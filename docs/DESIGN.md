@@ -109,41 +109,10 @@ crewbots daemon (Python, asyncio)
 
 There is no vector database, queue or container yet. Each would come in when a need below calls for it.
 
-## Next: memory and always-on agents
+## Next
 
-This is a proposal to settle before building it.
-
-**Context today.** Each task is one CLI session. The CLI owns its context window and compacts it, and crewbots resumes the session for follow-ups. Every run gets the role card, the roster and `team/` in its system prompt. Results move between bots as handoffs and reports, not raw transcripts. Nothing carries over from one task to the next.
-
-**Memory, in three layers. All of it is files or SQLite you can read and edit, never an opaque store.**
-1. **Working context (per task).** Still the CLI session. crewbots adds a rollover for long-lived conversations such as a standing chat with the chief: past a token threshold, which crewbots sees in its usage events, the bot writes itself a handoff and a fresh session starts from it.
-2. **Bot memory (per bot, across tasks).**
-   - Files in `crew/memory/<bot>/`: a short index plus one note per fact, the way Claude Code's memory works.
-   - Bots write with a `remember` tool. The index goes in the system prompt, and notes are read on demand, like skills.
-   - You can open and correct any of it. The Grok Bot guide flags that an uninspectable memory is a liability.
-3. **Crew record (everything that happened).**
-   - SQLite already holds every transcript, handoff and review. An FTS5 index over it gives bots a `recall(query)` tool, for questions like "what did we decide about auth?".
-   - Embeddings (sqlite-vec) come in only if keyword search proves too weak.
-   - A weekly retro routine distills recurring corrections into `team/standards.md` or role cards, like pstack's `reflect` and `correct`.
-
-**Always-on.**
-- **The daemon becomes a user service.** On macOS that's a launchd LaunchAgent: it starts at login, restarts on crash, and the app attaches to it instead of owning it.
-- **Triggers.**
-  - Routines: `crew/routines/*.md` with a schedule and a bot, such as standup, planning and retro.
-  - Events: GitHub PRs and CI (webhook or polling), file watches, and a chat channel such as Telegram or Slack for messaging the chief.
-- **Budgets.** Subscription plans have weekly limits. Each bot and routine gets a token budget, enforced in the runner, and Claude's `rate_limit_event` warns before the limit.
-- **Notifications.** Native notifications from the app for anything that needs you: an escalation, a merge to approve, a failure.
-- **The hard part is that a laptop sleeps.** Truly always-on means running the daemon on a machine that stays on: a home server, a VPS or a cloud VM, with the CLIs signed in there. The daemon is already a server with a client API, so this is mostly a deployment and auth change. The app connects over a private network such as Tailscale, with a device-bound token instead of a localhost file.
-
-**Architecture questions to settle before scaling.**
-- Where the daemon runs (local, remote, or both, with sync) and what moves with it: repos, CLI logins, the crew folder.
-- The security boundary.
-  - Worktrees separate work but don't contain it, and a bot reading a hostile repo could be prompt-injected into misusing its tools.
-  - Containers per task, or per bot, would make the sandbox real.
-- One daemon per crew or one per machine, and whether crews share bots and memory.
-- When the app's API needs versioning: the moment a second client exists, such as a phone or a chat bridge.
+The architecture past the prototype (where it runs, the app, long-lived sessions, containment, memory, always-on, the API) is settled in [ARCHITECTURE.md](ARCHITECTURE.md), along with the order of work.
 
 ## Open questions
 
-- Desktop shell: Tauri (small, Rust) or Electron (simpler with a Python sidecar). This can wait until milestone 5, because the daemon API is the contract.
-- Whether bots should share one long-lived app-server process per backend (`codex app-server`, `claude --input-format stream-json`) instead of one process per run. Start with one process per run and measure.
+- Settled in [ARCHITECTURE.md](ARCHITECTURE.md): Tauri for the shell, and long-lived sessions instead of a process per turn.

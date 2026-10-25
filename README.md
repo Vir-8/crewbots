@@ -2,7 +2,7 @@
 
 A crew of persistent AI agents that you manage instead of babysit. You give a goal to a chief of staff, which splits it into tasks with one owner each and hands them to specialist bots: an engineer, a reviewer, or whatever you add, such as a video editor working in DaVinci Resolve. The bots run in parallel, each writing bot in its own git worktree, and you hear back when there is something to review or decide.
 
-The agents run on the official **Claude Code** and **Codex** CLIs in non-interactive mode, so they use the Claude and ChatGPT plans you already have. crewbots is the layer above them: bots, tasks, worktrees, delegation, rules and the app. The plan is in [docs/DESIGN.md](docs/DESIGN.md).
+The agents run on the official **Claude Code** and **Codex** CLIs in non-interactive mode, so they use the Claude and ChatGPT plans you already have. crewbots is the layer above them: bots, tasks, worktrees, delegation, rules and the app. The plan is in [docs/DESIGN.md](docs/DESIGN.md), and the architecture in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## How it works
 
