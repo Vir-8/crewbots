@@ -1,0 +1,7 @@
+{"type": "thread.started", "thread_id": "01a173fb-1c7b-7601-9fb9-c8951b9655fe"}
+{"type": "turn.started"}
+{"type": "item.completed", "item": {"id": "item_0", "type": "agent_message", "text": "I\u2019ll read a.txt."}}
+{"type": "item.started", "item": {"id": "item_1", "type": "command_execution", "command": "/bin/zsh -lc 'cat a.txt'", "aggregated_output": "", "exit_code": null, "status": "in_progress"}}
+{"type": "item.completed", "item": {"id": "item_1", "type": "command_execution", "command": "/bin/zsh -lc 'cat a.txt'", "aggregated_output": "hi\n", "exit_code": 0, "status": "completed"}}
+{"type": "item.completed", "item": {"id": "item_2", "type": "agent_message", "text": "hi"}}
+{"type": "turn.completed", "usage": {"input_tokens": 36393, "cached_input_tokens": 31232, "cache_write_input_tokens": 0, "output_tokens": 53, "reasoning_output_tokens": 0}}

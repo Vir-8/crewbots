@@ -1,0 +1,34 @@
+[project]
+name = "crewbots"
+version = "0.1.0"
+description = "A crew of persistent coding agents, run on the Claude Code and Codex CLIs"
+readme = "README.md"
+authors = [
+    { name = "Vir Kothari", email = "virkothari8@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+crewbots = "crewbots.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11.30,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.17.1",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 130
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
