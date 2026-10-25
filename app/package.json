@@ -9,7 +9,8 @@
     "dev": "concurrently -k -n vite,electron \"vite --port 5173 --strictPort\" \"wait-on tcp:127.0.0.1:5173 && electron .\"",
     "build": "tsc --noEmit && vite build",
     "start": "electron .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "types": "uv run --directory .. crewbots openapi --ts --out app/src/api-types.ts"
   },
   "dependencies": {
     "react": "^19.3.1",

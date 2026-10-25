@@ -39,8 +39,8 @@ def crew_app(tmp_path):
     store = Store(tmp_path / "crew.db")
     backend = HeldBackend()
     crew = make_crew(tmp_path, bot("chief", can_delegate=True), bot("engineer"))
-    runner = Runner(store, crew, {"fake": backend}, api_url=f"http://127.0.0.1:{PORT}")
-    with TestClient(create_app(runner, ADMIN, PORT), base_url=f"http://127.0.0.1:{PORT}") as client:
+    runner = Runner(store, crew, {"fake": backend}, api_url=f"http://127.0.0.1:{PORT}/v1")
+    with TestClient(create_app(runner, ADMIN, PORT), base_url=f"http://127.0.0.1:{PORT}/v1") as client:
         yield client, backend, store
         backend.release.set()
     store.close()

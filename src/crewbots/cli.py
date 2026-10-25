@@ -16,7 +16,7 @@ from typing import Any
 
 import httpx
 
-from crewbots import api, crew, worktree
+from crewbots import api, crew, typescript, worktree
 from crewbots.backends import BACKENDS, Access, RunSpec
 from crewbots.events import Done, Event, Notice, SessionStarted, Text, ToolCall, ToolResult, Usage, from_json
 
@@ -66,6 +66,10 @@ def main(argv: list[str] | None = None) -> int:
     add = skills_sub.add_parser("add", help="copy in a skill folder, or a folder of skills such as pstack's skills/")
     add.add_argument("path", type=Path)
     add.add_argument("--name", help="the folder name in skills/; a pack's skills are named <name>:<skill>")
+
+    openapi = sub.add_parser("openapi", help="print the API's OpenAPI schema (what the app's types are generated from)")
+    openapi.add_argument("--out", type=Path)
+    openapi.add_argument("--ts", action="store_true", help="print TypeScript types instead of the schema")
 
     run = sub.add_parser("run", help="one prompt through one backend, without a crew or daemon")
     run.add_argument("prompt")
@@ -201,6 +205,16 @@ def _merge(args: argparse.Namespace) -> int:
     return 0
 
 
+def _openapi(args: argparse.Namespace) -> int:
+    schema = api.openapi_schema()
+    text = typescript.from_openapi(schema) if args.ts else json.dumps(schema, indent=2, sort_keys=True) + "\n"
+    if args.out:
+        args.out.write_text(text)
+    else:
+        sys.stdout.write(text)
+    return 0
+
+
 def _run(args: argparse.Namespace) -> int:
     return asyncio.run(_run_direct(args))
 
@@ -229,13 +243,13 @@ async def _run_direct(args: argparse.Namespace) -> int:
 
 COMMANDS = {
     "init": _init, "serve": _serve, "bots": _bots, "task": _task, "tasks": _tasks, "watch": _watch, "say": _say,
-    "cancel": _cancel, "diff": _diff, "review": _review, "merge": _merge, "skills": _skills, "run": _run,
+    "cancel": _cancel, "diff": _diff, "review": _review, "merge": _merge, "skills": _skills, "openapi": _openapi, "run": _run,
 }
 
 
 def _client(args: argparse.Namespace) -> httpx.Client:
     info = api.read_daemon_info(args.home)
-    return httpx.Client(base_url=info.url, headers={"Authorization": f"Bearer {info.token}"}, timeout=30)
+    return httpx.Client(base_url=f"{info.url}/v1", headers={"Authorization": f"Bearer {info.token}"}, timeout=30)
 
 
 def _last_event_id(client: httpx.Client, task_id: str) -> int:

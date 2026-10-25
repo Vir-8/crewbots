@@ -82,7 +82,7 @@ class ScriptedCrew:
         self.script = {}
         self.backend = FakeBackend(reply=self._reply, gate=gate)
         self.runner = Runner(store, make_crew(tmp_path, *bots), {"fake": self.backend},
-                             worktree_root=tmp_path / "wts", api_url="http://127.0.0.1:8765", **kw)
+                             worktree_root=tmp_path / "wts", api_url="http://127.0.0.1:8765/v1", **kw)
         self.store = store
 
     def _reply(self, spec: RunSpec):

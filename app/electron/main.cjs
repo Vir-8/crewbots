@@ -37,7 +37,7 @@ function readInfo() {
 
 async function reachable(info) {
   try {
-    const response = await fetch(`${info.url}/bots`, { headers: { Authorization: `Bearer ${info.token}` } });
+    const response = await fetch(`${info.url}/v1/bots`, { headers: { Authorization: `Bearer ${info.token}` } });
     return response.ok;
   } catch {
     return false;
@@ -89,7 +89,7 @@ async function request(method, pathname, body) {
     return { ok: false, status: 0, data: { detail: `not an app path: ${pathname}` } }; // /bot/ is for bots only
   }
   try {
-    const response = await fetch(daemon.url + pathname, {
+    const response = await fetch(`${daemon.url}/v1${pathname}`, {
       method,
       headers: { Authorization: `Bearer ${daemon.token}`, "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -110,7 +110,7 @@ async function request(method, pathname, body) {
 async function follow() {
   const cursor = await request("GET", "/events/cursor");
   const after = cursor.ok ? cursor.data.id : 0;
-  const url = `${daemon.url.replace(/^http/, "ws")}/live?after=${after}&token=${encodeURIComponent(daemon.token)}`;
+  const url = `${daemon.url.replace(/^http/, "ws")}/v1/live?after=${after}&token=${encodeURIComponent(daemon.token)}`;
   socket?.close();
   socket = new WebSocket(url);
   socket.onmessage = (message) => win?.webContents.send("crew:live", JSON.parse(String(message.data)));

@@ -198,7 +198,7 @@ async def test_every_run_gets_the_crew_tools_and_coordinators_get_delegation(sto
     envs = {s.system_prompt.split("You are the ")[1].split(".")[0]: s.mcp_servers[MCP_SERVER_NAME].env
             for s in crew.backend.specs}
     assert envs["chief"]["CREWBOTS_DELEGATE"] == "1" and envs["engineer"]["CREWBOTS_DELEGATE"] == "0"
-    assert envs["chief"]["CREWBOTS_URL"] == "http://127.0.0.1:8765"
+    assert envs["chief"]["CREWBOTS_URL"] == "http://127.0.0.1:8765/v1"
     assert envs["chief"]["CREWBOTS_TOKEN"] != envs["engineer"]["CREWBOTS_TOKEN"]
 
 
