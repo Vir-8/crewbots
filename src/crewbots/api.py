@@ -23,8 +23,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from crewbots import crew as crew_module
-from crewbots.runner import NotAllowed, Runner, UnknownBot
-from crewbots.store import Status, Store
+from crewbots.runner import MergeError, NotAllowed, Runner, UnknownBot
+from crewbots.store import Status, Store, Verdict
 
 DEFAULT_PORT = 8765
 DAEMON_FILE = "daemon.json"  # in the crew's folder: where the daemon is and its token, readable only by the user
@@ -63,6 +63,27 @@ class Escalation(BaseModel):
     question: str
 
 
+class Finding(BaseModel):
+    location: str
+    problem: str
+    scenario: str = ""
+
+
+class ReviewBody(BaseModel):
+    verdict: Verdict
+    summary: str
+    findings: list[Finding] = []
+
+
+class MergeProposal(BaseModel):
+    task_id: str
+    summary: str
+
+
+class MergeRequest(BaseModel):
+    force: bool = False
+
+
 def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT) -> FastAPI:
     store = runner.store
     hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
@@ -88,6 +109,10 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT) -> FastAPI:
     @app.exception_handler(NotAllowed)
     async def not_allowed(request: Request, e: NotAllowed):
         return JSONResponse({"detail": str(e)}, status_code=403)
+
+    @app.exception_handler(MergeError)
+    async def merge_error(request: Request, e: MergeError):
+        return JSONResponse({"detail": str(e)}, status_code=409)
 
     @app.exception_handler(UnknownBot)
     async def unknown_bot(request: Request, e: UnknownBot):
@@ -144,6 +169,16 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT) -> FastAPI:
         task_or_404(task_id)
         return runner.children_of(task_id)
 
+    @app.get("/tasks/{task_id}/review")
+    async def task_review(task_id: str):
+        task_or_404(task_id)
+        return runner.review_state(task_id).to_json()
+
+    @app.post("/tasks/{task_id}/merge")
+    async def merge(task_id: str, body: MergeRequest | None = None):
+        task_or_404(task_id)
+        return runner.merge(task_id, force=bool(body and body.force)).to_json()
+
     # The bot side: what a bot's crewbots MCP server calls, as the task its run token belongs to.
 
     @app.post("/bot/delegate", status_code=201)
@@ -164,6 +199,16 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT) -> FastAPI:
     @app.post("/bot/handoff", status_code=201)
     async def bot_handoff(request: Request, body: HandoffBody):
         return runner.handoff(request.state.task.id, body.done, body.output, body.open, body.needs).to_json()
+
+    @app.post("/bot/review", status_code=201)
+    async def bot_review(request: Request, body: ReviewBody):
+        findings = [f.model_dump() for f in body.findings]
+        return runner.review(request.state.task.id, body.verdict, body.summary, findings).to_json()
+
+    @app.post("/bot/propose_merge")
+    async def bot_propose_merge(request: Request, body: MergeProposal):
+        task = runner.propose_merge(request.state.task.id, body.task_id, body.summary)
+        return {"id": task.id, "merge_state": task.merge_state}
 
     @app.post("/bot/escalate")
     async def bot_escalate(request: Request, body: Escalation):

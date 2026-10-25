@@ -64,7 +64,7 @@ crewbots daemon (Python, asyncio)
 1. **Backends** (done). Run one prompt through each CLI in a worktree, normalize the events, resume a session. Tests use a fake CLI script, so none of them call a model.
 2. **Daemon and store** (done). Bots loaded from role cards, the `team/` brain in every bot's instructions, tasks with a single owner, events in SQLite, an HTTP/WebSocket API, and the `crewbots` CLI. There is no separate "thread" type: a conversation with a bot is a task, and a follow-up message resumes its session.
 3. **Crew** (done). The crewbots MCP server (`delegate`, `tasks`, `message` for coordinators; `handoff`, `escalate` for everyone), handoffs stored as records, reporting back to the coordinator when its work is done, run tokens, and skills, including crew versions of pstack's `interrogate`, `arena` and `swarm`.
-   Still to come: a structured review loop that counts rounds in code (the 3-round limit is in the rules and the skill for now), `ask_bot` between workers, and the merge step.
+   Then the review loop and the merge. Reviews are tasks with `review_of`, and verdicts are records. A round is one reviewed version of the work, and the 3-round limit is enforced in code. Only approved work can be proposed, and only the user merges. Still to come: `ask_bot` between workers.
 4. **Rhythm.** Bot memory, schedules, routines (standup, planning, retro), budgets and per-bot metrics.
 5. **Desktop app.** The Activity view, threads, diff review and approvals.
 
@@ -74,6 +74,12 @@ crewbots daemon (Python, asyncio)
 - `codex exec resume` takes neither `-s` nor `-C`, so the sandbox is set with `-c sandbox_mode=…` and the directory is the process's working directory.
 - Claude's list options (`--allowedTools`, `--mcp-config`) take multiple values and would swallow a prompt passed after them, so both CLIs get the prompt on stdin.
 - Read-only access was checked on real runs: Claude's `dontAsk` mode with only the Read, Glob and Grep tools, and Codex's `read-only` sandbox, both refused to write a file.
+
+### Learned building the review loop
+
+- Codex's `workspace-write` sandbox can't commit inside a worktree. A worktree's git metadata lives in the main repo's `.git/worktrees/`, outside the writable root. So bots leave changes uncommitted, and crewbots commits them when the user merges. That is also the right split: the commit and the merge are the user's act.
+- Counting a round as "one reviewed version" (the work's finished-run count when review was asked for) makes the limit objective. Two reviewers of the same version are one round, and a revision makes the next review a new round. A pass on version 1 never approves version 2.
+- In the live run, both reviewers recorded structured PASS verdicts. The Codex critic ran 610 boundary and property checks. The round status told the chief it could propose, and it did, with a summary covering edge-case decisions and the critic's "consider" notes. The merge commit records who reviewed it and in which round.
 
 ### Learned in milestone 3
 

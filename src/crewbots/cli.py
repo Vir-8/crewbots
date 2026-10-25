@@ -55,6 +55,11 @@ def main(argv: list[str] | None = None) -> int:
     cancel.add_argument("task_id")
     diff = sub.add_parser("diff", help="what a task changed in its worktree")
     diff.add_argument("task_id")
+    review = sub.add_parser("review", help="where a task's work stands in review")
+    review.add_argument("task_id")
+    merge = sub.add_parser("merge", help="merge a task's approved worktree into your checkout's current branch")
+    merge.add_argument("task_id")
+    merge.add_argument("--force", action="store_true", help="merge even though its current version is not approved")
 
     skills = sub.add_parser("skills", help="list the crew's skills, or add some")
     skills_sub = skills.add_subparsers(dest="skills_command")
@@ -126,7 +131,8 @@ def _tasks(args: argparse.Namespace) -> int:
 
     def show(task: dict[str, Any], depth: int) -> None:
         indent = "  " * depth + ("└ " if depth else "")
-        print(f"{task['id']}  {task['status']:<11} {indent}{task['bot']:<12} {task['title']}")
+        mark = {"proposed": "  [ready to merge]", "merged": "  [merged]"}.get(task["merge_state"], "")
+        print(f"{task['id']}  {task['status']:<11} {indent}{task['bot']:<12} {task['title']}{mark}")
         for child in children.get(task["id"], []):
             show(child, depth + 1)
 
@@ -174,6 +180,27 @@ def _diff(args: argparse.Namespace) -> int:
     return 0
 
 
+def _review(args: argparse.Namespace) -> int:
+    state = _client(args).get(f"/tasks/{args.task_id}/review").raise_for_status().json()
+    if not state["round"]:
+        print(f"{args.task_id} has not been reviewed")
+        return 0
+    verdict = ("approved" if state["approved"] else "out of rounds" if state["out_of_rounds"]
+               else "changes requested" if state["failed"] else "in progress")
+    print(f"{args.task_id}: round {state['round']} of {state['max_rounds']}, {verdict}")
+    for r in state["reviews"]:
+        print(f"  {r['reviewer']:<12} {(r['verdict'] or 'no verdict').upper():<10} {r['summary'] or ''}")
+        for f in r["findings"]:
+            print(f"    - {f.get('location', '?')}: {f.get('problem', '')}")
+    return 0
+
+
+def _merge(args: argparse.Namespace) -> int:
+    task = _client(args).post(f"/tasks/{args.task_id}/merge", json={"force": args.force}).raise_for_status().json()
+    print(f"merged {task['id']} ({task['branch']}) as {task['merged_commit'][:12]}")
+    return 0
+
+
 def _run(args: argparse.Namespace) -> int:
     return asyncio.run(_run_direct(args))
 
@@ -202,7 +229,7 @@ async def _run_direct(args: argparse.Namespace) -> int:
 
 COMMANDS = {
     "init": _init, "serve": _serve, "bots": _bots, "task": _task, "tasks": _tasks, "watch": _watch, "say": _say,
-    "cancel": _cancel, "diff": _diff, "skills": _skills, "run": _run,
+    "cancel": _cancel, "diff": _diff, "review": _review, "merge": _merge, "skills": _skills, "run": _run,
 }
 
 
@@ -259,6 +286,13 @@ def _format_stored(e: dict[str, Any]) -> str:
             return f"⇢ HANDOFF done: {d['done']} | output: {', '.join(d['output']) or '-'} | open: {d['open'] or '-'}"
         case "escalation":
             return f"? escalated: {e['data']['question']}"
+        case "review":
+            d = e["data"]
+            return f"⚖ {d['reviewer']}: {d['verdict'].upper()} (version {d['version']}) {d['summary']}"
+        case "merge_proposed":
+            return f"⇢ proposed for merging by {e['data']['by']}: {e['data']['summary']}"
+        case "merged":
+            return f"✓ merged as {e['data']['commit'][:12]} into {e['data']['into']}"
     event = from_json(e["kind"], e["data"])
     return _format(event) if event else f"· {e['kind']} {json.dumps(e['data'])}"
 

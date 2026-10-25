@@ -28,7 +28,8 @@ You have crewbots tools, from the MCP server named crewbots:
 - `handoff(done, output, open, needs)`: call it once when you finish, as the HANDOFF in team/protocol.md. `output` lists
   file paths, branches or links. Then end your reply with a short summary.
 - `escalate(question)`: when you need a decision that is not yours to make (team/rules.md). Ask one clear question,
-  then end your turn. The answer arrives as your next message."""
+  then end your turn. The answer arrives as your next message.
+- `review(verdict, summary, findings)`: only when your task is a review. Your verdict is what counts, not your prose."""
 
 DELEGATION_TOOLS = """You can delegate. Only you assign work, and every task has exactly one owner:
 
@@ -38,6 +39,12 @@ DELEGATION_TOOLS = """You can delegate. Only you assign work, and every task has
 - `tasks()`: the tasks you delegated, with their status, handoffs and results. For looking something up, never for
   waiting: results come to you.
 - `message(task_id, text)`: answer a task's escalation, or send it review objections to fix.
+- `propose_merge(task_id, summary)`: put approved work in front of the user to merge. You never merge; the user does.
+  Uncommitted changes in the worktree are expected: crewbots commits them when the user merges.
+
+Reviews are counted in code. A round is one reviewed version of the work. After three rounds that still fail, crewbots
+stops further review rounds and revisions, and you report to the user instead. Work can be proposed for merging only
+when every review of its current version passed.
 
 Delegated tasks run in parallel, so delegate independent work together. Do not wait or poll after delegating: end your
 turn. When all of your running tasks have finished, or one escalates, their results arrive as your next message."""
@@ -83,7 +90,7 @@ class Crew:
             return list(self.skills.values())
         return [self.skills[name] for name in bot.skills]
 
-    def system_prompt(self, bot: Bot, delegated_by: str | None = None) -> str:
+    def system_prompt(self, bot: Bot, delegated_by: str | None = None, reviewing: str | None = None) -> str:
         roster = "\n".join(
             f"- {b.name} ({b.title}){' ← you' if b.name == bot.name else ''}: {b.description}" for b in self.bots.values()
         )
@@ -95,6 +102,8 @@ class Crew:
             f"# The crew\n\n{roster}",
             CREW_TOOLS + ("\n\n" + DELEGATION_TOOLS if bot.can_delegate else ""),
         ]
+        if reviewing:
+            parts.insert(2, f"# This review\n\n{reviewing}")
         if skills := self.skills_for(bot):
             listing = "\n".join(f"- {s.name}: {s.description} ({s.path})" for s in skills)
             parts.append(

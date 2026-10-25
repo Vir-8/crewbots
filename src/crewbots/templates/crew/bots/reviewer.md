@@ -21,4 +21,4 @@ Catch what the author missed. The bot that wrote something should not be the onl
 
 ## Done means
 
-A verdict (PASS or FAIL) first, then each objection with its location. On a pass, the remaining risks, if any.
+The verdict and findings are recorded with the `review` tool. Each objection has its location, and on a pass, any remaining risks are listed as findings.

@@ -144,4 +144,25 @@ async def test_workers_are_not_offered_delegation_tools(crew_app):
 
     names = {t.name for t in await build_server(client, can_delegate=False).list_tools()}
 
-    assert names == {"handoff", "escalate"}
+    assert names == {"handoff", "escalate", "review"}
+
+
+def test_a_verdict_from_a_task_that_is_not_a_review_is_refused_with_a_reason(crew_app):
+    client, backend, _ = crew_app
+    _, token = start(client, backend, "engineer")
+
+    refused = client.post("/bot/review", json={"verdict": "pass", "summary": "fine"}, headers=as_bot(token))
+
+    assert refused.status_code == 403 and "not a review" in refused.json()["detail"]
+    bad = client.post("/bot/review", json={"verdict": "maybe", "summary": "?"}, headers=as_bot(token))
+    assert bad.status_code == 422  # only pass or fail
+
+
+def test_merging_unreviewed_work_is_a_conflict_the_user_can_read(crew_app):
+    client, backend, _ = crew_app
+    task_id, _ = start(client, backend, "engineer")
+    admin = {"Authorization": f"Bearer {ADMIN}"}
+
+    assert client.get(f"/tasks/{task_id}/review", headers=admin).json()["round"] == 0
+    refused = client.post(f"/tasks/{task_id}/merge", headers=admin)
+    assert refused.status_code == 409 and "no worktree" in refused.json()["detail"]

@@ -24,6 +24,11 @@ The agents run on the official **Claude Code** and **Codex** CLIs in non-interac
     - a coordinator can only touch tasks it delegated
     - there is a cap on how many tasks one task can delegate
   - Each run's MCP server holds a token that acts only as that task, and only while the run lasts.
+- **Review and merge.**
+  - A review is a task delegated with `review_of`, so the reviewer works in the reviewed task's worktree. It ends with the `review` tool: a pass or fail verdict, and findings with locations and failure scenarios.
+  - crewbots counts the rounds. A round is one reviewed version of the work, so a pass on an older version never approves newer changes. After three failed rounds it refuses both a fourth round and another revision, and the chief reports to you instead.
+  - Work that passes every review of its current version can be proposed with `propose_merge`, which marks it `[ready to merge]`. Only you merge, with `crewbots merge <task>`. It commits the worktree, merges its branch into your checkout's current branch with a merge commit naming the reviewers, then removes the worktree.
+  - It refuses to merge into a checkout with uncommitted changes, and aborts on a conflict, so nothing changes unless the merge is clean.
 - **Skills** are [Agent Skills](https://agentskills.io) folders (a `SKILL.md` each). A role card lists the ones its bot gets, and the bot sees each skill's name, description and path, then reads the `SKILL.md` when a task matches.
   - The starter crew ships `interrogate`, `arena` and `swarm`: crew versions of [pstack](https://github.com/cursor/plugins/tree/main/pstack)'s multi-agent skills. They use real model diversity, a Claude reviewer and a Codex critic.
   - Whole skill packs can be dropped in with `crewbots skills add`, and are namespaced (`pstack:tdd`).
@@ -70,6 +75,14 @@ uv run crewbots say <task id> "Also document it in the README"
 uv run crewbots diff <task id>
 ```
 
+```bash
+uv run crewbots review <task id>
+```
+
+```bash
+uv run crewbots merge <task id>
+```
+
 `crewbots tasks` lists everything as a tree, `watch` follows a task and everything it delegates, and `cancel` stops one. Tasks still running when the daemon stops are marked interrupted; send them a message to carry on. `crewbots run` skips the crew and the daemon entirely and sends one prompt through one backend.
 
 ## Skills from pstack
@@ -104,7 +117,7 @@ src/crewbots/
   store.py           tasks and events, in SQLite
   runner.py          runs tasks: sessions, worktrees, queued follow-ups, delegation and reporting back
   api.py             the daemon: HTTP + WebSocket, user and run tokens, host checks
-  mcp_server.py      the crewbots tools each bot gets (handoff, escalate; delegate, tasks, message)
+  mcp_server.py      the crewbots tools each bot gets (handoff, escalate, review; delegate, tasks, message, propose_merge)
   worktree.py        one git worktree per task
   cli.py             the `crewbots` command
   templates/crew/    the starter crew: bots, team files, skills

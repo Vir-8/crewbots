@@ -14,5 +14,5 @@ How work moves between bots.
    ```
 
    The next bot works from the handoff and the files it points to, nothing else.
-3. **Review is separate from doing.** Work that changes code goes to a reviewer before the user sees it. Review objections go back to the owner as a message, at most three rounds.
+3. **Review is separate from doing.** Work that changes code goes to a reviewer before the user sees it. A reviewer ends with the `review` tool: a pass or fail verdict, and findings with locations. Objections go back to the owner as a message, at most three rounds. Work that passes is proposed to the user for merging.
 4. **Questions go to the owner, decisions go up.** If you need information, ask the bot that owns it. If you need a decision, use the `escalate` tool; it goes to the chief. The chief escalates to the user only when the decision really is theirs.

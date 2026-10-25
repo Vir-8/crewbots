@@ -4,10 +4,10 @@ crewbots MCP tools reach through the daemon, as the task its run token belongs t
 import asyncio
 
 import pytest
-from fakes import FakeBackend, bot, git_repo, make_crew, wait_until
+from fakes import FakeBackend, ScriptedCrew, bot, git_repo, make_crew, wait_until
 
-from crewbots.backends import Access, RunSpec
-from crewbots.events import Done, SessionStarted
+from crewbots.backends import Access
+from crewbots.events import Done
 from crewbots.runner import MCP_SERVER_NAME, NotAllowed, Runner
 from crewbots.store import Status, Store
 
@@ -23,36 +23,12 @@ def chief(**kw):
     return bot("chief", can_delegate=True, **kw)
 
 
-class Crew:
-    """A runner whose bots are scripted: `script[bot](spec, me)` returns the run's events, where `me` is the caller's
-    task, found from its run token exactly as the daemon finds it."""
-
-    def __init__(self, store, tmp_path, *bots, gate=None, **kw):
-        self.script = {}
-        self.backend = FakeBackend(reply=self._reply, gate=gate)
-        self.runner = Runner(store, make_crew(tmp_path, *bots), {"fake": self.backend},
-                             worktree_root=tmp_path / "wts", api_url="http://127.0.0.1:8765", **kw)
-        self.store = store
-
-    def _reply(self, spec: RunSpec):
-        token = spec.mcp_servers[MCP_SERVER_NAME].env["CREWBOTS_TOKEN"]
-        me = self.runner.task_for_token(token)
-        events = self.script.get(me.bot, lambda spec, me: [Done(final_text=f"{me.bot} did: {spec.prompt[:40]}")])(spec, me)
-        return [SessionStarted(session_id=f"s-{me.id}"), *events]
-
-    def specs_for(self, bot_name):
-        return [s for s in self.backend.specs if f"You are the {bot_name}." in s.system_prompt]
-
-    def settled(self, task_id):
-        return lambda: not self.store.get_task(task_id).active and task_id not in self.runner.running()
-
-
 def messages(store, task_id):
     return [e.data for e in store.events(task_id) if e.kind == "message"]
 
 
 async def test_the_chief_delegates_and_hears_back_once_everything_is_done(store, tmp_path):
-    crew = Crew(store, tmp_path, chief(), bot("engineer"), bot("writer"))
+    crew = ScriptedCrew(store, tmp_path, chief(), bot("engineer"), bot("writer"))
     children = []
 
     def plan(spec, me):
@@ -83,7 +59,7 @@ async def test_the_chief_delegates_and_hears_back_once_everything_is_done(store,
 
 
 async def test_a_task_delegated_by_the_chief_knows_who_it_reports_to(store, tmp_path):
-    crew = Crew(store, tmp_path, chief(), bot("engineer"))
+    crew = ScriptedCrew(store, tmp_path, chief(), bot("engineer"))
     crew.script["chief"] = lambda spec, me: (
         [crew.runner.delegate(me.id, "engineer", "x"), Done(final_text="ok")][1:] if spec.prompt == "go" else
         [Done(final_text="done")])
@@ -96,7 +72,7 @@ async def test_a_task_delegated_by_the_chief_knows_who_it_reports_to(store, tmp_
 
 async def test_children_inherit_the_workspace_and_get_their_own_worktrees(store, tmp_path):
     repo = git_repo(tmp_path / "repo")
-    crew = Crew(store, tmp_path, chief(), bot("engineer", access=Access.WORKSPACE_WRITE))
+    crew = ScriptedCrew(store, tmp_path, chief(), bot("engineer", access=Access.WORKSPACE_WRITE))
     kids = []
     crew.script["chief"] = lambda spec, me: (
         [kids.append(crew.runner.delegate(me.id, "engineer", f"part {i}")) for i in range(2)] and
@@ -110,7 +86,7 @@ async def test_children_inherit_the_workspace_and_get_their_own_worktrees(store,
 
 async def test_a_reviewer_reads_the_worktree_of_the_work_it_reviews(store, tmp_path):
     repo = git_repo(tmp_path / "repo")
-    crew = Crew(store, tmp_path, chief(), bot("engineer", access=Access.WORKSPACE_WRITE), bot("reviewer"))
+    crew = ScriptedCrew(store, tmp_path, chief(), bot("engineer", access=Access.WORKSPACE_WRITE), bot("reviewer"))
     state = {}
 
     def plan(spec, me):
@@ -129,7 +105,7 @@ async def test_a_reviewer_reads_the_worktree_of_the_work_it_reviews(store, tmp_p
 
 
 async def test_only_coordinators_delegate_and_never_to_a_coordinator(store, tmp_path):
-    crew = Crew(store, tmp_path, chief(), bot("deputy", can_delegate=True), bot("engineer"))
+    crew = ScriptedCrew(store, tmp_path, chief(), bot("deputy", can_delegate=True), bot("engineer"))
     worker_task = store.create_task("engineer", "x")
     chief_task = store.create_task("chief", "y")
 
@@ -140,7 +116,7 @@ async def test_only_coordinators_delegate_and_never_to_a_coordinator(store, tmp_
 
 
 async def test_delegation_stops_at_the_limit(store, tmp_path):
-    crew = Crew(store, tmp_path, chief(), bot("engineer"), max_children=2, gate=asyncio.Event())
+    crew = ScriptedCrew(store, tmp_path, chief(), bot("engineer"), max_children=2, gate=asyncio.Event())
     parent = store.create_task("chief", "y")
     crew.runner.delegate(parent.id, "engineer", "a")
     crew.runner.delegate(parent.id, "engineer", "b")
@@ -151,7 +127,7 @@ async def test_delegation_stops_at_the_limit(store, tmp_path):
 
 
 async def test_a_bot_can_only_touch_tasks_it_delegated(store, tmp_path):
-    crew = Crew(store, tmp_path, chief(), bot("engineer"))
+    crew = ScriptedCrew(store, tmp_path, chief(), bot("engineer"))
     mine = store.create_task("chief", "mine")
     theirs = store.create_task("chief", "theirs")
     other_child = store.create_task("engineer", "x", parent_id=theirs.id, created_by="chief")
@@ -163,7 +139,7 @@ async def test_a_bot_can_only_touch_tasks_it_delegated(store, tmp_path):
 
 
 async def test_an_escalation_reaches_the_chief_at_once_and_its_answer_resumes_the_worker(store, tmp_path):
-    crew = Crew(store, tmp_path, chief(), bot("engineer"), bot("writer"))
+    crew = ScriptedCrew(store, tmp_path, chief(), bot("engineer"), bot("writer"))
     state = {"answered": False}
 
     def plan(spec, me):
@@ -196,7 +172,7 @@ async def test_an_escalation_reaches_the_chief_at_once_and_its_answer_resumes_th
 
 
 async def test_a_top_level_escalation_waits_for_the_user(store, tmp_path):
-    crew = Crew(store, tmp_path, chief())
+    crew = ScriptedCrew(store, tmp_path, chief())
     crew.script["chief"] = lambda spec, me: (crew.runner.escalate(me.id, "merge it?"), [Done(final_text="asked")])[1]
     top = crew.runner.submit("chief", "go")
     await wait_until(crew.settled(top.id))
@@ -205,7 +181,7 @@ async def test_a_top_level_escalation_waits_for_the_user(store, tmp_path):
 
 
 async def test_run_tokens_only_work_while_their_run_lasts(store, tmp_path):
-    crew = Crew(store, tmp_path, chief())
+    crew = ScriptedCrew(store, tmp_path, chief())
     top = crew.runner.submit("chief", "go")
     await wait_until(crew.settled(top.id))
     token = crew.backend.specs[0].mcp_servers[MCP_SERVER_NAME].env["CREWBOTS_TOKEN"]
@@ -214,7 +190,7 @@ async def test_run_tokens_only_work_while_their_run_lasts(store, tmp_path):
 
 
 async def test_every_run_gets_the_crew_tools_and_coordinators_get_delegation(store, tmp_path):
-    crew = Crew(store, tmp_path, chief(), bot("engineer"))
+    crew = ScriptedCrew(store, tmp_path, chief(), bot("engineer"))
     a = crew.runner.submit("chief", "a")
     b = crew.runner.submit("engineer", "b")
     await wait_until(lambda: crew.settled(a.id)() and crew.settled(b.id)())
@@ -237,7 +213,7 @@ async def test_without_a_daemon_bots_run_without_crew_tools(store, tmp_path):
 
 async def test_a_cancelled_chief_is_not_woken_by_its_children(store, tmp_path):
     gate = asyncio.Event()
-    crew = Crew(store, tmp_path, chief(), bot("engineer"))
+    crew = ScriptedCrew(store, tmp_path, chief(), bot("engineer"))
     parent = store.create_task("chief", "y")
     store.update_task(parent.id, status=Status.CANCELLED)
     crew.backend.gate = gate

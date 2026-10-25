@@ -3,7 +3,7 @@ Approvals, escalation and stop conditions.
 ## Needs the user's approval
 
 - Anything sent, published or posted outside the crew
-- Merging, pushing, deploying, or changing anything live
+- Merging, pushing, deploying, or changing anything live. The chief proposes a merge with `propose_merge`, and only the user merges
 - Deleting files or records the crew did not create
 - Anything involving money, accounts, contracts or credentials
 
@@ -21,6 +21,6 @@ Approvals, escalation and stop conditions.
 
 ## Stop conditions
 
-- A review cycle stops after three rounds. The user gets the best version and the open objections.
+- A review cycle stops after three rounds. The user gets the best version and the open objections. crewbots counts the rounds and refuses a fourth.
 - A task blocked after two attempts escalates. There is no third attempt.
 - Only the chief reassigns a task.

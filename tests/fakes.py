@@ -5,6 +5,7 @@ from pathlib import Path
 from crewbots.backends import Access, RunSpec
 from crewbots.crew import Bot, Crew
 from crewbots.events import Done, SessionStarted, Text, Usage
+from crewbots.runner import MCP_SERVER_NAME, Runner
 
 
 def reply(spec: RunSpec):
@@ -71,3 +72,27 @@ async def wait_until(condition, timeout: float = 5.0):
         if loop.time() > end:
             raise TimeoutError("condition never became true")
         await asyncio.sleep(0.01)
+
+
+class ScriptedCrew:
+    """A runner whose bots are scripted: `script[bot](spec, me)` returns the run's events, where `me` is the caller's
+    task, found from its run token exactly as the daemon finds it."""
+
+    def __init__(self, store, tmp_path, *bots, gate=None, **kw):
+        self.script = {}
+        self.backend = FakeBackend(reply=self._reply, gate=gate)
+        self.runner = Runner(store, make_crew(tmp_path, *bots), {"fake": self.backend},
+                             worktree_root=tmp_path / "wts", api_url="http://127.0.0.1:8765", **kw)
+        self.store = store
+
+    def _reply(self, spec: RunSpec):
+        token = spec.mcp_servers[MCP_SERVER_NAME].env["CREWBOTS_TOKEN"]
+        me = self.runner.task_for_token(token)
+        events = self.script.get(me.bot, lambda spec, me: [Done(final_text=f"{me.bot} did: {spec.prompt[:40]}")])(spec, me)
+        return [SessionStarted(session_id=f"s-{me.id}"), *events]
+
+    def specs_for(self, bot_name):
+        return [s for s in self.backend.specs if f"You are the {bot_name}." in s.system_prompt]
+
+    def settled(self, task_id):
+        return lambda: not self.store.get_task(task_id).active and task_id not in self.runner.running()

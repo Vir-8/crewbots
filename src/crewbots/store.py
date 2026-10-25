@@ -37,6 +37,11 @@ create table if not exists tasks (
     output_tokens integer not null default 0,
     cost_usd      real not null default 0,
     reported      integer not null default 0,  -- whether its outcome has gone back to the task that delegated it
+    turns         integer not null default 0,  -- runs that finished; a review is of the work as of one of these
+    review_of     text references tasks(id),   -- set on a review task: the work it reviews
+    review_version integer,                    -- the work's `turns` when this review was asked for
+    merge_state   text,                        -- null, proposed (by its coordinator), or merged (by the user)
+    merged_commit text,
     created_at    text not null,
     updated_at    text not null
 );
@@ -49,6 +54,18 @@ create table if not exists events (
 );
 create index if not exists events_by_task on events(task_id, id);
 create index if not exists tasks_by_parent on tasks(parent_id);
+create table if not exists reviews (
+    id       integer primary key autoincrement,
+    task_id  text not null references tasks(id),  -- the review task
+    work_id  text not null references tasks(id),  -- the work it reviewed
+    reviewer text not null,
+    version  integer not null,
+    verdict  text not null,                       -- pass or fail
+    summary  text not null,
+    findings text not null,                       -- JSON list of {location, problem, scenario}
+    at       text not null
+);
+create index if not exists reviews_by_work on reviews(work_id, version);
 create table if not exists handoffs (
     id       integer primary key autoincrement,
     task_id  text not null references tasks(id),
@@ -60,7 +77,14 @@ create table if not exists handoffs (
     at       text not null
 );
 """
-MIGRATIONS = {"reported": "alter table tasks add column reported integer not null default 0"}
+MIGRATIONS = {  # columns added after a crew's database may already exist
+    "reported": "alter table tasks add column reported integer not null default 0",
+    "turns": "alter table tasks add column turns integer not null default 0",
+    "review_of": "alter table tasks add column review_of text references tasks(id)",
+    "review_version": "alter table tasks add column review_version integer",
+    "merge_state": "alter table tasks add column merge_state text",
+    "merged_commit": "alter table tasks add column merged_commit text",
+}
 
 
 class Status(StrEnum):
@@ -93,6 +117,11 @@ class Task:
     output_tokens: int
     cost_usd: float
     reported: bool
+    turns: int
+    review_of: str | None
+    review_version: int | None
+    merge_state: str | None
+    merged_commit: str | None
     created_at: str
     updated_at: str
 
@@ -118,6 +147,27 @@ class Handoff:
     output: list[str]
     open: str
     needs: str
+    at: str
+
+    def to_json(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+class Verdict(StrEnum):
+    PASS = "pass"
+    FAIL = "fail"
+
+
+@dataclass(frozen=True)
+class Review:
+    id: int
+    task_id: str
+    work_id: str
+    reviewer: str
+    version: int
+    verdict: Verdict
+    summary: str
+    findings: list[dict[str, str]]
     at: str
 
     def to_json(self) -> dict[str, Any]:
@@ -153,15 +203,16 @@ class Store:
 
     def create_task(
         self, bot: str, goal: str, *, created_by: str = "user", parent_id: str | None = None, workspace: str | None = None,
+        review_of: str | None = None, review_version: int | None = None,
     ) -> Task:
         task_id = f"t_{uuid.uuid4().hex[:10]}"
         now = _now()
         first_line = goal.strip().splitlines()[0] if goal.strip() else "(empty)"
         title = first_line if len(first_line) <= TITLE_CHARS else first_line[: TITLE_CHARS - 1] + "…"
         self.db.execute(
-            "insert into tasks (id, bot, title, status, created_by, parent_id, workspace, created_at, updated_at)"
-            " values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (task_id, bot, title, Status.QUEUED, created_by, parent_id, workspace, now, now),
+            "insert into tasks (id, bot, title, status, created_by, parent_id, workspace, review_of, review_version,"
+            " created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (task_id, bot, title, Status.QUEUED, created_by, parent_id, workspace, review_of, review_version, now, now),
         )
         return self.get_task(task_id)
 
@@ -201,6 +252,27 @@ class Store:
         if row is None:
             return None
         return Handoff(**{**dict(row), "output": json.loads(row["output"])})
+
+    def reviewers_of(self, work_id: str) -> list[Task]:
+        """The review tasks of a piece of work, oldest first."""
+        rows = self.db.execute("select * from tasks where review_of = ? order by created_at, id", (work_id,)).fetchall()
+        return [_task(r) for r in rows]
+
+    def add_review(self, task_id: str, work_id: str, reviewer: str, version: int, verdict: Verdict, summary: str,
+                   findings: list[dict[str, str]]) -> Review:
+        now = _now()
+        cur = self.db.execute(
+            "insert into reviews (task_id, work_id, reviewer, version, verdict, summary, findings, at)"
+            " values (?, ?, ?, ?, ?, ?, ?, ?)",
+            (task_id, work_id, reviewer, version, verdict, summary, json.dumps(findings), now),
+        )
+        return Review(id=cur.lastrowid, task_id=task_id, work_id=work_id, reviewer=reviewer, version=version,
+                      verdict=verdict, summary=summary, findings=findings, at=now)
+
+    def latest_review(self, task_id: str) -> Review | None:
+        """The verdict a review task gave, if it gave one; a later verdict replaces an earlier one."""
+        row = self.db.execute("select * from reviews where task_id = ? order by id desc limit 1", (task_id,)).fetchone()
+        return _review(row) if row else None
 
     def update_task(self, task_id: str, **fields: Any) -> Task:
         allowed = set(Task.__dataclass_fields__) - {"id", "bot", "created_by", "created_at", "updated_at"}
@@ -249,6 +321,10 @@ class Store:
             StoredEvent(id=r["id"], task_id=r["task_id"], kind=r["kind"], data=json.loads(r["data"]), at=r["at"])
             for r in self.db.execute(sql, args).fetchall()
         ]
+
+
+def _review(row: sqlite3.Row) -> Review:
+    return Review(**{**dict(row), "verdict": Verdict(row["verdict"]), "findings": json.loads(row["findings"])})
 
 
 def _task(row: sqlite3.Row) -> Task:

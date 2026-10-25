@@ -20,4 +20,4 @@ Find what would break. Where the reviewer checks work against the standards, you
 
 ## Done means
 
-Each finding with its location, the scenario, and how sure you are. If there are no findings, say what you tried.
+The verdict and findings are recorded with the `review` tool: fail if you can prove a problem that matters, otherwise pass. Each finding has its location and scenario. If there are no findings, the summary says what you tried.

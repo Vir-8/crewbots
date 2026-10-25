@@ -51,8 +51,29 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
         call("POST", "/bot/escalate", {"question": question})
         return "Escalated. End your turn now; the answer will arrive as your next message."
 
+    @server.tool()
+    def review(verdict: str, summary: str, findings: list[dict[str, str]] | None = None) -> str:
+        """Give your verdict, when your task is a review. The verdict is what counts, not your prose.
+
+        verdict: "pass" or "fail". summary: one or two sentences. findings: one per problem, each
+        {"location": "file:line", "problem": "...", "scenario": "the input or state, and the wrong result"}. A pass
+        with remaining risks is still a pass; list the risks as findings.
+        """
+        call("POST", "/bot/review", {"verdict": verdict.lower(), "summary": summary, "findings": findings or []})
+        return "Verdict recorded. End your reply with a short summary."
+
     if not can_delegate:
         return server
+
+    @server.tool()
+    def propose_merge(task_id: str, summary: str) -> str:
+        """Put approved work in front of the user to merge. Every review of its current version must have passed.
+        You never merge; the user does.
+
+        summary: what the change does and how it was verified, for the user deciding whether to merge.
+        """
+        call("POST", "/bot/propose_merge", {"task_id": task_id, "summary": summary})
+        return f"Proposed {task_id} to the user for merging."
 
     @server.tool()
     def delegate(bot: str, goal: str, workspace: str | None = None, review_of: str | None = None) -> str:

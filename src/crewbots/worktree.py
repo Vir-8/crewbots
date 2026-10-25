@@ -55,6 +55,24 @@ def commit(wt: Worktree, message: str) -> str | None:
     return _git(wt.path, "rev-parse", "HEAD")
 
 
+def merge(wt: Worktree, message: str) -> str:
+    """Merges the worktree's branch into whatever branch the main checkout has out, with a merge commit, and returns
+    that commit. It refuses a checkout with uncommitted changes, and a conflict is aborted, so it either merges cleanly
+    or changes nothing."""
+    if _git(wt.repo, "status", "--porcelain", "--untracked-files=no"):
+        raise GitError(f"{wt.repo} has uncommitted changes; commit or stash them, then merge again")
+    try:
+        into = _git(wt.repo, "symbolic-ref", "--short", "HEAD")
+    except GitError:
+        raise GitError(f"{wt.repo} is not on a branch (detached HEAD); check out the branch to merge into") from None
+    try:
+        _git(wt.repo, "merge", "--no-ff", "--no-edit", "-m", message, wt.branch)
+    except GitError as e:
+        subprocess.run(["git", "merge", "--abort"], cwd=wt.repo, capture_output=True)
+        raise GitError(f"merging {wt.branch} into {into} failed, and nothing was changed: {e}") from None
+    return _git(wt.repo, "rev-parse", "HEAD")
+
+
 def remove(wt: Worktree, delete_branch: bool = False) -> None:
     _git(wt.repo, "worktree", "remove", "--force", str(wt.path))
     if delete_branch:

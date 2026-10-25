@@ -21,6 +21,8 @@ Delegate the same review to every reviewing bot in the crew on a different backe
 
 If the crew has only one reviewing bot, run it once and say in your report that the review was single-model.
 
+Each reviewer ends with the `review` tool, so its verdict and findings come back to you structured, along with the round status crewbots keeps.
+
 Then end your turn.
 
 ## 3. Judge
@@ -34,7 +36,9 @@ When the reviews arrive, merge findings that describe the same problem, and note
 
 ## 4. Act
 
-Send the **act on** findings back to the owner with `message`, as one list. Its fix comes back to you; review again only what changed. Stop after three rounds and report what is still open, as team/rules.md says.
+- **Act on findings exist:** send them back to the owner with `message`, as one list. When the fix comes back, run a new round: the same reviewers, with `review_of` set again. crewbots counts the rounds and stops at three. Then report the best version and what is still open to the user.
+- **All reviewers passed the current version:** call `propose_merge(task_id, summary)`. The summary covers what changed, how it was verified, and anything in Consider. The user decides whether to merge.
+- **A reviewer failed it only on findings you dismissed:** say why in your report to the user, and don't propose the merge yourself. The user can still merge it.
 
 ## Report
 
