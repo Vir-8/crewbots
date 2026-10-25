@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { previewBridge } from "./preview/bridge";
 import type { ConnectionStatus, Live } from "./types";
 
 export interface Reply {
@@ -22,7 +23,7 @@ function subscribe<T>(channel: string, callback: (payload: T) => void): () => vo
   };
 }
 
-export const bridge = {
+const tauriBridge = {
   status: () => invoke<ConnectionStatus>("crew_status"),
   request: (method: string, path: string, body?: unknown) =>
     invoke<Reply>("crew_request", { method, path, body: body ?? null }),
@@ -35,3 +36,7 @@ export const bridge = {
   onLive: (callback: (message: Live) => void) => subscribe("crew:live", callback),
   onResync: (callback: () => void) => subscribe<null>("crew:resync", () => callback()),
 };
+
+/** Inside the app, the real shell. In a plain browser, the design preview's made-up crew. */
+export const inTauri = "__TAURI_INTERNALS__" in window;
+export const bridge: typeof tauriBridge = inTauri ? tauriBridge : (previewBridge as unknown as typeof tauriBridge);

@@ -29,10 +29,19 @@ export async function selftest() {
     report.tasks = (await api.tasks()).length;
     report.botPathRefused = !(await bridge.request("GET", "/bot/tasks")).ok;
 
-    for (const [layout, selector] of [["Conversation", ".rail-goal"], ["Board", ".col"], ["Inbox", ".feed-item"]]) {
-      const button = await until(() => [...document.querySelectorAll(".switcher button")].find((b) => b.textContent === layout), 10_000);
-      (button as HTMLButtonElement | undefined)?.click();
-      report[`layout:${layout}`] = (await until(() => document.querySelectorAll(selector).length, 10_000)) ?? 0;
+    // The conversation: goals in the sidebar, the newest goal's thread, and a delegated task in the side panel.
+    report.goals = (await until(() => document.querySelectorAll(".side-row.goal").length, 10_000)) ?? 0;
+    report.threadBlocks = (await until(() => document.querySelector(".thread-col")?.children.length, 10_000)) ?? 0;
+    let card: HTMLElement | null = null;
+    for (const goal of document.querySelectorAll<HTMLElement>(".side-row.goal")) {
+      goal.click(); // the first goal whose thread has delegated work
+      card = (await until(() => document.querySelector<HTMLElement>(".work"), 2_000)) ?? null;
+      if (card) break;
+    }
+    report.workCards = document.querySelectorAll(".work").length;
+    if (card) {
+      card.click();
+      report.panelOpened = Boolean(await until(() => document.querySelector(".panel .thread-col"), 10_000));
     }
 
     // Live updates: start a task and stop it straight away, and see its events arrive through /v1/live.

@@ -137,7 +137,11 @@ Each step leaves the system working.
    - The Rust side finds or starts the daemon (with a login-like `PATH`), holds the token, proxies calls and relays `/v1/live`.
    - The window's CSP allows only IPC.
    - A self-test mode checks the whole path without anyone watching.
-3. **UI exploration** (prototypes built). Three layouts run on real crew data behind a switcher: Conversation, Board and Inbox. Next, you use them, we pick or blend one, and build it properly.
+3. **UI** (done). Of three prototypes (Conversation, Board, Inbox), the conversation won, as in other coding harnesses. Its redesign:
+   - Each goal is one quiet thread, with delegated work as cards that carry their reviews.
+   - A side panel shows any task's own thread.
+   - The sidebar holds what needs you.
+   - Outside Tauri the UI runs on a demo crew, so it can be designed and checked in a browser.
 4. **Long-lived sessions.** Codex app-server and Claude streaming input, with idle timeouts and the per-turn fallback, measured against the 2.9s baseline.
 5. **Login service and menu bar.** launchd install and uninstall from the app, the app attaching rather than owning, the power assertion, notifications.
 6. **Memory.** Bot memory files with `remember`/`forget`, FTS `recall`, and the rollover for long conversations.

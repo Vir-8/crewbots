@@ -170,22 +170,19 @@ export function describe(event: StoredEvent, tasks: Map<string, Task>): { text: 
   }
 }
 
-/** What a task is doing right now, in a few words. */
+/** What a task is doing right now, in a few words: "Running npm test", "Editing ExportButton.tsx". */
 export function doing(event: StoredEvent | undefined): string {
   if (!event) return "";
   const d = event.data;
   switch (event.kind) {
     case "text":
       return oneLine(d.text);
-    case "tool_call": {
-      const name = String(d.name).replace("mcp__crewbots__", "");
-      const arg = d.input?.command ?? d.input?.file_path ?? d.input?.pattern ?? d.input?.bot ?? "";
-      return `${name} ${oneLine(String(arg))}`.trim();
-    }
+    case "tool_call":
+      return describeCall(String(d.name), d.input ?? {});
     case "handoff":
-      return `Handed off: ${oneLine(d.done)}`;
+      return `Handed back: ${oneLine(d.done)}`;
     case "review":
-      return `${d.verdict === "pass" ? "Passed" : "Failed"}: ${oneLine(d.summary)}`;
+      return `${d.verdict === "pass" ? "Passed" : "Requested changes"}: ${oneLine(d.summary)}`;
     case "escalation":
       return `Asks: ${oneLine(d.question)}`;
     case "merge_proposed":
@@ -195,6 +192,44 @@ export function doing(event: StoredEvent | undefined): string {
     default:
       return "";
   }
+}
+
+export function describeCall(name: string, input: Record<string, any>): string {
+  const file = (path: unknown) => String(path ?? "").split("/").filter(Boolean).at(-1) ?? "";
+  switch (name.replace("mcp__crewbots__", "")) {
+    case "Bash":
+    case "shell":
+      return `Running ${oneLine(unwrapShell(String(input.command ?? "")), 90)}`;
+    case "Read":
+      return `Reading ${file(input.file_path)}`;
+    case "Grep":
+      return `Searching for ${oneLine(String(input.pattern ?? ""), 60)}`;
+    case "Glob":
+      return `Looking for ${oneLine(String(input.pattern ?? ""), 60)}`;
+    case "Edit":
+    case "Write":
+    case "MultiEdit":
+      return `Editing ${file(input.file_path)}`;
+    case "apply_patch":
+      return `Editing ${(input.changes ?? []).map((c: any) => file(c.path)).join(", ")}`;
+    case "WebSearch":
+    case "web_search":
+      return `Searching the web for ${oneLine(String(input.query ?? ""), 60)}`;
+    case "WebFetch":
+      return `Reading ${oneLine(String(input.url ?? ""), 60)}`;
+    case "delegate":
+      return `Handing work to ${input.bot}`;
+    case "tasks":
+      return "Checking on the crew";
+    default:
+      return name.replace(/^mcp__\w+?__/, "").replace(/_/g, " ");
+  }
+}
+
+/** Codex wraps commands as /bin/zsh -lc '…'; show the command itself. */
+function unwrapShell(command: string): string {
+  const match = /^\/bin\/(?:ba|z)?sh -lc (['"])([\s\S]*)\1$/.exec(command.trim());
+  return match ? match[2] : command;
 }
 
 export function oneLine(text: string, max = 140): string {

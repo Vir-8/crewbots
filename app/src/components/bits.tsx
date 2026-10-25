@@ -48,12 +48,13 @@ export function tokens(n: number): string {
   return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n);
 }
 
-export function ago(iso: string): string {
+export function ago(iso: string, short = false): string {
   const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
-  if (seconds < 60) return "just now";
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-  return `${Math.floor(seconds / 86400)}d ago`;
+  const suffix = short ? "" : " ago";
+  if (seconds < 60) return short ? "now" : "just now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m${suffix}`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h${suffix}`;
+  return `${Math.floor(seconds / 86400)}d${suffix}`;
 }
 
 /**

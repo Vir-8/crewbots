@@ -97,7 +97,7 @@ cd app && npm install
 npm run dev
 ```
 
-`npm run build` makes the `.app`.
+`npm run build` makes the `.app`. To work on the UI in a plain browser, run `npm run vite` and open http://localhost:5173. Outside Tauri, the UI runs on a built-in demo crew (`src/preview/`) that covers every state the app shows: working, waiting on you, ready to merge, failed and merged.
 
 The app is an Activity view of your crew:
 - **Sidebar:** the task tree, filtered by all, needs you or running.
@@ -108,14 +108,21 @@ The app is an Activity view of your crew:
   - a reply box and a merge button
 - **New task:** pick a bot, a goal and a workspace.
 
-A switcher in the title bar flips between three layout prototypes: Conversation, Board and Inbox. They're being compared before one is chosen.
+The app is one conversation per goal:
+- **Sidebar:** your goals, what needs you (questions, merges to approve, failures), and the crew, with who is working.
+- **Thread:**
+  - shows what was said and decided
+  - folds tool use into one line ("Read 3 files, Ran 2 commands")
+  - shows delegated work as cards with their review verdicts and a Merge button
+- **Side panel:** opening a card shows that bot's own thread, its changes and its review.
+- **Composer:** the one place you type, including a new goal with who it's for and the folder to work in.
 
 If a daemon is already running the app attaches to it; otherwise it starts one, and stops it on quit.
 - **The token stays out of the window.** The Rust side (`src-tauri/src/crew.rs`) holds the daemon's token, makes every call and relays `/v1/live` as events. The window gets nothing but IPC: its CSP allows no network.
 - **Bot output is safe to show.** It's rendered as React elements, never as HTML.
 - **`PATH` is fixed up.** An app launched from Finder gets a bare `PATH`, so the shell adds the usual tool folders before starting the daemon. Otherwise it couldn't find `uv`, `claude` or `codex`.
 - **Pointing it elsewhere.** `CREWBOTS_HOME`, `CREWBOTS_PORT` and `CREWBOTS_PROJECT` choose another crew, port or checkout.
-- **Self-test.** `CREWBOTS_SELFTEST=1` runs a check without anyone watching: connect, load, refuse `/bot/` paths, render every layout, see live events. The app prints a report and quits.
+- **Self-test.** `CREWBOTS_SELFTEST=1` runs a check without anyone watching: connect, load, refuse `/bot/` paths, render the goals and a thread, open a task in the side panel, see live events. The app prints a report and quits.
 
 ## Skills from pstack
 
@@ -154,6 +161,6 @@ src/crewbots/
   cli.py             the `crewbots` command
   templates/crew/    the starter crew: bots, team files, skills
 tests/               one file per module, plus the fakes and fixtures
-app/                 the desktop app: src-tauri/ is the Rust shell, src/ the React UI (layouts/, components/)
+app/                 the desktop app: src-tauri/ is the Rust shell, src/ the React UI, src/preview/ the demo crew
 docs/                the design, and example role cards
 ```
