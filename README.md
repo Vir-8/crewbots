@@ -85,6 +85,27 @@ uv run crewbots merge <task id>
 
 `crewbots tasks` lists everything as a tree, `watch` follows a task and everything it delegates, and `cancel` stops one. Tasks still running when the daemon stops are marked interrupted; send them a message to carry on. `crewbots run` skips the crew and the daemon entirely and sends one prompt through one backend.
 
+## The desktop app
+
+```bash
+cd app && npm install
+```
+
+```bash
+npm run dev
+```
+
+The app is an Activity view of your crew:
+- **Sidebar:** the task tree, filtered by all, needs you or running.
+- **Each task:**
+  - its live transcript, with tool calls, handoffs, verdicts and escalations
+  - a review tab with the round and every reviewer's findings
+  - a changes tab with the diff
+  - a reply box and a merge button
+- **New task:** pick a bot, a goal and a workspace.
+
+If a daemon is already running it attaches to it; otherwise it starts one, and stops it on quit. The window never holds the daemon's token. It asks the Electron main process over IPC, which makes every call and relays `/live` updates. Bot output is rendered as React elements, never as HTML. `CREWBOTS_HOME`, `CREWBOTS_PORT` and `CREWBOTS_PROJECT` point the app at another crew, port or checkout.
+
 ## Skills from pstack
 
 pstack's skills also work inside a single bot as they are. Its Claude Code port keeps relative links to its docs, so add the whole folder:
@@ -122,5 +143,6 @@ src/crewbots/
   cli.py             the `crewbots` command
   templates/crew/    the starter crew: bots, team files, skills
 tests/               one file per module, plus the fakes and fixtures
+app/                 the desktop app: electron/ is the shell, src/ the React UI
 docs/                the design, and example role cards
 ```

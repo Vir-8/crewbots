@@ -194,6 +194,23 @@ async def test_a_writing_bot_in_a_repo_gets_its_own_worktree(store, tmp_path):
     assert "worktree" in [e.kind for e in store.events(task.id)]
 
 
+async def test_watchers_hear_about_the_worktree_while_the_task_runs(store, tmp_path):
+    repo = git_repo(tmp_path / "repo")
+    runner, backend = runner_for(store, tmp_path, bot(access=Access.WORKSPACE_WRITE, workspace=repo),
+                                 backend=FakeBackend(gate=asyncio.Event()))
+    with runner.bus.subscribe() as queue:
+        task = runner.submit("worker", "x")
+        await wait_until(lambda: backend.active == 1)
+        updates = []
+        while not queue.empty():
+            message = queue.get_nowait()
+            if message["type"] == "task":
+                updates.append(message["task"])
+
+    assert any(u["worktree_path"] and u["status"] == "running" for u in updates)
+    await runner.cancel(task.id)
+
+
 async def test_a_follow_up_stays_in_the_same_worktree(store, tmp_path):
     repo = git_repo(tmp_path / "repo")
     runner, backend = runner_for(store, tmp_path, bot(access=Access.WORKSPACE_WRITE, workspace=repo))

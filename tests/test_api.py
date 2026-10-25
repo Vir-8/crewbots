@@ -91,3 +91,13 @@ def test_live_refuses_another_host_name(client):
 def test_live_needs_the_token_too(client):
     with pytest.raises(WebSocketDisconnect), client.websocket_connect("/live?token=wrong", headers=WS_HOST) as ws:
         ws.receive_json()
+
+
+def test_the_event_cursor_lets_a_client_skip_the_history(client):
+    assert client.get("/events/cursor", headers=AUTH).json() == {"id": 0}
+    task = client.post("/tasks", json={"bot": "worker", "goal": "one"}, headers=AUTH).json()
+    wait_idle(client, task["id"])
+
+    cursor = client.get("/events/cursor", headers=AUTH).json()["id"]
+
+    assert cursor == client.get(f"/tasks/{task['id']}/events", headers=AUTH).json()[-1]["id"]

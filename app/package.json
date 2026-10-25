@@ -1,0 +1,28 @@
+{
+  "name": "crewbots-app",
+  "private": true,
+  "version": "0.1.0",
+  "description": "The crewbots desktop app: watch, steer and merge your crew's work",
+  "main": "electron/main.cjs",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n vite,electron \"vite --port 5173 --strictPort\" \"wait-on tcp:127.0.0.1:5173 && electron .\"",
+    "build": "tsc --noEmit && vite build",
+    "start": "electron .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "concurrently": "^10.0.6",
+    "electron": "^45.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "wait-on": "^9.5.1"
+  }
+}

@@ -312,6 +312,9 @@ class Store:
         )
         return StoredEvent(id=cur.lastrowid, task_id=task_id, kind=kind, data=data or {}, at=now)
 
+    def latest_event_id(self) -> int:
+        return self.db.execute("select coalesce(max(id), 0) from events").fetchone()[0]
+
     def events(self, task_id: str | None = None, after: int = 0, limit: int = 1000) -> list[StoredEvent]:
         if task_id:
             sql, args = "select * from events where task_id = ? and id > ? order by id limit ?", (task_id, after, limit)

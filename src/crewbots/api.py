@@ -164,6 +164,11 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT) -> FastAPI:
         task_or_404(task_id)
         return {"diff": runner.changes(task_id)}
 
+    @app.get("/events/cursor")
+    async def events_cursor():
+        """The newest event's id, so a client can follow /live from now on instead of replaying the history."""
+        return {"id": store.latest_event_id()}
+
     @app.get("/tasks/{task_id}/children")
     async def task_children(task_id: str):
         task_or_404(task_id)

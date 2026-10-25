@@ -418,7 +418,7 @@ class Runner:
         if bot.access is Access.READ_ONLY or not bot.worktree or not worktree.is_repo(workspace):
             return workspace
         wt = worktree.create(workspace, task.id, root=self.worktree_root)
-        self.store.update_task(task.id, repo=str(wt.repo), worktree_path=str(wt.path), branch=wt.branch, base=wt.base)
+        self._set(task.id, repo=str(wt.repo), worktree_path=str(wt.path), branch=wt.branch, base=wt.base)  # watchers see it now
         self._record(task.id, kind="worktree", data={"path": str(wt.path), "branch": wt.branch, "base": wt.base})
         return wt.path
 
