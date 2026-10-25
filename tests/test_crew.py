@@ -63,11 +63,15 @@ def test_the_starter_crew_loads(tmp_path):
 
     loaded = crew.load(home)
 
-    assert list(loaded.bots) == ["chief", "engineer", "reviewer"]
+    assert list(loaded.bots) == ["chief", "critic", "engineer", "reviewer"]
     assert loaded.bots["engineer"].backend == "codex"
     assert loaded.bots["engineer"].access is Access.WORKSPACE_WRITE
     assert loaded.bots["chief"].access is Access.READ_ONLY
+    assert [b.name for b in loaded.bots.values() if b.can_delegate] == ["chief"]
+    assert {loaded.bots["reviewer"].backend, loaded.bots["critic"].backend} == {"claude", "codex"}
     assert set(loaded.team_files) == {"mission.md", "standards.md", "protocol.md", "rules.md"}
+    assert set(loaded.skills) == {"interrogate", "arena", "swarm"}
+    assert loaded.bots["chief"].skills == ("interrogate", "arena", "swarm")
 
 
 def test_init_never_overwrites_a_crew(tmp_path):
@@ -105,3 +109,74 @@ def test_the_example_cards_in_the_docs_are_valid():
 def test_a_folder_without_bots_is_not_a_crew(tmp_path):
     with pytest.raises(CrewError, match="crewbots init"):
         crew.load(tmp_path)
+
+
+def test_only_coordinators_are_told_they_can_delegate(tmp_path):
+    loaded = crew.load(crew.init(tmp_path / "crew"))
+
+    chief = loaded.system_prompt(loaded.bots["chief"])
+    engineer = loaded.system_prompt(loaded.bots["engineer"], delegated_by="chief")
+
+    assert "`delegate(bot, goal" in chief and "`delegate(bot, goal" not in engineer
+    assert "`handoff(" in chief and "`handoff(" in engineer
+    assert "This task comes from the user" in chief
+    assert "delegated to you by chief" in engineer
+
+
+def test_skills_are_listed_with_their_paths_for_bots_that_have_them(tmp_path):
+    loaded = crew.load(crew.init(tmp_path / "crew"))
+
+    chief = loaded.system_prompt(loaded.bots["chief"])
+
+    assert "# Skills" in chief and str(loaded.home / "skills" / "arena" / "SKILL.md") in chief
+    assert "# Skills" not in loaded.system_prompt(loaded.bots["engineer"])
+
+
+def write_skill(folder: Path, name: str, description: str = "does a thing") -> None:
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text(f"---\nname: {name}\ndescription: {description}\n---\n# {name}\n")
+
+
+def test_a_pack_keeps_its_layout_and_is_namespaced(tmp_path):
+    home = crew.init(tmp_path / "crew")
+    pack = tmp_path / "claude-code"
+    write_skill(pack / "skills" / "arena", "arena")
+    write_skill(pack / "skills" / "tdd", "tdd", "test first")
+    (pack / "docs").mkdir()
+    (pack / "docs" / "adapter.md").write_text("linked from the skills")
+
+    added = crew.add_skills(home, pack, name="pstack")
+
+    assert added == ["pstack:arena", "pstack:tdd"]
+    assert (home / "skills" / "pstack" / "docs" / "adapter.md").exists()
+    assert {"arena", "pstack:arena"} <= set(crew.load(home).skills)  # no clash with the crew's own arena
+
+
+def test_a_single_skill_folder_keeps_its_plain_name(tmp_path):
+    home = crew.init(tmp_path / "crew")
+    write_skill(tmp_path / "standup", "standup")
+
+    assert crew.add_skills(home, tmp_path / "standup") == ["standup"]
+
+
+def test_adding_a_broken_skill_leaves_the_crew_as_it_was(tmp_path):
+    home = crew.init(tmp_path / "crew")
+    (tmp_path / "bad").mkdir()
+    (tmp_path / "bad" / "SKILL.md").write_text("---\nname: bad\n---\nno description\n")
+
+    with pytest.raises(CrewError, match="needs a description"):
+        crew.add_skills(home, tmp_path / "bad")
+    assert not (home / "skills" / "bad").exists()
+
+
+def test_a_card_naming_a_missing_skill_is_refused(tmp_path):
+    home = crew.init(tmp_path / "crew")
+    (home / "bots" / "writer.md").write_text("---\ndescription: writes\nskills: [nope]\n---\nhi\n")
+
+    with pytest.raises(CrewError, match="no skills named"):
+        crew.load(home)
+
+
+def test_the_crewbots_mcp_name_is_reserved():
+    with pytest.raises(CrewError, match="reserved"):
+        parse_card("---\ndescription: x\nmcp:\n  crewbots:\n    command: evil\n---\n", default_name="x")

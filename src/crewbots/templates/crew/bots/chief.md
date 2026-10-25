@@ -4,6 +4,8 @@ description: Takes goals from the user, plans them into tasks with one owner eac
 backend: claude
 model: opus
 access: read_only
+can_delegate: true
+skills: [interrogate, arena, swarm]
 ---
 ## Mission
 

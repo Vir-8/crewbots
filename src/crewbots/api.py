@@ -1,7 +1,11 @@
 """The daemon's API: HTTP for commands, one WebSocket for live updates. The desktop app and `crewbots` both use it.
 
-It listens on localhost only, and every request needs the daemon's token. A browser tab can reach localhost too, so
-the Host header is checked as well (a DNS-rebinding page arrives with its own host name).
+It listens on localhost only, and every request needs a token. A browser tab can reach localhost too, so the Host
+header is checked as well (a DNS-rebinding page arrives with its own host name).
+
+There are two kinds of token. The daemon's token, in daemon.json, is the user's and opens everything but /bot/. A run
+token is minted for one run of one task and opens only /bot/, acting as that task: that is what a bot's crewbots MCP
+server holds, so a bot can never act for another task, or for the user.
 """
 
 import asyncio
@@ -19,7 +23,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from crewbots import crew as crew_module
-from crewbots.runner import Runner, UnknownBot
+from crewbots.runner import NotAllowed, Runner, UnknownBot
 from crewbots.store import Status, Store
 
 DEFAULT_PORT = 8765
@@ -36,6 +40,29 @@ class Message(BaseModel):
     text: str
 
 
+class Delegation(BaseModel):
+    bot: str
+    goal: str
+    workspace: str | None = None
+    review_of: str | None = None
+
+
+class ChildMessage(BaseModel):
+    task_id: str
+    text: str
+
+
+class HandoffBody(BaseModel):
+    done: str
+    output: list[str] = []
+    open: str = ""
+    needs: str = ""
+
+
+class Escalation(BaseModel):
+    question: str
+
+
 def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT) -> FastAPI:
     store = runner.store
     hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
@@ -48,9 +75,23 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT) -> FastAPI:
     @app.middleware("http")
     async def guard(request: Request, call_next):
         auth = request.headers.get("authorization", "")
-        if not allowed(request.headers.get("host"), auth.removeprefix("Bearer ") if auth.startswith("Bearer ") else None):
+        credential = auth.removeprefix("Bearer ") if auth.startswith("Bearer ") else None
+        if request.url.path.startswith("/bot/"):
+            task = runner.task_for_token(credential) if credential and request.headers.get("host") in hosts else None
+            if task is None:
+                return JSONResponse({"detail": "forbidden"}, status_code=403)
+            request.state.task = task
+        elif not allowed(request.headers.get("host"), credential):
             return JSONResponse({"detail": "forbidden"}, status_code=403)
         return await call_next(request)
+
+    @app.exception_handler(NotAllowed)
+    async def not_allowed(request: Request, e: NotAllowed):
+        return JSONResponse({"detail": str(e)}, status_code=403)
+
+    @app.exception_handler(UnknownBot)
+    async def unknown_bot(request: Request, e: UnknownBot):
+        return JSONResponse({"detail": str(e.args[0])}, status_code=422)
 
     def task_or_404(task_id: str):
         try:
@@ -72,10 +113,7 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT) -> FastAPI:
 
     @app.post("/tasks", status_code=201)
     async def new_task(body: NewTask):
-        try:
-            return runner.submit(body.bot, body.goal, workspace=body.workspace).to_json()
-        except UnknownBot as e:
-            raise HTTPException(422, str(e.args[0])) from None
+        return runner.submit(body.bot, body.goal, workspace=body.workspace).to_json()
 
     @app.get("/tasks/{task_id}")
     async def task(task_id: str):
@@ -100,6 +138,37 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT) -> FastAPI:
     async def changes(task_id: str):
         task_or_404(task_id)
         return {"diff": runner.changes(task_id)}
+
+    @app.get("/tasks/{task_id}/children")
+    async def task_children(task_id: str):
+        task_or_404(task_id)
+        return runner.children_of(task_id)
+
+    # The bot side: what a bot's crewbots MCP server calls, as the task its run token belongs to.
+
+    @app.post("/bot/delegate", status_code=201)
+    async def bot_delegate(request: Request, body: Delegation):
+        child = runner.delegate(request.state.task.id, body.bot, body.goal, workspace=body.workspace,
+                                review_of=body.review_of)
+        return {"id": child.id, "bot": child.bot, "title": child.title, "status": child.status}
+
+    @app.get("/bot/tasks")
+    async def bot_tasks(request: Request):
+        return runner.children_of(request.state.task.id)
+
+    @app.post("/bot/message")
+    async def bot_message(request: Request, body: ChildMessage):
+        task = runner.message_child(request.state.task.id, body.task_id, body.text)
+        return {"id": task.id, "status": task.status}
+
+    @app.post("/bot/handoff", status_code=201)
+    async def bot_handoff(request: Request, body: HandoffBody):
+        return runner.handoff(request.state.task.id, body.done, body.output, body.open, body.needs).to_json()
+
+    @app.post("/bot/escalate")
+    async def bot_escalate(request: Request, body: Escalation):
+        runner.escalate(request.state.task.id, body.question)
+        return {"ok": True}
 
     @app.websocket("/live")
     async def live(ws: WebSocket, after: int = 0, token_param: str | None = Query(None, alias="token")):
@@ -179,7 +248,7 @@ def serve(home: Path, port: int = DEFAULT_PORT, max_parallel: int = 4) -> None:
             info_path.unlink(missing_ok=True)
             store.close()
 
-    runner = Runner(store, crew, max_parallel=max_parallel)
+    runner = Runner(store, crew, max_parallel=max_parallel, api_url=f"http://127.0.0.1:{port}")
     app = create_app(runner, token, port)
     app.router.lifespan_context = lifespan
     print(f"crewbots: {len(crew.bots)} bots ({', '.join(crew.bots)}) from {home}, on http://127.0.0.1:{port}")

@@ -35,6 +35,7 @@ class RunSpec:
     system_prompt: str | None = None  # appended to the CLI's own system prompt, never replacing it
     resume_session_id: str | None = None
     mcp_servers: dict[str, McpServer] = field(default_factory=dict)
+    read_dirs: list[Path] = field(default_factory=list)  # outside cwd, readable even when read-only (e.g. skills)
     timeout_s: float | None = None
     extra_args: list[str] = field(default_factory=list)  # passed through to the CLI unchanged
 

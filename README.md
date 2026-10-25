@@ -6,7 +6,7 @@ The agents run on the official **Claude Code** and **Codex** CLIs in non-interac
 
 ## How it works
 
-- **A crew is a folder.** `bots/` has one role card per bot, and `team/` has the files every bot reads (mission, standards, protocol, rules).
+- **A crew is a folder.** `bots/` has one role card per bot, `team/` has the files every bot reads (mission, standards, protocol, rules), and `skills/` has the skills bots can use.
 - **A role card** is Markdown with frontmatter:
   - The frontmatter is what the harness enforces: backend, model, access level, workspace, and the bot's own MCP servers.
   - The body is the card itself: its mission, what it owns, what it does *not* own, and what done means.
@@ -15,6 +15,18 @@ The agents run on the official **Claude Code** and **Codex** CLIs in non-interac
   - Each task has exactly one owner bot and its own backend session, so a follow-up message picks up where the bot left off.
   - A task by a writing bot in a git repo gets its own worktree, on the branch `crewbots/<task id>`.
   - Every event is stored, so you can read the whole transcript later.
+- **Delegation.** A coordinator (`can_delegate: true`, the chief in the starter crew) hands out work through crewbots' own MCP tools:
+  - `delegate`, `tasks` and `message` are for coordinators only. Every bot gets `handoff` and `escalate`.
+  - Delegated tasks run in parallel. The chief ends its turn instead of waiting, and when none of its tasks are still running, their handoffs and results arrive as its next message.
+  - An escalation reaches it at once.
+  - The harness enforces the rules:
+    - only coordinators delegate, and never to another coordinator
+    - a coordinator can only touch tasks it delegated
+    - there is a cap on how many tasks one task can delegate
+  - Each run's MCP server holds a token that acts only as that task, and only while the run lasts.
+- **Skills** are [Agent Skills](https://agentskills.io) folders (a `SKILL.md` each). A role card lists the ones its bot gets, and the bot sees each skill's name, description and path, then reads the `SKILL.md` when a task matches.
+  - The starter crew ships `interrogate`, `arena` and `swarm`: crew versions of [pstack](https://github.com/cursor/plugins/tree/main/pstack)'s multi-agent skills. They use real model diversity, a Claude reviewer and a Codex critic.
+  - Whole skill packs can be dropped in with `crewbots skills add`, and are namespaced (`pstack:tdd`).
 - **The daemon** runs the tasks and serves an HTTP and WebSocket API on localhost. The desktop app and the `crewbots` command both use that API.
   - Every request needs the daemon's token, which is written to `daemon.json` and readable only by you.
   - The daemon also checks the Host header, so no web page you have open can drive your bots.
@@ -38,7 +50,13 @@ uv run crewbots init
 uv run crewbots serve
 ```
 
-`init` creates the starter crew (chief, engineer, reviewer) in `~/.crewbots/crew`. Edit its role cards and team files to make it yours. In another terminal:
+`init` creates the starter crew in `~/.crewbots/crew`: a chief of staff, an engineer (Codex), a reviewer (Claude) and a critic (Codex). Edit its role cards and team files to make it yours. In another terminal, give the chief a goal and follow the whole tree of work:
+
+```bash
+uv run crewbots task chief "Add a --verbose flag to the CLI, with tests. Review it with interrogate." --workspace ~/code/myproject
+```
+
+Or give one bot a task directly:
 
 ```bash
 uv run crewbots task engineer "Add a --verbose flag to the CLI, with a test" --workspace ~/code/myproject
@@ -52,7 +70,21 @@ uv run crewbots say <task id> "Also document it in the README"
 uv run crewbots diff <task id>
 ```
 
-`crewbots tasks` lists everything, `watch` follows a task, and `cancel` stops one. Tasks still running when the daemon stops are marked interrupted; send them a message to carry on. `crewbots run` skips the crew and the daemon entirely and sends one prompt through one backend.
+`crewbots tasks` lists everything as a tree, `watch` follows a task and everything it delegates, and `cancel` stops one. Tasks still running when the daemon stops are marked interrupted; send them a message to carry on. `crewbots run` skips the crew and the daemon entirely and sends one prompt through one backend.
+
+## Skills from pstack
+
+pstack's skills also work inside a single bot as they are. Its Claude Code port keeps relative links to its docs, so add the whole folder:
+
+```bash
+git clone --depth 1 https://github.com/cursor/plugins /tmp/cursor-plugins
+```
+
+```bash
+uv run crewbots skills add /tmp/cursor-plugins/harness/pstack/claude-code --name pstack
+```
+
+Then list skills on a role card, for example `skills: [pstack:tdd, pstack:architect]` for the engineer. `crewbots skills` shows what's installed and which bots use each skill.
 
 ## Tests
 
@@ -60,7 +92,7 @@ uv run crewbots diff <task id>
 uv run pytest -q
 ```
 
-No test calls a model. Backend tests replay real CLI output (`tests/fixtures/`) through a fake CLI. Runner and API tests use an in-process fake backend.
+No test calls a model. Backend tests replay real CLI output (`tests/fixtures/`) through a fake CLI. Runner, delegation and API tests use an in-process fake backend whose scripted bots call the same methods the MCP tools reach.
 
 ## Layout
 
@@ -70,11 +102,12 @@ src/crewbots/
   backends/          claude_cli, codex_cli, and the subprocess runner they share
   crew.py            role cards and team files → bots and their instructions
   store.py           tasks and events, in SQLite
-  runner.py          runs tasks: sessions, worktrees, queued follow-ups, the parallel limit
-  api.py             the daemon: HTTP + WebSocket, token and host checks
+  runner.py          runs tasks: sessions, worktrees, queued follow-ups, delegation and reporting back
+  api.py             the daemon: HTTP + WebSocket, user and run tokens, host checks
+  mcp_server.py      the crewbots tools each bot gets (handoff, escalate; delegate, tasks, message)
   worktree.py        one git worktree per task
   cli.py             the `crewbots` command
-  templates/crew/    the starter crew
+  templates/crew/    the starter crew: bots, team files, skills
 tests/               one file per module, plus the fakes and fixtures
 docs/                the design, and example role cards
 ```

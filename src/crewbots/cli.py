@@ -31,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="the crew's folder (default: $CREWBOTS_HOME or ~/.crewbots/crew)")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("init", help="create a starter crew: a chief of staff, an engineer and a reviewer")
+    sub.add_parser("init", help="create a starter crew: a chief of staff, an engineer, a reviewer and a critic")
     serve = sub.add_parser("serve", help="run the daemon")
     serve.add_argument("--port", type=int, default=api.DEFAULT_PORT)
     serve.add_argument("--parallel", type=int, default=4, help="runs at the same time, across all bots")
@@ -45,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
     tasks = sub.add_parser("tasks", help="list tasks")
     tasks.add_argument("--status")
     tasks.add_argument("--bot")
-    watch = sub.add_parser("watch", help="follow a task's transcript")
+    watch = sub.add_parser("watch", help="follow a task, and everything it delegates")
     watch.add_argument("task_id")
     say = sub.add_parser("say", help="send a task a follow-up message, and follow it")
     say.add_argument("task_id")
@@ -55,6 +55,12 @@ def main(argv: list[str] | None = None) -> int:
     cancel.add_argument("task_id")
     diff = sub.add_parser("diff", help="what a task changed in its worktree")
     diff.add_argument("task_id")
+
+    skills = sub.add_parser("skills", help="list the crew's skills, or add some")
+    skills_sub = skills.add_subparsers(dest="skills_command")
+    add = skills_sub.add_parser("add", help="copy in a skill folder, or a folder of skills such as pstack's skills/")
+    add.add_argument("path", type=Path)
+    add.add_argument("--name", help="the folder name in skills/; a pack's skills are named <name>:<skill>")
 
     run = sub.add_parser("run", help="one prompt through one backend, without a crew or daemon")
     run.add_argument("prompt")
@@ -112,8 +118,36 @@ def _task(args: argparse.Namespace) -> int:
 
 def _tasks(args: argparse.Namespace) -> int:
     params = {k: v for k, v in {"status": args.status, "bot": args.bot}.items() if v}
-    for t in _client(args).get("/tasks", params=params).raise_for_status().json():
-        print(f"{t['id']}  {t['status']:<11} {t['bot']:<12} {t['title']}")
+    tasks = _client(args).get("/tasks", params={**params, "limit": 1000}).raise_for_status().json()
+    ids = {t["id"] for t in tasks}
+    children: dict[str, list[dict[str, Any]]] = {}
+    for t in reversed(tasks):  # oldest first, so delegated tasks list in the order they were given
+        children.setdefault(t["parent_id"] if t["parent_id"] in ids else None, []).append(t)
+
+    def show(task: dict[str, Any], depth: int) -> None:
+        indent = "  " * depth + ("└ " if depth else "")
+        print(f"{task['id']}  {task['status']:<11} {indent}{task['bot']:<12} {task['title']}")
+        for child in children.get(task["id"], []):
+            show(child, depth + 1)
+
+    for task in reversed(children.get(None, [])):  # newest top-level task first
+        show(task, 0)
+    return 0
+
+
+def _skills(args: argparse.Namespace) -> int:
+    home = args.home.expanduser()
+    if args.skills_command == "add":
+        for name in crew.add_skills(home, args.path, args.name):
+            print(f"added {name}")
+        print("list them under skills: in a role card to give them to a bot")
+        return 0
+    loaded = crew.load(home)
+    users = {name: [b.name for b in loaded.bots.values() if name in b.skills or "all" in b.skills]
+             for name in loaded.skills}
+    for skill in loaded.skills.values():
+        used = ", ".join(users[skill.name]) or "no bot yet"
+        print(f"{skill.name:<24} ({used}) {skill.description[:PREVIEW_CHARS]}")
     return 0
 
 
@@ -168,7 +202,7 @@ async def _run_direct(args: argparse.Namespace) -> int:
 
 COMMANDS = {
     "init": _init, "serve": _serve, "bots": _bots, "task": _task, "tasks": _tasks, "watch": _watch, "say": _say,
-    "cancel": _cancel, "diff": _diff, "run": _run,
+    "cancel": _cancel, "diff": _diff, "skills": _skills, "run": _run,
 }
 
 
@@ -184,17 +218,32 @@ def _last_event_id(client: httpx.Client, task_id: str) -> int:
     return after
 
 
-def _follow(client: httpx.Client, task_id: str, after: int = 0) -> int:
-    """Prints the task's events until it stops running. Polling is plenty for a terminal; the app uses /live."""
+def _follow(client: httpx.Client, root_id: str, after: int = 0) -> int:
+    """Prints the task's events, and those of every task it delegates, until none of them is running.
+
+    Polling is plenty for a terminal; the app uses /live.
+    """
+    cursors = {root_id: after}
     while True:
-        status = client.get(f"/tasks/{task_id}").raise_for_status().json()["status"]
-        events = client.get(f"/tasks/{task_id}/events", params={"after": after}).raise_for_status().json()
-        for e in events:
-            print(_format_stored(e), flush=True)
-            after = e["id"]
-        if not events and status not in ACTIVE:
-            print(f"· {task_id} is {status}", file=sys.stderr)
-            return 0 if status == "idle" else 1
+        tasks = {t["id"]: t for t in client.get("/tasks", params={"limit": 1000}).raise_for_status().json()}
+        grew = True
+        while grew:  # the whole tree under the root, however deep
+            new = [t for t, task in tasks.items() if task["parent_id"] in cursors and t not in cursors]
+            cursors.update(dict.fromkeys(new, 0))
+            grew = bool(new)
+        events = []
+        for task_id, cursor in cursors.items():
+            batch = client.get(f"/tasks/{task_id}/events", params={"after": cursor}).raise_for_status().json()
+            if batch:
+                cursors[task_id] = batch[-1]["id"]
+                events += batch
+        for e in sorted(events, key=lambda e: e["id"]):
+            prefix = "" if e["task_id"] == root_id else f"[{tasks[e['task_id']]['bot']} {e['task_id']}] "
+            print(prefix + _format_stored(e), flush=True)
+        if not events and not any(tasks[t]["status"] in ACTIVE for t in cursors if t in tasks):
+            status = tasks[root_id]["status"]
+            print(f"· {root_id} is {status}", file=sys.stderr)
+            return 0 if status in ("idle", "needs_input") else 1
         if not events:
             time.sleep(POLL_S)
 
@@ -205,6 +254,11 @@ def _format_stored(e: dict[str, Any]) -> str:
             return f"\n» {e['data']['from']}: {e['data']['text']}"
         case "worktree":
             return f"· worktree {e['data']['path']} on {e['data']['branch']}"
+        case "handoff":
+            d = e["data"]
+            return f"⇢ HANDOFF done: {d['done']} | output: {', '.join(d['output']) or '-'} | open: {d['open'] or '-'}"
+        case "escalation":
+            return f"? escalated: {e['data']['question']}"
     event = from_json(e["kind"], e["data"])
     return _format(event) if event else f"· {e['kind']} {json.dumps(e['data'])}"
 

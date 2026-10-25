@@ -27,6 +27,7 @@ class CodexCLI:
         )
 
     def argv(self, spec: RunSpec) -> list[str]:
+        # Codex's sandboxes limit writes, not reads, so `read_dirs` needs nothing here.
         # `exec resume` takes neither -s nor -C, so the sandbox goes through -c and the directory is the process's cwd.
         args = [*self.command, "exec"]
         if spec.resume_session_id:
@@ -143,7 +144,11 @@ def _mcp_overrides(name: str, server: McpServer) -> list[str]:
     if not MCP_NAME.fullmatch(name):
         raise ValueError(f"MCP server name {name!r} must be letters, digits, - or _ (it becomes a config key)")
     key = f"mcp_servers.{name}"
-    args = ["-c", f"{key}.command={json.dumps(server.command)}", "-c", f"{key}.args={json.dumps(server.args)}"]
+    args = ["-c", f"{key}.command={json.dumps(server.command)}", "-c", f"{key}.args={json.dumps(server.args)}",
+            # A headless run has nobody to approve a call, so a tool needing approval would always be refused
+            # ("requires approval, but approval policy is never"). The role card granting the server is the approval,
+            # the same as Claude's --allowedTools.
+            "-c", f'{key}.default_tools_approval_mode="approve"']
     if server.env:
         table = ", ".join(f"{json.dumps(k)} = {json.dumps(v)}" for k, v in server.env.items())
         args += ["-c", f"{key}.env={{{table}}}"]

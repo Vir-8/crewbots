@@ -63,7 +63,8 @@ crewbots daemon (Python, asyncio)
 
 1. **Backends** (done). Run one prompt through each CLI in a worktree, normalize the events, resume a session. Tests use a fake CLI script, so none of them call a model.
 2. **Daemon and store** (done). Bots loaded from role cards, the `team/` brain in every bot's instructions, tasks with a single owner, events in SQLite, an HTTP/WebSocket API, and the `crewbots` CLI. There is no separate "thread" type: a conversation with a bot is a task, and a follow-up message resumes its session.
-3. **Crew.** The orchestration MCP server (`delegate_task`, `handoff`, `ask_bot`, `escalate`, `request_approval`), so the chief actually delegates; handoffs stored as records; the reviewer loop with its 3-round limit; and the diff review and merge step.
+3. **Crew** (done). The crewbots MCP server (`delegate`, `tasks`, `message` for coordinators; `handoff`, `escalate` for everyone), handoffs stored as records, reporting back to the coordinator when its work is done, run tokens, and skills, including crew versions of pstack's `interrogate`, `arena` and `swarm`.
+   Still to come: a structured review loop that counts rounds in code (the 3-round limit is in the rules and the skill for now), `ask_bot` between workers, and the merge step.
 4. **Rhythm.** Bot memory, schedules, routines (standup, planning, retro), budgets and per-bot metrics.
 5. **Desktop app.** The Activity view, threads, diff review and approvals.
 
@@ -73,6 +74,13 @@ crewbots daemon (Python, asyncio)
 - `codex exec resume` takes neither `-s` nor `-C`, so the sandbox is set with `-c sandbox_mode=…` and the directory is the process's working directory.
 - Claude's list options (`--allowedTools`, `--mcp-config`) take multiple values and would swallow a prompt passed after them, so both CLIs get the prompt on stdin.
 - Read-only access was checked on real runs: Claude's `dontAsk` mode with only the Read, Glob and Grep tools, and Codex's `read-only` sandbox, both refused to write a file.
+
+### Learned in milestone 3
+
+- Codex refuses MCP calls that need approval when its approval policy is `never`, so a headless bot's tools failed until each crew-granted server got `default_tools_approval_mode = "approve"`. The role card granting the server is the approval, which matches Claude's `--allowedTools`.
+- mcp 2.x hides an exception's message from the model ("Error executing tool delegate") unless the tool raises `ToolError`. Refusals have to say why, or the bot can't correct course.
+- With "don't poll" in its instructions, the chief still called `tasks()` once straight after delegating, just to "wait". The tool description now says it is for looking things up, not for waiting.
+- In the first real run, the chief made the design decision itself instead of escalating trivia. It ran interrogate on two backends and read the final code itself before reporting. The Codex critic ran 17 extra edge-case checks that the Claude reviewer didn't.
 
 ### Learned in milestone 2
 

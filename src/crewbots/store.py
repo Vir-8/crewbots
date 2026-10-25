@@ -36,6 +36,7 @@ create table if not exists tasks (
     input_tokens  integer not null default 0,
     output_tokens integer not null default 0,
     cost_usd      real not null default 0,
+    reported      integer not null default 0,  -- whether its outcome has gone back to the task that delegated it
     created_at    text not null,
     updated_at    text not null
 );
@@ -47,13 +48,26 @@ create table if not exists events (
     at      text not null
 );
 create index if not exists events_by_task on events(task_id, id);
+create index if not exists tasks_by_parent on tasks(parent_id);
+create table if not exists handoffs (
+    id       integer primary key autoincrement,
+    task_id  text not null references tasks(id),
+    from_bot text not null,
+    done     text not null,
+    output   text not null,  -- JSON list of paths, branches, links
+    open     text not null,
+    needs    text not null,
+    at       text not null
+);
 """
+MIGRATIONS = {"reported": "alter table tasks add column reported integer not null default 0"}
 
 
 class Status(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
     IDLE = "idle"  # the bot finished its turn; the task waits for a follow-up or to be closed
+    NEEDS_INPUT = "needs_input"  # the bot escalated a question; a reply resumes it
     FAILED = "failed"
     CANCELLED = "cancelled"
     INTERRUPTED = "interrupted"  # the daemon stopped mid-run; a follow-up message resumes it
@@ -78,8 +92,33 @@ class Task:
     input_tokens: int
     output_tokens: int
     cost_usd: float
+    reported: bool
     created_at: str
     updated_at: str
+
+    @property
+    def active(self) -> bool:
+        return self.status in ACTIVE
+
+    def to_json(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+ACTIVE = {Status.QUEUED, Status.RUNNING}
+
+
+@dataclass(frozen=True)
+class Handoff:
+    """How a bot hands its work back: what it did, where the output is, what is open, what the next step needs."""
+
+    id: int
+    task_id: str
+    from_bot: str
+    done: str
+    output: list[str]
+    open: str
+    needs: str
+    at: str
 
     def to_json(self) -> dict[str, Any]:
         return asdict(self)
@@ -104,6 +143,10 @@ class Store:
         self.db.execute("pragma journal_mode=wal")
         self.db.execute("pragma foreign_keys=on")
         self.db.executescript(SCHEMA)
+        columns = {r["name"] for r in self.db.execute("pragma table_info(tasks)")}
+        for column, sql in MIGRATIONS.items():
+            if column not in columns:
+                self.db.execute(sql)
 
     def close(self) -> None:
         self.db.close()
@@ -139,6 +182,25 @@ class Store:
         sql = "select * from tasks" + (" where " + " and ".join(where) if where else "")
         rows = self.db.execute(sql + " order by created_at desc, id desc limit ?", (*args, limit)).fetchall()
         return [_task(r) for r in rows]
+
+    def children(self, parent_id: str) -> list[Task]:
+        rows = self.db.execute("select * from tasks where parent_id = ? order by created_at, id", (parent_id,)).fetchall()
+        return [_task(r) for r in rows]
+
+    def add_handoff(self, task_id: str, from_bot: str, done: str, output: list[str], open: str, needs: str) -> Handoff:
+        now = _now()
+        cur = self.db.execute(
+            "insert into handoffs (task_id, from_bot, done, output, open, needs, at) values (?, ?, ?, ?, ?, ?, ?)",
+            (task_id, from_bot, done, json.dumps(output), open, needs, now),
+        )
+        return Handoff(id=cur.lastrowid, task_id=task_id, from_bot=from_bot, done=done, output=output, open=open,
+                       needs=needs, at=now)
+
+    def latest_handoff(self, task_id: str) -> Handoff | None:
+        row = self.db.execute("select * from handoffs where task_id = ? order by id desc limit 1", (task_id,)).fetchone()
+        if row is None:
+            return None
+        return Handoff(**{**dict(row), "output": json.loads(row["output"])})
 
     def update_task(self, task_id: str, **fields: Any) -> Task:
         allowed = set(Task.__dataclass_fields__) - {"id", "bot", "created_by", "created_at", "updated_at"}
@@ -192,6 +254,7 @@ class Store:
 def _task(row: sqlite3.Row) -> Task:
     values = dict(row)
     values["status"] = Status(values["status"])
+    values["reported"] = bool(values["reported"])
     return Task(**values)
 
 

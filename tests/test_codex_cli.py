@@ -88,6 +88,7 @@ def test_mcp_servers_become_config_overrides():
     assert 'mcp_servers.crew.command="crewbots-mcp"' in overrides
     assert 'mcp_servers.crew.args=["--bot", "lead"]' in overrides
     assert 'mcp_servers.crew.env={"CREW_TOKEN" = "t"}' in overrides
+    assert 'mcp_servers.crew.default_tools_approval_mode="approve"' in overrides  # headless: nobody to ask
 
 
 def test_an_mcp_name_that_cannot_be_a_config_key_is_refused():

@@ -53,6 +53,8 @@ class ClaudeCLI:
                 args += ["--permission-mode", "acceptEdits", "--allowedTools", ",".join(["Bash", *mcp_tools])]
             case Access.FULL:
                 args += ["--permission-mode", "bypassPermissions"]
+        for path in spec.read_dirs:
+            args += ["--add-dir", str(path)]
         if spec.model:
             args += ["--model", spec.model]
         if spec.system_prompt:
