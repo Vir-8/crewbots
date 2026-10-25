@@ -22,6 +22,11 @@ class Worktree:
     base: str  # the commit it started from, which its changes are measured against
 
 
+def is_repo(path: Path) -> bool:
+    result = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=path, capture_output=True, text=True)
+    return result.returncode == 0 and result.stdout.strip() == "true"
+
+
 def create(repo: Path, name: str, root: Path = DEFAULT_ROOT) -> Worktree:
     if not NAME.fullmatch(name):
         raise ValueError(f"worktree name {name!r} must be letters, digits, '.', '-' or '_'")

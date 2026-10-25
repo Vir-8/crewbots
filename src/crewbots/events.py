@@ -62,3 +62,13 @@ class Done:
 
 
 Event = SessionStarted | Text | ToolCall | ToolResult | Usage | Notice | Done
+
+BY_KIND: dict[str, type[Event]] = {
+    cls.__dataclass_fields__["kind"].default: cls for cls in (SessionStarted, Text, ToolCall, ToolResult, Usage, Notice, Done)
+}
+
+
+def from_json(kind: str, data: dict[str, Any]) -> Event | None:
+    """Rebuilds a stored event; None for kinds that are not backend events (messages, worktrees)."""
+    cls = BY_KIND.get(kind)
+    return cls(**data) if cls else None

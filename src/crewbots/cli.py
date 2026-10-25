@@ -1,23 +1,62 @@
-"""`crewbots run`: one prompt through one backend, with its events printed as they arrive. For trying backends out."""
+"""The `crewbots` command.
+
+`init` and `serve` set up and run a crew. `task`, `say`, `watch` and the rest talk to the running daemon. `run` skips
+the crew and the daemon altogether: one prompt through one backend, for trying backends out.
+"""
 
 import argparse
 import asyncio
 import json
+import os
 import sys
+import time
 import uuid
 from pathlib import Path
+from typing import Any
 
-from crewbots import worktree
+import httpx
+
+from crewbots import api, crew, worktree
 from crewbots.backends import BACKENDS, Access, RunSpec
-from crewbots.events import Done, Event, Notice, SessionStarted, Text, ToolCall, ToolResult, Usage
+from crewbots.events import Done, Event, Notice, SessionStarted, Text, ToolCall, ToolResult, Usage, from_json
 
 PREVIEW_CHARS = 200
+POLL_S = 0.5
+ACTIVE = {"queued", "running"}
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="crewbots")
+    parser.add_argument("--home", type=Path, default=Path(os.environ.get("CREWBOTS_HOME", crew.DEFAULT_HOME)),
+                        help="the crew's folder (default: $CREWBOTS_HOME or ~/.crewbots/crew)")
     sub = parser.add_subparsers(dest="command", required=True)
-    run = sub.add_parser("run", help="run one prompt through a backend")
+
+    sub.add_parser("init", help="create a starter crew: a chief of staff, an engineer and a reviewer")
+    serve = sub.add_parser("serve", help="run the daemon")
+    serve.add_argument("--port", type=int, default=api.DEFAULT_PORT)
+    serve.add_argument("--parallel", type=int, default=4, help="runs at the same time, across all bots")
+
+    sub.add_parser("bots", help="list the crew")
+    task = sub.add_parser("task", help="give a bot a task, and follow it")
+    task.add_argument("bot")
+    task.add_argument("goal")
+    task.add_argument("--workspace", type=Path, help="the folder or repo to work in, instead of the bot's own")
+    task.add_argument("--no-watch", action="store_true")
+    tasks = sub.add_parser("tasks", help="list tasks")
+    tasks.add_argument("--status")
+    tasks.add_argument("--bot")
+    watch = sub.add_parser("watch", help="follow a task's transcript")
+    watch.add_argument("task_id")
+    say = sub.add_parser("say", help="send a task a follow-up message, and follow it")
+    say.add_argument("task_id")
+    say.add_argument("text")
+    say.add_argument("--no-watch", action="store_true")
+    cancel = sub.add_parser("cancel", help="stop a task")
+    cancel.add_argument("task_id")
+    diff = sub.add_parser("diff", help="what a task changed in its worktree")
+    diff.add_argument("task_id")
+
+    run = sub.add_parser("run", help="one prompt through one backend, without a crew or daemon")
     run.add_argument("prompt")
     run.add_argument("--backend", choices=sorted(BACKENDS), default="claude")
     run.add_argument("--cwd", type=Path, default=Path.cwd())
@@ -27,11 +66,85 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--worktree", action="store_true", help="run in a new git worktree of --cwd and print its diff")
     run.add_argument("--timeout", type=float)
     run.add_argument("--json", action="store_true", help="print raw events as JSON lines")
+
     args = parser.parse_args(argv)
-    return asyncio.run(_run(args))
+    try:
+        return COMMANDS[args.command](args)
+    except (crew.CrewError, FileNotFoundError) as e:
+        print(f"crewbots: {e}", file=sys.stderr)
+        return 1
+    except httpx.HTTPStatusError as e:
+        print(f"crewbots: {e.response.status_code} {e.response.json().get('detail', e.response.text)}", file=sys.stderr)
+        return 1
+    except httpx.ConnectError:
+        print("crewbots: the daemon is not reachable (start it with `crewbots serve`)", file=sys.stderr)
+        return 1
 
 
-async def _run(args: argparse.Namespace) -> int:
+def _init(args: argparse.Namespace) -> int:
+    home = crew.init(args.home)
+    print(f"created a crew in {home}: {', '.join(crew.load(home).bots)}")
+    print("edit the role cards in bots/ and the team files in team/, then run `crewbots serve`")
+    return 0
+
+
+def _serve(args: argparse.Namespace) -> int:
+    api.serve(args.home, port=args.port, max_parallel=args.parallel)
+    return 0
+
+
+def _bots(args: argparse.Namespace) -> int:
+    for b in _client(args).get("/bots").raise_for_status().json():
+        model = f" {b['model']}" if b["model"] else ""
+        print(f"{b['name']:<14} {b['title']} · {b['backend']}{model} · {b['access']}\n{'':<14} {b['description']}")
+    return 0
+
+
+def _task(args: argparse.Namespace) -> int:
+    client = _client(args)
+    body: dict[str, Any] = {"bot": args.bot, "goal": args.goal}
+    if args.workspace:
+        body["workspace"] = str(args.workspace.expanduser().resolve())
+    task = client.post("/tasks", json=body).raise_for_status().json()
+    print(f"{task['id']} → {task['bot']}: {task['title']}", file=sys.stderr)
+    return 0 if args.no_watch else _follow(client, task["id"])
+
+
+def _tasks(args: argparse.Namespace) -> int:
+    params = {k: v for k, v in {"status": args.status, "bot": args.bot}.items() if v}
+    for t in _client(args).get("/tasks", params=params).raise_for_status().json():
+        print(f"{t['id']}  {t['status']:<11} {t['bot']:<12} {t['title']}")
+    return 0
+
+
+def _watch(args: argparse.Namespace) -> int:
+    return _follow(_client(args), args.task_id)
+
+
+def _say(args: argparse.Namespace) -> int:
+    client = _client(args)
+    after = _last_event_id(client, args.task_id)
+    client.post(f"/tasks/{args.task_id}/messages", json={"text": args.text}).raise_for_status()
+    return 0 if args.no_watch else _follow(client, args.task_id, after=after)
+
+
+def _cancel(args: argparse.Namespace) -> int:
+    task = _client(args).post(f"/tasks/{args.task_id}/cancel").raise_for_status().json()
+    print(f"{task['id']} {task['status']}")
+    return 0
+
+
+def _diff(args: argparse.Namespace) -> int:
+    diff = _client(args).get(f"/tasks/{args.task_id}/changes").raise_for_status().json()["diff"]
+    print("(this task has no worktree)" if diff is None else diff or "(no changes)")
+    return 0
+
+
+def _run(args: argparse.Namespace) -> int:
+    return asyncio.run(_run_direct(args))
+
+
+async def _run_direct(args: argparse.Namespace) -> int:
     cwd = args.cwd.resolve()
     wt = None
     if args.worktree:
@@ -51,6 +164,49 @@ async def _run(args: argparse.Namespace) -> int:
         diff = worktree.changes(wt)
         print(diff or "(no changes)")
     return 1 if done is None or done.is_error else 0
+
+
+COMMANDS = {
+    "init": _init, "serve": _serve, "bots": _bots, "task": _task, "tasks": _tasks, "watch": _watch, "say": _say,
+    "cancel": _cancel, "diff": _diff, "run": _run,
+}
+
+
+def _client(args: argparse.Namespace) -> httpx.Client:
+    info = api.read_daemon_info(args.home)
+    return httpx.Client(base_url=info.url, headers={"Authorization": f"Bearer {info.token}"}, timeout=30)
+
+
+def _last_event_id(client: httpx.Client, task_id: str) -> int:
+    after = 0
+    while batch := client.get(f"/tasks/{task_id}/events", params={"after": after}).raise_for_status().json():
+        after = batch[-1]["id"]
+    return after
+
+
+def _follow(client: httpx.Client, task_id: str, after: int = 0) -> int:
+    """Prints the task's events until it stops running. Polling is plenty for a terminal; the app uses /live."""
+    while True:
+        status = client.get(f"/tasks/{task_id}").raise_for_status().json()["status"]
+        events = client.get(f"/tasks/{task_id}/events", params={"after": after}).raise_for_status().json()
+        for e in events:
+            print(_format_stored(e), flush=True)
+            after = e["id"]
+        if not events and status not in ACTIVE:
+            print(f"· {task_id} is {status}", file=sys.stderr)
+            return 0 if status == "idle" else 1
+        if not events:
+            time.sleep(POLL_S)
+
+
+def _format_stored(e: dict[str, Any]) -> str:
+    match e["kind"]:
+        case "message":
+            return f"\n» {e['data']['from']}: {e['data']['text']}"
+        case "worktree":
+            return f"· worktree {e['data']['path']} on {e['data']['branch']}"
+    event = from_json(e["kind"], e["data"])
+    return _format(event) if event else f"· {e['kind']} {json.dumps(e['data'])}"
 
 
 def _format(event: Event) -> str:

@@ -62,8 +62,8 @@ crewbots daemon (Python, asyncio)
 ## Milestones
 
 1. **Backends** (done). Run one prompt through each CLI in a worktree, normalize the events, resume a session. Tests use a fake CLI script, so none of them call a model.
-2. **Daemon and store.** Bots (loaded from role cards), threads, tasks with a single owner, and handoffs, all in SQLite. An HTTP/WebSocket API, and a `crewbots` CLI to try it out.
-3. **Crew.** The orchestration MCP server (`delegate_task`, `handoff`, `ask_bot`, `escalate`, `request_approval`), a coordinator, the `team/` brain, a reviewer with the 3-round limit, and the diff review and merge step.
+2. **Daemon and store** (done). Bots loaded from role cards, the `team/` brain in every bot's instructions, tasks with a single owner, events in SQLite, an HTTP/WebSocket API, and the `crewbots` CLI. There is no separate "thread" type: a conversation with a bot is a task, and a follow-up message resumes its session.
+3. **Crew.** The orchestration MCP server (`delegate_task`, `handoff`, `ask_bot`, `escalate`, `request_approval`), so the chief actually delegates; handoffs stored as records; the reviewer loop with its 3-round limit; and the diff review and merge step.
 4. **Rhythm.** Bot memory, schedules, routines (standup, planning, retro), budgets and per-bot metrics.
 5. **Desktop app.** The Activity view, threads, diff review and approvals.
 
@@ -73,6 +73,12 @@ crewbots daemon (Python, asyncio)
 - `codex exec resume` takes neither `-s` nor `-C`, so the sandbox is set with `-c sandbox_mode=…` and the directory is the process's working directory.
 - Claude's list options (`--allowedTools`, `--mcp-config`) take multiple values and would swallow a prompt passed after them, so both CLIs get the prompt on stdin.
 - Read-only access was checked on real runs: Claude's `dontAsk` mode with only the Read, Glob and Grep tools, and Codex's `read-only` sandbox, both refused to write a file.
+
+### Learned in milestone 2
+
+- Codex's `workspace-write` sandbox limits *writes* to the worktree, but it can still *read* anywhere. On a real run the engineer searched every crewbots worktree for an AGENTS.md. Worktrees keep parallel bots from colliding; they are not a security boundary between bots. (The Grok Bot guide says the same: "don't treat separate bots as a security boundary.")
+- A reviewer with read-only access can't run tests, and it said so ("tests were not run") instead of claiming they passed. When the review step lands, it should get the engineer's test output, or a way to run tests that can't write.
+- Watchers must never see a task go `idle` while a follow-up is waiting to start, or they stop early. A task with queued messages stays `queued` between turns.
 
 ## Open questions
 
