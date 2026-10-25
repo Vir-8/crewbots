@@ -132,11 +132,12 @@ Nothing is hidden: every layer is a file or a SQLite row you can open, edit or d
 
 Each step leaves the system working.
 
-1. **API v1 and generated types.** Move routes under `/v1`, generate TS types, and keep the CLI working.
-2. **Tauri shell.** Replace Electron: the Rust proxy, token handling, `/live` relay and window security. The current UI moves over unchanged, as a placeholder.
-3. **UI exploration.**
-   - Two or three layouts built as clickable prototypes on real crew data: chat-first, a board of bots, an inbox.
-   - You use them, we pick, and then we build the real UI and drop the scaffolding.
+1. **API v1 and generated types** (done). Routes are under `/v1`, with typed response models. `crewbots openapi --ts` writes the UI's types, and a test catches drift.
+2. **Tauri shell** (done). Electron is replaced:
+   - The Rust side finds or starts the daemon (with a login-like `PATH`), holds the token, proxies calls and relays `/v1/live`.
+   - The window's CSP allows only IPC.
+   - A self-test mode checks the whole path without anyone watching.
+3. **UI exploration** (prototypes built). Three layouts run on real crew data behind a switcher: Conversation, Board and Inbox. Next, you use them, we pick or blend one, and build it properly.
 4. **Long-lived sessions.** Codex app-server and Claude streaming input, with idle timeouts and the per-turn fallback, measured against the 2.9s baseline.
 5. **Login service and menu bar.** launchd install and uninstall from the app, the app attaching rather than owning, the power assertion, notifications.
 6. **Memory.** Bot memory files with `remember`/`forget`, FTS `recall`, and the rollover for long conversations.

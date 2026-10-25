@@ -1,23 +1,8 @@
-import type { Bot, ConnectionStatus, Live, ReviewState, StoredEvent, Task } from "./types";
+import type { Bot, ReviewState, StoredEvent, Task } from "./types";
 
-// What electron/preload.cjs exposes. The token stays in the main process.
-interface Bridge {
-  status(): Promise<ConnectionStatus>;
-  request(method: string, path: string, body?: unknown): Promise<{ ok: boolean; status: number; data: any }>;
-  pickFolder(): Promise<string | null>;
-  reveal(path: string): Promise<void>;
-  onStatus(callback: (status: ConnectionStatus) => void): () => void;
-  onLive(callback: (message: Live) => void): () => void;
-  onResync(callback: () => void): () => void;
-}
+import { bridge } from "./bridge";
 
-declare global {
-  interface Window {
-    crew: Bridge;
-  }
-}
-
-export const bridge = window.crew;
+export { bridge };
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const response = await bridge.request(method, path, body);

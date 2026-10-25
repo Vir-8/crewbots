@@ -87,6 +87,8 @@ uv run crewbots merge <task id>
 
 ## The desktop app
 
+The app is a [Tauri](https://tauri.app) shell (Rust) around a React UI. You need Rust (`rustup`) and Node.
+
 ```bash
 cd app && npm install
 ```
@@ -94,6 +96,8 @@ cd app && npm install
 ```bash
 npm run dev
 ```
+
+`npm run build` makes the `.app`.
 
 The app is an Activity view of your crew:
 - **Sidebar:** the task tree, filtered by all, needs you or running.
@@ -104,7 +108,14 @@ The app is an Activity view of your crew:
   - a reply box and a merge button
 - **New task:** pick a bot, a goal and a workspace.
 
-If a daemon is already running it attaches to it; otherwise it starts one, and stops it on quit. The window never holds the daemon's token. It asks the Electron main process over IPC, which makes every call and relays `/live` updates. Bot output is rendered as React elements, never as HTML. `CREWBOTS_HOME`, `CREWBOTS_PORT` and `CREWBOTS_PROJECT` point the app at another crew, port or checkout.
+A switcher in the title bar flips between three layout prototypes: Conversation, Board and Inbox. They're being compared before one is chosen.
+
+If a daemon is already running the app attaches to it; otherwise it starts one, and stops it on quit.
+- **The token stays out of the window.** The Rust side (`src-tauri/src/crew.rs`) holds the daemon's token, makes every call and relays `/v1/live` as events. The window gets nothing but IPC: its CSP allows no network.
+- **Bot output is safe to show.** It's rendered as React elements, never as HTML.
+- **`PATH` is fixed up.** An app launched from Finder gets a bare `PATH`, so the shell adds the usual tool folders before starting the daemon. Otherwise it couldn't find `uv`, `claude` or `codex`.
+- **Pointing it elsewhere.** `CREWBOTS_HOME`, `CREWBOTS_PORT` and `CREWBOTS_PROJECT` choose another crew, port or checkout.
+- **Self-test.** `CREWBOTS_SELFTEST=1` runs a check without anyone watching: connect, load, refuse `/bot/` paths, render every layout, see live events. The app prints a report and quits.
 
 ## Skills from pstack
 
@@ -143,6 +154,6 @@ src/crewbots/
   cli.py             the `crewbots` command
   templates/crew/    the starter crew: bots, team files, skills
 tests/               one file per module, plus the fakes and fixtures
-app/                 the desktop app: electron/ is the shell, src/ the React UI
+app/                 the desktop app: src-tauri/ is the Rust shell, src/ the React UI (layouts/, components/)
 docs/                the design, and example role cards
 ```

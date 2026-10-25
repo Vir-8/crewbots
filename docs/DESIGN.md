@@ -41,7 +41,7 @@ This is the same split as the refund harness: the model can only *request*, and 
 ## Pieces
 
 ```
-desktop shell (later: Tauri or Electron)
+desktop app (Tauri)
         │  WebSocket + HTTP, localhost only
 crewbots daemon (Python, asyncio)
   ├── api/          HTTP + WebSocket for the app
@@ -104,8 +104,8 @@ crewbots daemon (Python, asyncio)
 | Crew tools | MCP Python SDK 2.x, a stdio server per run | Both CLIs speak MCP, so one set of tools works on either |
 | Isolation | git worktrees, the CLIs' own sandboxes and permission modes | Parallel bots never share a checkout |
 | Crew config | Markdown + YAML role cards, `team/` files, Agent Skills (`SKILL.md`) | Editable files you own, and the format pstack and others ship in |
-| App | Electron 45, React 19, TypeScript 7, Vite 8 | Node was installed and Rust wasn't. The shell is thin, so Tauri stays an option |
-| Tooling | uv, pytest + pytest-asyncio, ruff; npm, tsc | |
+| App | Tauri 2 (Rust), React 19, TypeScript 7, Vite 8 | Small and fast; the Rust side holds the token and proxies, the UI is plain React |
+| Tooling | uv, pytest + pytest-asyncio, ruff; npm, tsc; cargo | Types for the UI are generated from the API schema (`crewbots openapi --ts`) |
 
 There is no vector database, queue or container yet. Each would come in when a need below calls for it.
 

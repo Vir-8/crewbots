@@ -42,8 +42,10 @@ export function App() {
 
   return (
     <div className="shell">
-      <div className="titlebar">
-        <span className="wordmark">crewbots</span>
+      <div className="titlebar" data-tauri-drag-region>
+        <span className="wordmark" data-tauri-drag-region>
+          crewbots
+        </span>
         <div className="switcher" role="tablist">
           {(Object.keys(LAYOUTS) as Layout[]).map((key) => (
             <button key={key} className={layout === key ? "on" : ""} onClick={() => choose(key)}>
