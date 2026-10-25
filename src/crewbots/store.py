@@ -312,6 +312,15 @@ class Store:
         )
         return StoredEvent(id=cur.lastrowid, task_id=task_id, kind=kind, data=data or {}, at=now)
 
+    def recent_events(self, limit: int = 200, kinds: tuple[str, ...] | None = None) -> list[StoredEvent]:
+        """The newest events across the crew, oldest first."""
+        where = f" where kind in ({','.join('?' * len(kinds))})" if kinds else ""
+        rows = self.db.execute(f"select * from events{where} order by id desc limit ?", (*(kinds or ()), limit)).fetchall()
+        return [
+            StoredEvent(id=r["id"], task_id=r["task_id"], kind=r["kind"], data=json.loads(r["data"]), at=r["at"])
+            for r in reversed(rows)
+        ]
+
     def latest_event_id(self) -> int:
         return self.db.execute("select coalesce(max(id), 0) from events").fetchone()[0]
 

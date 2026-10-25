@@ -146,7 +146,10 @@ function createWindow() {
     if (!url.startsWith(DEV_URL) && !url.startsWith("file://")) event.preventDefault();
   });
 
-  const query = process.env.CREWBOTS_OPEN_TASK ? `?task=${encodeURIComponent(process.env.CREWBOTS_OPEN_TASK)}` : "";
+  const params = new URLSearchParams();
+  if (process.env.CREWBOTS_OPEN_TASK) params.set("task", process.env.CREWBOTS_OPEN_TASK);
+  if (process.env.CREWBOTS_OPEN_LAYOUT) params.set("layout", process.env.CREWBOTS_OPEN_LAYOUT);
+  const query = params.size ? `?${params}` : "";
   if (app.isPackaged || process.env.CREWBOTS_USE_BUILD) {
     win.loadFile(path.join(__dirname, "..", "dist", "index.html"), { search: query.slice(1) });
   } else {

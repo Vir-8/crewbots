@@ -37,6 +37,7 @@ export const api = {
       if (batch.length < 5000) return all;
     }
   },
+  recent: (limit = 400) => call<StoredEvent[]>("GET", `/events/recent?limit=${limit}`),
   review: (taskId: string) => call<ReviewState>("GET", `/tasks/${taskId}/review`),
   changes: (taskId: string) => call<{ diff: string | null }>("GET", `/tasks/${taskId}/changes`),
   newTask: (bot: string, goal: string, workspace?: string) =>

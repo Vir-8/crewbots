@@ -1,111 +1,74 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, bridge } from "./api";
+import { useState } from "react";
 import { NewTask } from "./components/NewTask";
-import { Sidebar } from "./components/Sidebar";
-import { TaskView } from "./components/TaskView";
-import type { Bot, ConnectionStatus, Live, StoredEvent, Task } from "./types";
+import { Board } from "./layouts/Board";
+import { Conversation } from "./layouts/Conversation";
+import { Inbox } from "./layouts/Inbox";
+import { useCrew } from "./state";
+import type { ConnectionStatus } from "./types";
+
+// Three ways to arrange the same crew, to try side by side before settling on one.
+const LAYOUTS = { conversation: Conversation, board: Board, inbox: Inbox } as const;
+type Layout = keyof typeof LAYOUTS;
+const LABELS: Record<Layout, string> = { conversation: "Conversation", board: "Board", inbox: "Inbox" };
+
+function remembered(): Layout {
+  const asked = new URLSearchParams(location.search).get("layout");
+  if (asked && asked in LAYOUTS) return asked as Layout;
+  try {
+    const saved = localStorage.getItem("crewbots.layout");
+    if (saved && saved in LAYOUTS) return saved as Layout;
+  } catch {
+    // storage can be unavailable; the default is fine
+  }
+  return "conversation";
+}
 
 export function App() {
-  const [status, setStatus] = useState<ConnectionStatus>({ state: "connecting", home: "" });
-  const [bots, setBots] = useState<Bot[]>([]);
-  const [tasks, setTasks] = useState<Map<string, Task>>(new Map());
-  const [events, setEvents] = useState<Map<string, StoredEvent[]>>(new Map()); // only for tasks that were opened
+  const crew = useCrew();
+  const [layout, setLayout] = useState<Layout>(remembered);
   const [selected, setSelected] = useState<string | null>(() => new URLSearchParams(location.search).get("task"));
   const [composing, setComposing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const loadAll = useCallback(async () => {
+  if (crew.status.state !== "connected") return <Connecting status={crew.status} />;
+  const View = LAYOUTS[layout];
+  const choose = (next: Layout) => {
+    setLayout(next);
     try {
-      const [loadedBots, loadedTasks] = await Promise.all([api.bots(), api.tasks()]);
-      setBots(loadedBots);
-      setTasks(new Map(loadedTasks.map((t) => [t.id, t])));
-      setEvents(new Map()); // reloaded on demand; anything cached may have missed live updates
-      setError(null);
-    } catch (e) {
-      setError(String(e));
+      localStorage.setItem("crewbots.layout", next);
+    } catch {
+      // not remembered, that's all
     }
-  }, []);
-
-  useEffect(() => {
-    bridge.status().then(setStatus);
-    const offStatus = bridge.onStatus(setStatus);
-    const offResync = bridge.onResync(loadAll);
-    const offLive = bridge.onLive((message: Live) => {
-      if (message.type === "task") {
-        setTasks((current) => new Map(current).set(message.task.id, message.task));
-      } else {
-        const event = message.event;
-        setEvents((current) => {
-          const known = current.get(event.task_id);
-          if (!known || known.some((e) => e.id === event.id)) return current;
-          return new Map(current).set(event.task_id, [...known, event]);
-        });
-      }
-    });
-    return () => {
-      offStatus();
-      offResync();
-      offLive();
-    };
-  }, [loadAll]);
-
-  useEffect(() => {
-    if (status.state === "connected") loadAll();
-  }, [status.state, loadAll]);
-
-  useEffect(() => {
-    if (!selected || events.has(selected) || status.state !== "connected") return;
-    api.events(selected).then(
-      (loaded) => setEvents((current) => new Map(current).set(selected, loaded)),
-      (e) => setError(String(e)),
-    );
-  }, [selected, events, status.state]);
-
-  const task = selected ? tasks.get(selected) : undefined;
-  const delegated = useMemo(
-    () => (task ? [...tasks.values()].filter((t) => t.parent_id === task.id) : []),
-    [task, tasks],
-  );
-
-  if (status.state !== "connected") return <Connecting status={status} />;
+  };
 
   return (
-    <div className="app">
-      <Sidebar
-        tasks={tasks}
-        bots={bots}
-        selected={selected}
-        onSelect={setSelected}
-        onNewTask={() => setComposing(true)}
-        status={status}
-      />
-      <main className="main">
-        {error && (
-          <div className="banner error" onClick={() => setError(null)}>
-            {error}
-          </div>
-        )}
-        {task ? (
-          <TaskView
-            key={task.id}
-            task={task}
-            tasks={tasks}
-            delegated={delegated}
-            events={events.get(task.id)}
-            onSelect={setSelected}
-            onError={setError}
-          />
-        ) : (
-          <Empty onNewTask={() => setComposing(true)} count={tasks.size} />
-        )}
-      </main>
+    <div className="shell">
+      <div className="titlebar">
+        <span className="wordmark">crewbots</span>
+        <div className="switcher" role="tablist">
+          {(Object.keys(LAYOUTS) as Layout[]).map((key) => (
+            <button key={key} className={layout === key ? "on" : ""} onClick={() => choose(key)}>
+              {LABELS[key]}
+            </button>
+          ))}
+        </div>
+        <span className="titlebar-right soft small">
+          {crew.inbox.length ? `${crew.inbox.length} need${crew.inbox.length === 1 ? "s" : ""} you` : ""}
+        </span>
+      </div>
+      {crew.error && (
+        <div className="toast" onClick={crew.clearError}>
+          {crew.error}
+        </div>
+      )}
+      <div className="stage">
+        <View crew={crew} onNewTask={() => setComposing(true)} selected={selected || null} onSelect={(id) => setSelected(id || null)} />
+      </div>
       {composing && (
         <NewTask
-          bots={bots}
+          bots={crew.bots}
           onClose={() => setComposing(false)}
-          onCreated={(created) => {
-            setTasks((current) => new Map(current).set(created.id, created));
-            setSelected(created.id);
+          onCreated={(task) => {
+            setSelected(task.id);
             setComposing(false);
           }}
         />
@@ -118,21 +81,8 @@ function Connecting({ status }: { status: ConnectionStatus }) {
   const failed = status.state === "error" || status.state === "no-crew";
   return (
     <div className="connecting">
-      <div className="brand">crewbots</div>
-      <p className={failed ? "error-text" : "muted"}>{status.message ?? "Connecting to your crew…"}</p>
-      {status.home && <p className="muted small">crew: {status.home}</p>}
-    </div>
-  );
-}
-
-function Empty({ onNewTask, count }: { onNewTask: () => void; count: number }) {
-  return (
-    <div className="empty">
-      <h2>{count ? "Pick a task" : "Your crew is ready"}</h2>
-      <p className="muted">Give the chief a goal and it splits the work across the crew, reviews it, and comes back to you.</p>
-      <button className="primary" onClick={onNewTask}>
-        New task
-      </button>
+      <div className="wordmark big">crewbots</div>
+      <p className={failed ? "bad pre" : "soft"}>{status.message ?? "Connecting to your crew…"}</p>
     </div>
   );
 }

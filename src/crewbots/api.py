@@ -286,6 +286,12 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT) -> FastAPI:
         task_or_404(task_id)
         return {"diff": runner.changes(task_id)}
 
+    @v1.get("/events/recent", response_model=list[EventOut])
+    async def recent_events(limit: int = Query(200, le=2000), kinds: str | None = None):
+        """The crew's newest events, oldest first; `kinds` is a comma-separated filter (e.g. handoff,review)."""
+        wanted = tuple(k for k in kinds.split(",") if k) if kinds else None
+        return [e.to_json() for e in store.recent_events(limit, wanted)]
+
     @v1.get("/events/cursor", response_model=CursorOut)
     async def events_cursor():
         """The newest event's id, so a client can follow /live from now on instead of replaying the history."""

@@ -61,6 +61,16 @@ def test_events_come_back_in_order_and_from_a_cursor(store):
     assert [e.kind for e in store.events()] == ["text", "message", "text"]
 
 
+def test_recent_events_are_the_newest_in_order_and_can_be_filtered(store):
+    a = store.create_task("engineer", "a")
+    for n in range(5):
+        store.append_event(a.id, Text(text=str(n)))
+    store.append_event(a.id, kind="handoff", data={"done": "x"})
+
+    assert [e.data.get("text") for e in store.recent_events(3)] == ["3", "4", None]
+    assert [e.kind for e in store.recent_events(10, ("handoff",))] == ["handoff"]
+
+
 def test_unfinished_tasks_are_marked_interrupted_on_startup(store):
     running = store.create_task("engineer", "a")
     store.update_task(running.id, status=Status.RUNNING)
