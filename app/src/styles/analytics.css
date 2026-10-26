@@ -1,0 +1,346 @@
+/* Analytics: plan limits, a year of tokens, and the crew's use. */
+
+/* Usage */
+
+.plan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.plan-card {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--raised);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.plan-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.plan-card-head .key {
+  margin: 0;
+}
+
+.plan-card-name {
+  font-weight: 600;
+  flex: 1;
+}
+
+.plan-window {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.plan-window-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13px;
+  color: var(--soft);
+}
+
+.plan-left {
+  color: var(--faint);
+  font-size: 12.5px;
+}
+
+.plan-left strong {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  margin-right: 2px;
+}
+
+.plan-notes {
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.plan-window .meter {
+  height: 6px;
+  border-radius: 3px;
+}
+
+.stat-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.stat {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--raised);
+  min-width: 0;
+}
+
+.stat-value {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--faint);
+}
+
+/* Token activity: a year of days, a column a week */
+
+.heat-cell {
+  display: block;
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  background: var(--line);
+}
+
+.heat-cell.blank {
+  background: none;
+}
+
+/* Drawn inside the square, so nothing around the grid can cut it off */
+.heat-cell.on {
+  box-shadow: inset 0 0 0 1.5px var(--text);
+}
+
+/* After the cells' own rules, so a day's shade wins */
+.heat-1 {
+  background: var(--heat-1);
+}
+
+.heat-2 {
+  background: var(--heat-2);
+}
+
+.heat-3 {
+  background: var(--heat-3);
+}
+
+.heat-4 {
+  background: var(--heat-4);
+}
+
+.heat-5 {
+  background: var(--heat-5);
+}
+
+.heat-weeks {
+  display: flex;
+  gap: var(--gap);
+}
+
+.heat-weeks .heat-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  width: var(--cell);
+  flex: none;
+}
+
+.heat-weeks .heat-cell {
+  width: var(--cell);
+  height: var(--cell);
+  border-radius: max(2px, calc(var(--cell) / 4));
+}
+
+.heat-month {
+  height: 16px;
+  font-size: 11px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+.heat-weeks .heat-labels {
+  width: auto;
+}
+
+.heat-daylabel {
+  height: var(--cell);
+  font-size: 10px;
+  line-height: var(--cell);
+  color: var(--faint);
+}
+
+.heat-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 20px;
+  margin-top: 8px;
+}
+
+.heat-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.heat-legend .heat-cell {
+  width: 10px;
+  height: 10px;
+}
+
+.heat-legend .heat-cell:first-child {
+  margin-left: 4px;
+}
+
+.heat-legend .heat-cell:last-of-type {
+  margin-right: 4px;
+}
+
+.split {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.split-bar {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--line);
+}
+
+.split-bar > span {
+  display: block;
+  height: 100%;
+}
+
+.split-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.split-legend strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--soft);
+}
+
+.key {
+  display: inline-block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  margin-right: 6px;
+  vertical-align: -1px;
+}
+
+.legend-item .key {
+  margin-right: 0;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.usage-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  column-gap: 28px;
+}
+
+.ranked {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ranked-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  row-gap: 5px;
+  column-gap: 12px;
+  font-size: 13px;
+}
+
+.ranked-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ranked-label .key {
+  margin: 0;
+}
+
+.ranked-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ranked-bar {
+  grid-column: 1 / -1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line-soft);
+  overflow: hidden;
+}
+
+.ranked-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--soft);
+}
+
+.budget-row .meter {
+  width: 160px;
+  flex: none;
+}
+
+.ranked-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: var(--hover);
+  color: var(--soft);
+}
+
+.stat-strip.insights {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.insights .stat-value {
+  font-size: 18px;
+}
+
+@media (max-width: 760px) {
+  .stat-strip.insights {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

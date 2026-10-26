@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { Task } from "../types";
+import "../styles/panels.css";
 
 export function DiffView({ task }: { task: Task }) {
   const [diff, setDiff] = useState<string | null | undefined>(undefined);

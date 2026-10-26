@@ -1,0 +1,252 @@
+/* Pages (Crew, Routines, Analytics, Tools, Settings): their frame, lists and form fields. */
+
+/* Pages: Crew, Routines, Usage, Settings */
+
+.page-head {
+  height: 56px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--line-soft);
+  user-select: none;
+}
+
+.page-head h1 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.page-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.page-col {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 24px 28px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.page-lede {
+  margin: 0;
+  color: var(--soft);
+  font-size: 13.5px;
+}
+
+.page-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.page-section h2 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--soft);
+  margin: 0;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.small {
+  font-size: 12.5px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.list-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line-soft);
+  text-align: left;
+}
+
+.list-row:first-child {
+  border-top: 0;
+}
+
+.list-row[role="button"] {
+  cursor: pointer;
+}
+
+.list-row[role="button"]:hover {
+  background: var(--hover);
+}
+
+.list-row.routine.off .list-title {
+  color: var(--faint);
+}
+
+.list-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.list-title {
+  font-weight: 550;
+  font-size: 13.5px;
+}
+
+.list-empty {
+  padding: 14px 16px;
+  margin: 0;
+}
+
+.inline-input,
+.field input,
+.field select,
+.field textarea {
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--raised);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  width: 100%;
+  min-width: 0;
+}
+
+.inline-input {
+  flex: 1;
+}
+
+.field textarea {
+  height: auto;
+  padding: 8px 10px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus,
+.inline-input:focus {
+  border-color: color-mix(in srgb, var(--soft) 45%, var(--line));
+}
+
+.field input:disabled {
+  color: var(--faint);
+}
+
+.mono-area,
+.field textarea.mono-area {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--soft);
+}
+
+.field-hint {
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.field-row {
+  display: flex;
+  gap: 14px;
+}
+
+.budget-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.budget-row input {
+  max-width: 160px;
+}
+
+.budget-row select {
+  max-width: 110px;
+}
+
+.segmented.inline {
+  display: inline-flex;
+  margin: 0;
+}
+
+.field .segmented.inline {
+  align-self: flex-start; /* in a form field's column, don't stretch to its width */
+}
+
+.segmented.inline button {
+  flex: none;
+  padding: 0 12px;
+}
+
+.switch {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  flex: none;
+  border-radius: 10px;
+  background: var(--line);
+  transition: background 0.15s;
+}
+
+.switch span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text);
+  transition: transform 0.15s;
+}
+
+.switch.on {
+  background: var(--green);
+}
+
+.switch.on span {
+  transform: translateX(14px);
+  background: #fff;
+}
+
+.switch:disabled {
+  opacity: 0.4;
+}
+
+.danger-text {
+  color: var(--red);
+}

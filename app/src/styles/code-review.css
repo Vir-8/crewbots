@@ -1,0 +1,547 @@
+/* Code review: the pull requests waiting on you, a pull request's page, its review, and find. */
+
+/* Code review */
+
+.review-area {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns:
+    minmax(200px, var(--review-list-user, clamp(220px, 22vw, 320px))) minmax(320px, 1fr)
+    minmax(280px, var(--review-pane-user, clamp(300px, 30vw, 440px)));
+}
+
+.review-list {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--line-soft);
+}
+
+.review-list-head {
+  height: 56px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 0 12px 0 18px;
+}
+
+.review-list-head h1 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.review-list-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 8px 20px;
+}
+
+.pull-group {
+  margin-bottom: 10px;
+}
+
+.pull-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 10px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--soft);
+}
+
+.pull-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 10px;
+  text-align: left;
+}
+
+.pull-row:hover {
+  background: var(--hover);
+}
+
+.pull-row.on {
+  background: var(--raised);
+}
+
+.pull-row-title {
+  font-size: 13px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.pull-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  min-width: 0;
+}
+
+.pull-row-meta .faint {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.gh-avatar {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--line);
+}
+
+.draft-tag {
+  font-size: 11px;
+  color: var(--faint);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 0 4px;
+  margin-right: 6px;
+}
+
+.reviewed-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--blue);
+  flex: none;
+}
+
+.check-failed {
+  color: var(--red);
+  flex: none;
+}
+
+.pad-x {
+  padding: 0 10px;
+  margin: 0;
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.review-empty {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  grid-column: span 2;
+}
+
+.pull-view {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  container-type: inline-size; /* its header fits itself to the column, not the window */
+}
+
+.pull-head {
+  height: 56px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.pull-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Find in the changes, floating over the diff's top right like a browser's */
+.find-bar {
+  position: absolute;
+  top: 64px;
+  right: 18px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: min(360px, calc(100% - 36px));
+  padding: 4px 4px 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+  color: var(--soft);
+}
+
+.find-bar input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 4px;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.find-count {
+  font-size: 12px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.find-bar .flip {
+  transform: rotate(180deg);
+}
+
+.find-hit {
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--amber) 35%, transparent);
+  color: inherit;
+}
+
+.find-hit.current {
+  background: var(--amber);
+  color: #1a1a1a;
+}
+
+.pull-col {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 20px 24px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pull-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.state-pill {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 10px;
+}
+
+.state-pill.open {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+}
+
+.state-pill.draft {
+  color: var(--soft);
+  background: var(--raised);
+}
+
+.pull-title {
+  font-size: 20px;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  margin: 2px 0 0;
+}
+
+.pull-by {
+  font-size: 13px;
+}
+
+.pull-facts {
+  margin: 10px 0 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.pull-facts > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  font-size: 13px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.pull-facts > div:first-child {
+  border-top: 0;
+}
+
+.pull-facts .icon {
+  color: var(--faint);
+}
+
+.pull-facts .bad,
+.pull-facts .bad .icon {
+  color: var(--red);
+}
+
+.add {
+  color: var(--green);
+}
+
+.del {
+  color: var(--red);
+}
+
+.pull-body {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.pull-body code {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.pull-head .segmented {
+  flex: none;
+  margin: 0; /* the shared control's margin and top alignment would lift it off the header's centre line */
+  align-self: center;
+}
+
+.pull-head .segmented button {
+  white-space: nowrap;
+}
+
+.pull-delta {
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.reviewer-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  overflow-x: auto;
+}
+
+.reviewer-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--soft);
+  white-space: nowrap;
+}
+
+.reviewer-tab:hover,
+.reviewer-tab.on {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  flex: none;
+}
+
+.status-dot.running,
+.status-dot.queued {
+  background: var(--blue);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
+.status-dot.failed,
+.status-dot.cancelled {
+  background: var(--red);
+}
+
+.status-dot.held {
+  background: var(--amber);
+}
+
+.review-team {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  min-width: 0;
+}
+
+.review-team-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 8px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  color: var(--soft);
+}
+
+.review-team-toggle > span:not(.status-dot) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-team-toggle:not(:disabled):hover,
+.review-team-toggle.on {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.review-team-toggle:disabled {
+  cursor: default;
+}
+
+.review-team-toggle .icon {
+  flex: none;
+}
+
+.review-peek {
+  border-bottom: 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.round-select {
+  margin-left: auto;
+  height: 26px;
+  background: var(--raised);
+  color: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.model-picker {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.model-picker select {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--raised);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.reviewer-row .model-picker {
+  flex: 1;
+  max-width: 460px;
+}
+
+.review-start .icon {
+  color: var(--faint);
+}
+
+.review-pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--panel);
+  border-left: 1px solid var(--line-soft);
+}
+
+.review-pane-head {
+  height: 56px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px 0 18px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.review-pane-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.review-pane-head select {
+  height: 28px;
+  background: var(--raised);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  font: inherit;
+  font-size: 12.5px;
+  padding: 0 6px;
+}
+
+.review-hint {
+  font-size: 12.5px;
+  margin: 0;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.review-thread {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.review-composer {
+  padding: 10px 14px 14px;
+}
+
+.review-start {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px 28px;
+  text-align: center;
+  color: var(--soft);
+  font-size: 13.5px;
+}
+
+.review-start textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--raised);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+}

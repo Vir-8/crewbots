@@ -5,6 +5,7 @@ import { Icon } from "../components/Icon";
 import { Field, Page, Segmented, Sheet } from "../components/ui";
 import type { Crew } from "../state";
 import type { InstalledMcp, McpCheckResult, McpServerInfo, RegistryServer, Skill } from "../types";
+import "../styles/tools.css";
 
 /** What the bots can reach beyond their own CLI: the crew's MCP servers, which a bot gets only when its card names
  * one, and the skills every bot can read. */

@@ -7,6 +7,7 @@ import { tokens } from "../components/StatusPanel";
 import { Field, Page, Segmented, Sheet } from "../components/ui";
 import type { Crew } from "../state";
 import type { Bot, Card, McpServerInfo } from "../types";
+import "../styles/crew.css";
 
 // The window a bot's sessions compact within; "auto" is the model's whole window (a million tokens on some).
 const WINDOWS: [string, string][] = [["200000", "200K"], ["400000", "400K"], ["1000000", "1M"], ["auto", "The model's"]];

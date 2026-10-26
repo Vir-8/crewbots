@@ -1,0 +1,96 @@
+/* Attachments: in the message box, and under a sent message. */
+
+/* Attachments: in the message box, and under a sent message */
+
+.composer.dropping {
+  border-color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 6%, var(--raised));
+}
+
+.pending-files,
+.message-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pending-files {
+  margin-bottom: 4px;
+}
+
+.message-files {
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+
+.file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 260px;
+  height: 34px;
+  padding: 0 6px 0 8px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--soft);
+  font-size: 12.5px;
+}
+
+.file-chip img {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  object-fit: cover;
+}
+
+.file-chip.uploading {
+  opacity: 0.6;
+}
+
+.file-chip.error {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.file-chip-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+
+.file-chip-x {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  color: var(--faint);
+}
+
+.file-chip-x:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.message-picture {
+  padding: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--raised);
+  min-width: 60px;
+  min-height: 40px;
+}
+
+.message-picture img {
+  display: block;
+  max-width: 260px;
+  max-height: 220px;
+  object-fit: cover;
+}
+
+.icon-button.attach {
+  margin-left: -4px;
+}

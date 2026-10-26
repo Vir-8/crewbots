@@ -8,6 +8,7 @@ import { Boundary } from "./Boundary";
 import { Markdown } from "./bits";
 import { Icon } from "./Icon";
 import { WorkCard } from "./WorkCard";
+import "../styles/chat.css";
 
 type Block =
   | { kind: "you"; id: number; text: string; files: Attachment[] }

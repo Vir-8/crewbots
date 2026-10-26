@@ -2,6 +2,8 @@
 
 import type { ReactNode } from "react";
 import { Icon } from "./Icon";
+import "../styles/dialogs.css";
+import "../styles/pages.css";
 
 export function Page(props: { title: string; actions?: ReactNode; children: ReactNode; wide?: boolean }) {
   return (

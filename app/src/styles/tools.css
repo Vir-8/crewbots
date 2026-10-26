@@ -1,0 +1,138 @@
+/* Tools: the crew's MCP servers and skills. */
+
+/* Tools: the crew's MCP servers and skills */
+
+.mcp-row {
+  gap: 12px;
+}
+
+.mcp-row .list-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.ellipsis {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tag {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--soft);
+  background: var(--raised);
+  border-radius: 6px;
+  padding: 1px 7px;
+  margin-left: 6px;
+  vertical-align: 1px;
+}
+
+.mcp-users {
+  display: inline-flex;
+  flex: none;
+}
+
+.mcp-users .avatar + .avatar {
+  margin-left: -5px;
+}
+
+.skill-group h3 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--faint);
+  margin: 14px 0 6px;
+}
+
+.skill-row {
+  text-align: left;
+  width: 100%;
+}
+
+.skill-row.unused .list-title {
+  color: var(--soft);
+}
+
+.skill-row .list-text {
+  min-width: 0;
+}
+
+.add-server-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.registry-search {
+  display: flex;
+  gap: 8px;
+}
+
+.registry-search input {
+  flex: 1;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--raised);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.registry-entry + .registry-entry {
+  border-top: 1px solid var(--line-soft);
+}
+
+.registry-head {
+  width: 100%;
+  text-align: left;
+  gap: 10px;
+}
+
+.registry-head .list-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.registry-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 4px 14px;
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chip-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 11px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  color: var(--soft);
+  font-size: 12.5px;
+}
+
+.choice:hover {
+  color: var(--text);
+}
+
+.choice.on {
+  background: var(--raised);
+  border-color: var(--soft);
+  color: var(--text);
+}

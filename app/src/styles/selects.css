@@ -1,0 +1,15 @@
+/* Imported last (main.tsx), after every other stylesheet. */
+
+/* Every select drawn as a box shows it's a dropdown. Last, so it applies over each one's own background; the
+ * composer's "To" chip draws its own arrow. */
+select:not(:disabled) {
+  background-image: var(--chevron);
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+}
+
+.chip select {
+  background-image: none;
+  padding-right: 0;
+}

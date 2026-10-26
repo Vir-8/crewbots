@@ -1,0 +1,197 @@
+/* Dialogs and the sheets editors open in. */
+
+/* New group chat */
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: grid;
+  place-items: center;
+  z-index: 20;
+}
+
+.dialog {
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  padding: 20px;
+  border-radius: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dialog h2 {
+  font-size: 16px;
+  margin: 0 0 4px;
+}
+
+.dialog-input {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--raised);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+
+.dialog-label {
+  font-size: 12px;
+  color: var(--faint);
+  margin-top: 4px;
+}
+
+.dialog-members {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.member-option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.member-option:hover,
+.member-option.on {
+  background: var(--raised);
+}
+
+.member-name {
+  font-weight: 550;
+}
+
+.dialog-lead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+}
+
+.dialog-lead select {
+  background: var(--raised);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 4px 8px;
+  font: inherit;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* The sheet editors open in */
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.sheet {
+  width: 560px;
+  max-width: 100vw;
+  height: 100%;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet-head {
+  height: 56px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px 0 24px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.sheet-head h2 {
+  font-size: 15px;
+  margin: 0;
+}
+
+.sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sheet-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.sheet-error {
+  font-size: 12.5px;
+  max-width: 60%;
+}
+
+.face-picker {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.face-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.swatches,
+.shapes {
+  display: flex;
+  gap: 6px;
+}
+
+.swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  box-shadow: 0 0 0 2px var(--panel) inset;
+}
+
+.swatch.on {
+  border-color: var(--text);
+}
+
+.shape {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+}
+
+.shape:hover,
+.shape.on {
+  background: var(--raised);
+}

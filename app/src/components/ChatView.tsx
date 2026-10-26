@@ -11,6 +11,7 @@ import { Composer } from "./Composer";
 import { Icon } from "./Icon";
 import { Thread } from "./Thread";
 import { settle } from "./ui";
+import "../styles/chat.css";
 
 /** Your ongoing chat with one bot. Work it takes on shows as thread cards, which open beside the chat. */
 export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) => void; onProfile: () => void; profileOpen: boolean }) {

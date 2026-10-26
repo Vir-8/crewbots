@@ -8,6 +8,7 @@ import { Icon } from "./Icon";
 import { type Pending, PendingFiles, upload } from "./Attachments";
 import { StatusPanel } from "./StatusPanel";
 import { UsagePanel } from "./UsagePanel";
+import "../styles/composer.css";
 
 /** The one place you type, or talk: the mic dictates into it. In a group chat, typing @ suggests who to mention, and
  * anywhere, typing / offers the app's own commands. */

@@ -8,6 +8,7 @@ import { Page, Segmented } from "../components/ui";
 import { usePlans } from "../plans";
 import type { Crew } from "../state";
 import type { Budget, UsageSummary } from "../types";
+import "../styles/analytics.css";
 
 // Each plan keeps one color everywhere on the page (orange and aqua, adjacent slots of the validated palette); the
 // activity grid's magnitude is a separate one-hue blue ramp, so neither reads as one plan's. Both are set in styles.css.

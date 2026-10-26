@@ -3,6 +3,7 @@ import type { Draft } from "../types";
 import { Markdown } from "./bits";
 import { Icon } from "./Icon";
 import { MentionArea } from "./Mentions";
+import "../styles/pull-diff.css";
 
 type Side = "RIGHT" | "LEFT";
 type Row = { kind: "hunk" | "add" | "del" | "ctx"; text: string; old?: number; new?: number };

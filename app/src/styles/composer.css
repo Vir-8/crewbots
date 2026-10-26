@@ -1,0 +1,301 @@
+/* The message box, and what opens above it: commands, mentions, panels. */
+
+/* The composer */
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 12px 10px 16px;
+  border-radius: 18px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  cursor: text;
+  transition: border-color 0.15s;
+}
+
+.composer:focus-within {
+  border-color: color-mix(in srgb, var(--soft) 45%, var(--line));
+}
+
+.composer.asking {
+  border-color: color-mix(in srgb, var(--amber) 55%, transparent);
+}
+
+.composer textarea {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  outline: none;
+  resize: none;
+  width: 100%;
+  padding: 2px 0;
+  line-height: 1.55;
+}
+
+.composer textarea::placeholder {
+  color: var(--faint);
+}
+
+.composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.composer-hint {
+  font-size: 11.5px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.composer:focus-within .composer-hint {
+  opacity: 1;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--soft);
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.chip:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.chip.select select {
+  color: var(--text);
+  font-weight: 550;
+}
+
+.send {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--primary);
+  color: var(--primary-ink);
+}
+
+.send:disabled {
+  opacity: 0.25;
+}
+
+/* A new goal */
+
+.new-goal {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.new-goal-body {
+  flex: 1;
+  width: 100%;
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 0 24px 12vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+}
+
+.new-goal-body h1 {
+  font-size: 26px;
+  letter-spacing: -0.02em;
+}
+
+.new-goal-body p {
+  margin: 0 0 18px;
+}
+
+/* The composer's extras */
+
+.composer {
+  position: relative;
+}
+
+.mentions {
+  position: absolute;
+  left: 12px;
+  bottom: calc(100% + 6px);
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  min-width: 160px;
+  z-index: 5;
+}
+
+/* The composer's own commands: the / menu, and a command's panel above the message box */
+
+.commands {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  padding: 5px;
+  border-radius: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 30%);
+  display: flex;
+  flex-direction: column;
+  z-index: 6;
+}
+
+.command-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  text-align: left;
+  color: var(--soft);
+  min-width: 0;
+}
+
+.command-option.on {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.command-name {
+  font-weight: 550;
+  color: var(--text);
+}
+
+.command-desc {
+  color: var(--faint);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.command-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 12px 14px 14px;
+  border-radius: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 30%);
+  z-index: 6;
+  cursor: default;
+}
+
+.command-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.status-facts {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 8px 14px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.status-facts dt {
+  color: var(--faint);
+}
+
+.status-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.status-limit {
+  display: contents;
+}
+
+.status-meter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.status-meter .meter {
+  width: 140px;
+  height: 6px;
+  border-radius: 3px;
+  flex: none;
+}
+
+.status-meter strong {
+  font-weight: 600;
+}
+
+.status-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0 0;
+}
+
+.command-panel-title {
+  font-weight: 600;
+  font-size: 13.5px;
+}
+
+.mention-option {
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+}
+
+.mention-option:first-child,
+.mention-option:hover {
+  background: var(--hover);
+}
+
+.mic {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--soft);
+}
+
+.mic:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.mic.on {
+  background: var(--red);
+  color: #fff;
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
+.composer.listening {
+  border-color: color-mix(in srgb, var(--red) 45%, var(--line));
+}
+
+.listening-hint {
+  color: var(--red);
+}

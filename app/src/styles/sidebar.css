@@ -1,0 +1,625 @@
+/* The sidebar: the chat list, its rail when collapsed, and the menu at its foot. */
+
+/* Sidebar */
+
+.sidebar {
+  position: relative;
+  background: var(--side);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0 10px 12px;
+  border-right: 1px solid var(--line-soft);
+}
+
+/* As tall as the headers beside it: the window's buttons, the sidebar button and the headers' titles all sit on its
+ * centre line (the buttons are moved there by trafficLightPosition in tauri.conf.json). */
+.sidebar-drag {
+  height: 56px;
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.app {
+  --side-w: min(var(--side-user, 264px), 36vw);
+}
+
+.app.side-hidden {
+  --side-w: 80px;
+}
+
+/* Beside the window's buttons in both states: the sidebar grows and shrinks under it, it doesn't move. */
+.side-toggle {
+  position: fixed;
+  top: 14px;
+  left: 86px;
+  z-index: 12;
+  color: var(--faint);
+}
+
+/* The collapsed sidebar: a rail of icons and faces */
+
+.sidebar.rail {
+  align-items: center;
+  gap: 4px;
+  padding: 0 0 12px;
+}
+
+.rail-button {
+  position: relative;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  color: var(--soft);
+}
+
+.rail-button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.rail-button.on {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.rail-count {
+  position: absolute;
+  top: 1px;
+  right: 0;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--primary);
+  border: 1.5px solid var(--side);
+  color: var(--primary-ink);
+  font-size: 9.5px;
+  font-weight: 650;
+  line-height: 12px;
+  text-align: center;
+}
+
+.rail-need {
+  color: var(--amber);
+}
+
+.rail-need.merge {
+  color: var(--green);
+}
+
+.rail-need.failed,
+.rail-need.interrupted {
+  color: var(--red);
+}
+
+.rail-alert {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--red);
+}
+
+.rail-sep {
+  flex: none;
+  width: 24px;
+  height: 1px;
+  margin: 6px 0;
+  background: var(--line);
+}
+
+.rail-chats {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.rail-chat {
+  position: relative;
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+}
+
+.rail-chat:hover {
+  background: var(--hover);
+}
+
+.rail-chat.on {
+  background: var(--raised);
+}
+
+.rail-chat .unread-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  border: 1.5px solid var(--side);
+  width: 10px;
+  height: 10px;
+}
+
+.rail .crew-menu {
+  margin-top: 8px;
+}
+
+.rail .menu {
+  left: calc(100% + 4px);
+  right: auto;
+  bottom: 0;
+  width: 220px;
+}
+
+/* No hover background, only a brighter icon: macOS keeps hover on whatever was under the pointer until it moves
+ * again, so a background would look pressed after the sidebar it toggles has gone. */
+.side-toggle:hover,
+.side-toggle.settled:hover {
+  background: none;
+  color: var(--text);
+}
+
+.side-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 10px;
+  border-radius: 8px;
+  color: var(--soft);
+}
+
+.side-row:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.side-row.on {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.side-row.new {
+  color: var(--text);
+  font-weight: 550;
+  margin-bottom: 6px;
+}
+
+.side-section {
+  display: flex;
+  flex-direction: column;
+  margin-top: 14px;
+  min-height: 0;
+}
+
+.grow-section {
+  flex: 1;
+}
+
+.side-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--faint);
+  padding: 0 10px 6px;
+}
+
+.side-scroll {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.side-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.side-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.side-row.goal .side-title {
+  color: inherit;
+}
+
+.side-sub {
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.side-row.need .icon {
+  color: var(--amber);
+}
+
+.side-routine {
+  color: var(--faint);
+  flex: none;
+}
+
+.routines {
+  flex: none;
+  margin-bottom: 10px;
+}
+
+.routine-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.routine-row:hover {
+  background: var(--hover);
+}
+
+.routine-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.routine-name {
+  color: var(--soft);
+}
+
+.routine-row.off .routine-name,
+.routine-row.broken .routine-name {
+  color: var(--faint);
+}
+
+.routine-row.broken .side-sub {
+  color: var(--red);
+}
+
+.routine-run {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--faint);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.routine-row:hover .routine-run {
+  opacity: 1;
+}
+
+.routine-run:hover {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.side-row.need.merge .icon {
+  color: var(--green);
+}
+
+.side-row.need.failed .icon,
+.side-row.need.interrupted .icon {
+  color: var(--red);
+}
+
+.side-time {
+  font-size: 11.5px;
+  color: var(--faint);
+  flex: none;
+}
+
+.side-empty {
+  color: var(--faint);
+  font-size: 13px;
+  padding: 4px 10px;
+  margin: 0;
+}
+
+.side-crew {
+  border-top: 1px solid var(--line-soft);
+  padding: 12px 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.crew-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12.5px;
+  color: var(--soft);
+}
+
+.crew-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--line);
+}
+
+.crew-dot.on {
+  background: var(--blue);
+  animation: breathe 1.8s ease-in-out infinite;
+}
+
+.crew-name {
+  flex: 1;
+}
+
+.crew-backend {
+  font-size: 11.5px;
+  color: var(--faint);
+}
+
+/* The chat list */
+
+.side-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.side-search {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 9px;
+  background: var(--raised);
+  color: var(--faint);
+}
+
+.side-search input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  outline: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.side-needs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 8px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.need-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.need-row:hover {
+  background: var(--hover);
+}
+
+.need-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--amber);
+}
+
+.need-row.merge .need-dot {
+  background: var(--green);
+}
+
+.need-row.failed .need-dot,
+.need-row.interrupted .need-dot {
+  background: var(--red);
+}
+
+.need-title {
+  font-size: 13px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chat-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chat-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  text-align: left;
+}
+
+.chat-row:hover {
+  background: var(--hover);
+}
+
+.chat-row.on {
+  background: var(--raised);
+}
+
+.chat-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.chat-row-top,
+.chat-row-bottom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-row-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 550;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chat-row-time {
+  font-size: 11.5px;
+  color: var(--faint);
+  flex: none;
+}
+
+.chat-row-preview {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--faint);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chat-row-preview.working {
+  color: var(--green);
+}
+
+.unread-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--blue);
+  flex: none;
+}
+
+.unread-dot.working {
+  background: var(--green);
+}
+
+.settings-row {
+  margin-top: 8px;
+}
+
+.settings-row .settings-alert {
+  margin-left: auto;
+  color: var(--red);
+}
+
+/* The sidebar's menu and code review row */
+
+.nav-row {
+  margin-bottom: 8px;
+}
+
+.count {
+  margin-left: auto;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--raised);
+  border-radius: 9px;
+  padding: 1px 7px;
+}
+
+.crew-menu {
+  position: relative;
+  margin-top: 8px;
+}
+
+.crew-button .flip {
+  transform: rotate(180deg);
+}
+
+.crew-faces {
+  display: inline-flex;
+}
+
+.crew-faces .avatar + .avatar {
+  margin-left: -6px;
+}
+
+.menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  padding: 5px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  color: var(--soft);
+  text-align: left;
+}
+
+.menu-item:hover,
+.menu-item.on {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.menu-item .settings-alert,
+.crew-button .settings-alert {
+  margin-left: auto;
+  color: var(--red);
+}
+
+.menu-sep {
+  height: 1px;
+  background: var(--line-soft);
+  margin: 4px 6px;
+}

@@ -17,6 +17,7 @@ import type { Crew } from "./state";
 import { useCrew } from "./state";
 import { settle } from "./components/ui";
 import type { ConnectionStatus, Task } from "./types";
+import "./styles/dialogs.css";
 
 /** A preference kept in this browser profile, surviving restarts; a storage that won't work just forgets. */
 function useRemembered(key: string, initial: boolean): [boolean, (value: boolean) => void] {

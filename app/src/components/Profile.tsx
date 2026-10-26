@@ -7,6 +7,7 @@ import { ACTIVE } from "../types";
 import { Avatar, GroupAvatar, labelOf } from "./Avatar";
 import { ago } from "./bits";
 import { Icon } from "./Icon";
+import "../styles/panels.css";
 
 const ACCESS: Record<string, string> = { read_only: "Reads only", workspace_write: "Writes in its task's folder", full: "Full access" };
 const SHOWN = 6;

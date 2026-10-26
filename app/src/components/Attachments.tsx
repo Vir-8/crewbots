@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, bridge } from "../api";
 import type { Attachment } from "../types";
 import { Icon } from "./Icon";
+import "../styles/attachments.css";
 
 /** A file waiting in the message box: uploading, ready (with its id), or refused. */
 export type Pending = { key: string; name: string; kind: "image" | "file"; size: number; preview?: string; id?: string; error?: string };

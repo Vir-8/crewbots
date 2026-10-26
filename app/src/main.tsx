@@ -1,11 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import "./styles/tokens.css";
+import "./styles/base.css";
 import { App } from "./App";
 import { inTauri } from "./bridge";
 import { Boundary, report } from "./components/Boundary";
 import { selftest } from "./selftest";
-import "./styles.css";
+import "./styles/selects.css"; // last: it applies over each select's own background
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

@@ -1,5 +1,6 @@
 import type { ReviewState, Task } from "../types";
 import { Icon } from "./Icon";
+import "../styles/panels.css";
 
 /** Where a piece of work stands in review: the round, and each reviewer's verdict on the current version. */
 export function ReviewPanel(props: { task: Task; review: ReviewState | null; tasks: Map<string, Task>; onSelect: (id: string) => void }) {

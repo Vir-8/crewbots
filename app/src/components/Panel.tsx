@@ -10,6 +10,7 @@ import { Icon } from "./Icon";
 import { ReviewPanel } from "./ReviewPanel";
 import { Thread } from "./Thread";
 import { MergeButton } from "./WorkCard";
+import "../styles/panels.css";
 
 type Tab = "activity" | "changes" | "review";
 

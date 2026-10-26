@@ -13,6 +13,7 @@ import { Segmented } from "../components/ui";
 import type { Crew } from "../state";
 import type { Draft, Pull, PullSummary, Reviewer, Submitted, Task } from "../types";
 import { ACTIVE } from "../types";
+import "../styles/code-review.css";
 
 type Selected = { repo: string; number: number };
 

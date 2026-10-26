@@ -31,7 +31,9 @@ const steps = [
 ];
 let step = 0;
 let ticking: number | undefined; // from the first listener on: nothing runs just because this module was imported
+const still = new URLSearchParams(globalThis.location?.search ?? "").has("still"); // ?still: no live activity, for comparing screens
 const tick = () => {
+  if (still) return;
   ticking ??= window.setInterval(() => {
     const s = steps[step++ % steps.length];
     say(demo.live.taskId, "tool_call", { id: `live-${step}`, name: s.name, input: s.input });

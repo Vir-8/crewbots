@@ -6,6 +6,7 @@ import type { Chat } from "../types";
 import { Avatar, GroupAvatar, labelOf } from "./Avatar";
 import { ago } from "./bits";
 import { Icon } from "./Icon";
+import "../styles/sidebar.css";
 
 const NEED: Record<InboxItem["reason"], string> = {
   merge: "Ready to merge",
