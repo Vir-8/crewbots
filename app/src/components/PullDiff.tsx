@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import type { Draft } from "../types";
 import { Markdown } from "./bits";
 import { Icon } from "./Icon";
@@ -7,13 +7,18 @@ type Side = "RIGHT" | "LEFT";
 type Row = { kind: "hunk" | "add" | "del" | "ctx"; text: string; old?: number; new?: number };
 type File = { path: string; status: "added" | "deleted" | "changed"; binary: boolean; rows: Row[]; added: number; removed: number };
 type Spot = { path: string; side: Side; line: number };
+type Hit = { file: number; row: number; at: number }; // row -1 is the file's name
 
 const IMAGE = /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i;
 
 /** A pull request's diff with line numbers, where you and the reviewers leave line comments for a review: a draft
- * shows under its line, and a + beside a line starts one. Images it changes show before and after. */
+ * shows under its line, and a + beside a line starts one. Images it changes show before and after. `find` marks
+ * what you're looking for in file names and lines, and brings the `current` match into view. */
 export function PullDiff(props: {
   diff: string;
+  find?: string;
+  current?: number;
+  onMatches?: (count: number) => void;
   drafts: Draft[];
   author: (who: string) => string;
   onAdd: (spot: Spot, body: string) => Promise<unknown>;
@@ -23,14 +28,54 @@ export function PullDiff(props: {
 }) {
   const files = useMemo(() => parse(props.diff), [props.diff]);
   const [open, setOpen] = useState<Spot | null>(null);
+  const query = (props.find ?? "").toLowerCase();
+  const hits = useMemo(() => {
+    const out: Hit[] = [];
+    if (!query) return out;
+    const look = (text: string, file: number, row: number) => {
+      const lower = text.toLowerCase();
+      for (let at = lower.indexOf(query); at >= 0; at = lower.indexOf(query, at + query.length)) out.push({ file, row, at });
+    };
+    files.forEach((file, f) => {
+      look(file.path, f, -1);
+      file.rows.forEach((row, r) => look(row.text, f, r));
+    });
+    return out;
+  }, [files, query]);
+  const hitsAt = useMemo(() => {
+    const at = new Map<string, number[]>();
+    hits.forEach((h, n) => at.set(`${h.file}:${h.row}`, [...(at.get(`${h.file}:${h.row}`) ?? []), n]));
+    return at;
+  }, [hits]);
+  useEffect(() => props.onMatches?.(hits.length), [hits.length]);
+  useEffect(() => {
+    if (hits.length) document.getElementById(`find-${props.current ?? 0}`)?.scrollIntoView({ block: "center" });
+  }, [props.current, hits]);
+  const marked = (text: string, file: number, row: number): ReactNode => {
+    const here = hitsAt.get(`${file}:${row}`);
+    if (!here) return text;
+    const parts: ReactNode[] = [];
+    let from = 0;
+    for (const n of here) {
+      parts.push(text.slice(from, hits[n].at));
+      from = hits[n].at + query.length;
+      parts.push(
+        <mark key={n} id={`find-${n}`} className={`find-hit ${n === (props.current ?? 0) ? "current" : ""}`}>
+          {text.slice(hits[n].at, from)}
+        </mark>,
+      );
+    }
+    parts.push(text.slice(from));
+    return parts;
+  };
   const at = (path: string, side: Side, line: number) => props.drafts.filter((d) => d.path === path && d.side === side && d.line === line);
 
   return (
     <div className="diff pull-diff">
-      {files.map((file) => (
+      {files.map((file, f) => (
         <div key={file.path} className="diff-file">
           <div className="diff-name">
-            <span className="mono">{file.path}</span>
+            <span className="mono">{marked(file.path, f, -1)}</span>
             {file.status !== "changed" && <span className="tag">{file.status === "added" ? "New" : "Deleted"}</span>}
             <span className="add">+{file.added}</span>
             <span className="del">−{file.removed}</span>
@@ -40,7 +85,7 @@ export function PullDiff(props: {
           ) : (
             <div className="pd-rows">
               {file.rows.map((row, i) => {
-                if (row.kind === "hunk") return <div key={i} className="pd-row hunk"><span className="pd-hunk">{row.text}</span></div>;
+                if (row.kind === "hunk") return <div key={i} className="pd-row hunk"><span className="pd-hunk">{marked(row.text, f, i)}</span></div>;
                 const side: Side = row.kind === "del" ? "LEFT" : "RIGHT";
                 const line = side === "LEFT" ? row.old! : row.new!;
                 const here = [...at(file.path, side, line), ...(row.kind === "ctx" ? at(file.path, "LEFT", row.old!) : [])];
@@ -55,7 +100,7 @@ export function PullDiff(props: {
                       </button>
                       <span className="pd-code">
                         <span className="pd-mark">{row.kind === "add" ? "+" : row.kind === "del" ? "-" : " "}</span>
-                        {row.text || " "}
+                        {row.text ? marked(row.text, f, i) : " "}
                       </span>
                     </div>
                     {here.map((d) => (

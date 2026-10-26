@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { api, bridge } from "../api";
 import { Markdown, ago } from "../components/bits";
 import { Composer } from "../components/Composer";
@@ -159,6 +159,30 @@ function PullView({ crew, selected, onSettings }: { crew: Crew; selected: Select
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState<Submitted | null>(null);
+  // Finding in the diff, with ⌘F: the webview has no find of its own.
+  const [finding, setFinding] = useState(false);
+  const [query, setQuery] = useState("");
+  const [current, setCurrent] = useState(0);
+  const [found, setFound] = useState(0);
+  const findInput = useRef<HTMLInputElement>(null);
+  const lookFor = useDeferredValue(finding ? query : ""); // a big diff marks its matches behind your typing
+  const step = (by: number) => found && setCurrent((c) => (c + by + found) % found);
+  useEffect(() => {
+    const keys = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      if (e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        setTab("changes");
+        setFinding(true);
+        setTimeout(() => findInput.current?.select(), 0);
+      } else if (e.key.toLowerCase() === "g" && finding) {
+        e.preventDefault();
+        step(e.shiftKey ? -1 : 1);
+      }
+    };
+    window.addEventListener("keydown", keys);
+    return () => window.removeEventListener("keydown", keys);
+  }, [finding, found]);
   const loadDrafts = () => api.drafts(selected.repo, selected.number).then(setDrafts, () => undefined);
   // A kept one shows at once; the daemon's answer, kept there too, replaces it a moment later.
   const load = () =>
@@ -253,6 +277,36 @@ function PullView({ crew, selected, onSettings }: { crew: Crew; selected: Select
             </button>
           </div>
         )}
+        {finding && tab === "changes" && (
+          <div className="find-bar" role="search">
+            <Icon name="search" size={13} />
+            <input
+              ref={findInput}
+              autoFocus
+              value={query}
+              placeholder="Find in the changes"
+              aria-label="Find in the changes"
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setCurrent(0);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") step(e.shiftKey ? -1 : 1);
+                if (e.key === "Escape") setFinding(false);
+              }}
+            />
+            <span className="find-count faint">{query ? (found ? `${current + 1} of ${found}` : "No matches") : ""}</span>
+            <button className="icon-button" onClick={() => step(-1)} disabled={!found} title="Previous (⇧↩)">
+              <Icon name="chevronDown" size={13} className="flip" />
+            </button>
+            <button className="icon-button" onClick={() => step(1)} disabled={!found} title="Next (↩)">
+              <Icon name="chevronDown" size={13} />
+            </button>
+            <button className="icon-button" onClick={() => setFinding(false)} title="Close (esc)">
+              <Icon name="x" size={13} />
+            </button>
+          </div>
+        )}
         <div className="pull-scroll">
           {tab === "summary" ? (
             <div className="pull-col">
@@ -304,6 +358,12 @@ function PullView({ crew, selected, onSettings }: { crew: Crew; selected: Select
           ) : (
             <PullDiff
               diff={diff}
+              find={lookFor}
+              current={current}
+              onMatches={(n) => {
+                setFound(n);
+                setCurrent((c) => (c < n ? c : 0));
+              }}
               drafts={drafts}
               author={authorOf}
               onAdd={async (spot, body) => {
