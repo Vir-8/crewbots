@@ -96,6 +96,18 @@ async def test_running_sends_the_prompt_on_stdin_and_hides_the_api_key(tmp_path,
     assert events[-1] == Done(final_text="hi")
 
 
+async def test_a_bot_never_uses_claude_codes_auto_memory(tmp_path, monkeypatch):
+    # Auto memory would keep a folder per bot working folder in ~/.claude/projects, beside the user's own memory.
+    record = tmp_path / "record.json"
+    monkeypatch.setenv("FAKE_RECORD", str(record))
+    monkeypatch.setenv("FAKE_RECORD_ENV", "CLAUDE_CODE_DISABLE_AUTO_MEMORY")
+    monkeypatch.delenv("CLAUDE_CODE_DISABLE_AUTO_MEMORY", raising=False)
+
+    await collect(ClaudeCLI(command=fake_command("claude_read.jsonl")).run(RunSpec(prompt="x", cwd=tmp_path)))
+
+    assert json.loads(record.read_text())["env"] == {"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
+
+
 async def test_an_explicit_api_key_choice_is_respected(tmp_path, monkeypatch):
     record = tmp_path / "record.json"
     monkeypatch.setenv("FAKE_RECORD", str(record))

@@ -35,7 +35,7 @@ from claude_agent_sdk import (
     tool,
 )
 
-from crewbots.backends.base import Access, RunSpec, claude_retry
+from crewbots.backends.base import CLAUDE_BOT_ENV, Access, RunSpec, claude_retry
 from crewbots.backends.claude_cli import READ_ONLY_TOOLS, _stringify, rate_limit
 from crewbots.backends.credentials import without_credentials
 from crewbots.backends.policy import WEB_TOOLS, Policy
@@ -78,7 +78,9 @@ class ClaudeAgent:
         if spec.crew is not None:  # the crew's tools, or a reviewer's
             servers[CREW_SERVER] = crew_server(spec.crew)
         full = spec.access is Access.FULL
-        env = {} if self.use_api_key or "ANTHROPIC_API_KEY" not in os.environ else {"ANTHROPIC_API_KEY": ""}
+        env = dict(CLAUDE_BOT_ENV)
+        if not self.use_api_key and "ANTHROPIC_API_KEY" in os.environ:
+            env["ANTHROPIC_API_KEY"] = ""
         sandbox = None
         if spec.access is Access.WORKSPACE_WRITE:
             # Claude Code's OS sandbox for shell commands: writes confined to the working folder, and no opting out.

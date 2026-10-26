@@ -71,7 +71,9 @@ async def _codex() -> list[dict[str, Any]]:
 async def _claude() -> list[dict[str, Any]]:
     from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
 
-    env = {"ANTHROPIC_API_KEY": ""} if "ANTHROPIC_API_KEY" in os.environ else {}
+    from crewbots.backends.base import CLAUDE_BOT_ENV
+
+    env = CLAUDE_BOT_ENV | ({"ANTHROPIC_API_KEY": ""} if "ANTHROPIC_API_KEY" in os.environ else {})
     options = ClaudeAgentOptions(cli_path=shutil.which("claude"), setting_sources=[], env=env, tools=[])
     async with ClaudeSDKClient(options) as client:
         info = await client.get_server_info() or {}

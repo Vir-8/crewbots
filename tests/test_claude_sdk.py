@@ -175,7 +175,7 @@ def test_the_cli_gets_only_crewbots_tools_and_the_repos_settings(tmp_path, monke
     assert options.tools == ["Read", "Glob", "Grep"] and options.permission_mode == "default"
     assert options.can_use_tool is session.policy
     assert set(options.mcp_servers) == {"resolve"}  # no crew tools without a CrewTools
-    assert options.env == {"ANTHROPIC_API_KEY": ""}
+    assert options.env == {"ANTHROPIC_API_KEY": "", "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
     assert options.add_dirs == [str(tmp_path / "skills")]
 
 

@@ -39,6 +39,8 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
   - Notes are files in `crew/memory/<bot>/notes/`, listed in each bot's instructions, so you can read, edit or delete them.
   - `recall` searches the whole record with SQLite FTS5, and so does `GET /v1/search?q=`.
   - A conversation that fills 70% of its context continues in a fresh session, from a briefing the bot writes.
+  - Bots never use the CLIs' own memory: Claude Code's auto memory and Codex's memories are off for every bot, so
+    nothing a bot learns lands beside your own Claude or Codex memory.
 - **Routines** are work the crew starts on its own: Markdown files in `routines/`, each naming a bot, a goal, and when.
   - A `schedule` is cron in your time zone. A routine missed while the Mac slept runs once when it wakes, never once
     per miss, and one whose last run is still going is skipped that time.

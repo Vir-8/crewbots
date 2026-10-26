@@ -1,6 +1,7 @@
 """Stands in for `claude` or `codex`: prints a fixture's lines, then behaves as the FAKE_* variables say.
 
-FAKE_RECORD   file to write {"argv", "stdin", "env_keys", "pid"} to
+FAKE_RECORD   file to write {"argv", "stdin", "env_keys", "env", "pid"} to; "env" has the values of the variables
+              FAKE_RECORD_ENV names (comma-separated)
 FAKE_STDERR   text to print on stderr
 FAKE_SLEEP    seconds to wait after printing, before exiting
 FAKE_EXIT     exit code (default 0)
@@ -21,7 +22,9 @@ if argv[:3] == ["mcp", "list", "--json"]:  # Codex listing its MCP servers
 stdin = sys.stdin.read()
 if record := os.environ.get("FAKE_RECORD"):
     with open(record, "w") as f:
-        json.dump({"argv": argv, "stdin": stdin, "env_keys": sorted(os.environ), "pid": os.getpid()}, f)
+        wanted = [k for k in os.environ.get("FAKE_RECORD_ENV", "").split(",") if k]
+        json.dump({"argv": argv, "stdin": stdin, "env_keys": sorted(os.environ),
+                   "env": {k: os.environ.get(k) for k in wanted}, "pid": os.getpid()}, f)
 if fixture != "-":
     with open(fixture) as f:
         for line in f:

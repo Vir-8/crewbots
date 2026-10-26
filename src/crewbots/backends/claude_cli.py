@@ -6,7 +6,7 @@ import os
 from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
-from crewbots.backends.base import Access, RunSpec, claude_retry, mcp_servers_json
+from crewbots.backends.base import CLAUDE_BOT_ENV, Access, RunSpec, claude_retry, mcp_servers_json
 from crewbots.backends.process import JsonlProcess, stream_jsonl
 from crewbots.events import Done, Event, Notice, RateLimit, SessionStarted, Text, ToolCall, ToolResult, Usage
 
@@ -35,7 +35,7 @@ class ClaudeCLI:
         return ClaudeSession(await JsonlProcess.start(argv, cwd=spec.cwd, env=self.env()), spec)
 
     def env(self) -> dict[str, str]:
-        env = dict(os.environ)
+        env = dict(os.environ) | CLAUDE_BOT_ENV
         if not self.use_api_key:
             env.pop("ANTHROPIC_API_KEY", None)
         return env

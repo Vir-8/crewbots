@@ -67,8 +67,10 @@ class CodexExec:
         return [*args, *spec.extra_args, "-"]  # "-": the prompt comes on stdin
 
     def config_overrides(self, spec: RunSpec) -> list[str]:
-        """The user's servers, plugins and apps switched off, then the bot's own servers added."""
-        args = isolation_overrides(self.command, keep=spec.mcp_servers) if self.isolate else []
+        """The user's servers, plugins and apps switched off, then the bot's own servers added. Codex's own memories
+        stay off whatever the user's config says: a bot's notes are crewbots'."""
+        args = ["-c", "features.memories=false"]
+        args += isolation_overrides(self.command, keep=spec.mcp_servers) if self.isolate else []
         for name, server in spec.mcp_servers.items():
             args += _mcp_overrides(name, server)
         return args

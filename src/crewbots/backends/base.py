@@ -110,6 +110,10 @@ class Backend(Protocol):
         ...
 
 
+# Claude Code keeps an auto memory per working folder under ~/.claude/projects/, next to the user's own. A bot's notes
+# are crewbots' (`remember`), so its sessions never read or write there.
+CLAUDE_BOT_ENV = {"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
+
 TEMP_ROOT = Path.home() / ".crewbots" / "tmp"
 
 

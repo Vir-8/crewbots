@@ -19,6 +19,8 @@ from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from crewbots.backends.base import CLAUDE_BOT_ENV
+
 TTL_S = 120.0
 # A limit line of Claude Code's /usage: "Current session: 5% used · resets 5:40pm (Asia/Calcutta)".
 USAGE_LINE = re.compile(r"^(?:Current )?([^:]+):\s*(\d+(?:\.\d+)?)% used(?:\s*·\s*resets (.+?)(?:\s*\(([^)]+)\))?)?\s*$",
@@ -66,7 +68,8 @@ async def _claude() -> dict[str, Any]:
     cli = shutil.which("claude")
     if not cli:
         raise RuntimeError("Claude Code isn't installed")
-    env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}  # the subscription's limits, not an API key's
+    # The subscription's limits, not an API key's; and no auto memory folder for the temp folder it runs in.
+    env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"} | CLAUDE_BOT_ENV
     # Without MCP servers, Chrome or a saved session, and away from any project's settings, it starts in about two
     # thirds of the time. `--bare` would be quicker still, but it never reads the sign-in, so it has no limits to show.
     process = await asyncio.create_subprocess_exec(

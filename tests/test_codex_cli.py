@@ -121,6 +121,12 @@ def test_mcp_servers_become_config_overrides():
     assert 'mcp_servers.crew.default_tools_approval_mode="approve"' in overrides  # headless: nobody to ask
 
 
+def test_codex_memories_stay_off_for_every_bot():
+    for access in Access:
+        argv = CodexExec(isolate=False).argv(RunSpec(prompt="x", cwd=".", access=access))
+        assert "features.memories=false" in [argv[i + 1] for i, a in enumerate(argv) if a == "-c"]
+
+
 def test_an_mcp_name_that_cannot_be_a_config_key_is_refused():
     with pytest.raises(ValueError):
         CodexExec(isolate=False).argv(RunSpec(prompt="x", cwd=".", mcp_servers={"my.crew": McpServer(command="x")}))
