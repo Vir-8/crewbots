@@ -16,6 +16,7 @@ import secrets
 import sys
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -24,10 +25,13 @@ from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, WebSocket
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from crewbots import cards
 from crewbots import crew as crew_module
 from crewbots import routines as routines_module
 from crewbots.backends import codex_isolation
+from crewbots.github import GitHubError
 from crewbots.memory import MemoryError
+from crewbots.reviews import ReviewError, Reviews
 from crewbots.routines import RoutineError
 from crewbots.runner import MergeError, NotAllowed, Runner, UnknownBot
 from crewbots.scheduler import Scheduler
@@ -66,6 +70,7 @@ class TaskOut(BaseModel):
     merged_commit: str | None
     kind: Literal["chat", "seat", "thread"]
     room_id: str | None
+    pr: str | None  # a code review's pull request, owner/name#number
     routine: str | None
     budget: int | None
     created_at: str
@@ -93,6 +98,144 @@ class BotOut(BaseModel):
     skills: list[str]
     can_delegate: bool
     path: str | None  # its role card
+    display_name: str | None  # what you call it; `name` is its handle
+    avatar: dict[str, str] | None  # {color, shape}; none: picked from its name
+
+
+class Avatar(BaseModel):
+    color: str | None = None
+    shape: str | None = None
+
+
+class Budget(BaseModel):
+    tokens: int
+    per: Literal["day", "week"] = "week"
+
+
+class CardBody(BaseModel):
+    """A role card's editable parts. Fields left out are left as they are."""
+
+    display_name: str | None = None
+    title: str | None = None
+    description: str | None = None
+    backend: str | None = None
+    model: str | None = None
+    access: Literal["read_only", "workspace_write", "full"] | None = None
+    network: bool | list[str] | None = None
+    avatar: Avatar | None = None
+    budget: Budget | None = None
+    instructions: str | None = None  # the card's body: mission, what it owns, what done means
+
+
+class NewBot(CardBody):
+    name: str  # its handle
+
+
+class CardOut(CardBody):
+    name: str
+
+
+class PullSummary(BaseModel):
+    repo: str
+    number: int
+    title: str
+    url: str
+    draft: bool
+    author: str
+    author_avatar: str | None
+    created_at: str | None
+    updated_at: str | None
+    additions: int
+    deletions: int
+    changed_files: int
+    review_decision: str | None
+    checks: str | None  # SUCCESS, FAILURE, PENDING, ... for the head commit
+    reviewed_at: str | None = None  # when a review of yours in crewbots was last touched
+
+
+class Inbox(BaseModel):
+    direct: list[PullSummary]  # asking you for a review
+    team: list[PullSummary]  # asking one of your teams
+    mine: list[PullSummary]  # yours
+    error: str | None
+
+
+class PullFile(BaseModel):
+    path: str
+    additions: int
+    deletions: int
+
+
+class Checks(BaseModel):
+    total: int
+    passed: int
+    failed: int
+
+
+class PullOut(BaseModel):
+    repo: str
+    number: int
+    title: str
+    body: str
+    url: str
+    state: str | None
+    draft: bool
+    author: str
+    head: str
+    base: str
+    head_sha: str
+    additions: int
+    deletions: int
+    changed_files: int
+    review_decision: str | None
+    created_at: str | None
+    updated_at: str | None
+    labels: list[str]
+    files: list[PullFile]
+    checks: Checks
+    checkout: str | None  # the local copy reviews read, if the repo is mapped
+    reviews: list[TaskOut]
+
+
+class ReviewRequest(BaseModel):
+    bot: str
+    note: str = ""
+
+
+class RepoFolder(BaseModel):
+    folder: str | None
+
+
+class UsageBot(BaseModel):
+    bot: str
+    by_day: list[int]  # fresh tokens, one per day in `days`
+    turns: list[int]
+    total: int
+
+
+class UsageOut(BaseModel):
+    days: list[str]  # local dates, oldest first
+    bots: list[UsageBot]
+
+
+class RoutineBody(BaseModel):
+    description: str | None = None
+    bot: str | None = None
+    schedule: str | None = None
+    on: str | None = None
+    repo: str | None = None
+    workspace: str | None = None
+    budget: int | None = None
+    enabled: bool | None = None
+    goal: str | None = None
+
+
+class NewRoutine(RoutineBody):
+    name: str
+
+
+class RoutineFileOut(RoutineBody):
+    name: str
 
 
 class FindingOut(BaseModel):
@@ -382,9 +525,11 @@ class MergeRequest(BaseModel):
     force: bool = False
 
 
-def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: Scheduler | None = None) -> FastAPI:
+def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: Scheduler | None = None,
+               reviews: Reviews | None = None) -> FastAPI:
     store = runner.store
     scheduler = scheduler or Scheduler(runner)
+    reviews = reviews or Reviews(runner.crew.home)
     hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
 
     def allowed(host: str | None, credential: str | None) -> bool:
@@ -443,9 +588,44 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
             {"name": b.name, "title": b.title, "description": b.description, "backend": b.backend, "model": b.model,
              "access": b.access, "workspace": str(b.workspace) if b.workspace else None,
              "network": list(b.network) if isinstance(b.network, tuple) else b.network, "mcp": sorted(b.mcp),
-             "skills": list(b.skills), "can_delegate": b.can_delegate, "path": str(b.path) if b.path else None}
+             "skills": list(b.skills), "can_delegate": b.can_delegate, "path": str(b.path) if b.path else None,
+             "display_name": b.display_name, "avatar": b.avatar}
             for b in runner.crew.bots.values()
         ]
+
+    # Editing the crew from the app. Each change is checked by the crew's own parser before the file is replaced.
+
+    def edited(fields: dict[str, Any]) -> dict[str, Any]:
+        if fields.get("avatar") is not None:
+            fields["avatar"] = {k: v for k, v in fields["avatar"].items() if v}
+        return fields
+
+    def reload_crew() -> None:
+        runner.reload(crew_module.load(runner.crew.home))
+
+    @v1.get("/bots/{name}/card", response_model=CardOut)
+    async def get_card(name: str):
+        try:
+            return cards.card(runner.crew.home, name)
+        except KeyError:
+            raise HTTPException(404, f"no bot named {name}") from None
+
+    @v1.put("/bots/{name}/card", response_model=CardOut)
+    async def put_card(name: str, body: CardBody):
+        fields = edited(body.model_dump(exclude_unset=True, exclude={"instructions"}))
+        try:
+            cards.save_card(runner.crew.home, name, fields, body.instructions)
+        except KeyError:
+            raise HTTPException(404, f"no bot named {name}") from None
+        reload_crew()
+        return cards.card(runner.crew.home, name)
+
+    @v1.post("/bots", status_code=201, response_model=CardOut)
+    async def new_bot(body: NewBot):
+        fields = edited(body.model_dump(exclude_unset=True, exclude={"instructions", "name"}))
+        cards.save_card(runner.crew.home, body.name, fields, body.instructions or "", create=True)
+        reload_crew()
+        return cards.card(runner.crew.home, body.name)
 
     @v1.get("/tasks", response_model=list[TaskOut])
     async def tasks(status: Status | None = None, bot: str | None = None, limit: int = Query(100, le=1000)):
@@ -570,6 +750,70 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
                 "last_active": max((t.updated_at for t in mine), default=None),
                 "threads": [t.to_json() for t in threads], "outputs": outputs[:30]}
 
+    # Code review: pull requests waiting on you, and private reviews of them. Nothing is posted to GitHub.
+
+    def reviewing(fn, *args):
+        try:
+            return fn(*args)
+        except (GitHubError, ReviewError) as e:
+            raise HTTPException(502 if isinstance(e, GitHubError) else 422, str(e)) from None
+
+    @v1.get("/reviews/inbox", response_model=Inbox)
+    async def review_inbox(fresh: bool = False):
+        try:
+            inbox = await asyncio.to_thread(reviews.inbox, fresh)
+        except GitHubError as e:
+            return {"direct": [], "team": [], "mine": [], "error": str(e)}
+        touched = store.reviewed_prs()
+        return {k: [p | {"reviewed_at": touched.get(f"{p['repo']}#{p['number']}")} for p in v] for k, v in inbox.items()} | {
+            "error": None}
+
+    @v1.get("/reviews/{owner}/{name}/{number}", response_model=PullOut)
+    async def review_pull(owner: str, name: str, number: int):
+        repo = f"{owner}/{name}"
+        pull = await asyncio.to_thread(reviewing, reviews.pull, repo, number)
+        return pull | {"reviews": [t.to_json() for t in store.reviews_of(f"{repo}#{number}")]}
+
+    @v1.get("/reviews/{owner}/{name}/{number}/diff", response_model=ChangesOut)
+    async def review_diff(owner: str, name: str, number: int):
+        return {"diff": await asyncio.to_thread(reviewing, reviews.diff, f"{owner}/{name}", number)}
+
+    @v1.post("/reviews/{owner}/{name}/{number}/review", status_code=201, response_model=TaskOut)
+    async def review_start(owner: str, name: str, number: int, body: ReviewRequest):
+        """A private review by one of your bots: the PR's diff and, with a local copy, its code. Follow-ups go to
+        the task like any other."""
+        if body.bot not in runner.crew.bots:
+            raise HTTPException(422, f"no bot named {body.bot}")
+        repo = f"{owner}/{name}"
+        title, goal, folder = await asyncio.to_thread(reviewing, reviews.brief, repo, number, body.note)
+        return runner.submit(body.bot, goal, workspace=folder, title=title, pr=f"{repo}#{number}").to_json()
+
+    @v1.get("/reviews/repos", response_model=dict[str, str])
+    async def review_repos():
+        return reviews.repos()
+
+    @v1.put("/reviews/repos/{owner}/{name}", response_model=dict[str, str])
+    async def review_repo(owner: str, name: str, body: RepoFolder):
+        """Maps a repo to your local checkout of it, so reviews read the code, not just the diff."""
+        return reviewing(reviews.set_repo, f"{owner}/{name}", body.folder)
+
+    @v1.get("/usage", response_model=UsageOut)
+    async def usage(days: int = Query(14, ge=1, le=90)):
+        """Fresh tokens and turns per bot per day, in this Mac's time zone."""
+        today = datetime.now().astimezone().date()
+        dates = [today - timedelta(days=n) for n in range(days - 1, -1, -1)]
+        since = datetime.combine(dates[0], datetime.min.time()).astimezone().astimezone(UTC)
+        index = {d.isoformat(): i for i, d in enumerate(dates)}
+        rows: dict[str, dict[str, list[int]]] = {
+            b: {"by_day": [0] * days, "turns": [0] * days} for b in runner.crew.bots}
+        for bot, at, fresh, turns in store.usage_by_day(since.isoformat(timespec="milliseconds")):
+            day = datetime.fromisoformat(at).astimezone().date().isoformat()
+            if day in index:
+                row = rows.setdefault(bot, {"by_day": [0] * days, "turns": [0] * days})
+                row["by_day"][index[day]] += fresh
+                row["turns"][index[day]] += turns
+        return {"days": list(index), "bots": [{"bot": b, **r, "total": sum(r["by_day"])} for b, r in rows.items()]}
+
     @v1.get("/search", response_model=list[SearchHit])
     async def search(q: str, limit: int = Query(20, le=200)):
         """Everything the crew said or decided that matches `q`."""
@@ -608,6 +852,38 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
                 starters.append({"name": name, "description": starter.description, "when": starter.when})
         return {"routines": [_routine_out(v) for v in scheduler.views()], "errors": scheduler.errors,
                 "github_error": scheduler.github_error, "crew_error": scheduler.crew_error, "starters": starters}
+
+    @v1.get("/routines/{name}/file", response_model=RoutineFileOut)
+    async def get_routine(name: str):
+        try:
+            return cards.routine(runner.crew.home, name)
+        except KeyError:
+            raise HTTPException(404, f"no routine named {name}") from None
+
+    @v1.put("/routines/{name}/file", response_model=RoutineFileOut)
+    async def put_routine(name: str, body: RoutineBody):
+        try:
+            cards.save_routine(runner.crew.home, name, body.model_dump(exclude_unset=True, exclude={"goal"}), body.goal)
+        except KeyError:
+            raise HTTPException(404, f"no routine named {name}") from None
+        scheduler.load()
+        return cards.routine(runner.crew.home, name)
+
+    @v1.post("/routines", status_code=201, response_model=RoutineFileOut)
+    async def new_routine(body: NewRoutine):
+        cards.save_routine(runner.crew.home, body.name, body.model_dump(exclude_unset=True, exclude={"goal", "name"}),
+                           body.goal or "", create=True)
+        scheduler.load()
+        return cards.routine(runner.crew.home, body.name)
+
+    @v1.delete("/routines/{name}")
+    async def delete_routine(name: str):
+        try:
+            cards.delete_routine(runner.crew.home, name)
+        except KeyError:
+            raise HTTPException(404, f"no routine named {name}") from None
+        scheduler.load()
+        return {"ok": True}
 
     @v1.post("/routines/starters/{name}", status_code=201, response_model=RoutineOut)
     async def add_starter(name: str):

@@ -53,6 +53,7 @@ create table if not exists tasks (
     briefing      text,                        -- where things stood, carried into a fresh session at rollover
     kind          text not null default 'thread', -- chat, seat or thread
     room_id       text,                        -- a seat's room
+    pr            text,                        -- a review's pull request, owner/name#number
     routine       text,                        -- the routine that started it, on a routine's top-level task
     budget        integer,                     -- tokens it may use, with everything it delegates (a routine's budget)
     created_at    text not null,
@@ -148,6 +149,7 @@ MIGRATIONS = {  # columns added after a crew's database may already exist
     "budget": "alter table tasks add column budget integer",
     "kind": "alter table tasks add column kind text not null default 'thread'",
     "room_id": "alter table tasks add column room_id text",
+    "pr": "alter table tasks add column pr text",
 }
 
 
@@ -190,6 +192,7 @@ class Task:
     briefing: str | None
     kind: str
     room_id: str | None
+    pr: str | None
     routine: str | None
     budget: int | None
     created_at: str
@@ -278,7 +281,7 @@ class Store:
         self, bot: str, goal: str, *, created_by: str = "user", parent_id: str | None = None, workspace: str | None = None,
         review_of: str | None = None, review_version: int | None = None, routine: str | None = None,
         budget: int | None = None, title: str | None = None, kind: str = "thread", room_id: str | None = None,
-        status: "Status | None" = None,
+        status: "Status | None" = None, pr: str | None = None,
     ) -> Task:
         task_id = f"t_{uuid.uuid4().hex[:10]}"
         now = _now()
@@ -286,9 +289,10 @@ class Store:
         title = first_line if len(first_line) <= TITLE_CHARS else first_line[: TITLE_CHARS - 1] + "…"
         self.db.execute(
             "insert into tasks (id, bot, title, status, created_by, parent_id, workspace, review_of, review_version,"
-            " routine, budget, kind, room_id, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " routine, budget, kind, room_id, pr, created_at, updated_at)"
+            " values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (task_id, bot, title, status or Status.QUEUED, created_by, parent_id, workspace, review_of, review_version,
-             routine, budget, kind, room_id, now, now),
+             routine, budget, kind, room_id, pr, now, now),
         )
         self.db.execute("insert into search (text, task_id, event_id, kind, at) values (?, ?, 0, 'task', ?)",
                         (title, task_id, now))
@@ -490,7 +494,7 @@ class Store:
         """Threads of work with anything new since `since`, oldest first: each one that isn't inside another thread,
         leaving out one routine's own runs."""
         rows = self.db.execute(
-            "select t.* from tasks t left join tasks p on p.id = t.parent_id where t.kind = 'thread'"
+            "select t.* from tasks t left join tasks p on p.id = t.parent_id where t.kind = 'thread' and t.pr is null"
             " and (p.id is null or p.kind != 'thread') and t.updated_at >= ? and coalesce(t.routine, '') != ?"
             " order by t.created_at, t.id", (since, exclude_routine or "")).fetchall()
         return [_task(r) for r in rows]
@@ -508,9 +512,27 @@ class Store:
         return _task(row) if row else None
 
     def threads_of(self, bot: str, limit: int = 50) -> list[Task]:
-        rows = self.db.execute("select * from tasks where kind = 'thread' and bot = ? order by updated_at desc limit ?",
-                               (bot, limit)).fetchall()
+        """A bot's work, newest first. Code reviews are kept apart, with their pull requests."""
+        rows = self.db.execute("select * from tasks where kind = 'thread' and pr is null and bot = ?"
+                               " order by updated_at desc limit ?", (bot, limit)).fetchall()
         return [_task(r) for r in rows]
+
+    def reviews_of(self, pr: str) -> list[Task]:
+        rows = self.db.execute("select * from tasks where pr = ? order by created_at", (pr,)).fetchall()
+        return [_task(r) for r in rows]
+
+    def reviewed_prs(self) -> dict[str, str]:
+        """Each pull request that has a review, with when it was last touched."""
+        rows = self.db.execute("select pr, max(updated_at) as at from tasks where pr is not null group by pr").fetchall()
+        return {r["pr"]: r["at"] for r in rows}
+
+    def usage_by_day(self, since: str) -> list[tuple[str, str, int, int]]:
+        """(bot, UTC time, fresh tokens, 1) for each turn since `since`: the app buckets them into its own days."""
+        rows = self.db.execute(
+            "select t.bot, e.at, json_extract(e.data, '$.input_tokens') - coalesce(json_extract(e.data,"
+            " '$.cached_input_tokens'), 0) + json_extract(e.data, '$.output_tokens') as fresh from events e"
+            " join tasks t on t.id = e.task_id where e.kind = 'usage' and e.at >= ? order by e.id", (since,)).fetchall()
+        return [(r["bot"], r["at"], int(r["fresh"] or 0), 1) for r in rows]
 
     def create_room(self, title: str, lead: str, members: list[str]) -> dict[str, Any]:
         room_id = f"r_{uuid.uuid4().hex[:10]}"

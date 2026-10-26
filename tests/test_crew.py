@@ -88,8 +88,8 @@ def test_every_bot_sees_its_card_the_roster_and_the_team_files(tmp_path):
 
     assert prompt.startswith("You are reviewer, the Reviewer")
     assert "Catch what the author missed" in prompt
-    assert "- reviewer (Reviewer) ← you:" in prompt
-    assert "- chief (Chief of Staff):" in prompt and "← you" not in prompt.split("- chief")[1].splitlines()[0]
+    assert "- reviewer (@reviewer, Reviewer) ← you:" in prompt
+    assert "- chief (@chief, Chief of Staff):" in prompt and "← you" not in prompt.split("- chief")[1].splitlines()[0]
     assert "# team/protocol.md" in prompt and "HANDOFF" in prompt
 
 
@@ -196,3 +196,12 @@ def test_network_on_a_role_card():
     with pytest.raises(CrewError, match="list of hosts"):
         card("network: everywhere\n")
 
+
+
+def test_a_bot_can_have_a_name_and_a_face():
+    card = "---\ndescription: d\ndisplay_name: Roger\navatar: {color: orange, shape: drop}\n---\nbody"
+
+    bot = parse_card(card, "chief")
+    assert bot.label == "Roger" and bot.name == "chief" and bot.avatar == {"color": "orange", "shape": "drop"}
+    with pytest.raises(CrewError, match="avatar is"):
+        parse_card("---\ndescription: d\navatar: {color: plaid}\n---\nbody", "x")

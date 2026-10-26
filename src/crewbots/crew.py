@@ -20,8 +20,11 @@ from crewbots.memory import MEMORY_GUIDE, Memory
 DEFAULT_HOME = Path.home() / ".crewbots" / "crew"
 CARD_FIELDS = {
     "name", "title", "description", "backend", "model", "access", "workspace", "worktree", "timeout", "mcp",
-    "can_delegate", "skills", "budget", "network",
+    "can_delegate", "skills", "budget", "network", "display_name", "avatar",
 }
+# A bot's face in the app: one of these colors and shapes, or one picked from its name.
+AVATAR_COLORS = ("blue", "orange", "aqua", "yellow", "magenta", "green", "violet", "red")  # validated for charts too
+AVATAR_SHAPES = ("circle", "drop", "square", "flower", "hex")
 BUDGET_WINDOWS = {"day": timedelta(days=1), "week": timedelta(days=7)}
 
 NO_REPLY = "NO_REPLY"  # a bot's whole reply in a group chat when it has nothing to add
@@ -100,6 +103,12 @@ class Bot:
     budget: Budget | None = None
     network: bool | tuple[str, ...] = False  # for its shell commands: none, any host, or these hosts
     path: Path | None = None  # its role card
+    display_name: str | None = None  # what you call it, e.g. Roger; `name` stays its handle, for @mentions and tasks
+    avatar: dict[str, str] | None = None  # {color, shape}, from AVATAR_COLORS and AVATAR_SHAPES
+
+    @property
+    def label(self) -> str:
+        return self.display_name or self.name
 
 
 @dataclass(frozen=True)
@@ -136,10 +145,11 @@ class Crew:
     def system_prompt(self, bot: Bot, delegated_by: str | None = None, reviewing: str | None = None,
                       briefing: str | None = None, routine: str | None = None, setting: str | None = None) -> str:
         roster = "\n".join(
-            f"- {b.name} ({b.title}){' ← you' if b.name == bot.name else ''}: {b.description}" for b in self.bots.values()
+            f"- {b.label} (@{b.name}, {b.title}){' ← you' if b.name == bot.name else ''}: {b.description}"
+            for b in self.bots.values()
         )
         parts = [
-            f"You are {bot.name}, the {bot.title} of a crew of AI agents run by crewbots.",
+            f"You are {bot.label}, the {bot.title} of a crew of AI agents run by crewbots. Your handle is @{bot.name}.",
             setting if setting else
             f"This task was delegated to you by {delegated_by}; your handoff goes back to them."
             if delegated_by else
@@ -276,6 +286,8 @@ def parse_card(text: str, default_name: str, source: Path | str = "<card>") -> B
         skills=_skill_names(meta.get("skills"), source),
         budget=_budget(meta.get("budget"), source),
         network=_network(meta.get("network", False), access, backend, source),
+        display_name=str(meta["display_name"]).strip() or None if meta.get("display_name") else None,
+        avatar=_avatar(meta.get("avatar"), source),
     )
 
 
@@ -301,6 +313,15 @@ def _frontmatter(text: str, source: Path | str) -> tuple[dict[str, Any], str]:
     if not isinstance(meta, dict):
         raise CrewError(f"{source}: frontmatter must be a mapping")
     return meta, body.lstrip("\n")
+
+
+def _avatar(raw: Any, source: Path | str) -> dict[str, str] | None:
+    if raw is None:
+        return None
+    if (not isinstance(raw, dict) or raw.get("color", AVATAR_COLORS[0]) not in AVATAR_COLORS
+            or raw.get("shape", AVATAR_SHAPES[0]) not in AVATAR_SHAPES):
+        raise CrewError(f"{source}: avatar is {{color: one of {list(AVATAR_COLORS)}, shape: one of {list(AVATAR_SHAPES)}}}")
+    return {k: str(raw[k]) for k in ("color", "shape") if k in raw}
 
 
 def _network(raw: Any, access: Access, backend: str, source: Path | str) -> bool | tuple[str, ...]:

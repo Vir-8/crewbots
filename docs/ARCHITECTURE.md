@@ -247,8 +247,20 @@ Each step leaves the system working.
   bot's chat, with its per-run budget, and the chat hears how it went.
 - **Unread** is kept in the daemon (`reads`), so the app and the menu bar agree.
 - **Voice:** dictation uses `SFSpeechRecognizer` through a Swift sidecar (`app/src-tauri/dictation`), on device when
-  the Mac supports it. Codex's app-server has an experimental realtime voice API (`thread/realtime/*`): a spoken
-  conversation on the ChatGPT plan, not plain transcription, so it's the base for a later "Call" with a bot.
+  the Mac supports it. The recognizer starts a new utterance after a pause and reports only its words, and a request
+  ends after about a minute, so the helper keeps what it has heard and adds each utterance after it, starting a new
+  request whenever one ends.
+- **Codex for voice:** its app-server has an experimental realtime API (`thread/realtime/*`, behind
+  `experimentalApi`), a spoken conversation rather than transcription. Tried with synthesized speech, it answers
+  "realtime conversation requires API key auth": not available on a ChatGPT sign-in, so not for dictation here.
+- **Code review** (`reviews.py`) is apart from the crew's always-on work: a review is a top-level thread with a `pr`
+  link, shown with its pull request and not among the bot's own threads. Its brief carries the description, files and
+  diff (capped), forbids changing code or posting anything, and asks for prioritized findings. With a mapped local
+  copy, the PR's head is fetched (`pull/N/head`) into a detached worktree under `~/.crewbots/worktrees/reviews`, and
+  the read-only reviewer works there. GitHub's inbox and pull requests are cached for a minute or two.
+- **Editing the crew** (`cards.py`): role cards and routines are rewritten from the app with the frontmatter it
+  doesn't edit kept, after the crew's own parser accepts the new text, and atomically. YAML comments don't survive.
+  A bot's handle stays fixed (tasks and @mentions use it); its display name, which @mentions also match, can change.
 
 ## Learned building sessions
 
@@ -266,6 +278,14 @@ Each step leaves the system working.
   - `set_permission_mode`, `set_model`, and MCP control while running
 
   The Python SDK, `claude-agent-sdk` (0.2.x), has all of these, and `cli_path` keeps it on the user's own signed-in `claude`.
+
+## Learned polishing the app
+
+- macOS warned that crewbots "includes a component that will not work with a future release": the dictation helper
+  was Intel. The `node` here is an x86_64 build, so `npx tauri build` ran under Rosetta and `swiftc` defaulted to
+  x86_64, while Rust still built for Apple silicon. The build now names the helper's target outright.
+- The first avatar colors failed the palette checks on the dark surface (too light, and pink and coral too close). The
+  faces now use the validated categorical palette, which the usage chart shares, so a bot is one color everywhere.
 
 ## Learned enforcing one policy
 

@@ -208,12 +208,13 @@ class Runner:
 
     def submit(self, bot: str, goal: str, *, created_by: str = "user", parent_id: str | None = None,
                workspace: str | None = None, review_of: str | None = None, review_version: int | None = None,
-               routine: str | None = None, budget: int | None = None, title: str | None = None) -> Task:
+               routine: str | None = None, budget: int | None = None, title: str | None = None,
+               pr: str | None = None) -> Task:
         if bot not in self.crew.bots:
             raise UnknownBot(f"no bot named {bot!r}; the crew is {sorted(self.crew.bots)}")
         task = self.store.create_task(bot, goal, created_by=created_by, parent_id=parent_id, workspace=workspace,
                                       review_of=review_of, review_version=review_version, routine=routine,
-                                      budget=budget, title=title)
+                                      budget=budget, title=title, pr=pr)
         self.bus.publish({"type": "task", "task": task.to_json()})
         self._message(task.id, created_by, goal)
         self._start(task.id, goal)
@@ -274,6 +275,9 @@ class Runner:
         message = self.store.add_room_message(room_id, author, text, depth)
         self.bus.publish({"type": "room_message", "message": message})
         members = {m.lower(): m for m in room["members"]}
+        for m in room["members"]:  # a bot can also be mentioned by the name you gave it, written as one word
+            if (bot := self.crew.bots.get(m)) and bot.display_name:
+                members.setdefault(bot.display_name.replace(" ", "").lower(), m)
         mentioned = list(dict.fromkeys(members[m.lower()] for m in MENTION.findall(text) if m.lower() in members))
         if author == "user":
             wake = mentioned or [room["lead"]]
