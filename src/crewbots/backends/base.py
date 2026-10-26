@@ -40,6 +40,7 @@ class RunSpec:
     crew: Any = None  # the crew tools as Python (crewbots.crew_tools.CrewTools), for backends that host them in-process
     timeout_s: float | None = None
     network: bool | tuple[str, ...] = False  # a writing bot's shell commands: no network, any host, or these hosts
+    effort: str | None = None  # reasoning effort (low ... max); None leaves it to the CLI's own default
     extra_args: list[str] = field(default_factory=list)  # passed through to the CLI unchanged
 
 

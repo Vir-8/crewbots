@@ -189,3 +189,10 @@ def test_an_unchanged_config_is_never_listed_twice(codex_home, monkeypatch, tmp_
 
     assert 'mcp_servers.cua_repl={command="false", enabled=false}' in argv
     assert not record.exists()  # the saved list was used; Codex wasn't asked
+
+
+def test_reasoning_effort_goes_to_codex():
+    argv = CodexExec(isolate=False).argv(RunSpec(prompt="x", cwd=".", effort="high"))
+
+    assert 'model_reasoning_effort="high"' in argv
+    assert not any("reasoning" in a for a in CodexExec(isolate=False).argv(RunSpec(prompt="x", cwd=".")))

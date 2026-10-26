@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, bridge } from "./api";
 import { setCrew } from "./components/Avatar";
-import type { Bot, Chat, ConnectionStatus, CrewState, Live, ReviewInbox, RoomMessage, Routines, StoredEvent, Task } from "./types";
+import type { Bot, Chat, ConnectionStatus, CrewState, Live, Models, ReviewInbox, RoomMessage, Routines, StoredEvent, Task } from "./types";
 import { ACTIVE } from "./types";
 
 const RECENT = 400;
@@ -30,6 +30,10 @@ export function useCrew() {
   }, [loadChats]);
 
   const [reviewInbox, setReviewInbox] = useState<ReviewInbox | null>(null);
+  const [models, setModels] = useState<Models | null>(null); // asked of the CLIs once, when something needs them
+  const loadModels = useCallback(() => {
+    if (!models) api.models().then(setModels, () => undefined);
+  }, [models]);
   const loadReviews = useCallback((fresh = false) => api.reviewInbox(fresh).then(setReviewInbox, () => undefined), []);
 
   const loadRoutines = useCallback(() => api.routines().then(setRoutines, () => setRoutines(null)), []);
@@ -164,6 +168,8 @@ export function useCrew() {
     ...derived,
     reviewInbox,
     loadReviews,
+    models,
+    loadModels,
     pause: (on: boolean) => act(api.pause(on)).then(setCrewState),
     /** Reads the crew again after an edit: its bots, their chats and the routines. */
     refresh: async () => {

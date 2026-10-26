@@ -301,3 +301,12 @@ def test_the_crew_server_holds_exactly_the_bots_tools(store, tmp_path):
     server = crew_server(CrewTools(crew.runner, "t_x", can_delegate=False))
 
     assert server["type"] == "sdk" and server["name"] == "crewbots"
+
+
+def test_reasoning_effort_goes_to_claude_when_it_takes_it(worktree):
+    def effort(value):
+        spec = RunSpec(prompt="", cwd=worktree, effort=value)
+        return ClaudeAgent().options(spec, ClaudeAgentSession(spec)).effort
+
+    assert effort("high") == "high" and effort(None) is None
+    assert effort("ultra") is None  # a Codex-only level: Claude's own default instead

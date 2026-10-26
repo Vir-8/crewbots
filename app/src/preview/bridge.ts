@@ -78,11 +78,25 @@ async function request(method: string, path: string, body?: any) {
   if (method === "GET" && url.pathname === "/usage") return ok(usage(Number(url.searchParams.get("days") ?? 14)));
   if (method === "GET" && url.pathname === "/reviews/inbox") return ok(reviewInbox);
   if (method === "GET" && url.pathname === "/reviews/repos") return ok({ "acme/web": "~/code/acme-web" });
+  if (url.pathname === "/reviews/reviewers") return ok(method === "PUT" ? body : [{ backend: "claude", model: "sonnet", effort: "high" }, { backend: "codex", model: null, effort: "high" }]);
+  if (method === "GET" && url.pathname === "/models") {
+    return ok({
+      claude: [
+        { id: "default", label: "Default (recommended)", description: "Opus", efforts: ["low", "medium", "high", "max"], default_effort: null, default: true },
+        { id: "sonnet", label: "Sonnet", description: "Best for everyday tasks", efforts: ["low", "medium", "high"], default_effort: null, default: false },
+        { id: "haiku", label: "Haiku", description: "Fastest", efforts: [], default_effort: null, default: false },
+      ],
+      codex: [
+        { id: "gpt-6.1-sol", label: "GPT-6.1-Sol", description: "", efforts: ["low", "medium", "high", "xhigh", "max", "ultra"], default_effort: "low", default: true },
+        { id: "gpt-6-luna", label: "GPT-6-Luna", description: "", efforts: ["low", "medium", "high", "xhigh", "max"], default_effort: "medium", default: false },
+      ],
+    });
+  }
   if (parts[0] === "reviews" && parts.length >= 4) {
     const pr = reviewInbox.direct.find((p) => p.number === Number(parts[3])) ?? reviewInbox.direct[0];
     if (parts[4] === "diff") return ok({ diff: demo.diffs.get("t_csv0000002") ?? "" });
     if (parts[4] === "review") return ok(demo.tasks.get("t_truncate03"));
-    return ok({ ...pr, body: "Moves the export button into the toolbar and adds a test for the filters.\n\n- [x] Tests added\n- [x] Screenshots updated", state: "OPEN", head: "toolbar-export", base: "main", head_sha: "abc", labels: [], files: [{ path: "web/src/reports/Toolbar.tsx", additions: 40, deletions: 12 }], checks: { total: 12, passed: 12, failed: 0 }, checkout: null, reviews: [] });
+    return ok({ ...pr, body: "Moves the export button into the toolbar and adds a test for the filters.\n\n- [x] Tests added\n- [x] Screenshots updated", state: "OPEN", head: "toolbar-export", base: "main", head_sha: "abc", labels: [], files: [{ path: "web/src/reports/Toolbar.tsx", additions: 40, deletions: 12 }], checks: { total: 12, passed: 12, failed: 0 }, failing: [], issues: [], checkout: null, reviews: [] });
   }
   if (method === "GET" && parts[0] === "bots" && parts[2] === "card") {
     const b = demo.bots.find((x) => x.name === parts[1])!;
@@ -180,6 +194,9 @@ const reviewInbox = {
   direct: [
     { repo: "acme/web", number: 412, title: "Move the export button into the reports toolbar", url: "https://github.com/acme/web/pull/412", draft: false, author: "sam", author_avatar: null, created_at: new Date(Date.now() - 5 * 3600e3).toISOString(), updated_at: new Date(Date.now() - 3600e3).toISOString(), additions: 40, deletions: 12, changed_files: 3, review_decision: "REVIEW_REQUIRED", checks: "SUCCESS", reviewed_at: null },
     { repo: "acme/web", number: 409, title: "Fix the date filter's off-by-one at month boundaries", url: "https://github.com/acme/web/pull/409", draft: false, author: "lee", author_avatar: null, created_at: new Date(Date.now() - 30 * 3600e3).toISOString(), updated_at: new Date(Date.now() - 20 * 3600e3).toISOString(), additions: 18, deletions: 6, changed_files: 2, review_decision: "REVIEW_REQUIRED", checks: "FAILURE", reviewed_at: new Date().toISOString() },
+  ],
+  assigned: [
+    { repo: "acme/web", number: 401, title: "Upgrade the charts library", url: "https://github.com/acme/web/pull/401", draft: false, author: "vir", author_avatar: null, created_at: new Date(Date.now() - 70 * 3600e3).toISOString(), updated_at: new Date(Date.now() - 60 * 3600e3).toISOString(), additions: 210, deletions: 180, changed_files: 9, review_decision: null, checks: "SUCCESS", reviewed_at: null },
   ],
   team: [
     { repo: "acme/api", number: 88, title: "Paginate the audit log endpoint", url: "https://github.com/acme/api/pull/88", draft: true, author: "kim", author_avatar: null, created_at: new Date(Date.now() - 50 * 3600e3).toISOString(), updated_at: new Date(Date.now() - 48 * 3600e3).toISOString(), additions: 120, deletions: 30, changed_files: 6, review_decision: null, checks: "PENDING", reviewed_at: null },

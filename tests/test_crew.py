@@ -205,3 +205,9 @@ def test_a_bot_can_have_a_name_and_a_face():
     assert bot.label == "Roger" and bot.name == "chief" and bot.avatar == {"color": "orange", "shape": "drop"}
     with pytest.raises(CrewError, match="avatar is"):
         parse_card("---\ndescription: d\navatar: {color: plaid}\n---\nbody", "x")
+
+
+def test_a_bots_reasoning_effort():
+    assert parse_card("---\ndescription: d\neffort: xhigh\n---\nbody", "x").effort == "xhigh"
+    with pytest.raises(CrewError, match="effort is one of"):
+        parse_card("---\ndescription: d\neffort: lots\n---\nbody", "x")

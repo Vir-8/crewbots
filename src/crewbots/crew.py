@@ -20,8 +20,9 @@ from crewbots.memory import MEMORY_GUIDE, Memory
 DEFAULT_HOME = Path.home() / ".crewbots" / "crew"
 CARD_FIELDS = {
     "name", "title", "description", "backend", "model", "access", "workspace", "worktree", "timeout", "mcp",
-    "can_delegate", "skills", "budget", "network", "display_name", "avatar",
+    "can_delegate", "skills", "budget", "network", "display_name", "avatar", "effort",
 }
+EFFORTS = ("low", "medium", "high", "xhigh", "max", "ultra")  # what each CLI accepts is narrower; its model list says
 # A bot's face in the app: one of these colors and shapes, or one picked from its name.
 AVATAR_COLORS = ("blue", "orange", "aqua", "yellow", "magenta", "green", "violet", "red")  # validated for charts too
 AVATAR_SHAPES = ("circle", "drop", "square", "flower", "hex")
@@ -105,6 +106,7 @@ class Bot:
     path: Path | None = None  # its role card
     display_name: str | None = None  # what you call it, e.g. Roger; `name` stays its handle, for @mentions and tasks
     avatar: dict[str, str] | None = None  # {color, shape}, from AVATAR_COLORS and AVATAR_SHAPES
+    effort: str | None = None  # reasoning effort for every turn it takes, its threads' too; None: the CLI's default
 
     @property
     def label(self) -> str:
@@ -288,6 +290,7 @@ def parse_card(text: str, default_name: str, source: Path | str = "<card>") -> B
         network=_network(meta.get("network", False), access, backend, source),
         display_name=str(meta["display_name"]).strip() or None if meta.get("display_name") else None,
         avatar=_avatar(meta.get("avatar"), source),
+        effort=_effort(meta.get("effort"), source),
     )
 
 
@@ -313,6 +316,14 @@ def _frontmatter(text: str, source: Path | str) -> tuple[dict[str, Any], str]:
     if not isinstance(meta, dict):
         raise CrewError(f"{source}: frontmatter must be a mapping")
     return meta, body.lstrip("\n")
+
+
+def _effort(raw: Any, source: Path | str) -> str | None:
+    if raw is None or raw == "":
+        return None
+    if raw not in EFFORTS:
+        raise CrewError(f"{source}: effort is one of {list(EFFORTS)}, not {raw!r}")
+    return str(raw)
 
 
 def _avatar(raw: Any, source: Path | str) -> dict[str, str] | None:

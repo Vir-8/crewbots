@@ -170,13 +170,15 @@ The app works like a messaging app:
 - **The mic** dictates into any message box with macOS's own speech recognizer, on this Mac when it can, across
   pauses and past the recognizer's one-minute limit. The first time, macOS asks to allow the microphone and speech
   recognition.
-- **Code review**, above the chats: pull requests that ask you for a review, your teams' and your own, read with your
-  `gh` login. Each has its summary, checks and diff, and a private review by the bot you pick, which you can then
-  talk to about the change. Nothing is posted to GitHub. Point a repo at your local copy in Settings, and reviews
-  read the pull request's own code, checked out at its head in a worktree beside your copy.
+- **Code review**, above the chats: pull requests that ask you for a review, are assigned to you, are yours, or ask
+  your teams, read with your `gh` login. Each has its summary, checks and diff. Review runs the PR reviewer, an agent
+  of its own (not one of your bots), on each model you choose in Settings, side by side: by default Claude Sonnet and
+  Codex's default model, both at high effort. Each review is a tab you can keep talking to. Nothing is posted to
+  GitHub. A reviewer gets the PR's description, the issues it refers to, its files and diff, the failing checks and
+  the discussion so far; point a repo at your local copy in Settings, and it reads the PR's own code too.
 - **The crew menu**, at the bottom left:
-  - **Crew:** your bots, and an editor for each: its name and face, title and description, backend and model,
-    access, network, budget, and its role card's text. Saving rewrites the card after checking it loads, and the
+  - **Crew:** your bots, and an editor for each: its name and face, title and description, backend, model and
+    reasoning effort (from the lists the CLIs themselves report), access, network, budget, and its role card's text. Saving rewrites the card after checking it loads, and the
     crew uses it from the next turn. New bots start here too.
   - **Routines:** turn them on and off, run them, edit when and what (schedules as "weekdays at 9:00", or cron),
     and add new ones or the starters.

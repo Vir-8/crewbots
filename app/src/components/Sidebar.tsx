@@ -29,6 +29,7 @@ export function Sidebar(props: {
   onChat: (key: string) => void;
   onOpen: (taskId: string) => void;
   onNewGroup: () => void;
+  onHide: () => void;
 }) {
   const { crew } = props;
   const [query, setQuery] = useState("");
@@ -40,7 +41,11 @@ export function Sidebar(props: {
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-drag" data-tauri-drag-region />
+      <div className="sidebar-drag" data-tauri-drag-region>
+        <button className="icon-button" onClick={props.onHide} title="Hide the sidebar">
+          <Icon name="panelClose" size={15} />
+        </button>
+      </div>
       <div className="side-top">
         <label className="side-search">
           <Icon name="search" size={14} />

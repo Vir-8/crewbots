@@ -108,8 +108,12 @@ class ClaudeAgent:
             can_use_tool=None if full else session.policy,
             env=env,
             sandbox=sandbox,
+            effort=spec.effort if spec.effort in CLAUDE_EFFORTS else None,
             stderr=session.stderr_lines.append,
         )
+
+
+CLAUDE_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 
 
 class ClaudeAgentSession:

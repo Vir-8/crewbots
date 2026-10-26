@@ -45,6 +45,7 @@ from crewbots.crew import CHAT_SETTING, NO_REPLY, SEAT_SETTING, Bot, Crew
 from crewbots.crew_tools import CrewTools
 from crewbots.events import Done, Event, RateLimit, SessionStarted, Usage
 from crewbots.memory import CREW_SCOPE, Note
+from crewbots.reviews import reviewer_bot
 from crewbots.store import Handoff, Review, Status, Store, Task, Verdict
 
 SUBSCRIBER_QUEUE = 10_000
@@ -365,6 +366,19 @@ class Runner:
     def running(self) -> list[str]:
         return list(self._runs)
 
+    def bot_for(self, name: str) -> Bot | None:
+        """A crew bot, or the reviewer agent a code review runs as (it isn't one of the crew)."""
+        return self.crew.bots.get(name) or reviewer_bot(name)
+
+    def start_review(self, reviewer: str, goal: str, *, title: str, pr: str, folder: str) -> Task:
+        """A private code review by one reviewer model: its own task, apart from the crew's work."""
+        task = self.store.create_task(reviewer, goal, created_by="user", workspace=folder, title=title, pr=pr,
+                                      kind="review")
+        self.bus.publish({"type": "task", "task": task.to_json()})
+        self._message(task.id, "user", goal)
+        self._start(task.id, goal)
+        return task
+
     def held(self) -> list[str]:
         return list(self._held)
 
@@ -422,7 +436,7 @@ class Runner:
     def hold_reason(self, task: Task) -> str | None:
         """Why the task's next turn has to wait, or None if it can go ahead."""
         root = self.store.work_of(task.id)
-        bot = self.crew.bots.get(task.bot)
+        bot = self.bot_for(task.bot)
         if root.id in self._released or bot is None:
             return None
         if bot.budget:
@@ -668,7 +682,9 @@ class Runner:
         async with self._slots:
             task = self._set(task_id, status=Status.RUNNING, error=None)
             try:
-                bot = self.crew.bots[task.bot]
+                bot = self.bot_for(task.bot)
+                if bot is None:
+                    raise KeyError(f"no bot named {task.bot!r} in the crew")
                 cwd = self._cwd(task, bot)
             except Exception as e:  # a bot removed from the crew, a missing workspace, a git failure
                 self._record(task_id, Done(final_text="", is_error=True, error=f"crewbots: {e}"))
@@ -727,6 +743,9 @@ class Runner:
                 self._set(task_id, status=next_status, result=done.final_text, turns=task.turns + 1)
 
     def _spec(self, task: Task, bot: Bot, cwd: Path, token: str, prompt: str, backend: Backend) -> RunSpec:
+        if task.kind == "review":  # its own instructions, and nothing of the crew's: no roster, no tools, no memory
+            return RunSpec(prompt=prompt, cwd=cwd, access=bot.access, model=bot.model, system_prompt=bot.instructions,
+                           resume_session_id=task.session_id, timeout_s=bot.timeout_s, effort=bot.effort)
         # A backend that hosts tools in-process gets the crew tools as Python; any other, as an MCP server with a token.
         in_process = getattr(backend, "in_process_tools", False) and self.api_url is not None
         return RunSpec(
@@ -738,7 +757,7 @@ class Runner:
             mcp_servers={**bot.mcp, **({} if in_process else self._crew_tools(token, bot))},
             crew=CrewTools(self, task.id, bot.can_delegate) if in_process else None,
             read_dirs=[d for d in (self.crew.skills_dir, self.crew.memory.root) if d.is_dir()], timeout_s=bot.timeout_s,
-            network=bot.network,
+            network=bot.network, effort=bot.effort,
         )
 
     # Sessions.

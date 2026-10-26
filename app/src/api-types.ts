@@ -19,6 +19,7 @@ export interface BotOut {
   can_delegate: boolean;
   path: string | null;
   display_name: string | null;
+  effort: string | null;
   avatar: Record<string, string> | null;
 }
 
@@ -42,6 +43,7 @@ export interface CardBody {
   description?: string | null;
   backend?: string | null;
   model?: string | null;
+  effort?: string | null;
   access?: "read_only" | "workspace_write" | "full" | null;
   network?: boolean | string[] | null;
   avatar?: Avatar | null;
@@ -55,6 +57,7 @@ export interface CardOut {
   description?: string | null;
   backend?: string | null;
   model?: string | null;
+  effort?: string | null;
   access?: "read_only" | "workspace_write" | "full" | null;
   network?: boolean | string[] | null;
   avatar?: Avatar | null;
@@ -175,6 +178,7 @@ export interface HandoffOut {
 
 export interface Inbox {
   direct: PullSummary[];
+  assigned: PullSummary[];
   team: PullSummary[];
   mine: PullSummary[];
   error: string | null;
@@ -224,12 +228,27 @@ export interface Message {
   text: string;
 }
 
+export interface ModelOut {
+  id: string;
+  label: string;
+  description: string;
+  efforts: string[];
+  default_effort: string | null;
+  default: boolean;
+}
+
+export interface ModelsOut {
+  claude: ModelOut[];
+  codex: ModelOut[];
+}
+
 export interface NewBot {
   display_name?: string | null;
   title?: string | null;
   description?: string | null;
   backend?: string | null;
   model?: string | null;
+  effort?: string | null;
   access?: "read_only" | "workspace_write" | "full" | null;
   network?: boolean | string[] | null;
   avatar?: Avatar | null;
@@ -318,6 +337,8 @@ export interface PullOut {
   labels: string[];
   files: PullFile[];
   checks: Checks;
+  failing: string[];
+  issues: number[];
   checkout: string | null;
   reviews: TaskOut[];
 }
@@ -370,7 +391,6 @@ export interface ReviewEntryOut {
 }
 
 export interface ReviewRequest {
-  bot: string;
   note?: string;
 }
 
@@ -383,6 +403,12 @@ export interface ReviewStateOut {
   failed: boolean;
   out_of_rounds: boolean;
   reviews: ReviewEntryOut[];
+}
+
+export interface Reviewer {
+  backend: "claude" | "codex";
+  model?: string | null;
+  effort?: string | null;
 }
 
 export interface RoomMessageOut {
@@ -495,7 +521,7 @@ export interface TaskOut {
   review_version: number | null;
   merge_state: "proposed" | "merged" | null;
   merged_commit: string | null;
-  kind: "chat" | "seat" | "thread";
+  kind: "chat" | "seat" | "thread" | "review";
   room_id: string | null;
   pr: string | null;
   routine: string | null;

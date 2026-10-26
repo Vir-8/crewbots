@@ -2,12 +2,12 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Avatar, COLORS, COLOR_NAMES, SHAPE_NAMES, face, labelOf } from "../components/Avatar";
 import { Icon } from "../components/Icon";
+import { ModelPicker } from "../components/ModelPicker";
 import { Field, Page, Segmented, Sheet } from "../components/ui";
 import type { Crew } from "../state";
 import type { Bot, Card } from "../types";
 
 const ACCESS: Record<string, string> = { read_only: "Reads only", workspace_write: "Writes in its task's folder", full: "Full access" };
-const MODELS: Record<string, string[]> = { claude: ["opus", "sonnet", "haiku"], codex: [] };
 
 /** Your bots: who they are, what each may do, and an editor for each. Saving rewrites its role card. */
 export function CrewBots({ crew, editing, onEdit, onChat }: { crew: Crew; editing: string | null; onEdit: (bot: string | null) => void; onChat: (bot: string) => void }) {
@@ -81,7 +81,7 @@ type Draft = Partial<Card> & { name: string; hosts?: string; budgetOn?: boolean 
 export function BotEditor({ crew, name, onClose }: { crew: Crew; name: string | null; onClose: () => void }) {
   const creating = name === null;
   const [draft, setDraft] = useState<Draft | null>(
-    creating ? { name: "", title: "", description: "", backend: "claude", model: "sonnet", access: "read_only", instructions: "## Mission\n\n\n## Owns\n\n- \n\n## Does not own\n\n- \n\n## Done means\n\n- " } : null,
+    creating ? { name: "", title: "", description: "", backend: "claude", model: "sonnet", effort: null, access: "read_only", instructions: "## Mission\n\n\n## Owns\n\n- \n\n## Does not own\n\n- \n\n## Done means\n\n- " } : null,
   );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -110,6 +110,7 @@ export function BotEditor({ crew, name, onClose }: { crew: Crew; name: string | 
       description: draft.description,
       backend: draft.backend,
       model: draft.model ?? "",
+      effort: draft.effort ?? "",
       access: draft.access,
       network: !writes ? false : networkMode === "hosts" ? (draft.hosts ?? "").split(/[\s,]+/).filter(Boolean) : networkMode === "any",
       avatar: draft.avatar ?? null,
@@ -188,23 +189,16 @@ export function BotEditor({ crew, name, onClose }: { crew: Crew; name: string | 
         <textarea rows={2} value={draft.description ?? ""} onChange={(e) => set({ description: e.target.value })} />
       </Field>
 
-      <div className="field-row">
-        <Field label="Runs on">
-          <Segmented
-            value={(draft.backend ?? "claude").startsWith("codex") ? "codex" : "claude"}
-            options={[["claude", "Claude"], ["codex", "Codex"]]}
-            onChange={(backend) => set({ backend, model: MODELS[backend][0] ?? "" })}
-          />
-        </Field>
-        <Field label="Model" hint={(draft.backend ?? "").startsWith("codex") ? "Blank: Codex's own default." : undefined}>
-          <input list={`models-${draft.backend}`} value={draft.model ?? ""} onChange={(e) => set({ model: e.target.value })} placeholder="default" />
-          <datalist id={`models-${draft.backend}`}>
-            {(MODELS[(draft.backend ?? "claude").startsWith("codex") ? "codex" : "claude"] ?? []).map((m) => (
-              <option key={m} value={m} />
-            ))}
-          </datalist>
-        </Field>
-      </div>
+      <Field label="Runs on">
+        <Segmented
+          value={(draft.backend ?? "claude").startsWith("codex") ? "codex" : "claude"}
+          options={[["claude", "Claude"], ["codex", "Codex"]]}
+          onChange={(backend) => set({ backend, model: null, effort: null })}
+        />
+      </Field>
+      <Field label="Model and reasoning" hint="Its chat and every thread it opens use these. Blank: the CLI's own default.">
+        <ModelPicker crew={crew} backend={draft.backend ?? "claude"} model={draft.model} effort={draft.effort} onChange={(model, effort) => set({ model, effort })} />
+      </Field>
 
       <Field label="Access">
         <select value={draft.access ?? "read_only"} onChange={(e) => set({ access: e.target.value as Card["access"] })}>

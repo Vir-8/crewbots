@@ -62,6 +62,8 @@ class CodexExec:
         args += self.config_overrides(spec)
         if spec.model:
             args += ["--model", spec.model]
+        if spec.effort:
+            args += ["-c", f'model_reasoning_effort="{spec.effort}"']
         return [*args, *spec.extra_args, "-"]  # "-": the prompt comes on stdin
 
     def config_overrides(self, spec: RunSpec) -> list[str]:

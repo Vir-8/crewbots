@@ -22,6 +22,11 @@ export function App() {
   const [editing, setEditing] = useState<string | null>(null); // a bot being edited on the Crew page; "" for a new one
   const [side, setSide] = useState<Side>(null);
   const [newGroup, setNewGroup] = useState(false);
+  const [sideHidden, setSideHidden] = useState(false);
+  // Code review needs the room: in a smaller window, the sidebar steps aside when you open it.
+  useEffect(() => {
+    if (current === "review" && window.innerWidth < 1280) setSideHidden(true);
+  }, [current]);
 
   /** Opens any task where it lives: a chat or a room, or a thread beside the chat it came from. */
   const openTask = (id: string) => {
@@ -47,7 +52,12 @@ export function App() {
   const profile = side?.kind === "profile" && chat?.kind === "direct" ? chat.bot : null;
 
   return (
-    <div className={`app ${thread || profile ? "with-panel" : ""} ${profile ? "with-profile" : ""} ${current === "review" ? "reviewing" : ""}`}>
+    <div className={`app ${thread || profile ? "with-panel" : ""} ${profile ? "with-profile" : ""} ${current === "review" ? "reviewing" : ""} ${sideHidden ? "side-hidden" : ""}`}>
+      {sideHidden && (
+        <button className="icon-button side-toggle" onClick={() => setSideHidden(false)} title="Show the sidebar">
+          <Icon name="panelClose" size={15} />
+        </button>
+      )}
       <Sidebar
         crew={crew}
         current={current}
@@ -57,6 +67,7 @@ export function App() {
         }}
         onOpen={openTask}
         onNewGroup={() => setNewGroup(true)}
+        onHide={() => setSideHidden(true)}
       />
       <main className="main">
         {current === "page:crew" ? (

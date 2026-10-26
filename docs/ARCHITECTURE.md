@@ -253,9 +253,16 @@ Each step leaves the system working.
 - **Codex for voice:** its app-server has an experimental realtime API (`thread/realtime/*`, behind
   `experimentalApi`), a spoken conversation rather than transcription. Tried with synthesized speech, it answers
   "realtime conversation requires API key auth": not available on a ChatGPT sign-in, so not for dictation here.
-- **Code review** (`reviews.py`) is apart from the crew's always-on work: a review is a top-level thread with a `pr`
-  link, shown with its pull request and not among the bot's own threads. Its brief carries the description, files and
-  diff (capped), forbids changing code or posting anything, and asks for prioritized findings. With a mapped local
+- **Models and reasoning:** a role card's `model` and `effort` apply to every turn the bot takes: its chat, its seats
+  in group chats, and every thread it opens or is handed, since a thread runs as its owner. Claude takes the effort
+  through the Agent SDK (`effort`: low to max), Codex per turn (`turn/start`'s `effort`, or `model_reasoning_effort`
+  for `exec`). Blank means the CLI's own default. The app's dropdowns come from the CLIs (`models.py`): Codex's
+  `model/list`, and the model list Claude Code reports when a session starts, cached for half an hour.
+- **Code review** (`reviews.py`) is apart from the crew's always-on work. The PR reviewer is its own agent: its own
+  instructions (`REVIEWER`), read-only, with no roster, crew tools or memory, run once per configured model
+  (`reviewers:` in `reviews.yaml`) as tasks of kind `review`, named `reviewer:<backend>:<model>:<effort>` so they can
+  be resumed from the name alone. Its brief carries the description, the issues it refers to (closing references and
+  `#N` mentions), the files and diff (capped), the failing checks and the discussion so far. With a mapped local
   copy, the PR's head is fetched (`pull/N/head`) into a detached worktree under `~/.crewbots/worktrees/reviews`, and
   the read-only reviewer works there. GitHub's inbox and pull requests are cached for a minute or two.
 - **Editing the crew** (`cards.py`): role cards and routines are rewritten from the app with the frontmatter it

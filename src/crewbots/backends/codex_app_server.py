@@ -46,6 +46,7 @@ class CodexSession:
     def __init__(self, process: JsonlProcess, spec: RunSpec):
         self.process = process
         self.timeout_s = spec.timeout_s
+        self.effort = spec.effort
         self.session_id: str | None = None
         self._next_id = 0
         self._pending: deque[dict[str, Any]] = deque()  # notifications read while waiting for a response
@@ -110,6 +111,7 @@ class CodexSession:
                 yield SessionStarted(session_id=self.session_id or "")
             started = await self._request("turn/start", {
                 "threadId": self.session_id, "input": [{"type": "text", "text": prompt, "text_elements": []}],
+                **({"effort": self.effort} if self.effort else {}),
             })
             turn_id = (started.get("turn") or {}).get("id")
             self._turn_id = turn_id

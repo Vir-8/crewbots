@@ -27,11 +27,12 @@ from pydantic import BaseModel, Field
 
 from crewbots import cards
 from crewbots import crew as crew_module
+from crewbots import models as models_module
 from crewbots import routines as routines_module
 from crewbots.backends import codex_isolation
 from crewbots.github import GitHubError
 from crewbots.memory import MemoryError
-from crewbots.reviews import ReviewError, Reviews
+from crewbots.reviews import ReviewError, Reviews, reviewer_name
 from crewbots.routines import RoutineError
 from crewbots.runner import MergeError, NotAllowed, Runner, UnknownBot
 from crewbots.scheduler import Scheduler
@@ -68,7 +69,7 @@ class TaskOut(BaseModel):
     review_version: int | None
     merge_state: Literal["proposed", "merged"] | None
     merged_commit: str | None
-    kind: Literal["chat", "seat", "thread"]
+    kind: Literal["chat", "seat", "thread", "review"]
     room_id: str | None
     pr: str | None  # a code review's pull request, owner/name#number
     routine: str | None
@@ -99,6 +100,7 @@ class BotOut(BaseModel):
     can_delegate: bool
     path: str | None  # its role card
     display_name: str | None  # what you call it; `name` is its handle
+    effort: str | None  # reasoning effort; none: the CLI's default
     avatar: dict[str, str] | None  # {color, shape}; none: picked from its name
 
 
@@ -120,6 +122,7 @@ class CardBody(BaseModel):
     description: str | None = None
     backend: str | None = None
     model: str | None = None
+    effort: str | None = None
     access: Literal["read_only", "workspace_write", "full"] | None = None
     network: bool | list[str] | None = None
     avatar: Avatar | None = None
@@ -155,6 +158,7 @@ class PullSummary(BaseModel):
 
 class Inbox(BaseModel):
     direct: list[PullSummary]  # asking you for a review
+    assigned: list[PullSummary]  # assigned to you
     team: list[PullSummary]  # asking one of your teams
     mine: list[PullSummary]  # yours
     error: str | None
@@ -193,13 +197,34 @@ class PullOut(BaseModel):
     labels: list[str]
     files: list[PullFile]
     checks: Checks
+    failing: list[str]  # the checks that fail
+    issues: list[int]  # the issues it refers to
     checkout: str | None  # the local copy reviews read, if the repo is mapped
     reviews: list[TaskOut]
 
 
 class ReviewRequest(BaseModel):
-    bot: str
-    note: str = ""
+    note: str = ""  # anything to look at in particular
+
+
+class Reviewer(BaseModel):
+    backend: Literal["claude", "codex"]
+    model: str | None = None  # None: the CLI's own default
+    effort: str | None = None
+
+
+class ModelOut(BaseModel):
+    id: str
+    label: str
+    description: str
+    efforts: list[str]
+    default_effort: str | None
+    default: bool
+
+
+class ModelsOut(BaseModel):
+    claude: list[ModelOut]
+    codex: list[ModelOut]
 
 
 class RepoFolder(BaseModel):
@@ -589,7 +614,7 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
              "access": b.access, "workspace": str(b.workspace) if b.workspace else None,
              "network": list(b.network) if isinstance(b.network, tuple) else b.network, "mcp": sorted(b.mcp),
              "skills": list(b.skills), "can_delegate": b.can_delegate, "path": str(b.path) if b.path else None,
-             "display_name": b.display_name, "avatar": b.avatar}
+             "display_name": b.display_name, "avatar": b.avatar, "effort": b.effort}
             for b in runner.crew.bots.values()
         ]
 
@@ -763,7 +788,7 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
         try:
             inbox = await asyncio.to_thread(reviews.inbox, fresh)
         except GitHubError as e:
-            return {"direct": [], "team": [], "mine": [], "error": str(e)}
+            return {"direct": [], "assigned": [], "team": [], "mine": [], "error": str(e)}
         touched = store.reviewed_prs()
         return {k: [p | {"reviewed_at": touched.get(f"{p['repo']}#{p['number']}")} for p in v] for k, v in inbox.items()} | {
             "error": None}
@@ -778,15 +803,29 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
     async def review_diff(owner: str, name: str, number: int):
         return {"diff": await asyncio.to_thread(reviewing, reviews.diff, f"{owner}/{name}", number)}
 
-    @v1.post("/reviews/{owner}/{name}/{number}/review", status_code=201, response_model=TaskOut)
-    async def review_start(owner: str, name: str, number: int, body: ReviewRequest):
-        """A private review by one of your bots: the PR's diff and, with a local copy, its code. Follow-ups go to
-        the task like any other."""
-        if body.bot not in runner.crew.bots:
-            raise HTTPException(422, f"no bot named {body.bot}")
+    @v1.post("/reviews/{owner}/{name}/{number}/review", status_code=201, response_model=list[TaskOut])
+    async def review_start(owner: str, name: str, number: int, body: ReviewRequest | None = None):
+        """A private review by each of your reviewer models, side by side. Follow-ups go to each task like any
+        other."""
         repo = f"{owner}/{name}"
-        title, goal, folder = await asyncio.to_thread(reviewing, reviews.brief, repo, number, body.note)
-        return runner.submit(body.bot, goal, workspace=folder, title=title, pr=f"{repo}#{number}").to_json()
+        title, goal = await asyncio.to_thread(reviewing, reviews.brief, repo, number, body.note if body else "")
+        folder = await asyncio.to_thread(reviewing, reviews.folder, repo, number)
+        return [runner.start_review(reviewer_name(r), goal, title=title, pr=f"{repo}#{number}", folder=folder).to_json()
+                for r in reviews.reviewers()]
+
+    @v1.get("/reviews/reviewers", response_model=list[Reviewer])
+    async def get_reviewers():
+        return reviews.reviewers()
+
+    @v1.put("/reviews/reviewers", response_model=list[Reviewer])
+    async def put_reviewers(body: list[Reviewer]):
+        """The models that review a pull request, each with its reasoning effort."""
+        return reviewing(reviews.set_reviewers, [r.model_dump() for r in body])
+
+    @v1.get("/models", response_model=ModelsOut)
+    async def list_models(fresh: bool = False):
+        """The models each CLI offers, with the reasoning efforts each takes, as the CLIs report them."""
+        return await models_module.models(fresh)
 
     @v1.get("/reviews/repos", response_model=dict[str, str])
     async def review_repos():

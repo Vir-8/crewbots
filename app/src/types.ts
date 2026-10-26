@@ -6,6 +6,9 @@ import type {
   CardOut,
   ChatOut,
   Inbox as InboxOut,
+  ModelOut,
+  ModelsOut,
+  Reviewer as ReviewerOut,
   PullOut,
   PullSummary as PullSummaryOut,
   RoutineFileOut,
@@ -45,6 +48,9 @@ export type Usage = UsageOut;
 export type ReviewInbox = InboxOut;
 export type PullSummary = PullSummaryOut;
 export type Pull = PullOut;
+export type Model = ModelOut;
+export type Models = ModelsOut;
+export type Reviewer = ReviewerOut;
 export type CrewState = CrewStateOut;
 export type Routine = RoutineOut;
 export type Routines = RoutinesOut;

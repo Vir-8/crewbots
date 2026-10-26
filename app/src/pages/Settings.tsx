@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { api, bridge } from "../api";
 import { Icon } from "../components/Icon";
-import { Page, Switch } from "../components/ui";
+import { ModelPicker } from "../components/ModelPicker";
+import { Page, Segmented, Switch } from "../components/ui";
 import type { Crew } from "../state";
+import type { Reviewer } from "../types";
 
 /** How crewbots itself is set up: starting at login, where the crew lives, GitHub, and code review's local copies. */
 export function Settings({ crew }: { crew: Crew }) {
@@ -108,8 +110,10 @@ export function Settings({ crew }: { crew: Crew }) {
         </div>
       </section>
 
+      <Reviewers crew={crew} />
+
       <section className="page-section">
-        <h2>Code review</h2>
+        <h2>Code review's local copies</h2>
         <p className="faint small">
           A review reads the pull request's diff. Point a repo at your local copy, and the reviewer reads the pull request's own code too, checked out at its head beside your copy.
         </p>
@@ -151,5 +155,66 @@ export function Settings({ crew }: { crew: Crew }) {
         </div>
       </section>
     </Page>
+  );
+}
+
+/** The models that review a pull request, side by side. Two model families catch different things. */
+function Reviewers({ crew }: { crew: Crew }) {
+  const [reviewers, setReviewers] = useState<Reviewer[] | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    api.reviewers().then(setReviewers, (e) => setError(String(e)));
+  }, []);
+  if (!reviewers) return null;
+
+  const change = (i: number, fields: Partial<Reviewer>) => {
+    setSaved(null);
+    setReviewers(reviewers.map((r, j) => (j === i ? { ...r, ...fields } : r)));
+  };
+  const save = async () => {
+    setError(null);
+    try {
+      setReviewers(await api.setReviewers(reviewers));
+      setSaved("Saved");
+    } catch (e) {
+      setError(String(e).replace(/^Error: /, ""));
+    }
+  };
+  return (
+    <section className="page-section">
+      <div className="section-head">
+        <h2>Code review: reviewers</h2>
+        <span className="grow" />
+        {saved && <span className="faint small">{saved}</span>}
+        <button className="button small primary" onClick={save}>
+          Save
+        </button>
+      </div>
+      <p className="faint small">
+        Pressing Review runs each of these on the pull request, side by side, with the reviewer's own instructions: not your bots. Each review is a conversation you can carry on.
+      </p>
+      <div className="list">
+        {reviewers.map((r, i) => (
+          <div key={i} className="list-row reviewer-row">
+            <Segmented value={r.backend} options={[["claude", "Claude"], ["codex", "Codex"]]} onChange={(backend) => change(i, { backend, model: null, effort: null })} />
+            <ModelPicker crew={crew} backend={r.backend} model={r.model} effort={r.effort} onChange={(model, effort) => change(i, { model, effort })} />
+            <span className="grow" />
+            <button className="icon-button" title="Remove" disabled={reviewers.length === 1} onClick={() => setReviewers(reviewers.filter((_, j) => j !== i))}>
+              <Icon name="x" size={14} />
+            </button>
+          </div>
+        ))}
+        {reviewers.length < 4 && (
+          <div className="list-row">
+            <button className="button small" onClick={() => setReviewers([...reviewers, { backend: "claude", model: null, effort: "high" }])}>
+              <Icon name="plus" size={13} />
+              Add a reviewer
+            </button>
+          </div>
+        )}
+      </div>
+      {error && <p className="error-text">{error}</p>}
+    </section>
   );
 }

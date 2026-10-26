@@ -17,7 +17,7 @@ from crewbots import routines as routines_module
 from crewbots.crew import CrewError, parse_card
 
 HANDLE = re.compile(r"[a-z][a-z0-9-]{0,30}")
-BOT_FIELDS = ("display_name", "title", "description", "backend", "model", "access", "network", "avatar", "budget")
+BOT_FIELDS = ("display_name", "title", "description", "backend", "model", "effort", "access", "network", "avatar", "budget")
 ROUTINE_FIELDS = ("description", "bot", "schedule", "on", "repo", "workspace", "budget", "enabled")
 
 
