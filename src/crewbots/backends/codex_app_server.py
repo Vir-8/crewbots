@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 from crewbots.backends.base import Access, RunSpec, session_temp_dir
 from crewbots.backends.codex_cli import network_overrides
+from crewbots.backends.credentials import without_credentials
 from crewbots.backends.policy import NO_NETWORK, STAY_IN_SANDBOX, Policy
 from crewbots.backends.process import JsonlProcess
 from crewbots.events import Done, Event, Notice, RateLimit, SessionStarted, Text, ToolCall, ToolResult, Usage
@@ -70,6 +71,7 @@ class CodexSession:
             # The sandbox otherwise lets commands write to /tmp and $TMPDIR too: a way out of the task's folder.
             temp = session_temp_dir()
             env["TMPDIR"] = str(temp)
+            env |= without_credentials()
             overrides += ["-c", "sandbox_workspace_write.exclude_slash_tmp=true",
                           "-c", "sandbox_workspace_write.exclude_tmpdir_env_var=true",
                           "-c", f"sandbox_workspace_write.writable_roots={json.dumps([str(temp)])}",

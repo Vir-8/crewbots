@@ -37,6 +37,7 @@ from claude_agent_sdk import (
 
 from crewbots.backends.base import Access, RunSpec
 from crewbots.backends.claude_cli import READ_ONLY_TOOLS, _stringify, rate_limit
+from crewbots.backends.credentials import without_credentials
 from crewbots.backends.policy import Policy
 from crewbots.crew_tools import CrewTools, ToolRefused
 from crewbots.events import Done, Event, Notice, SessionStarted, Text, ToolCall, ToolResult, Usage
@@ -89,6 +90,7 @@ class ClaudeAgent:
             # folder fail.
             Path("/tmp/claude").mkdir(exist_ok=True)
             sandbox = {"enabled": True, "autoAllowBashIfSandboxed": False, "allowUnsandboxedCommands": False}
+            env |= without_credentials()
         return ClaudeAgentOptions(
             cli_path=self.cli_path,
             cwd=str(spec.cwd),

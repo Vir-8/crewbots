@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from crewbots.backends.base import Access, McpServer, RunSpec
 from crewbots.backends.codex_isolation import isolation_overrides
+from crewbots.backends.credentials import without_credentials
 from crewbots.backends.process import stream_jsonl
 from crewbots.events import Done, Event, Notice, SessionStarted, Text, ToolCall, ToolResult, Usage
 
@@ -36,7 +37,8 @@ class CodexExec:
 
     async def run(self, spec: RunSpec) -> AsyncIterator[Event]:
         argv = await asyncio.to_thread(self.argv, spec)  # may list Codex's MCP servers, which takes seconds
-        async with aclosing(stream_jsonl(argv, cwd=spec.cwd, env=dict(os.environ), parser=CodexParser(),
+        env = dict(os.environ) | (without_credentials() if spec.access is Access.WORKSPACE_WRITE else {})
+        async with aclosing(stream_jsonl(argv, cwd=spec.cwd, env=env, parser=CodexParser(),
                                          stdin_text=self.prompt(spec), timeout_s=spec.timeout_s)) as stream:
             async for event in stream:
                 yield event
