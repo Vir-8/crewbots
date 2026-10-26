@@ -1,6 +1,7 @@
 // The bridge the UI uses outside Tauri: it answers the API from the demo crew, and plays a little live activity, so
 // the UI can be designed and checked in an ordinary browser.
 
+import { API_SCHEMA, API_VERSION } from "../api-types";
 import type { ConnectionStatus, Live, StoredEvent, Task } from "../types";
 import * as demo from "./demo";
 
@@ -50,6 +51,7 @@ async function request(method: string, path: string, body?: any) {
   if (method === "GET" && url.pathname === "/events/cursor") return ok({ id: allEvents.at(-1)?.id ?? 0 });
   if (parts[0] === "bot") return { ok: false, status: 0, data: { detail: "not an app path" } };
   if (method === "GET" && url.pathname === "/crew") return ok(crewState);
+  if (method === "GET" && url.pathname === "/version") return ok({ api: API_VERSION, schema_hash: API_SCHEMA, build: "preview", source_changed: false });
   if (url.pathname === "/crew/restart") {
     crewState.restarting = method === "POST" && body?.when_idle !== false;
     return ok({ ...crewState });
@@ -371,6 +373,8 @@ export const previewBridge = {
   openPath: async (_path: string) => undefined,
   openUrl: async (url: string) => void window.open(url, "_blank"),
   startAtLogin: async (enabled?: boolean) => enabled ?? true,
+  appInfo: async () => ({ installed_newer: new URLSearchParams(location.search).has("update") }), // ?update shows the banner
+  restartApp: async () => location.assign(location.pathname),
   dictation: browserDictation(),
   onStatus: (_callback: Listener<ConnectionStatus>) => () => undefined,
   onLive: (callback: Listener<Live>) => {

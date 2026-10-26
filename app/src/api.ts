@@ -29,6 +29,7 @@ import type {
   Submitted,
   Attachment,
 } from "./types";
+import type { VersionOut } from "./api-types";
 
 import { bridge } from "./bridge";
 
@@ -80,6 +81,7 @@ export const api = {
   newRoutine: (fields: Partial<RoutineFile> & { name: string }) => call<RoutineFile>("POST", "/routines", fields),
   deleteRoutine: (name: string) => call<{ ok: boolean }>("DELETE", `/routines/${encodeURIComponent(name)}`),
   pause: (on: boolean) => call<CrewState>("POST", on ? "/crew/pause" : "/crew/resume"),
+  version: () => call<VersionOut>("GET", "/version"),
   /** Restarts the daemon once no turn is running (or now, `whenIdle` false); turns cut off carry on after. */
   restart: (whenIdle: boolean) => call<CrewState>("POST", "/crew/restart", { when_idle: whenIdle }),
   cancelRestart: () => call<CrewState>("DELETE", "/crew/restart"),

@@ -4,14 +4,24 @@ It handles the JSON Schema that Pydantic emits for this API's models (objects, e
 nullable and tagged unions) and fails loudly on anything else rather than guessing.
 """
 
+import hashlib
+import json
 from typing import Any
 
 HEADER = "// Generated from the crewbots API schema by `crewbots openapi --ts`. Do not edit; regenerate.\n"
 
 
+def schema_hash(schema: dict[str, Any]) -> str:
+    """A short fingerprint of the whole API: its routes and models. The app is built with one, and the daemon reports
+    its own, so either can tell when the other is a different version."""
+    return hashlib.sha256(json.dumps(schema, sort_keys=True).encode()).hexdigest()[:12]
+
+
 def from_openapi(schema: dict[str, Any]) -> str:
     components = schema["components"]["schemas"]
-    out = [HEADER]
+    out = [HEADER, f'/** The API this app was built against: its major version, and a fingerprint of all of it. */\n'
+                   f'export const API_VERSION = {int(schema["info"]["version"])};\n'
+                   f'export const API_SCHEMA = "{schema_hash(schema)}";\n']
     for name in sorted(components):
         out.append(_declaration(name, components[name]))
     return "\n".join(out)

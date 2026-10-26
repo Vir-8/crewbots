@@ -122,6 +122,18 @@ def test_the_apps_types_match_the_api():
     assert committed.read_text() == typescript.from_openapi(openapi_schema()), "app/src/api-types.ts is stale"
 
 
+def test_the_daemon_says_which_version_it_is(client):
+    from crewbots import typescript
+    from crewbots.api import API_VERSION, openapi_schema
+
+    version = client.get("/version", headers=AUTH).json()
+
+    assert version["api"] == API_VERSION and version["build"]  # this checkout's commit
+    assert version["schema_hash"] == typescript.schema_hash(openapi_schema())  # what the app is built with
+    assert f'API_SCHEMA = "{version["schema_hash"]}"' in typescript.from_openapi(openapi_schema())
+    assert version["source_changed"] is False
+
+
 def test_the_crew_can_be_paused_and_resumed_over_the_api(client):
     assert client.get("/crew", headers=AUTH).json() == {"paused": False, "restarting": False, "running": 0,
                                                          "turns_running": 0, "held": 0, "sessions": 0, "limits": []}

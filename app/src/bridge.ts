@@ -34,6 +34,10 @@ const tauriBridge = {
   reveal: (path: string) => revealItemInDir(path),
   /** Whether the crew starts at login; pass `enabled` to change it. */
   startAtLogin: (enabled?: boolean) => invoke<boolean>("start_at_login", { enabled: enabled ?? null }),
+  /** Whether a newer build of the app is installed over this one. */
+  appInfo: () => invoke<{ installed_newer: boolean }>("app_info"),
+  /** Quits and opens the app again, from the build installed now. */
+  restartApp: () => invoke<void>("restart_app"),
   openPath: (path: string) => openPath(path),
   /** A GitHub page, in your browser. */
   openUrl: (url: string) => openUrl(url),

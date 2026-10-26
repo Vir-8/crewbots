@@ -1,8 +1,18 @@
+import { useEffect, useState } from "react";
+import { api, bridge } from "../api";
+import { API_SCHEMA, API_VERSION, type VersionOut } from "../api-types";
 import type { Crew } from "../state";
 import { Icon } from "./Icon";
 
-/** The daemon itself, when it isn't simply running: restarting once the crew is idle, or being reconnected to. */
+const VERSION_EVERY_MS = 5 * 60_000;
+const INSTALLED_EVERY_MS = 60_000;
+
+/** The daemon itself, when it isn't simply running: reconnecting, restarting once the crew is idle, or a different
+ * version from this app. */
 export function CrewBanner({ crew }: { crew: Crew }) {
+  const update = useUpdate(crew);
+  const [dismissed, setDismissed] = useState<string | null>(null);
+
   if (crew.status.state !== "connected") {
     const failed = crew.status.state === "error" || crew.status.state === "no-crew";
     return (
@@ -12,21 +22,82 @@ export function CrewBanner({ crew }: { crew: Crew }) {
       </div>
     );
   }
-  if (!crew.crewState?.restarting) return null;
-  const running = crew.crewState.turns_running;
+  if (crew.crewState?.restarting) {
+    const running = crew.crewState.turns_running;
+    return (
+      <div className="crew-banner" role="status">
+        <Icon name="repeat" size={13} />
+        <span>
+          Restarting when the crew is idle
+          {running > 0 && <span className="faint"> · {running === 1 ? "1 turn" : `${running} turns`} still running</span>}
+        </span>
+        <button className="text-button" onClick={() => crew.restart(false)} title="Turns cut off carry on after the restart">
+          Restart now
+        </button>
+        <button className="text-button" onClick={() => crew.cancelRestart()}>
+          Cancel
+        </button>
+      </div>
+    );
+  }
+  if (!update || dismissed === update.text) return null;
   return (
-    <div className="crew-banner" role="status">
-      <Icon name="repeat" size={13} />
-      <span>
-        Restarting when the crew is idle
-        {running > 0 && <span className="faint"> · {running === 1 ? "1 turn" : `${running} turns`} still running</span>}
-      </span>
-      <button className="text-button" onClick={() => crew.restart(false)} title="Turns cut off carry on after the restart">
-        Restart now
-      </button>
-      <button className="text-button" onClick={() => crew.cancelRestart()}>
-        Cancel
+    <div className={`crew-banner ${update.bad ? "bad" : ""}`} role="status">
+      <Icon name={update.bad ? "alert" : "repeat"} size={13} />
+      <span title={update.why}>{update.text}</span>
+      {update.action && (
+        <button className="text-button" onClick={update.action.run}>
+          {update.action.label}
+        </button>
+      )}
+      <button className="icon-button small" onClick={() => setDismissed(update.text)} title="Hide until something changes">
+        <Icon name="x" size={12} />
       </button>
     </div>
   );
+}
+
+interface Update {
+  text: string;
+  why?: string;
+  bad?: boolean;
+  action?: { label: string; run: () => void };
+}
+
+/** Whether this app, the build installed over it, and the crew's daemon are the same version, and what to do if not. */
+function useUpdate(crew: Crew): Update | null {
+  const connected = crew.status.state === "connected";
+  const [daemon, setDaemon] = useState<VersionOut | "unversioned" | null>(null);
+  const [installedNewer, setInstalledNewer] = useState(false);
+
+  useEffect(() => {
+    if (!connected) return;
+    const ask = () =>
+      api.version().then(setDaemon, (e) => setDaemon(String(e).includes("Not Found") ? "unversioned" : null));
+    ask();
+    const timer = window.setInterval(ask, VERSION_EVERY_MS);
+    return () => window.clearInterval(timer);
+  }, [connected]);
+
+  useEffect(() => {
+    const ask = () => bridge.appInfo().then((info) => setInstalledNewer(info.installed_newer), () => undefined);
+    ask();
+    const timer = window.setInterval(ask, INSTALLED_EVERY_MS);
+    window.addEventListener("focus", ask);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", ask);
+    };
+  }, []);
+
+  if (installedNewer) return { text: "A new version of crewbots is installed", action: { label: "Restart to update", run: () => void bridge.restartApp() } };
+  if (!daemon) return null;
+  const restartDaemon = { label: "Restart it when idle", run: () => void crew.restart(true) };
+  if (daemon === "unversioned" || daemon.api < API_VERSION)
+    return { text: "The crew's daemon is older than this app", why: "Restarting it runs the crewbots checkout's current code.", action: restartDaemon };
+  if (daemon.api > API_VERSION)
+    return { text: `This app is too old for the crew's daemon: install a new build`, why: `The app speaks API v${API_VERSION}; the daemon speaks v${daemon.api}.`, bad: true };
+  if (daemon.schema_hash === API_SCHEMA) return null;
+  if (daemon.source_changed) return { text: "The crew's daemon has an update", why: `It runs ${daemon.build ?? "an older commit"}; its checkout has moved on.`, action: restartDaemon };
+  return { text: "This app and the crew's daemon are different versions: install a new build of the app", why: `The app was built against API ${API_SCHEMA}; the daemon serves ${daemon.schema_hash}.` };
 }

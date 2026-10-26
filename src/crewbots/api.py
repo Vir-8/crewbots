@@ -15,6 +15,7 @@ import contextlib
 import json
 import os
 import secrets
+import subprocess
 import sys
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -28,7 +29,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from crewbots import attachments as attachments_module
-from crewbots import cards, mcp_catalog
+from crewbots import cards, mcp_catalog, typescript
 from crewbots import crew as crew_module
 from crewbots import models as models_module
 from crewbots import plans as plans_module
@@ -45,6 +46,8 @@ from crewbots.scheduler import Scheduler
 from crewbots.store import Status, Store, Task, Verdict
 
 DEFAULT_PORT = 8765
+API_VERSION = 1  # the /v1 in every route; a change the app can't follow raises it
+PROJECT = Path(__file__).resolve().parents[2]  # the checkout the daemon runs from, when it runs from one
 RESTART_EXIT = 75  # EX_TEMPFAIL: stopped to be started again
 RESTART_TIMEOUT_S = 20 * 60.0  # how long a restart waits for running turns; then they're cut off and carried on
 DAEMON_FILE = "daemon.json"  # in the crew's folder: where the daemon is and its token, readable only by the user
@@ -571,6 +574,15 @@ class PlanLimitOut(BaseModel):
     resets_at: int | None
 
 
+class VersionOut(BaseModel):
+    """What the daemon is, so the app can tell when one of them is out of date."""
+
+    api: int  # the major version: the app and the daemon must agree on it
+    schema_hash: str  # a fingerprint of every route and model; the app is built with its own
+    build: str | None  # the commit the daemon started from, when it runs from a git checkout
+    source_changed: bool  # the checkout has moved on since: a restart would update the daemon
+
+
 class RestartBody(BaseModel):
     when_idle: bool = True
     timeout_s: float = RESTART_TIMEOUT_S
@@ -851,7 +863,7 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
     def allowed(host: str | None, credential: str | None) -> bool:
         return host in hosts and credential is not None and secrets.compare_digest(credential, token)
 
-    app = FastAPI(title="crewbots", version="1", openapi_url=None, docs_url=None, redoc_url=None)
+    app = FastAPI(title="crewbots", version=str(API_VERSION), openapi_url=None, docs_url=None, redoc_url=None)
     app.state.reviews = reviews
     app.state.restart = None  # the restart waiting for the crew to be idle
     app.state.stop = lambda code: None  # serve() replaces it: stops the server, which exits with `code`
@@ -1350,6 +1362,14 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
         runner.resume()
         return runner.state()
 
+    started_from = _commit()
+
+    @v1.get("/version", response_model=VersionOut)
+    async def version():
+        now = await asyncio.to_thread(_commit)
+        return {"api": API_VERSION, "schema_hash": typescript.schema_hash(app.openapi()), "build": started_from,
+                "source_changed": bool(started_from and now and now != started_from)}
+
     @v1.post("/crew/restart", response_model=CrewState)
     async def restart(body: RestartBody):
         """Restarts the daemon once no turn is running: none starts meanwhile. After `timeout_s` (or at once, unless
@@ -1598,6 +1618,18 @@ def openapi_schema() -> dict[str, Any]:
 
     runner = Runner(Store(":memory:"), Crew(home=Path("."), bots={}, team_files={}))
     return create_app(runner, token="schema").openapi()
+
+
+def _commit() -> str | None:
+    """The commit the daemon's checkout is at, or None when it isn't one (an installed package)."""
+    if not (PROJECT / ".git").exists():
+        return None
+    try:
+        done = subprocess.run(["git", "-C", str(PROJECT), "rev-parse", "--short=12", "HEAD"], capture_output=True,
+                              text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return done.stdout.strip() or None
 
 
 def _routine_out(view: Any) -> dict[str, Any]:

@@ -2,7 +2,8 @@ mod crew;
 mod dictation;
 mod watch;
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::SystemTime;
 
 use serde_json::{Value, json};
 use tauri::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
@@ -60,6 +61,27 @@ async fn start_at_login(app: AppHandle, crew: State<'_, Arc<Crew>>, enabled: Opt
 
 /// For checking the app without someone at the screen: with CREWBOTS_SELFTEST set, the window runs its checks,
 /// reports here, and the app prints the report and quits.
+/// When this app's executable was built, as it was when the app started. Installing a new build replaces the file.
+static LAUNCHED_BUILD: OnceLock<Option<SystemTime>> = OnceLock::new();
+
+fn executable_time() -> Option<SystemTime> {
+    std::env::current_exe().ok().and_then(|path| std::fs::metadata(path).ok()).and_then(|m| m.modified().ok())
+}
+
+/// Whether a newer build is installed over the running one, so relaunching would update it.
+#[tauri::command]
+fn app_info() -> Value {
+    let launched = *LAUNCHED_BUILD.get_or_init(executable_time);
+    let installed_newer = matches!((launched, executable_time()), (Some(was), Some(now)) if now > was);
+    json!({ "installed_newer": installed_newer })
+}
+
+/// Quits and opens the app again, from whatever build is installed now.
+#[tauri::command]
+fn restart_app(app: AppHandle) {
+    app.restart();
+}
+
 #[tauri::command]
 fn selftest_wanted() -> bool {
     std::env::var("CREWBOTS_SELFTEST").is_ok()
@@ -171,10 +193,13 @@ pub fn run() {
             selftest_wanted,
             selftest_report,
             start_at_login,
+            app_info,
+            restart_app,
             dictation::dictation_start,
             dictation::dictation_stop
         ])
         .setup(move |app| {
+            LAUNCHED_BUILD.get_or_init(executable_time);
             build_tray(app, &crew)?;
             tauri::async_runtime::spawn(crew.clone().run(app.handle().clone()));
             Ok(())

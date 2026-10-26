@@ -1,5 +1,9 @@
 // Generated from the crewbots API schema by `crewbots openapi --ts`. Do not edit; regenerate.
 
+/** The API this app was built against: its major version, and a fingerprint of all of it. */
+export const API_VERSION = 1;
+export const API_SCHEMA = "ca7787ae554a";
+
 export interface AttachmentCopy {
   path: string;
 }
@@ -822,3 +826,11 @@ export interface ValidationError {
 }
 
 export type Verdict = "pass" | "fail";
+
+/** What the daemon is, so the app can tell when one of them is out of date. */
+export interface VersionOut {
+  api: number;
+  schema_hash: string;
+  build: string | null;
+  source_changed: boolean;
+}
