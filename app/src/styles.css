@@ -266,12 +266,14 @@ select {
   grid-template-columns: var(--side-w) minmax(0, 1fr);
 }
 
+/* Each pane's width is the one dragged to (--*-user, set by its edge's handle), else its default. When the window
+ * is too narrow for them all, side panes give way down to their minimum before anything spills out. */
 .app.with-panel {
-  grid-template-columns: var(--side-w) minmax(0, 1fr) minmax(380px, 34vw);
+  grid-template-columns: var(--side-w) minmax(min(360px, 30vw), 1fr) minmax(320px, min(var(--panel-user, max(380px, 34vw)), 60vw));
 }
 
 .app.with-profile {
-  grid-template-columns: var(--side-w) minmax(0, 1fr) 300px;
+  grid-template-columns: var(--side-w) minmax(min(360px, 30vw), 1fr) minmax(260px, min(var(--profile-user, 300px), 40vw));
 }
 
 .main {
@@ -372,6 +374,7 @@ select {
 /* Sidebar */
 
 .sidebar {
+  position: relative;
   background: var(--side);
   display: flex;
   flex-direction: column;
@@ -391,7 +394,7 @@ select {
 }
 
 .app {
-  --side-w: 264px;
+  --side-w: min(var(--side-user, 264px), 36vw);
 }
 
 .app.side-hidden {
@@ -1251,6 +1254,7 @@ select {
 /* The side panel */
 
 .panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -1439,18 +1443,22 @@ select {
   color: var(--red);
 }
 
+/* Long lines wrap, so each line's colour spans the file's width and nothing scrolls sideways on its own. The
+ * marker column (+, -, space) stays put, and a wrapped line carries on under its text. */
 .diff pre {
   margin: 0;
   padding: 6px 0;
   font-family: var(--mono);
   font-size: 12px;
   line-height: 1.65;
-  overflow-x: auto;
+  tab-size: 4;
 }
 
 .diff pre div {
-  padding: 0 12px;
-  white-space: pre;
+  padding: 0 12px 0 calc(12px + 1ch);
+  text-indent: -1ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .diff pre .add {
@@ -2929,6 +2937,62 @@ button.chat-head-who:hover {
   background: var(--bg);
 }
 
+/* A pane's edge, to drag: a wide target on the border, drawn as a line once you're on it */
+
+.resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 9px;
+  z-index: 20;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+
+.resizer.right {
+  right: -5px;
+}
+
+.resizer.left {
+  left: -5px;
+}
+
+.resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+  background: transparent;
+  transition: background 0.12s 0.08s;
+}
+
+.resizer:hover::after,
+.resizer:focus-visible::after,
+.resizer.resize::after {
+  left: 3px;
+  width: 3px;
+  background: var(--blue);
+}
+
+.resizer.collapse::after {
+  left: 3px;
+  width: 3px;
+  background: var(--soft);
+}
+
+body.resizing,
+body.resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+body.resizing iframe {
+  pointer-events: none;
+}
+
 /* Tools: the crew's MCP servers and skills */
 
 .mcp-row {
@@ -3490,10 +3554,13 @@ button.chat-head-who:hover {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: clamp(220px, 22vw, 320px) minmax(320px, 1fr) clamp(300px, 30vw, 440px);
+  grid-template-columns:
+    minmax(200px, var(--review-list-user, clamp(220px, 22vw, 320px))) minmax(320px, 1fr)
+    minmax(280px, var(--review-pane-user, clamp(300px, 30vw, 440px)));
 }
 
 .review-list {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -3850,6 +3917,7 @@ button.chat-head-who:hover {
 }
 
 .review-pane {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;

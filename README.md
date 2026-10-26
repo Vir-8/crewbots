@@ -79,9 +79,10 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
   - **Skills:** every bot sees the crew's skills and your global ones (`~/.claude/skills`, with those synced from
     claude.ai, `~/.agents/skills` and `~/.codex/skills`), by name and description, and reads a skill's `SKILL.md` when
     a task matches it, the way Claude Code does. A role card's `skills:` can name only some, or `none`.
-  - **Adding bots:** any bot can add a bot when you ask it to (`add_bot`), with a role card it writes. The new bot
-    gets no more access, network or MCP servers than its maker, and delegates only if its maker does. No tool removes
-    or changes a bot: that's yours, in the app.
+  - **Adding bots:** the chief (any bot that coordinates) can add a bot when you ask it to (`add_bot`), with a role
+    card it writes and whatever it chooses to give: either access short of full, delegation, any of the crew's MCP
+    servers (all of them unless it names some), and network unless the chief has none itself. No tool removes or
+    changes a bot: that's yours, in the app.
   - Each active task keeps its CLI running between turns, so follow-ups skip start-up. Idle sessions close after 10 minutes, and `serve --no-sessions` turns this off.
   - `ANTHROPIC_API_KEY` is hidden from Claude by default, so a run stays on your subscription.
 
@@ -174,6 +175,8 @@ set `CREWBOTS_PROJECT`). To work on the UI in a plain browser, run `npm run vite
 Outside Tauri, the UI runs on a built-in demo crew (`src/preview/`).
 
 The app works like a messaging app:
+- **Panes resize:** drag the edge between the sidebar, a chat, its profile or thread, and code review's columns; the
+  widths are kept, double-click an edge to reset it, and dragging the sidebar narrow collapses it to its rail.
 - **Sidebar:** your conversations, most recent first, each bot with its own face, the last message and an unread
   dot, and the group chats. Above them, work that needs you (merges, questions, holds). Search filters them.
   Collapsed, it stays as a rail of icons and faces, and its button stays where it is, beside the window's buttons,
@@ -201,8 +204,8 @@ The app works like a messaging app:
   in Settings, and it gets the whole repository at the PR's head instead.
 - **The crew menu**, at the bottom left:
   - **Crew:** your bots, and an editor for each: its name and face, title and description, backend, model and
-    reasoning effort (from the lists the CLIs themselves report), access, network, MCP servers, budget, and its role
-    card's text. Saving rewrites the card after checking it loads, and the
+    reasoning effort (from the lists the CLIs themselves report), access, network, MCP servers (a new bot starts with
+    all of the crew's), budget, and its role card's text. Edit from a bot's profile opens it over the chat. Saving rewrites the card after checking it loads, and the
     crew uses it from the next turn. New bots start here too.
   - **Tools:** the crew's MCP servers and the skills bots can use. Add a server from your other apps (Claude Code,
     Claude's desktop app, Codex), from the official MCP registry, or by hand; Check starts it and lists its tools.

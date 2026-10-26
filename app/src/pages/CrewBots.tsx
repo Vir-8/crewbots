@@ -10,7 +10,7 @@ import type { Bot, Card, McpServerInfo } from "../types";
 const ACCESS: Record<string, string> = { read_only: "Reads only", workspace_write: "Writes in its task's folder", full: "Full access" };
 
 /** Your bots: who they are, what each may do, and an editor for each. Saving rewrites its role card. */
-export function CrewBots({ crew, editing, onEdit, onChat }: { crew: Crew; editing: string | null; onEdit: (bot: string | null) => void; onChat: (bot: string) => void }) {
+export function CrewBots({ crew, onEdit, onChat }: { crew: Crew; onEdit: (bot: string) => void; onChat: (bot: string) => void }) {
   return (
     <Page
       title="Crew"
@@ -35,7 +35,6 @@ export function CrewBots({ crew, editing, onEdit, onChat }: { crew: Crew; editin
           <BotTile key={b.name} bot={b} working={crew.running.some((t) => t.bot === b.name)} onEdit={() => onEdit(b.name)} onChat={() => onChat(b.name)} />
         ))}
       </div>
-      {editing !== null && <BotEditor crew={crew} name={editing || null} onClose={() => onEdit(null)} />}
     </Page>
   );
 }
@@ -87,7 +86,14 @@ export function BotEditor({ crew, name, onClose }: { crew: Crew; name: string | 
   const [saving, setSaving] = useState(false);
   const [servers, setServers] = useState<McpServerInfo[]>([]);
   useEffect(() => {
-    api.mcpServers().then(setServers, () => setServers([]));
+    api.mcpServers().then(
+      (list) => {
+        setServers(list);
+        // A new bot starts with every server the crew has; untick the ones it shouldn't have.
+        if (creating) setDraft((d) => (d && d.mcp === undefined ? { ...d, mcp: list.map((s) => s.name) } : d));
+      },
+      () => setServers([]),
+    );
   }, []);
 
   useEffect(() => {

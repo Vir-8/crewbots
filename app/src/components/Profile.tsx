@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { api } from "../api";
 import type { Crew } from "../state";
 import { oneLine } from "../state";
@@ -12,7 +12,7 @@ const ACCESS: Record<string, string> = { read_only: "Reads only", workspace_writ
 const SHOWN = 6;
 
 /** A bot, beside your chat with it: what it's doing, what runs on its own, the work it has done, and how it's set up. */
-export function Profile(props: { crew: Crew; bot: string; onOpen: (id: string) => void; onClose: () => void; onEdit: () => void }) {
+export function Profile(props: { crew: Crew; bot: string; onOpen: (id: string) => void; onClose: () => void; onEdit: () => void; edge?: ReactNode }) {
   const { crew } = props;
   const bot = crew.bots.find((b) => b.name === props.bot);
   const [data, setData] = useState<ProfileData | null>(null);
@@ -31,6 +31,7 @@ export function Profile(props: { crew: Crew; bot: string; onOpen: (id: string) =
 
   return (
     <aside className="panel profile">
+      {props.edge}
       <div className="profile-close">
         <button className="icon-button" onClick={props.onClose} title="Close">
           <Icon name="x" size={15} />
@@ -140,7 +141,7 @@ function when(iso: string): string {
 }
 
 /** A group chat, beside it: who's in it and what each is doing, who leads, and the threads opened from it. */
-export function RoomProfile(props: { crew: Crew; room: Room; onOpen: (id: string) => void; onChat: (bot: string) => void; onClose: () => void }) {
+export function RoomProfile(props: { crew: Crew; room: Room; onOpen: (id: string) => void; onChat: (bot: string) => void; onClose: () => void; edge?: ReactNode }) {
   const { crew, room } = props;
   const [all, setAll] = useState(false);
   useEffect(() => setAll(false), [room.id]);
@@ -153,6 +154,7 @@ export function RoomProfile(props: { crew: Crew; room: Room; onOpen: (id: string
 
   return (
     <aside className="panel profile">
+      {props.edge}
       <div className="profile-close">
         <button className="icon-button" onClick={props.onClose} title="Close">
           <Icon name="x" size={15} />

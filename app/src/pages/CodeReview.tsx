@@ -5,6 +5,7 @@ import { Composer } from "../components/Composer";
 import { DiffText } from "../components/DiffView";
 import { Icon } from "../components/Icon";
 import { modelLabel } from "../components/ModelPicker";
+import { Resizer, useWidth } from "../components/Resizer";
 import { Thread } from "../components/Thread";
 import { Segmented } from "../components/ui";
 import type { Crew } from "../state";
@@ -12,6 +13,8 @@ import type { Pull, PullSummary, Reviewer, Task } from "../types";
 import { ACTIVE } from "../types";
 
 type Selected = { repo: string; number: number };
+
+const area = () => document.querySelector<HTMLElement>(".review-area"); // the grid both edges resize
 
 // Kept while the app is open, so going back to a pull request or the teams' list shows it at once while it refreshes.
 let keptTeam: PullSummary[] | null = null;
@@ -47,9 +50,11 @@ export function CodeReview({ crew, onSettings }: { crew: Crew; onSettings: () =>
     if (!selected && first) setSelected({ repo: first.repo, number: first.number });
   }, [first?.repo, first?.number]);
 
+  const [listWidth, setListWidth] = useWidth("review-list");
   return (
     <div className="review-area">
       <aside className="review-list">
+        <Resizer label="Resize the list" edge="right" width={listWidth} min={200} max={480} keep={320} cssVar="--review-list-user" host={area} pane={() => area()?.querySelector<HTMLElement>(":scope > .review-list") ?? null} flexible={() => area()?.querySelector<HTMLElement>(":scope > .pull-view, :scope > .review-empty") ?? null} onChange={setListWidth} />
         <header className="review-list-head" data-tauri-drag-region>
           <h1 data-tauri-drag-region>Code review</h1>
           <span className="grow" data-tauri-drag-region />
@@ -251,6 +256,7 @@ function rounds(reviews: Task[]): Task[][] {
 }
 
 function ReviewPane({ crew, pull, reviews, onStarted, onSettings }: { crew: Crew; pull: Pull; reviews: Task[]; onStarted: () => void; onSettings: () => void }) {
+  const [paneWidth, setPaneWidth] = useWidth("review-pane");
   const [reviewers, setReviewers] = useState<Reviewer[]>([]);
   const [note, setNote] = useState("");
   const [starting, setStarting] = useState(false);
@@ -285,6 +291,7 @@ function ReviewPane({ crew, pull, reviews, onStarted, onSettings }: { crew: Crew
 
   return (
     <aside className="review-pane">
+      <Resizer label="Resize the review" edge="left" width={paneWidth} min={280} max={760} keep={320} cssVar="--review-pane-user" host={area} pane={() => area()?.querySelector<HTMLElement>(":scope > .review-pane") ?? null} flexible={() => area()?.querySelector<HTMLElement>(":scope > .pull-view") ?? null} onChange={setPaneWidth} />
       <header className="review-pane-head">
         <span className="review-pane-title">Private review</span>
         <span className="grow" />

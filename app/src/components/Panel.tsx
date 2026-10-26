@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { api, bridge } from "../api";
 import type { Crew } from "../state";
 import { oneLine } from "../state";
@@ -14,7 +14,7 @@ import { MergeButton } from "./WorkCard";
 type Tab = "activity" | "changes" | "review";
 
 /** One delegated task, beside the conversation it belongs to. */
-export function Panel(props: { crew: Crew; task: Task; onOpen: (id: string) => void; onClose: () => void }) {
+export function Panel(props: { crew: Crew; task: Task; onOpen: (id: string) => void; onClose: () => void; edge?: ReactNode }) {
   const { crew, task } = props;
   const [tab, setTab] = useState<Tab>("activity");
   const [review, setReview] = useState<ReviewState | null>(null);
@@ -32,6 +32,7 @@ export function Panel(props: { crew: Crew; task: Task; onOpen: (id: string) => v
 
   return (
     <aside className="panel">
+      {props.edge}
       <header className="panel-head">
         <div className="panel-top">
           <div className="panel-who">

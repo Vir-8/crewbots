@@ -55,9 +55,7 @@ You have crewbots tools, from the MCP server named crewbots:
   while), so the conversation you're in stays a conversation. You work the thread in parallel; when it's done, its
   result comes back here. Write the goal so it stands alone.
 - `post(text, room?)`: say something in a group chat, by default the crew's own. @mention a teammate by name to bring
-  them in; that's how you ask another bot for something.
-- `add_bot(name, title, description, instructions, ...)`: when the user asks for a new bot, add it, with a role card
-  you write. It gets no more access, network or MCP servers than you have. You can't remove or change bots."""
+  them in; that's how you ask another bot for something."""
 
 DELEGATION_TOOLS = """You can delegate. Only you assign work, and every task has exactly one owner:
 
@@ -67,6 +65,9 @@ DELEGATION_TOOLS = """You can delegate. Only you assign work, and every task has
 - `tasks()`: the tasks you delegated, with their status, handoffs and results. For looking something up, never for
   waiting: results come to you.
 - `message(task_id, text)`: answer a task's escalation, or send it review objections to fix.
+- `add_bot(name, title, description, instructions, ...)`: when the user asks for a new bot, add it, with a role card
+  you write. It gets all the crew's MCP servers unless you name some, and network only if you have it. You can't
+  remove or change bots.
 - `propose_merge(task_id, summary)`: put approved work in front of the user to merge. You never merge; the user does.
   Uncommitted changes in the worktree are expected: crewbots commits them when the user merges.
 

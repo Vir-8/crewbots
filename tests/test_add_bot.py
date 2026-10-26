@@ -1,10 +1,12 @@
-"""A bot can add a bot to the crew when asked, with no more than it has itself, and can never remove or change one."""
+"""The chief can add a bot to the crew when asked, with whatever it gives it, and no bot can remove or change one."""
+
+import json
 
 import pytest
 from fakes import FakeBackend
 
-from crewbots import crew
-from crewbots.crew_tools import TOOLS, CrewTools, ToolRefused
+from crewbots import cards, crew
+from crewbots.crew_tools import TOOLS, CrewTools, ToolRefused, tools_for
 from crewbots.runner import Runner
 from crewbots.store import Store
 
@@ -15,6 +17,8 @@ MARKETING = {"name": "marketing", "title": "Marketing Lead", "description": "Pla
 @pytest.fixture
 def crewed(tmp_path):
     home = crew.init(tmp_path / "crew")
+    (home / "mcp.json").write_text(json.dumps({"mcpServers": {"blender": {"command": "blender-mcp"},
+                                                              "unity": {"type": "http", "url": "http://x/mcp"}}}))
     store = Store(tmp_path / "crew.db")
     runner = Runner(store, crew.load(home), {"fake": FakeBackend()}, worktree_root=tmp_path / "wts")
     yield runner, store
@@ -30,29 +34,39 @@ async def test_the_chief_adds_a_bot_when_asked(crewed):
     runner, store = crewed
     chief, task = tools(runner, store, "chief")
 
-    said = await chief.call("add_bot", {**MARKETING, "display_name": "Mira"})
+    said = await chief.call("add_bot", {**MARKETING, "display_name": "Mira", "access": "workspace_write"})
 
     assert said.startswith("Added Mira (@marketing), Marketing Lead, to the crew.")
     marketing = runner.crew.bots["marketing"]
-    assert marketing.access.value == "read_only" and marketing.backend == runner.crew.bots["chief"].backend
-    assert (runner.crew.home / "bots" / "marketing.md").exists()
+    assert marketing.access.value == "workspace_write" and marketing.backend == runner.crew.bots["chief"].backend
+    assert marketing.mcp_names == ("blender", "unity")  # every server the crew has, unless the chief names some
     assert any(e.kind == "notice" and "Added Mira" in e.data["message"] for e in store.events(task.id))
 
 
-async def test_a_new_bot_gets_no_more_than_its_maker(crewed):
+async def test_only_a_coordinator_can_add_bots(crewed):
     runner, store = crewed
-    engineer, _ = tools(runner, store, "engineer")  # writes in its folder, doesn't delegate
-    chief, _ = tools(runner, store, "chief")  # reads only
+    engineer, _ = tools(runner, store, "engineer")
 
-    with pytest.raises(ToolRefused, match="more access than you"):
-        await chief.call("add_bot", {**MARKETING, "access": "workspace_write"})
-    with pytest.raises(ToolRefused, match="only a bot that delegates"):
-        await engineer.call("add_bot", {**MARKETING, "can_delegate": True})
-    with pytest.raises(ToolRefused, match="MCP servers you have yourself"):
-        await engineer.call("add_bot", {**MARKETING, "mcp": ["blender"]})
-    with pytest.raises(ToolRefused, match="more network than you"):
+    assert "add_bot" not in {t.name for t in tools_for(can_delegate=False)}
+    with pytest.raises(ToolRefused, match="not one of this bot's crew tools"):
+        await engineer.call("add_bot", MARKETING)
+
+
+async def test_the_chief_gives_what_it_chooses_short_of_full_access_and_network_it_hasnt_got(crewed):
+    runner, store = crewed
+    chief, _ = tools(runner, store, "chief")
+
+    with pytest.raises(ToolRefused, match="full access"):
+        await chief.call("add_bot", {**MARKETING, "access": "full"})
+    with pytest.raises(ToolRefused, match="you have no network"):
         await chief.call("add_bot", {**MARKETING, "network": True})
-    assert "marketing" not in runner.crew.bots
+
+    cards.save_card(runner.crew.home, "chief", {"network": True}, None)
+    runner.reload(crew.load(runner.crew.home))
+    chief, _ = tools(runner, store, "chief")
+    await chief.call("add_bot", {**MARKETING, "network": True, "can_delegate": True, "mcp": ["unity"]})
+    added = runner.crew.bots["marketing"]
+    assert added.network is True and added.can_delegate and added.mcp_names == ("unity",)
 
 
 async def test_a_taken_name_is_refused_and_no_tool_removes_or_changes_a_bot(crewed):

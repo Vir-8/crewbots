@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { Crew, InboxItem } from "../state";
 import { oneLine } from "../state";
 import type { Chat } from "../types";
@@ -41,6 +41,7 @@ export function Sidebar(props: {
   onOpen: (taskId: string) => void;
   onNewGroup: () => void;
   onExpand: () => void;
+  edge?: ReactNode; // the handle on its border, to resize it, or open it from the rail
 }) {
   const { crew } = props;
   const [query, setQuery] = useState("");
@@ -62,6 +63,7 @@ export function Sidebar(props: {
   if (props.rail) {
     return (
       <aside className="sidebar rail">
+        {props.edge}
         <div className="sidebar-drag" data-tauri-drag-region />
         <button
           className="rail-button"
@@ -101,6 +103,7 @@ export function Sidebar(props: {
 
   return (
     <aside className="sidebar">
+      {props.edge}
       <div className="sidebar-drag" data-tauri-drag-region />
       <div className="side-top">
         <label className="side-search">

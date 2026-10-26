@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DirectChat, GroupChat } from "./components/ChatView";
 import { Icon } from "./components/Icon";
 import { Panel } from "./components/Panel";
 import { Profile, RoomProfile } from "./components/Profile";
+import { RailEdge, Resizer, useWidth } from "./components/Resizer";
 import { Sidebar } from "./components/Sidebar";
 import { CodeReview } from "./pages/CodeReview";
-import { CrewBots } from "./pages/CrewBots";
+import { BotEditor, CrewBots } from "./pages/CrewBots";
 import { Routines } from "./pages/Routines";
 import { Settings } from "./pages/Settings";
 import { Analytics } from "./pages/Analytics";
@@ -39,7 +40,7 @@ export function App() {
   const crew = useCrew();
   const initial = new URLSearchParams(location.search).get("task");
   const [current, setCurrent] = useState<string | null>(null); // a chat's key, "review", or a page ("page:crew", ...)
-  const [editing, setEditing] = useState<string | null>(null); // a bot being edited on the Crew page; "" for a new one
+  const [editing, setEditing] = useState<string | null>(null); // a bot being edited, over whatever's open; "" for a new one
   const [thread_, setThread] = useState<string | null>(null); // a thread open beside its chat
   // The profile beside a bot's chat, or a group's beside its chat: on unless you turn it off, and remembered, wherever
   // you go in between.
@@ -51,6 +52,13 @@ export function App() {
   const [stepAside, setStepAside] = useState(false);
   useEffect(() => setStepAside(current === "review" && window.innerWidth < 1280), [current]);
   const sideHidden = sideOff || stepAside;
+  // Widths you drag the sidebar and the panels to, kept; each edge's handle sets them.
+  const shell = useRef<HTMLDivElement>(null);
+  const [sideWidth, setSideWidth] = useWidth("sidebar");
+  const [panelWidth, setPanelWidth] = useWidth("panel");
+  const [profileWidth, setProfileWidth] = useWidth("profile");
+  const host = () => shell.current;
+  const part = (selector: string) => () => shell.current?.querySelector<HTMLElement>(`:scope > ${selector}`) ?? null;
   const setSideHidden = (hidden: boolean) => {
     setStepAside(false);
     setSideOff(hidden);
@@ -81,7 +89,7 @@ export function App() {
   const room = !thread && profileOn && chat?.kind === "group" && current === chat.key ? chat.room : null;
 
   return (
-    <div className={`app ${thread || profile || room ? "with-panel" : ""} ${profile || room ? "with-profile" : ""} ${current === "review" ? "reviewing" : ""} ${sideHidden ? "side-hidden" : ""}`}>
+    <div ref={shell} className={`app ${thread || profile || room ? "with-panel" : ""} ${profile || room ? "with-profile" : ""} ${current === "review" ? "reviewing" : ""} ${sideHidden ? "side-hidden" : ""}`}>
       {/* One place in both states, beside the window's buttons, so it's always under your pointer. */}
       <button className="icon-button side-toggle" onClick={() => setSideHidden(!sideHidden)} title={sideHidden ? "Expand the sidebar" : "Collapse the sidebar"}>
         <Icon name="sidebar" size={15} />
@@ -97,10 +105,17 @@ export function App() {
         onOpen={openTask}
         onNewGroup={() => setNewGroup(true)}
         onExpand={() => setSideHidden(false)}
+        edge={
+          sideHidden ? (
+            <RailEdge onExpand={() => setSideHidden(false)} />
+          ) : (
+            <Resizer label="Resize the sidebar" edge="right" width={sideWidth} min={200} max={440} cssVar="--side-user" host={host} pane={part(".sidebar")} flexible={part(".main")} onChange={setSideWidth} onCollapse={() => setSideHidden(true)} />
+          )
+        }
       />
       <main className="main">
         {current === "page:crew" ? (
-          <CrewBots crew={crew} editing={editing} onEdit={setEditing} onChat={(bot) => setCurrent(`bot:${bot}`)} />
+          <CrewBots crew={crew} onEdit={setEditing} onChat={(bot) => setCurrent(`bot:${bot}`)} />
         ) : current === "page:routines" ? (
           <Routines crew={crew} onOpen={openTask} />
         ) : current === "page:tools" ? (
@@ -119,17 +134,23 @@ export function App() {
           <div className="thread" />
         )}
       </main>
-      {thread && <Panel crew={crew} task={thread} onOpen={openTask} onClose={() => setThread(null)} />}
+      {thread && (
+        <Panel
+          crew={crew}
+          task={thread}
+          onOpen={openTask}
+          onClose={() => setThread(null)}
+          edge={<Resizer label="Resize the thread" edge="left" width={panelWidth} min={320} max={960} cssVar="--panel-user" host={host} pane={part(".panel")} flexible={part(".main")} onChange={setPanelWidth} />}
+        />
+      )}
       {profile && (
         <Profile
           crew={crew}
           bot={profile}
           onOpen={openTask}
           onClose={() => setProfileOn(false)}
-          onEdit={() => {
-            setEditing(profile);
-            setCurrent("page:crew");
-          }}
+          onEdit={() => setEditing(profile)}
+          edge={<Resizer label="Resize the profile" edge="left" width={profileWidth} min={260} max={560} cssVar="--profile-user" host={host} pane={part(".panel")} flexible={part(".main")} onChange={setProfileWidth} />}
         />
       )}
       {room && (
@@ -139,8 +160,10 @@ export function App() {
           onOpen={openTask}
           onChat={(bot) => setCurrent(`bot:${bot}`)}
           onClose={() => setProfileOn(false)}
+          edge={<Resizer label="Resize the group's panel" edge="left" width={profileWidth} min={260} max={560} cssVar="--profile-user" host={host} pane={part(".panel")} flexible={part(".main")} onChange={setProfileWidth} />}
         />
       )}
+      {editing !== null && <BotEditor crew={crew} name={editing || null} onClose={() => setEditing(null)} />}
       {newGroup && (
         <NewGroup
           crew={crew}

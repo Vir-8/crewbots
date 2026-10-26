@@ -79,7 +79,6 @@ RETRY_PROMPT = (
     "your answer again."
 )
 MCP_SERVER_NAME = "crewbots"
-ACCESS_RANK = {Access.READ_ONLY: 0, Access.WORKSPACE_WRITE: 1, Access.FULL: 2}
 MCP_COMMAND = (sys.executable, "-m", "crewbots.mcp_server")
 
 
@@ -591,24 +590,19 @@ class Runner:
         return self.send(task_id, text, sender=self.store.get_task(parent_id).bot)
 
     def add_bot(self, task_id: str, fields: dict[str, Any]) -> Bot:
-        """A bot adds a bot, when the user asks it to. The new one gets no more than its maker has: no more access or
-        network, only MCP servers the maker has itself, and delegation only from a bot that delegates. Nothing lets a
-        bot remove or change one: that's the user's."""
+        """A coordinator adds a bot, when the user asks it to, with whatever it gives it: either access short of full
+        (no sandbox is the user's call), any of the crew's MCP servers (all of them unless it names some), delegation,
+        and network unless the coordinator has none itself. Nothing lets a bot remove or change one: that's the user's."""
         maker = self.bot_for(self.store.get_task(task_id).bot)
-        if maker is None:
-            raise NotAllowed("only a bot of the crew can add one")
+        if maker is None or not maker.can_delegate:
+            raise NotAllowed("only a bot that coordinates the crew can add bots")
         access = Access(fields.get("access") or Access.READ_ONLY)
-        if ACCESS_RANK[access] > ACCESS_RANK[maker.access]:
-            raise NotAllowed(f"a new bot can't have more access than you ({maker.access}); ask the user to raise it")
+        if access is Access.FULL:
+            raise NotAllowed("full access, with no sandbox, is the user's to give, in the app")
         network = fields.get("network", maker.network)
-        if network and not (maker.access is Access.FULL or maker.network is True or network == maker.network):
-            raise NotAllowed("a new bot can't have more network than you; ask the user to give it more")
-        if fields.get("can_delegate") and not maker.can_delegate:
-            raise NotAllowed("only a bot that delegates can add one that does")
-        mcp = list(fields.get("mcp") or [])
-        if extra := [n for n in mcp if n not in maker.mcp_names]:
-            raise NotAllowed(f"you can only pass on MCP servers you have yourself, and not {', '.join(extra)}; the "
-                             "user can add more in the app")
+        if network and not maker.network:
+            raise NotAllowed("you have no network, so a bot you add can't either; the user can give it some")
+        mcp = list(fields["mcp"]) if fields.get("mcp") is not None else sorted(self.crew.mcp_servers)
         name = str(fields["name"]).strip().lower()
         card = {"display_name": fields.get("display_name"), "title": fields["title"],
                 "description": fields["description"], "backend": fields.get("backend") or maker.backend,

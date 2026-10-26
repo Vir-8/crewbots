@@ -285,9 +285,14 @@ Each step leaves the system working.
   which env and header names a server has, never their values.
 - **Skills** come from the crew's `skills/` and the user's global folders; a global one that can't be read, or one a
   CLI keeps for itself (Codex's `.system`), is left out, and the crew's own win a clash of names.
-- **`add_bot`**, for any bot: it writes the role card through the same code as the app, checks the crew still loads
-  (or takes the card back), and reloads the crew. Its maker's access, network, MCP servers and delegation are the
-  ceiling. There is no tool to remove or edit a bot.
+- **`add_bot`**, for coordinators only: it writes the role card through the same code as the app, checks the crew
+  still loads (or takes the card back), and reloads the crew. The new bot has what the coordinator gives it, except
+  full access (the user's to give) and network when the coordinator has none. There is no tool to remove or edit a
+  bot.
+- **Resizing panes** (`Resizer.tsx`): each pane's width is a CSS variable on the grid it's part of, set straight on
+  the element while dragging (so a re-render mid-drag can't undo it) and kept in localStorage when the drag ends. The
+  handle limits a drag to what the middle column can give up, the grid's `minmax` tracks let side panes give way in a
+  narrow window, and the CSS defaults stand in until a pane is dragged.
 - **`/status`** asks the runner for a task's session and context: measured live when its session is open and idle,
   else the last measurement, kept after every turn.
 - **When a turn fails:** the CLIs retry a failed API call themselves first (Claude Code with backoff, Codex per

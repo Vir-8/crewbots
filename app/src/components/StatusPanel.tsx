@@ -40,14 +40,14 @@ export function StatusPanel({ taskId, onClose }: { taskId: string; onClose: () =
             {status.backend ?? "?"} · {status.model ?? "default model"} · {status.effort ? EFFORT[status.effort] ?? status.effort : "default effort"}
           </dd>
           <dt>Session</dt>
-          <dd className="mono">
-            {status.session_id ?? "none yet"}
-            <span className="faint"> · {status.open ? "open" : status.session_id ? "resumes on the next message" : ""}</span>
+          <dd>
+            {status.session_id ? <span className="mono">{status.session_id}</span> : <span className="faint">None yet: it starts with the first message</span>}
+            {status.session_id && <span className="faint"> · {status.open ? "open" : "resumes on the next message"}</span>}
           </dd>
           <dt>Context</dt>
           <dd>
             {used === null ? (
-              <span className="faint">Not measured yet: it is after a turn</span>
+              <span className="faint">Not measured yet: it is after each turn</span>
             ) : (
               <span className="status-meter">
                 <span className={`meter ${status.rollover_percent && used >= status.rollover_percent * 0.85 ? "warning" : ""}`}>

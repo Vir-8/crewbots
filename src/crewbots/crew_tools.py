@@ -93,14 +93,15 @@ TOOLS = [
         "which can't be taken. title and description: what it is, a line each; the description is how the crew routes "
         "work to it. instructions: its role card, in markdown: ## Mission, ## Owns, ## Does not own, ## Done means. "
         "Optional: display_name, backend (claude or codex), model, effort, access (read_only or workspace_write), network "
-        "(true or false), can_delegate, mcp (names of MCP servers), skills (names; leave out for all of them). It gets no "
-        "more than you have: access, network and MCP servers of your own, and delegation only if you delegate. Bots can't "
-        "be removed or changed this way: that's the user's, in the app.",
+        "(true or false), can_delegate, mcp (names of the crew's MCP servers; leave out for all of them), skills (names; "
+        "leave out for all of them). Network only if you have it yourself. Bots can't be removed or changed this way: "
+        "that's the user's, in the app.",
         _object({"name": STRING, "title": STRING, "description": STRING, "instructions": STRING, "display_name": STRING,
                  "backend": {"type": "string", "enum": ["claude", "codex"]}, "model": STRING, "effort": STRING,
                  "access": {"type": "string", "enum": ["read_only", "workspace_write"]},
                  "network": {"type": "boolean"}, "can_delegate": {"type": "boolean"}, "mcp": STRINGS, "skills": STRINGS},
                 ["name", "title", "description", "instructions"]),
+        coordinator_only=True,
     ),
     ToolDef(
         "delegate",
