@@ -4,6 +4,7 @@ import { describeCall, doing, limitText, oneLine } from "../state";
 import type { Attachment, StoredEvent, Task } from "../types";
 import { ACTIVE } from "../types";
 import { MessageFiles } from "./Attachments";
+import { Boundary } from "./Boundary";
 import { Markdown } from "./bits";
 import { Icon } from "./Icon";
 import { WorkCard } from "./WorkCard";
@@ -53,7 +54,9 @@ export function Thread(props: { crew: Crew; task: Task; onOpen: (id: string) => 
       <div className={`thread-col ${props.compact ? "compact" : ""} ${props.chat ? "chat" : ""}`}>
         {!events && <div className="thread-loading" />}
         {blocks.map((block) => (
-          <BlockView key={`${block.kind}-${block.id}`} block={block} crew={crew} lead={task.bot} onOpen={props.onOpen} />
+          <Boundary key={`${block.kind}-${block.id}`} where={`a message (${block.kind} ${block.id} in ${task.id})`}>
+            <BlockView block={block} crew={crew} lead={task.bot} onOpen={props.onOpen} />
+          </Boundary>
         ))}
         {active && (
           <div className="working">

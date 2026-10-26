@@ -17,6 +17,8 @@ import os
 import secrets
 import subprocess
 import sys
+import time
+from collections import deque
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -49,6 +51,7 @@ DEFAULT_PORT = 8765
 API_VERSION = 1  # the /v1 in every route; a change the app can't follow raises it
 PROJECT = Path(__file__).resolve().parents[2]  # the checkout the daemon runs from, when it runs from one
 RESTART_EXIT = 75  # EX_TEMPFAIL: stopped to be started again
+CLIENT_ERRORS_PER_MINUTE = 30
 RESTART_TIMEOUT_S = 20 * 60.0  # how long a restart waits for running turns; then they're cut off and carried on
 DAEMON_FILE = "daemon.json"  # in the crew's folder: where the daemon is and its token, readable only by the user
 
@@ -581,6 +584,14 @@ class VersionOut(BaseModel):
     schema_hash: str  # a fingerprint of every route and model; the app is built with its own
     build: str | None  # the commit the daemon started from, when it runs from a git checkout
     source_changed: bool  # the checkout has moved on since: a restart would update the daemon
+
+
+class ClientError(BaseModel):
+    """Something in the app's window that failed, for the daemon's log: the app has no terminal of its own."""
+
+    where: str
+    message: str
+    stack: str | None = None
 
 
 class RestartBody(BaseModel):
@@ -1363,6 +1374,18 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
         return runner.state()
 
     started_from = _commit()
+    reported: deque[float] = deque()  # when the app last reported errors, so a part failing in a loop can't flood
+
+    @v1.post("/client-errors", status_code=204)
+    async def client_error(body: ClientError):
+        now = time.monotonic()
+        while reported and now - reported[0] > 60:
+            reported.popleft()
+        if len(reported) < CLIENT_ERRORS_PER_MINUTE:
+            reported.append(now)
+            stack = (body.stack or "")[:4000]
+            print(f"app: {body.where} failed: {body.message[:500]}" + (f"\n{stack}" if stack else ""), file=sys.stderr,
+                  flush=True)
 
     @v1.get("/version", response_model=VersionOut)
     async def version():

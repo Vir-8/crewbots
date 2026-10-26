@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { DirectChat, GroupChat } from "./components/ChatView";
+import { Boundary } from "./components/Boundary";
 import { CrewBanner } from "./components/CrewBanner";
 import { Icon } from "./components/Icon";
 import { Panel } from "./components/Panel";
@@ -103,6 +104,7 @@ export function App() {
       >
         <Icon name="sidebar" size={15} />
       </button>
+      <Boundary where="the sidebar" as="aside" className="sidebar">
       <Sidebar
         crew={crew}
         current={current}
@@ -122,7 +124,9 @@ export function App() {
           )
         }
       />
+      </Boundary>
       <main className="main">
+        <Boundary where={`the main view (${current ?? "none"})`} key={current ?? ""}>
         {current === "page:crew" ? (
           <CrewBots crew={crew} onEdit={setEditing} onChat={(bot) => setCurrent(`bot:${bot}`)} />
         ) : current === "page:routines" ? (
@@ -142,8 +146,10 @@ export function App() {
         ) : (
           <div className="thread" />
         )}
+        </Boundary>
       </main>
       {thread && (
+        <Boundary where="the thread" as="aside" className="panel" key={thread.id}>
         <Panel
           crew={crew}
           task={thread}
@@ -151,8 +157,10 @@ export function App() {
           onClose={() => setThread(null)}
           edge={<Resizer label="Resize the thread" edge="left" width={panelWidth} min={320} max={960} cssVar="--panel-user" host={host} pane={part(".panel")} flexible={part(".main")} onChange={setPanelWidth} />}
         />
+        </Boundary>
       )}
       {profile && (
+        <Boundary where="the profile" as="aside" className="panel profile" key={profile}>
         <Profile
           crew={crew}
           bot={profile}
@@ -161,8 +169,10 @@ export function App() {
           onEdit={() => setEditing(profile)}
           edge={<Resizer label="Resize the profile" edge="left" width={profileWidth} min={260} max={560} cssVar="--profile-user" host={host} pane={part(".panel")} flexible={part(".main")} onChange={setProfileWidth} />}
         />
+        </Boundary>
       )}
       {room && (
+        <Boundary where="the group's panel" as="aside" className="panel profile" key={room.id}>
         <RoomProfile
           crew={crew}
           room={room}
@@ -171,6 +181,7 @@ export function App() {
           onClose={() => setProfileOn(false)}
           edge={<Resizer label="Resize the group's panel" edge="left" width={profileWidth} min={260} max={560} cssVar="--profile-user" host={host} pane={part(".panel")} flexible={part(".main")} onChange={setProfileWidth} />}
         />
+        </Boundary>
       )}
       {editing !== null && <BotEditor crew={crew} name={editing || null} onClose={() => setEditing(null)} />}
       {newGroup && (

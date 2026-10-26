@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "ca7787ae554a";
+export const API_SCHEMA = "83abb297b87f";
 
 export interface AttachmentCopy {
   path: string;
@@ -149,6 +149,13 @@ export interface ChildOut {
   handoff?: HandoffOut | null;
   result?: string | null;
   error?: string | null;
+}
+
+/** Something in the app's window that failed, for the daemon's log: the app has no terminal of its own. */
+export interface ClientError {
+  where: string;
+  message: string;
+  stack?: string | null;
 }
 
 export interface CrewState {

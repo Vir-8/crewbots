@@ -134,6 +134,16 @@ def test_the_daemon_says_which_version_it_is(client):
     assert version["source_changed"] is False
 
 
+def test_the_apps_errors_go_to_the_daemons_log_without_flooding_it(client, capsys):
+    for n in range(40):
+        assert client.post("/client-errors", json={"where": "a message", "message": f"boom {n}", "stack": "at X"},
+                           headers=AUTH).status_code == 204
+
+    logged = capsys.readouterr().err
+    assert "app: a message failed: boom 0\nat X" in logged
+    assert logged.count("app: a message failed") == 30  # a minute's worth; the rest are dropped
+
+
 def test_the_crew_can_be_paused_and_resumed_over_the_api(client):
     assert client.get("/crew", headers=AUTH).json() == {"paused": False, "restarting": False, "running": 0,
                                                          "turns_running": 0, "held": 0, "sessions": 0, "limits": []}

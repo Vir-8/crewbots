@@ -353,6 +353,26 @@ select {
   color: var(--red);
 }
 
+/* A part of the window that failed to show, in its own place, with a way to show it again. */
+.failed-part {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 16px;
+  color: var(--soft);
+  font-size: 13px;
+}
+
+.failed-part-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.failed-part-line .icon {
+  color: var(--red);
+}
+
 /* The daemon restarting or being reconnected to: a quiet pill over the headers' line, out of the way of the work. */
 .crew-banner {
   position: fixed;

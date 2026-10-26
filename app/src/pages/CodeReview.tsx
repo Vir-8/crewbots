@@ -3,7 +3,7 @@ import { api, bridge } from "../api";
 import { Markdown, ago } from "../components/bits";
 import { Composer } from "../components/Composer";
 import { useDraft } from "../drafts";
-import { PullDiff } from "../components/PullDiff";
+import { MAX_HITS, PullDiff } from "../components/PullDiff";
 import { Icon } from "../components/Icon";
 import { MentionArea } from "../components/Mentions";
 import { modelLabel } from "../components/ModelPicker";
@@ -297,7 +297,7 @@ function PullView({ crew, selected, onSettings }: { crew: Crew; selected: Select
                 if (e.key === "Escape") setFinding(false);
               }}
             />
-            <span className="find-count faint">{query ? (found ? `${current + 1} of ${found}` : "No matches") : ""}</span>
+            <span className="find-count faint">{query ? (found ? `${current + 1} of ${found}${found >= MAX_HITS ? "+" : ""}` : "No matches") : ""}</span>
             <button className="icon-button" onClick={() => step(-1)} disabled={!found} title="Previous (⇧↩)">
               <Icon name="chevronDown" size={13} className="flip" />
             </button>

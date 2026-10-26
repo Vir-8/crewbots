@@ -6,9 +6,9 @@ import { MentionArea } from "./Mentions";
 
 type Side = "RIGHT" | "LEFT";
 type Row = { kind: "hunk" | "add" | "del" | "ctx"; text: string; old?: number; new?: number };
-type File = { path: string; status: "added" | "deleted" | "changed"; binary: boolean; rows: Row[]; added: number; removed: number };
+export type File = { path: string; status: "added" | "deleted" | "changed"; binary: boolean; rows: Row[]; added: number; removed: number };
 type Spot = { path: string; side: Side; line: number };
-type Hit = { file: number; row: number; at: number }; // row -1 is the file's name
+export type Hit = { file: number; row: number; at: number }; // row -1 is the file's name
 
 const IMAGE = /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i;
 
@@ -31,19 +31,7 @@ export function PullDiff(props: {
   const files = useMemo(() => parse(props.diff), [props.diff]);
   const [open, setOpen] = useState<Spot | null>(null);
   const query = (props.find ?? "").toLowerCase();
-  const hits = useMemo(() => {
-    const out: Hit[] = [];
-    if (!query) return out;
-    const look = (text: string, file: number, row: number) => {
-      const lower = text.toLowerCase();
-      for (let at = lower.indexOf(query); at >= 0; at = lower.indexOf(query, at + query.length)) out.push({ file, row, at });
-    };
-    files.forEach((file, f) => {
-      look(file.path, f, -1);
-      file.rows.forEach((row, r) => look(row.text, f, r));
-    });
-    return out;
-  }, [files, query]);
+  const hits = useMemo(() => findHits(files, query), [files, query]);
   const hitsAt = useMemo(() => {
     const at = new Map<string, number[]>();
     hits.forEach((h, n) => at.set(`${h.file}:${h.row}`, [...(at.get(`${h.file}:${h.row}`) ?? []), n]));
@@ -240,8 +228,27 @@ function ImageChange({ file, image }: { file: File; image: (path: string, side: 
   );
 }
 
+// Past this many, find stops marking: a one-letter search of a big diff would otherwise take seconds to draw.
+export const MAX_HITS = 5000;
+
+/** Where `query` (lower case) appears in the diff's paths and lines, in order: at most MAX_HITS. */
+export function findHits(files: File[], query: string): Hit[] {
+  const out: Hit[] = [];
+  if (!query) return out;
+  const look = (text: string, file: number, row: number) => {
+    const lower = text.toLowerCase();
+    if (lower.length !== text.length) return; // a character whose lower case is longer: positions wouldn't line up
+    for (let at = lower.indexOf(query); at >= 0 && out.length < MAX_HITS; at = lower.indexOf(query, at + query.length)) out.push({ file, row, at });
+  };
+  files.forEach((file, f) => {
+    look(file.path, f, -1);
+    file.rows.forEach((row, r) => look(row.text, f, r));
+  });
+  return out;
+}
+
 /** A unified diff into files and numbered rows. */
-function parse(diff: string): File[] {
+export function parse(diff: string): File[] {
   const files: File[] = [];
   for (const chunk of diff.split(/^(?=diff --git )/m).filter(Boolean)) {
     const lines = chunk.split("\n");

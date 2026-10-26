@@ -82,6 +82,7 @@ export const api = {
   deleteRoutine: (name: string) => call<{ ok: boolean }>("DELETE", `/routines/${encodeURIComponent(name)}`),
   pause: (on: boolean) => call<CrewState>("POST", on ? "/crew/pause" : "/crew/resume"),
   version: () => call<VersionOut>("GET", "/version"),
+  clientError: (error: { where: string; message: string; stack: string | null }) => call<void>("POST", "/client-errors", error),
   /** Restarts the daemon once no turn is running (or now, `whenIdle` false); turns cut off carry on after. */
   restart: (whenIdle: boolean) => call<CrewState>("POST", "/crew/restart", { when_idle: whenIdle }),
   cancelRestart: () => call<CrewState>("DELETE", "/crew/restart"),

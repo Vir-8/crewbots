@@ -5,6 +5,7 @@ import type { Chat, Room, RoomMessage } from "../types";
 import { ACTIVE } from "../types";
 import { MessageFiles } from "./Attachments";
 import { Avatar, GroupAvatar, labelOf } from "./Avatar";
+import { Boundary } from "./Boundary";
 import { Markdown, ago } from "./bits";
 import { Composer } from "./Composer";
 import { Icon } from "./Icon";
@@ -123,10 +124,12 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
             {groups.map((group) =>
               group.author === "user" ? (
                 group.messages.map((m) => (
-                  <div key={m.id} className="you">
-                    {m.text && <div className="you-text">{withMentions(m.text)}</div>}
-                    <MessageFiles items={m.attachments ?? []} />
-                  </div>
+                  <Boundary key={m.id} where={`a group chat message (${m.id})`}>
+                    <div className="you">
+                      {m.text && <div className="you-text">{withMentions(m.text)}</div>}
+                      <MessageFiles items={m.attachments ?? []} />
+                    </div>
+                  </Boundary>
                 ))
               ) : (
                 <div key={group.messages[0].id} className="room-group">
@@ -137,9 +140,11 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
                       <span className="faint"> · {ago(group.messages[0].at)}</span>
                     </div>
                     {group.messages.map((m) => (
-                      <div key={m.id} className="room-bubble">
-                        <Markdown text={m.text} onSelect={props.onOpen} />
-                      </div>
+                      <Boundary key={m.id} where={`a group chat message (${m.id})`}>
+                        <div className="room-bubble">
+                          <Markdown text={m.text} onSelect={props.onOpen} />
+                        </div>
+                      </Boundary>
                     ))}
                   </div>
                 </div>
