@@ -14,7 +14,6 @@ def codex_home(tmp_path, monkeypatch):
     home = tmp_path / "codex-home"
     home.mkdir()
     monkeypatch.setenv("CODEX_HOME", str(home))
-    monkeypatch.setattr(codex_isolation, "LAST_GOOD", tmp_path / "last-good.json")
     codex_isolation._cache.clear()
     return home
 

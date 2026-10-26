@@ -13,9 +13,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from crewbots import paths
+
 LABEL = "app.crewbots.daemon"
-AGENTS = Path.home() / "Library" / "LaunchAgents"
-LOGS = Path.home() / ".crewbots" / "logs"
 
 
 @dataclass(frozen=True)
@@ -28,7 +28,7 @@ class ServiceStatus:
 
 
 def plist_path(label: str = LABEL) -> Path:
-    return AGENTS / f"{label}.plist"
+    return paths.launch_agents() / f"{label}.plist"
 
 
 def login_path() -> str:
@@ -46,7 +46,7 @@ def login_path() -> str:
 def plist(home: Path, port: int, label: str = LABEL, executable: Path | None = None) -> dict:
     """The LaunchAgent: run `crewbots serve` for this crew at login, and again if it ever exits with an error."""
     executable = executable or Path(sys.executable).with_name("crewbots")
-    LOGS.mkdir(parents=True, exist_ok=True)
+    paths.logs().mkdir(parents=True, exist_ok=True)
     return {
         "Label": label,
         "ProgramArguments": [str(executable), "--home", str(home.expanduser()), "serve", "--port", str(port)],
@@ -55,8 +55,8 @@ def plist(home: Path, port: int, label: str = LABEL, executable: Path | None = N
         "KeepAlive": {"SuccessfulExit": False},  # restart after a crash, not after a clean stop
         "ThrottleInterval": 10,
         "ProcessType": "Interactive",  # it runs agents for the user; don't throttle it like a background job
-        "StandardOutPath": str(LOGS / "daemon.log"),
-        "StandardErrorPath": str(LOGS / "daemon.log"),
+        "StandardOutPath": str(paths.logs() / "daemon.log"),
+        "StandardErrorPath": str(paths.logs() / "daemon.log"),
         "WorkingDirectory": str(home.expanduser()),
     }
 

@@ -7,7 +7,7 @@ import pytest
 from fakes import FakeBackend
 from fastapi.testclient import TestClient
 
-from crewbots import crew, mcp_catalog
+from crewbots import crew, mcp_catalog, paths
 from crewbots.api import create_app
 from crewbots.backends import Access, McpServer, RunSpec
 from crewbots.backends.claude_cli import ClaudeCLI
@@ -79,9 +79,9 @@ def test_your_apps_servers_are_found_once_each(tmp_path, monkeypatch):
     codex = tmp_path / "config.toml"
     codex.write_text('[mcp_servers.gimp]\ncommand = "run-gimp.sh"\n\n[mcp_servers.off]\ncommand = "x"\nenabled = false\n'
                      '\n[mcp_servers.web]\nurl = "https://example.com/mcp"\nhttp_headers = { "X-Key" = "k" }\n')
-    monkeypatch.setattr(mcp_catalog, "CLAUDE_CODE", claude)
-    monkeypatch.setattr(mcp_catalog, "CLAUDE_DESKTOP", tmp_path / "none.json")
-    monkeypatch.setattr(mcp_catalog, "CODEX", codex)
+    monkeypatch.setattr(paths, "claude_code_config", lambda: claude)
+    monkeypatch.setattr(paths, "claude_desktop_config", lambda: tmp_path / "none.json")
+    monkeypatch.setattr(paths, "codex_config", lambda: codex)
 
     found = mcp_catalog.installed()
 

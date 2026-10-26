@@ -183,7 +183,7 @@ class Runner:
         *,
         max_parallel: int = 4,
         max_children: int = MAX_CHILDREN,
-        worktree_root: Path = worktree.DEFAULT_ROOT,
+        worktree_root: Path | None = None,  # default: ~/.crewbots/worktrees
         api_url: str | None = None,  # where bots' MCP servers reach the daemon; None runs bots without crew tools
         mcp_command: tuple[str, ...] = MCP_COMMAND,
         sessions: bool = True,

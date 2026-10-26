@@ -13,14 +13,15 @@ read a key file or ask the keychain directly. That boundary is a container.
 import subprocess
 from pathlib import Path
 
+from crewbots import paths
+
 TOKENS = ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GIT_ASKPASS", "SSH_ASKPASS")
 NO_KEY_SSH = "ssh -F /dev/null -o IdentitiesOnly=yes -o IdentityFile=/dev/null -o IdentityAgent=none -o BatchMode=yes"
-FOLDER = Path.home() / ".crewbots" / "no-credentials"  # outside anything a bot may write to
-
-
-def without_credentials(folder: Path = FOLDER) -> dict[str, str]:
+def without_credentials(folder: Path | None = None) -> dict[str, str]:
     """Environment variables for a writing bot's process. Empty values stand for unset, which every tool here treats
-    the same."""
+    the same. `folder` holds the empty logins: by default ~/.crewbots/no-credentials, outside anything a bot may
+    write to."""
+    folder = folder or paths.no_credentials()
     folder.mkdir(parents=True, exist_ok=True)
     gh = folder / "gh"
     gh.mkdir(exist_ok=True)

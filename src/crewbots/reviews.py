@@ -34,11 +34,10 @@ from typing import Any
 
 import yaml
 
+from crewbots import paths
 from crewbots.github import GitHubError, _gh
 
 REPOS_FILE = "reviews.yaml"  # in the crew's folder: {repos: {owner/name: local checkout}, reviewers: [...]}
-WORKTREES = Path.home() / ".crewbots" / "worktrees" / "reviews"
-SNAPSHOTS = Path.home() / ".crewbots" / "reviews"  # a pull request's changed files, fetched from GitHub
 # In there: repos/, crewbots' own blobless clone of each repository it reviews, and checkouts/, pull requests' heads.
 KEEP_CHECKOUTS = 6  # per repository; older ones are removed (each is a whole working tree)
 REMOTE = "https://github.com/{repo}.git"
@@ -169,12 +168,12 @@ class _Cached:
 
 
 class Reviews:
-    def __init__(self, crew_home: Path, gh=_gh, worktrees: Path = WORKTREES, snapshots: Path = SNAPSHOTS,
+    def __init__(self, crew_home: Path, gh=_gh, worktrees: Path | None = None, snapshots: Path | None = None,
                  remote: str = REMOTE):
         self.home = crew_home
         self.gh = gh
-        self.worktrees = worktrees
-        self.snapshots = snapshots
+        self.worktrees = worktrees or paths.review_worktrees()
+        self.snapshots = snapshots = snapshots or paths.review_snapshots()
         self.clones = snapshots / "repos"
         self.checkouts = snapshots / "checkouts"
         self.remote = remote  # where a repository is cloned from: GitHub, or a folder in tests

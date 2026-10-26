@@ -10,7 +10,6 @@ Without this, a bot could reach whatever the user connected Codex to: their trad
 """
 
 import json
-import os
 import re
 import subprocess
 import time
@@ -19,7 +18,8 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
-LAST_GOOD = Path.home() / ".crewbots" / "codex-mcp-servers.json"  # the last list that worked, should listing fail
+from crewbots import paths
+
 CACHE_S = 3600.0  # `codex mcp list` takes about 5s, and its answer only changes with the config or the plugins
 LIST_TIMEOUT_S = 90.0  # it checks HTTP servers' auth over the network, so it's anywhere from 5s to well past 30s
 BARE_KEY = re.compile(r"[A-Za-z0-9_-]+")
@@ -28,7 +28,7 @@ _cache: dict[tuple[str, ...], tuple[float, tuple[float, float], list[str]]] = {}
 
 
 def codex_home() -> Path:
-    return Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+    return paths.codex_home()
 
 
 def isolation_overrides(command: Sequence[str] = ("codex",), keep: Iterable[str] = ()) -> list[str]:
@@ -92,7 +92,7 @@ def _listed_servers(command: Sequence[str]) -> tuple[list[str], str | None]:
 def _last_good() -> tuple[tuple[float, float], list[str]] | None:
     """The last list that worked, with the config and plugins timestamps it was taken at."""
     try:
-        saved = json.loads(LAST_GOOD.read_text())
+        saved = json.loads(paths.codex_servers().read_text())  # the last list that worked, should listing fail
         return (float(saved["stamp"][0]), float(saved["stamp"][1])), [str(n) for n in saved["names"]]
     except (OSError, ValueError, KeyError, TypeError, IndexError):
         return None
@@ -100,8 +100,8 @@ def _last_good() -> tuple[tuple[float, float], list[str]] | None:
 
 def _save_last_good(stamp: tuple[float, float], names: list[str]) -> None:
     try:
-        LAST_GOOD.parent.mkdir(parents=True, exist_ok=True)
-        LAST_GOOD.write_text(json.dumps({"stamp": list(stamp), "names": sorted(names)}))
+        paths.codex_servers().parent.mkdir(parents=True, exist_ok=True)
+        paths.codex_servers().write_text(json.dumps({"stamp": list(stamp), "names": sorted(names)}))
     except OSError:
         pass  # only a fallback
 

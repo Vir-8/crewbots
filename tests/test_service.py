@@ -31,15 +31,12 @@ def launchctl(tmp_path, monkeypatch):
     script = tmp_path / "launchctl.py"
     script.write_text(FAKE_LAUNCHCTL)
     log = tmp_path / "launchctl.log"
-    monkeypatch.setenv("LAUNCHCTL_LOG", str(log))
-    monkeypatch.setattr(svc, "AGENTS", tmp_path / "LaunchAgents")
-    monkeypatch.setattr(svc, "LOGS", tmp_path / "logs")
+    monkeypatch.setenv("LAUNCHCTL_LOG", str(log))  # LaunchAgents is under the test's own home (conftest.py)
     calls = lambda: [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []  # noqa: E731
     return (sys.executable, str(script)), calls
 
 
-def test_the_launch_agent_runs_the_crews_daemon_at_login_and_after_a_crash(tmp_path, monkeypatch):
-    monkeypatch.setattr(svc, "LOGS", tmp_path / "logs")
+def test_the_launch_agent_runs_the_crews_daemon_at_login_and_after_a_crash(tmp_path):
     agent = svc.plist(tmp_path / "crew", 8765, label="app.crewbots.test", executable=tmp_path / "bin" / "crewbots")
 
     assert agent["ProgramArguments"] == [str(tmp_path / "bin" / "crewbots"), "--home", str(tmp_path / "crew"),
@@ -47,7 +44,7 @@ def test_the_launch_agent_runs_the_crews_daemon_at_login_and_after_a_crash(tmp_p
     assert agent["RunAtLoad"] is True and agent["KeepAlive"] == {"SuccessfulExit": False}
     path = agent["EnvironmentVariables"]["PATH"].split(":")
     assert "/usr/local/bin" in path and str(svc.Path.home() / ".local/bin") in path  # where uv, claude, codex live
-    assert agent["StandardErrorPath"].startswith(str(tmp_path / "logs"))
+    assert agent["StandardErrorPath"] == str(tmp_path / "home" / ".crewbots" / "logs" / "daemon.log")
 
 
 def test_install_writes_the_agent_and_loads_it(tmp_path, launchctl, monkeypatch):

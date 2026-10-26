@@ -7,7 +7,6 @@ the crew and the daemon altogether: one prompt through one backend, for trying b
 import argparse
 import asyncio
 import json
-import os
 import sys
 import time
 import uuid
@@ -16,7 +15,7 @@ from typing import Any
 
 import httpx
 
-from crewbots import api, crew, typescript, worktree
+from crewbots import api, crew, paths, typescript, worktree
 from crewbots import routines as routines_module
 from crewbots import service as svc
 from crewbots.backends import BACKENDS, Access, RunSpec
@@ -29,7 +28,7 @@ ACTIVE = {"queued", "running"}
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="crewbots")
-    parser.add_argument("--home", type=Path, default=Path(os.environ.get("CREWBOTS_HOME", crew.DEFAULT_HOME)),
+    parser.add_argument("--home", type=Path, default=paths.crew(),
                         help="the crew's folder (default: $CREWBOTS_HOME or ~/.crewbots/crew)")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -190,7 +189,7 @@ def _service(args: argparse.Namespace) -> int:
         print(f"{state.label}: not installed")
     else:
         print(f"{state.label}: installed ({state.plist}), {'running, pid ' + str(state.pid) if state.running else 'not running'}")
-        print(f"logs: {svc.LOGS / 'daemon.log'}")
+        print(f"logs: {paths.logs() / 'daemon.log'}")
     return 0
 
 

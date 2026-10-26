@@ -9,7 +9,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_ROOT = Path.home() / ".crewbots" / "worktrees"
+from crewbots import paths
+
 BRANCH_PREFIX = "crewbots/"
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
@@ -27,13 +28,13 @@ def is_repo(path: Path) -> bool:
     return result.returncode == 0 and result.stdout.strip() == "true"
 
 
-def create(repo: Path, name: str, root: Path = DEFAULT_ROOT) -> Worktree:
+def create(repo: Path, name: str, root: Path | None = None) -> Worktree:
     if not NAME.fullmatch(name):
         raise ValueError(f"worktree name {name!r} must be letters, digits, '.', '-' or '_'")
     top = Path(_git(repo, "rev-parse", "--show-toplevel"))
     base = _git(top, "rev-parse", "HEAD")
     repo_key = f"{top.name}-{hashlib.sha256(str(top).encode()).hexdigest()[:8]}"
-    path = root / repo_key / name
+    path = (root or paths.worktrees()) / repo_key / name
     branch = BRANCH_PREFIX + name
     path.parent.mkdir(parents=True, exist_ok=True)
     _git(top, "worktree", "add", "-b", branch, str(path), base)

@@ -263,7 +263,7 @@ And the app's own logic (Markdown, diffs and find, mentions, commands, the sideb
 cd app && npm test
 ```
 
-No test calls a model. Backend tests replay real CLI output (`tests/fixtures/`) through a fake CLI. Runner, delegation and API tests use an in-process fake backend whose scripted bots call the same methods the MCP tools reach.
+No test calls a model, and none touches your own folders: each test runs with a home folder of its own, and the run fails if anything in your real `~/.crewbots` or `~/.claude` changed. Backend tests replay real CLI output (`tests/fixtures/`) through a fake CLI. Runner, delegation and API tests use an in-process fake backend whose scripted bots call the same methods the MCP tools reach.
 
 ## Layout
 
@@ -283,6 +283,7 @@ src/crewbots/
   api.py             the daemon: HTTP + WebSocket, user and run tokens, host checks
   mcp_server.py      the crewbots tools each bot gets (handoff, escalate, review; delegate, tasks, message, propose_merge)
   worktree.py        one git worktree per task
+  paths.py           where crewbots keeps things, worked out when asked
   cli.py             the `crewbots` command
   templates/crew/    the starter crew: bots, team files, skills
 tests/               one file per module, plus the fakes and fixtures

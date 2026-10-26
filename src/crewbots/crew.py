@@ -16,10 +16,10 @@ from typing import Any
 
 import yaml
 
+from crewbots import paths
 from crewbots.backends import BACKENDS, Access, McpServer
 from crewbots.memory import MEMORY_GUIDE, Memory
 
-DEFAULT_HOME = Path.home() / ".crewbots" / "crew"
 CARD_FIELDS = {
     "name", "title", "description", "backend", "model", "access", "workspace", "worktree", "timeout", "mcp",
     "can_delegate", "skills", "budget", "network", "display_name", "avatar", "effort", "context_window",
@@ -135,10 +135,6 @@ class Skill:
 MCP_FILE = "mcp.json"  # the crew's MCP servers, in Claude's mcpServers shape
 MCP_NAME = re.compile(r"[A-Za-z0-9_-]+")  # a server's name becomes a config key in Codex
 
-# Skills installed for you everywhere, which every bot can use too: Claude Code's (with the ones synced from
-# claude.ai), the cross-agent folder, and Codex's. The crew's own come first; a global one of the same name is left out.
-GLOBAL_SKILL_DIRS = (Path.home() / ".claude" / "skills", Path.home() / ".agents" / "skills",
-                     Path.home() / ".codex" / "skills")
 
 
 @dataclass(frozen=True)
@@ -232,7 +228,7 @@ def load(home: Path) -> Crew:
     team_dir = home / "team"
     team_files = {p.name: p.read_text() for p in sorted(team_dir.glob("*.md"))} if team_dir.is_dir() else {}
     skills = load_skills(home / "skills")
-    global_dirs = tuple(d.expanduser() for d in GLOBAL_SKILL_DIRS)
+    global_dirs = paths.global_skill_dirs()  # the crew's own come first; a global one of the same name is left out
     shadowed: list[Skill] = []  # the same name in a later folder: listed, but the first one is the one used
     for folder in global_dirs:
         for name, skill in load_global_skills(folder).items():
@@ -259,10 +255,10 @@ def load(home: Path) -> Crew:
 def stamp(home: Path) -> tuple[tuple[str, int], ...]:
     """What the crew is made of on disk, as names and modification times: when it changes, the crew is read again."""
     home = home.expanduser()
-    paths = [*home.glob("bots/*.md"), *home.glob("team/*.md"), *home.glob("skills/**/SKILL.md"), *home.glob(MCP_FILE),
-             *(p for d in GLOBAL_SKILL_DIRS if d.is_dir() for p in d.expanduser().rglob("SKILL.md"))]
+    files = [*home.glob("bots/*.md"), *home.glob("team/*.md"), *home.glob("skills/**/SKILL.md"), *home.glob(MCP_FILE),
+             *(p for d in paths.global_skill_dirs() if d.is_dir() for p in d.rglob("SKILL.md"))]
     found = []
-    for p in sorted(paths):
+    for p in sorted(files):
         try:
             found.append((str(p.relative_to(home) if p.is_relative_to(home) else p), p.stat().st_mtime_ns))
         except OSError:

@@ -17,15 +17,12 @@ from typing import Any
 
 import httpx
 
-from crewbots import cards
+from crewbots import cards, paths
 from crewbots.backends import McpServer
 from crewbots.crew import MCP_FILE, MCP_NAME, CrewError, mcp_server
 
 REGISTRY = "https://registry.modelcontextprotocol.io/v0"
 CHECK_TIMEOUT_S = 30.0
-CLAUDE_CODE = Path.home() / ".claude.json"
-CLAUDE_DESKTOP = Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
-CODEX = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex") / "config.toml"
 
 
 # The crew's own servers.
@@ -93,17 +90,17 @@ def installed() -> list[dict[str, Any]]:
         found.append({"id": f"{source}:{name}:{len(found)}", "source": source, "name": name, "spec": spec})
 
     with contextlib.suppress(OSError, ValueError):
-        config = json.loads(CLAUDE_CODE.read_text())
+        config = json.loads(paths.claude_code_config().read_text())
         for name, spec in (config.get("mcpServers") or {}).items():
             add("Claude Code", name, spec)
         for project, settings in (config.get("projects") or {}).items():
             for name, spec in (settings.get("mcpServers") or {}).items():
                 add(f"Claude Code · {Path(project).name}", name, spec)
     with contextlib.suppress(OSError, ValueError):
-        for name, spec in (json.loads(CLAUDE_DESKTOP.read_text()).get("mcpServers") or {}).items():
+        for name, spec in (json.loads(paths.claude_desktop_config().read_text()).get("mcpServers") or {}).items():
             add("Claude desktop", name, spec)
     with contextlib.suppress(OSError, ValueError, tomllib.TOMLDecodeError):
-        for name, raw in (tomllib.loads(CODEX.read_text()).get("mcp_servers") or {}).items():
+        for name, raw in (tomllib.loads(paths.codex_config().read_text()).get("mcp_servers") or {}).items():
             if raw.get("enabled", True) is not False:
                 add("Codex", name, _from_codex(raw))
     return [f for f in found if _loads(f["name"], f["spec"])]

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from crewbots import crew
+from crewbots import crew, paths
 from crewbots.backends import Access, McpServer
 from crewbots.crew import CrewError, parse_card
 
@@ -159,7 +159,7 @@ def test_global_skills_are_there_for_every_bot_after_the_crews_own(tmp_path, mon
     write_skill(mine / ".system" / "imagegen", "imagegen", "a CLI's built-in")
     (mine / "broken").mkdir()
     (mine / "broken" / "SKILL.md").write_text("no frontmatter here")
-    monkeypatch.setattr(crew, "GLOBAL_SKILL_DIRS", (mine,))
+    monkeypatch.setattr(paths, "global_skill_dirs", lambda: (mine,))
 
     loaded = crew.load(home)
 

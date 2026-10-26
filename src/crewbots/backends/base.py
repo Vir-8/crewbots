@@ -7,6 +7,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol
 
+from crewbots import paths
 from crewbots.events import Event
 
 
@@ -115,14 +116,11 @@ class Backend(Protocol):
 # are crewbots' (`remember`), so its sessions never read or write there.
 CLAUDE_BOT_ENV = {"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
 
-TEMP_ROOT = Path.home() / ".crewbots" / "tmp"
-
-
 def session_temp_dir() -> Path:
     """A private temp folder for one session. With the shell confined to the task's folder, tools still need
     somewhere to write scratch files, and the machine's /tmp would be a way out of the folder."""
-    TEMP_ROOT.mkdir(parents=True, exist_ok=True)
-    return Path(tempfile.mkdtemp(prefix="session-", dir=TEMP_ROOT))
+    paths.temp().mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix="session-", dir=paths.temp()))
 
 
 def mcp_servers_json(servers: dict[str, McpServer]) -> dict[str, Any]:
