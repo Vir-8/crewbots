@@ -297,7 +297,8 @@ src/crewbots/
   usage.py           the crew's own use, by day, plan, model and bot, for the analytics page
   plans.py           how much of each plan's limits is used, asked of the Claude and Codex CLIs
   store.py           tasks and events, in SQLite, with full-text search
-  runner.py          runs tasks: sessions, worktrees, queued follow-ups, delegation and reporting back
+  runner/            runs tasks: core.py (turns, retries) with sessions, rooms, delegation, reviews, work (handoffs,
+                     merges, notes) and holds (budgets, pausing, restarting)
   api/               the daemon: HTTP + WebSocket, user and run tokens, host checks
     app.py           who may call it, and how errors answer
     routes/          one module per area: tasks, chats, bots, crew, routines, mcp, reviews, usage, events, ...

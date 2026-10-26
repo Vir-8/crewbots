@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent))  # so tests can import helpers
 
 import pytest  # noqa: E402
 
-from crewbots import runner  # noqa: E402
+from crewbots.runner import core as runner_core  # noqa: E402
 
 GIT_IDENTITY = "[user]\n\tname = crewbots tests\n\temail = tests@crewbots.invalid\n"
 
@@ -38,7 +38,7 @@ def own_home(tmp_path, monkeypatch):
 @pytest.fixture(autouse=True)
 def quick_retries(monkeypatch):
     """A turn that failed for a passing reason is tried again at once in tests, not after minutes."""
-    monkeypatch.setattr(runner, "RETRY_WAITS_S", (0.0, 0.0, 0.0))
+    monkeypatch.setattr(runner_core, "RETRY_WAITS_S", (0.0, 0.0, 0.0))
 
 
 # The guard: nothing in the real ~/.crewbots or ~/.claude may change while the tests run. The crew's daemon may be

@@ -8,12 +8,11 @@ from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
 from fakes import FakeBackend, make_crew, wait_until
 
 from crewbots import prompts
-from crewbots import runner as runner_module
 from crewbots.backends.base import claude_retry, codex_retry
 from crewbots.backends.claude_sdk import SdkMapper
 from crewbots.backends.codex_app_server import AppServerParser
 from crewbots.events import Done, Notice, RateLimit, SessionStarted, Text
-from crewbots.runner import Runner
+from crewbots.runner import Runner, holds
 from crewbots.store import Status, Store
 
 
@@ -114,7 +113,7 @@ async def test_a_turn_that_goes_quiet_is_stopped_and_tried_again(store, tmp_path
 
 
 async def test_a_turn_stopped_by_the_plans_limit_goes_on_when_it_resets(store, tmp_path, monkeypatch):
-    monkeypatch.setattr(runner_module, "HOLD_RECHECK_S", 0.05)
+    monkeypatch.setattr(holds, "HOLD_RECHECK_S", 0.05)
     resets = int(time.time()) + 1
     calls = []
 
