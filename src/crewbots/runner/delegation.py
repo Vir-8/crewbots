@@ -1,5 +1,9 @@
-"""Threads and delegation: a bot opening a thread, a coordinator handing out work, and results going back up when the
-work is done."""
+"""Threads and delegation: a bot opening a thread, handing a piece of work to a teammate, and results going back up
+when the work is done.
+
+Any bot can delegate; only coordinators add bots and propose work for merging. What keeps delegation from running
+away is checked here, in code: no delegating to yourself, nor back to a bot already in the chain (a circle), a chain at
+most a few delegations deep, a cap on how many tasks one bot has out at once, and the budgets."""
 
 from typing import Any
 
@@ -12,7 +16,9 @@ from crewbots.runner.common import NotAllowed, UnknownBot, _clip
 from crewbots.runner.reviews import MAX_REVIEW_ROUNDS, _review_findings, _round_status
 from crewbots.store import Handoff, Review, Status, Task
 
-MAX_CHILDREN = 12  # a stop condition: a coordinator that keeps delegating is looping, not managing
+MAX_CHILDREN = 12  # a stop condition: a task that keeps delegating is looping, not managing
+MAX_DEPTH = 3  # delegations in a row: chief → engineer → helper → one more, and no further
+MAX_OUT = 4  # tasks one bot has delegated that aren't finished yet, across all its work
 
 
 class Delegation:
@@ -30,12 +36,28 @@ class Delegation:
     def delegate(self, parent_id: str, bot: str, goal: str, *, workspace: str | None = None,
                  review_of: str | None = None) -> Task:
         parent = self.store.get_task(parent_id)
-        if not self.crew.bots[parent.bot].can_delegate:
-            raise NotAllowed(f"{parent.bot} cannot delegate; only coordinators assign work (team/protocol.md)")
         if bot not in self.crew.bots:
             raise UnknownBot(f"no bot named {bot!r}; the crew is {sorted(self.crew.bots)}")
+        if bot == parent.bot:
+            raise NotAllowed("that's you: to work on it yourself, open a thread with start_thread")
         if self.crew.bots[bot].can_delegate:
             raise NotAllowed(f"{bot} is a coordinator; delegate to the bot that will do the work")
+        chain = self._chain(parent)
+        if bot in {t.bot for t in chain}:
+            way = " → ".join(dict.fromkeys(t.bot for t in reversed(chain)))
+            raise NotAllowed(f"{bot} is already in this chain of work ({way}); handing it back would go round in a "
+                             "circle. Hand back with `handoff`, or ask with `escalate`, instead.")
+        depth = 1 + sum(1 for t in chain if _delegated(t))
+        if depth > self.max_depth:
+            raise NotAllowed(f"stop condition: that would be {depth} delegations deep, and the most is "
+                             f"{self.max_depth}. Do it yourself, or hand back what you have and what's left.")
+        out = self.store.delegated_out(parent.bot)
+        if out >= self.max_out:
+            raise NotAllowed(f"stop condition: you already have {out} delegated tasks that haven't finished, and the "
+                             f"most is {self.max_out}. Wait for their results, which come to you, before delegating "
+                             "more.")
+        if reason := self.hold_reason(parent) or self.budget_reason(bot, parent):
+            raise NotAllowed(f"no budget for more work: {reason}")
         if len(self.store.children(parent_id)) >= self.max_children:
             raise NotAllowed(
                 f"stop condition: this task already delegated {self.max_children} tasks. Report to the user "
@@ -126,6 +148,13 @@ class Delegation:
             f"{len(finished)} thread(s) you opened or delegated finished, and none are still running.\n\n{sections}"
             + (f"\n\n# Review status\n\n{status}" if status else "")))
 
+    def _chain(self, task: Task) -> list[Task]:
+        """The task and every task above it, up to the one that started the work."""
+        chain = [task]
+        while chain[-1].parent_id:
+            chain.append(self.store.get_task(chain[-1].parent_id))
+        return chain
+
     def _own_child(self, parent_id: str, task_id: str) -> Task:
         try:
             child = self.store.get_task(task_id)
@@ -165,3 +194,9 @@ def _report_section(task: Task, handoff: Handoff | None, review: Review | None =
     if task.result:
         lines += ["Final message:", _clip(task.result) or ""]
     return "\n".join(lines)
+
+
+def _delegated(task: Task) -> bool:
+    """Whether a bot handed this task to another (rather than the user starting it, or a bot opening it for itself)."""
+    return bool(task.parent_id) and task.created_by not in ("user", task.bot) and not task.created_by.startswith(
+        "routine")

@@ -74,14 +74,14 @@ def test_a_coordinator_delegates_and_sees_its_tasks(crew_app):
     assert [t["id"] for t in listed] == [child.id]
 
 
-def test_a_worker_is_refused_delegation_with_a_reason(crew_app):
+def test_a_refused_delegation_says_why(crew_app):
     client, backend, _ = crew_app
     _, token = start(client, backend, "engineer")
 
     refused = client.post("/bot/delegate", json={"bot": "engineer", "goal": "x"}, headers=as_bot(token))
 
     assert refused.status_code == 403
-    assert "only coordinators assign work" in refused.json()["detail"]
+    assert "that's you" in refused.json()["detail"]
 
 
 def test_handoffs_and_escalations_are_recorded_on_the_callers_task(crew_app):
@@ -139,12 +139,15 @@ async def test_a_refusal_reaches_the_bot_as_a_tool_error_it_can_read(crew_app):
         await server.call_tool("delegate", {"bot": "ghost", "goal": "x"})
 
 
-async def test_workers_are_not_offered_delegation_tools(crew_app):
+async def test_workers_delegate_but_only_coordinators_add_bots_and_propose_merges(crew_app):
     client, _, _ = crew_app
 
-    names = {t.name for t in await build_server(client, can_delegate=False).list_tools()}
+    worker = {t.name for t in await build_server(client, can_delegate=False).list_tools()}
+    coordinator = {t.name for t in await build_server(client, can_delegate=True).list_tools()}
 
-    assert names == {"handoff", "escalate", "review", "remember", "forget", "recall", "start_thread", "post"}
+    assert worker == {"handoff", "escalate", "review", "remember", "forget", "recall", "start_thread", "post",
+                      "delegate", "tasks", "message"}
+    assert coordinator == worker | {"add_bot", "propose_merge"}
 
 
 def test_a_verdict_from_a_task_that_is_not_a_review_is_refused_with_a_reason(crew_app):

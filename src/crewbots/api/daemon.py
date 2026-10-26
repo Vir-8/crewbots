@@ -55,7 +55,7 @@ def read_daemon_info(home: Path) -> DaemonInfo:
     return DaemonInfo(**json.loads(path.read_text()))
 
 
-def serve(home: Path, port: int = DEFAULT_PORT, max_parallel: int = 4, sessions: bool = True) -> None:
+def serve(home: Path, port: int = DEFAULT_PORT, max_parallel: int = 4, sessions: bool = True, max_depth: int = 3) -> None:
     home = home.expanduser()
     crew = crew_module.load(home)
     store = Store(home / "crewbots.db")
@@ -90,7 +90,7 @@ def serve(home: Path, port: int = DEFAULT_PORT, max_parallel: int = 4, sessions:
 
     keep_awake = ("caffeinate", "-i") if sys.platform == "darwin" else None
     runner = Runner(store, crew, max_parallel=max_parallel, api_url=f"http://127.0.0.1:{port}/v1", sessions=sessions,
-                    keep_awake=keep_awake)
+                    keep_awake=keep_awake, max_depth=max_depth)
     scheduler = Scheduler(runner)
     app = create_app(runner, token, port, scheduler)
     app.router.lifespan_context = lifespan

@@ -37,6 +37,7 @@ def main(argv: list[str] | None = None) -> int:
     serve.add_argument("--port", type=int, default=api.DEFAULT_PORT)
     serve.add_argument("--parallel", type=int, default=4, help="runs at the same time, across all bots")
     serve.add_argument("--no-sessions", action="store_true", help="start a fresh CLI for every turn instead of keeping one")
+    serve.add_argument("--max-delegation-depth", type=int, default=3, help="delegations in a row a chain of work may go")
 
     sub.add_parser("bots", help="list the crew")
     task = sub.add_parser("task", help="give a bot a task, and follow it")
@@ -130,7 +131,8 @@ def _init(args: argparse.Namespace) -> int:
 
 
 def _serve(args: argparse.Namespace) -> int:
-    api.serve(args.home, port=args.port, max_parallel=args.parallel, sessions=not args.no_sessions)
+    api.serve(args.home, port=args.port, max_parallel=args.parallel, sessions=not args.no_sessions,
+              max_depth=args.max_delegation_depth)
     return 0
 
 

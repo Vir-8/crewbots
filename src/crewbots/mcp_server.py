@@ -3,7 +3,7 @@ is Codex. The CLI starts one per session, over stdio.
 
 It holds nothing but a run token (CREWBOTS_TOKEN) and the daemon's address (CREWBOTS_URL). Every tool is a call to the
 daemon's /bot/ API, which decides what this task may do; this process only translates. Coordinators also get the
-delegation tools (CREWBOTS_DELEGATE=1), but the daemon refuses delegation from anyone else regardless.
+tools for adding bots and proposing merges (CREWBOTS_DELEGATE=1), which the daemon refuses anyone else regardless.
 """
 
 import json
@@ -76,7 +76,21 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
         message = call("POST", "/bot/post", {"text": text, "room": room})
         return f"Posted in the group chat ({message['room_id']})."
 
-    if not can_delegate:
+    @server.tool(description=describe("delegate"))
+    def delegate(bot: str, goal: str, workspace: str | None = None, review_of: str | None = None) -> str:
+        task = call("POST", "/bot/delegate", {"bot": bot, "goal": goal, "workspace": workspace, "review_of": review_of})
+        return f"Delegated {task['id']} to {task['bot']}: {task['title']}"
+
+    @server.tool(description=describe("tasks"))
+    def tasks() -> str:
+        return json.dumps(call("GET", "/bot/tasks"), indent=1)
+
+    @server.tool(description=describe("message"))
+    def message(task_id: str, text: str) -> str:
+        result = call("POST", "/bot/message", {"task_id": task_id, "text": text})
+        return f"Sent to {result['id']} ({result['status']})."
+
+    if not can_delegate:  # adding bots and proposing merges are a coordinator's
         return server
 
     @server.tool(description=describe("add_bot"))
@@ -96,19 +110,6 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
         call("POST", "/bot/propose_merge", {"task_id": task_id, "summary": summary})
         return f"Proposed {task_id} to the user for merging."
 
-    @server.tool(description=describe("delegate"))
-    def delegate(bot: str, goal: str, workspace: str | None = None, review_of: str | None = None) -> str:
-        task = call("POST", "/bot/delegate", {"bot": bot, "goal": goal, "workspace": workspace, "review_of": review_of})
-        return f"Delegated {task['id']} to {task['bot']}: {task['title']}"
-
-    @server.tool(description=describe("tasks"))
-    def tasks() -> str:
-        return json.dumps(call("GET", "/bot/tasks"), indent=1)
-
-    @server.tool(description=describe("message"))
-    def message(task_id: str, text: str) -> str:
-        result = call("POST", "/bot/message", {"task_id": task_id, "text": text})
-        return f"Sent to {result['id']} ({result['status']})."
 
     return server
 

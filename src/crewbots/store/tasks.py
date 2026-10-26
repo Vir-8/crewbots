@@ -160,6 +160,12 @@ class Tasks:
             task = self.get_task(task.parent_id)
         return task
 
+    def delegated_out(self, bot: str) -> int:
+        """Tasks `bot` handed to another bot that haven't finished: running, waiting, held, or asking a question."""
+        return self.db.execute(
+            "select count(*) from tasks where created_by = ? and bot != ? and status in (?, ?, ?, ?)",
+            (bot, bot, Status.QUEUED, Status.RUNNING, Status.HELD, Status.NEEDS_INPUT)).fetchone()[0]
+
     def chat_of(self, bot: str) -> Task | None:
         row = self.db.execute("select * from tasks where kind = 'chat' and bot = ? order by created_at limit 1",
                               (bot,)).fetchone()

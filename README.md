@@ -18,14 +18,18 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
   - Each task has exactly one owner bot and its own backend session, so a follow-up message picks up where the bot left off.
   - A task by a writing bot in a git repo gets its own worktree, on the branch `crewbots/<task id>`.
   - Every event is stored, so you can read the whole transcript later.
-- **Delegation.** A coordinator (`can_delegate: true`, the chief in the starter crew) hands out work through crewbots' own MCP tools:
-  - `delegate`, `tasks` and `message` are for coordinators only. Every bot gets `handoff` and `escalate`.
-  - Delegated tasks run in parallel. The chief ends its turn instead of waiting, and when none of its tasks are still running, their handoffs and results arrive as its next message.
+- **Delegation.** Any bot hands a piece of work to the teammate best suited to it through crewbots' own MCP tools:
+  - `delegate`, `tasks` and `message` are every bot's, as are `handoff` and `escalate`. A coordinator
+    (`can_delegate: true`, the chief in the starter crew) also adds bots (`add_bot`) and proposes work for merging.
+  - Delegated tasks run in parallel, each as its own bot with its own access. The delegating bot ends its turn instead
+    of waiting, and when none of its tasks are still running, their handoffs and results arrive as its next message.
   - An escalation reaches it at once.
   - The harness enforces the rules:
-    - only coordinators delegate, and never to another coordinator
-    - a coordinator can only touch tasks it delegated
-    - there is a cap on how many tasks one task can delegate
+    - never to yourself, nor to a coordinator, nor back to a bot already in the chain (a circle)
+    - a chain at most three delegations deep (`crewbots serve --max-delegation-depth` changes it)
+    - at most four unfinished delegated tasks per bot at once, and twelve from one task
+    - no delegating past a budget or a reached plan limit, the delegating bot's or the teammate's
+    - a bot can only touch tasks it delegated
   - Each run's MCP server holds a token that acts only as that task, and only while the run lasts.
 - **Review and merge.**
   - A review is a task delegated with `review_of`, so the reviewer works in the reviewed task's worktree. It ends with the `review` tool: a pass or fail verdict, and findings with locations and failure scenarios.

@@ -127,13 +127,14 @@ def test_a_folder_without_bots_is_not_a_crew(tmp_path):
         crew.load(tmp_path)
 
 
-def test_only_coordinators_are_told_they_can_delegate(tmp_path):
+def test_every_bot_is_told_it_can_delegate_and_coordinators_what_else_they_do(tmp_path):
     loaded = crew.load(crew.init(tmp_path / "crew"))
 
     chief = loaded.system_prompt(loaded.bots["chief"])
     engineer = loaded.system_prompt(loaded.bots["engineer"], delegated_by="chief")
 
-    assert "`delegate(bot, goal" in chief and "`delegate(bot, goal" not in engineer
+    assert "`delegate(bot, goal" in chief and "`delegate(bot, goal" in engineer
+    assert "`add_bot(" in chief and "`add_bot(" not in engineer and "`propose_merge(" not in engineer
     assert "`handoff(" in chief and "`handoff(" in engineer
     assert "This task comes from the user" in chief
     assert "delegated to you by chief" in engineer

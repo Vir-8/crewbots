@@ -63,7 +63,7 @@ class Bot:
     timeout_s: float | None = None
     mcp: dict[str, McpServer] = field(default_factory=dict)  # once loaded: the crew's servers it names, and its own
     mcp_names: tuple[str, ...] = ()  # the crew's servers (mcp.json) its role card names
-    can_delegate: bool = False  # only coordinators assign work; the harness refuses delegation from anyone else
+    can_delegate: bool = False  # a coordinator: it adds bots and proposes work for merging, which others can't
     skills: tuple[str, ...] = ()  # () or ("all",): every skill, the crew's and global; ("none",); or just these
     budget: Budget | None = None
     network: bool | tuple[str, ...] = False  # web search and pages, and a writer's commands: none, any, or these hosts
@@ -136,8 +136,8 @@ class Crew:
             f"You are {bot.label}, the {bot.title} of a crew of AI agents run by crewbots. Your handle is @{bot.name}.",
             f"# Your role card\n\n{bot.instructions.strip()}",
             f"# The crew\n\n{roster}",
-            prompts.text("crew-tools", self.home)
-            + ("\n\n" + prompts.text("delegation", self.home) if bot.can_delegate else ""),
+            prompts.text("crew-tools", self.home) + "\n\n" + prompts.text("delegation", self.home)
+            + ("\n\n" + prompts.text("coordinating", self.home) if bot.can_delegate else ""),
         ]
         if skills := self.skills_for(bot):
             listing = "\n".join(f"- {s.name}: {s.description} ({s.path})" for s in skills)

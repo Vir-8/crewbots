@@ -96,6 +96,15 @@ class Holds:
         bot = self.bot_for(task.bot)
         if root.id in self._released or bot is None:
             return None
+        return self.budget_reason(bot.name, task)
+
+    def budget_reason(self, name: str, within: Task) -> str | None:
+        """Why bot `name` can't take a turn now in the work `within` belongs to: its budget, the work's, or its plan's
+        limit. None if it can."""
+        root = self.store.work_of(within.id)
+        bot = self.bot_for(name)
+        if root.id in self._released or bot is None:
+            return None
         if bot.budget:
             used = self.store.bot_usage(bot.name, _iso(datetime.now(UTC) - bot.budget.window))
             if used >= bot.budget.tokens:

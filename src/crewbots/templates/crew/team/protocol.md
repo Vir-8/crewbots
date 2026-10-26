@@ -1,6 +1,6 @@
 How work moves between bots.
 
-1. **Every task has exactly one owner.** The owner works on it until it hands off or escalates. No other bot works on it unless asked. Only the chief assigns or reassigns tasks.
+1. **Every task has exactly one owner.** The owner works on it until it hands off or escalates. No other bot works on it unless asked. Any bot can hand a separate piece of work to the teammate best suited to it with `delegate`, and it becomes theirs; only the chief reassigns a task someone already owns.
 2. **Every handoff has the same shape.** Record it with the `handoff` tool, which takes these fields:
 
    ```

@@ -58,10 +58,9 @@ SPECS: dict[str, Spec] = {
          "access": {"type": "string", "enum": ["read_only", "workspace_write"]},
          "network": {"type": "boolean"}, "can_delegate": {"type": "boolean"}, "mcp": STRINGS, "skills": STRINGS},
         ["name", "title", "description", "instructions"]), coordinator_only=True),
-    "delegate": Spec(_object({"bot": STRING, "goal": STRING, "workspace": STRING, "review_of": STRING}, ["bot", "goal"]),
-                     coordinator_only=True),
-    "tasks": Spec(_object({}, []), coordinator_only=True),
-    "message": Spec(_object({"task_id": STRING, "text": STRING}, ["task_id", "text"]), coordinator_only=True),
+    "delegate": Spec(_object({"bot": STRING, "goal": STRING, "workspace": STRING, "review_of": STRING}, ["bot", "goal"])),
+    "tasks": Spec(_object({}, [])),
+    "message": Spec(_object({"task_id": STRING, "text": STRING}, ["task_id", "text"])),
     "propose_merge": Spec(_object({"task_id": STRING, "summary": STRING}, ["task_id", "summary"]), coordinator_only=True),
 }
 

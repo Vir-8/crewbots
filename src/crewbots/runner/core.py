@@ -41,7 +41,7 @@ from crewbots.crew_tools import CrewTools
 from crewbots.events import Done, Event, Notice, RateLimit, SessionStarted, Usage
 from crewbots.reviews import review_prompt, reviewer_bot
 from crewbots.runner.common import MCP_COMMAND, MCP_SERVER_NAME, Bus, OpenSession, UnknownBot, _duration, _usage_data
-from crewbots.runner.delegation import MAX_CHILDREN, Delegation
+from crewbots.runner.delegation import MAX_CHILDREN, MAX_DEPTH, MAX_OUT, Delegation
 from crewbots.runner.holds import Holds
 from crewbots.runner.reviews import Reviewing
 from crewbots.runner.rooms import Rooms
@@ -69,6 +69,8 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds):
         *,
         max_parallel: int = 4,
         max_children: int = MAX_CHILDREN,
+        max_depth: int = MAX_DEPTH,  # delegations in a row
+        max_out: int = MAX_OUT,  # unfinished tasks one bot may have delegated at once
         worktree_root: Path | None = None,  # default: ~/.crewbots/worktrees
         api_url: str | None = None,  # where bots' MCP servers reach the daemon; None runs bots without crew tools
         mcp_command: tuple[str, ...] = MCP_COMMAND,
@@ -85,6 +87,8 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds):
         self.backends = dict(backends) if backends else {name: cls() for name, cls in BACKENDS.items()}
         self.worktree_root = worktree_root
         self.max_children = max_children
+        self.max_depth = max_depth
+        self.max_out = max_out
         self.api_url = api_url
         self.mcp_command = mcp_command
         self.bus = Bus()

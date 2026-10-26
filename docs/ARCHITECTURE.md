@@ -296,6 +296,7 @@ Each step leaves the system working.
   which env and header names a server has, never their values.
 - **Skills** come from the crew's `skills/` and the user's global folders; a global one that can't be read, or one a
   CLI keeps for itself (Codex's `.system`), is left out, and the crew's own win a clash of names.
+- **Delegation** is any bot's: it hands a piece of work to a teammate, which runs it as itself, with its own access. The runner stops it from running away (`runner/delegation.py`): nothing to yourself, to a coordinator or back up the chain, three delegations deep at most, four unfinished delegated tasks per bot, and nothing past a budget.
 - **`add_bot`**, for coordinators only: it writes the role card through the same code as the app, checks the crew
   still loads (or takes the card back), and reloads the crew. The new bot has what the coordinator gives it, except
   full access (the user's to give) and network when the coordinator has none. There is no tool to remove or edit a

@@ -104,15 +104,76 @@ async def test_a_reviewer_reads_the_worktree_of_the_work_it_reviews(store, tmp_p
     assert crew.specs_for("reviewer")[0].cwd == tmp_path / "wts" / work.worktree_path.split("/wts/")[1]
 
 
-async def test_only_coordinators_delegate_and_never_to_a_coordinator(store, tmp_path):
-    crew = ScriptedCrew(store, tmp_path, chief(), bot("deputy", can_delegate=True), bot("engineer"))
+async def test_any_bot_delegates_but_not_to_itself_or_a_coordinator(store, tmp_path):
+    crew = ScriptedCrew(store, tmp_path, chief(), bot("deputy", can_delegate=True), bot("engineer"), bot("writer"),
+                        gate=asyncio.Event())
     worker_task = store.create_task("engineer", "x")
     chief_task = store.create_task("chief", "y")
 
-    with pytest.raises(NotAllowed, match="cannot delegate"):
+    child = crew.runner.delegate(worker_task.id, "writer", "write the docs for it")
+    assert child.bot == "writer" and child.created_by == "engineer" and child.parent_id == worker_task.id
+    with pytest.raises(NotAllowed, match="that's you"):
         crew.runner.delegate(worker_task.id, "engineer", "do my work")
     with pytest.raises(NotAllowed, match="is a coordinator"):
         crew.runner.delegate(chief_task.id, "deputy", "manage this")
+    await crew.runner.shutdown()
+
+
+async def test_a_delegation_never_goes_back_round_the_chain(store, tmp_path):
+    crew = ScriptedCrew(store, tmp_path, chief(), bot("a"), bot("b"), gate=asyncio.Event())
+    top = store.create_task("chief", "ship it")
+    to_a = crew.runner.delegate(top.id, "a", "build it")
+    to_b = crew.runner.delegate(to_a.id, "b", "test it")
+
+    with pytest.raises(NotAllowed, match="go round in a circle"):
+        crew.runner.delegate(to_b.id, "a", "you build this part")  # a handed this to b: b can't hand it back down
+    await crew.runner.shutdown()
+
+
+async def test_a_chain_of_delegations_stops_at_its_depth(store, tmp_path):
+    crew = ScriptedCrew(store, tmp_path, chief(), bot("a"), bot("b"), bot("c"), bot("d"), max_depth=3,
+                        gate=asyncio.Event())
+    top = store.create_task("chief", "ship it")
+    one = crew.runner.delegate(top.id, "a", "1")
+    two = crew.runner.delegate(one.id, "b", "2")
+    three = crew.runner.delegate(two.id, "c", "3")  # three deep: the most
+    own = crew.runner.start_thread(three.id, "my part", "a thread of c's own doesn't count")
+
+    with pytest.raises(NotAllowed, match="4 delegations deep, and the most is 3"):
+        crew.runner.delegate(three.id, "d", "4")
+    with pytest.raises(NotAllowed, match="delegations deep"):
+        crew.runner.delegate(own.id, "d", "4")
+    await crew.runner.shutdown()
+
+
+async def test_a_bot_has_only_so_many_delegated_tasks_out_at_once(store, tmp_path):
+    gate = asyncio.Event()
+    crew = ScriptedCrew(store, tmp_path, chief(), bot("a"), bot("b"), bot("c"), max_out=2, gate=gate)
+    mine, other = store.create_task("a", "one"), store.create_task("a", "two")
+    crew.runner.delegate(mine.id, "b", "x")
+    crew.runner.delegate(other.id, "c", "y")  # across all of a's work
+
+    with pytest.raises(NotAllowed, match="already have 2 delegated tasks"):
+        crew.runner.delegate(mine.id, "c", "z")
+    gate.set()  # they finish
+    await wait_until(lambda: store.delegated_out("a") == 0)
+    assert crew.runner.delegate(mine.id, "c", "z").bot == "c"
+    await crew.runner.shutdown()
+
+
+async def test_no_delegating_past_a_budget(store, tmp_path):
+    from crewbots.crew import Budget
+
+    crew = ScriptedCrew(store, tmp_path, chief(), bot("a"), bot("b", budget=Budget(tokens=10, per="day")),
+                        bot("c"), gate=asyncio.Event())
+    spent = store.create_task("b", "earlier")
+    store.append_event(spent.id, kind="usage", data={"input_tokens": 50, "output_tokens": 5})
+    mine = store.create_task("a", "work")
+
+    with pytest.raises(NotAllowed, match="no budget for more work: b has used 55 of its 10 tokens"):
+        crew.runner.delegate(mine.id, "b", "x")
+    assert crew.runner.delegate(mine.id, "c", "y").bot == "c"
+    await crew.runner.shutdown()
 
 
 async def test_delegation_stops_at_the_limit(store, tmp_path):
