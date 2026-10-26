@@ -14,7 +14,7 @@ import "../styles/chat.css";
 type Block =
   | { kind: "you"; id: number; text: string; files: Attachment[] }
   | { kind: "brief"; id: number; from: string; text: string }
-  | { kind: "say"; id: number; text: string }
+  | { kind: "say"; id: number; text: string; checkin?: boolean }
   | { kind: "steps"; id: number; calls: { call: StoredEvent; result?: StoredEvent }[] }
   | { kind: "work"; id: number; task: Task }
   | { kind: "asked"; id: number; bot: string; question: string; task?: Task }
@@ -119,7 +119,7 @@ function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>
         break;
       case "text":
         flush();
-        out.push({ kind: "say", id: e.id, text: d.text });
+        out.push({ kind: "say", id: e.id, text: d.text, checkin: Boolean(d.checkin) });
         break;
       case "escalation":
         flush();
@@ -227,6 +227,7 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
     case "say":
       return (
         <div className="say">
+          {block.checkin && <div className="say-tag">Checked in on its own</div>}
           <Markdown text={block.text} onSelect={props.onOpen} />
         </div>
       );

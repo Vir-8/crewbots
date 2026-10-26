@@ -1,4 +1,4 @@
-"""Routines: listing, editing, adding and running them."""
+"""Routines: listing, editing, adding and running them; and checking a bot in now."""
 
 from pathlib import Path
 from typing import Any
@@ -27,6 +27,16 @@ def routes(c: Context) -> APIRouter:
                 starters.append({"name": name, "description": starter.description, "when": starter.when})
         return {"routines": [_routine_out(v) for v in scheduler.views()], "errors": scheduler.errors,
                 "github_error": scheduler.github_error, "crew_error": scheduler.crew_error, "starters": starters}
+
+    @v1.post("/checkins/{bot}", status_code=201, response_model=TaskOut)
+    async def check_in(bot: str):
+        """Checks a bot in on its whole checklist now, whatever's due."""
+        if bot not in runner.crew.bots:
+            raise HTTPException(404, f"no bot named {bot}")
+        try:
+            return scheduler.check_in(bot).to_json()
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from None
 
     @v1.get("/routines/{name}/file", response_model=RoutineFileOut)
     async def get_routine(name: str):

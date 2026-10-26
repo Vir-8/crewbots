@@ -624,6 +624,13 @@ button.chat-head-who:hover {
   font-weight: 550;
 }
 
+/* A message a bot sent on its own, from a check-in */
+.say-tag {
+  font-size: 11.5px;
+  color: var(--faint);
+  margin-bottom: 4px;
+}
+
 /* Above the composer of an archived group chat */
 .room-archived {
   display: flex;

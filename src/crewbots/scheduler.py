@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from crewbots import checkins
 from crewbots import crew as crew_module
 from crewbots import github as github_module
 from crewbots import routines as routines_module
@@ -23,6 +24,7 @@ GITHUB_EVERY_S = 300.0
 MAX_STARTS_PER_POLL = 3  # per trigger; the rest wait for the next poll
 FIRST_SINCE = timedelta(days=1)  # what a routine's first run looks back over
 ACTIVITY_CHARS = 30_000
+CHECKIN_CHARS = 4_000  # of what changed, for a check-in: its context stays small
 EVENT_CHARS = 400
 
 log = logging.getLogger("crewbots.scheduler")
@@ -94,12 +96,38 @@ class Scheduler:
             if self.runner.dream_due(bot, now):
                 self.runner.dream(bot)
                 break
+        self._check_in_due(now)
         triggers = [r for r in self.routines if r.enabled and r.on]
         loop = asyncio.get_running_loop()
         if triggers and (self._polled is None or loop.time() - self._polled >= self.github_every_s):
             self._polled = loop.time()
             started += await self._poll_github(triggers, now)
         return started
+
+    def _check_in_due(self, now: datetime) -> Task | None:
+        """One bot's check-in, when something on its checklist is due, within its active hours, while it's idle and
+        there's spare capacity. One a tick, so they never pile up."""
+        for bot, card in self.runner.crew.bots.items():
+            checklist = checkins.load(self.runner.crew.home, bot)
+            if not checklist or not checklist.active(now) or self.runner.bot_busy(bot):
+                continue
+            last = {i.id: (self.runner.store.routine_state(f"checkin:{bot}:{i.id}") or {}).get("last_run_at")
+                    for i in checklist.items}
+            due = checklist.due(last, now)
+            if due and self.runner.capacity.verdict(card.backend.split("-")[0]).go:
+                return self.check_in(bot, due, now)
+        return None
+
+    def check_in(self, bot: str, items: list[checkins.Item] | None = None, now: datetime | None = None) -> Task:
+        """Checks `bot` in on `items` (default: its whole checklist), with what the crew did since its last one."""
+        now = now or datetime.now().astimezone()
+        checklist = checkins.load(self.runner.crew.home, bot)
+        if items is None and not checklist:
+            raise ValueError(f"{bot} has no checklist: write one in {checkins.path(self.runner.crew.home, bot)}")
+        last = (self.runner.store.routine_state(f"checkin:{bot}") or {}).get("last_run_at")
+        since = datetime.fromisoformat(last) if last else now - timedelta(days=1)
+        changes = activity(self.runner.store, since, chars=CHECKIN_CHARS)
+        return self.runner.check_in(bot, items if items is not None else checklist.items, changes)
 
     def views(self, now: datetime | None = None) -> list[RoutineView]:
         now = now or datetime.now().astimezone()
@@ -205,7 +233,7 @@ class Scheduler:
         return values
 
 
-def activity(store: Store, since: datetime, exclude_routine: str | None = None) -> str:
+def activity(store: Store, since: datetime, exclude_routine: str | None = None, chars: int = ACTIVITY_CHARS) -> str:
     """What the crew did since `since`, for a routine to read: each goal with anything new, what was delegated for it,
     and what was said, asked, reviewed and merged along the way."""
     goals = store.activity(_utc(since), exclude_routine=exclude_routine)  # the store's times are UTC, compared as text
@@ -231,8 +259,8 @@ def activity(store: Store, since: datetime, exclude_routine: str | None = None) 
             lines.append(f"Latest reply: {_clip(goal.result, EVENT_CHARS * 2)}")
         sections.append("\n".join(lines))
     text = "\n\n".join(sections)
-    if len(text) > ACTIVITY_CHARS:
-        text = text[:ACTIVITY_CHARS] + "\n… (more; use recall or the task ids to look closer)"
+    if len(text) > chars:
+        text = text[:chars] + "\n… (more; use recall or the task ids to look closer)"
     return text
 
 

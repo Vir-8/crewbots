@@ -42,6 +42,7 @@ from crewbots.crew import NO_REPLY, Bot, Crew
 from crewbots.crew_tools import CrewTools
 from crewbots.events import Compacted, Done, Event, Notice, RateLimit, SessionStarted, Usage
 from crewbots.reviews import review_prompt, reviewer_bot
+from crewbots.runner.checkins import Checkins
 from crewbots.runner.common import (
     MCP_COMMAND,
     MCP_SERVER_NAME,
@@ -74,9 +75,9 @@ STALL_S = 1200.0  # no event at all from a turn for this long: it's stuck, so it
 WORK = "work"  # in the crew's folder: where each writing bot with no folder of its own works
 
 
-class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds, Dreams):
-    """Runs the crew's tasks. Its parts are by area: sessions, rooms, delegation, reviews, work, holds, and dreams
-    (memory consolidated overnight)."""
+class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds, Dreams, Checkins):
+    """Runs the crew's tasks. Its parts are by area: sessions, rooms, delegation, reviews, work, holds, dreams (memory
+    consolidated overnight) and check-ins."""
 
     def __init__(
         self,

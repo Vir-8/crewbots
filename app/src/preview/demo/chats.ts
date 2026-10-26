@@ -45,6 +45,7 @@ for (const b of bots) {
   tool(chatIds.engineer, "mcp__crewbots__ask", { bot: "reviewer", question: rule }, "Asked reviewer (t_ask0000002).");
   task("t_ask0000002", "reviewer", rule, { kind: "ask", parent_id: chatIds.engineer, created_by: "engineer", workspace: null, status: "running", reported: false });
   done(chatIds.engineer);
+  emit(chatIds.reviewer, "text", { text: "PR acme/web#409 has waited on you since Friday; it's approved and its checks pass.", checkin: true, urgency: "normal" });
   message(chatIds.reviewer, "user", "What do you look for first?");
   say(chatIds.reviewer, "That the change does what the task asked, with a test for each edge case. Then `team/standards.md`.");
   done(chatIds.reviewer);
