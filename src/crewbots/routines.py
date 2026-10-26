@@ -1,12 +1,12 @@
 """Routines: work the crew starts on its own, on a schedule or when something happens.
 
 A routine is a Markdown file in the crew's `routines/` folder, like a role card. The frontmatter says when it runs
-and who runs it; the body is the goal, given to that bot as a new task each time:
+and who runs it; the body is the goal. A scheduled routine arrives as a message in its bot's chat; a trigger opens a
+thread under that chat, which hears how it went, and can have a token budget for the thread:
 
     ---
     bot: chief
     schedule: "0 9 * * 1-5"      # cron, in the Mac's time zone: weekdays at 9:00
-    budget: 300000               # optional: tokens for one run, with everything it delegates
     ---
     Write the standup. Since {{since}}: {{activity}}
 
@@ -116,6 +116,9 @@ def parse(text: str, default_name: str, source: Path) -> Routine:
     budget = meta.get("budget")
     if budget is not None and (not isinstance(budget, int) or isinstance(budget, bool) or budget <= 0):
         raise RoutineError("budget is a number of tokens, for one run")
+    if budget is not None and "schedule" in meta:
+        raise RoutineError("a scheduled routine is a message in its bot's chat, so the bot's own budget covers it; "
+                           "a per-run budget is for triggers, which open a thread")
     workspace = meta.get("workspace")
     return Routine(
         name=str(meta.get("name", default_name)), bot=str(meta["bot"]), goal=goal, path=source,

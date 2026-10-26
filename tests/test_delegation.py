@@ -50,7 +50,7 @@ async def test_the_chief_delegates_and_hears_back_once_everything_is_done(store,
     assert [c.created_by for c in children] == ["chief", "chief"]
     report = messages(store, top.id)[-1]
     assert report["from"] == "crewbots"
-    assert "2 delegated task(s) finished" in report["text"]
+    assert "2 thread(s) you opened or delegated finished" in report["text"]
     assert "Done: engineer finished" in report["text"] and "Output: writer.md" in report["text"]
     assert "engineer final words" in report["text"]
     assert crew.specs_for("chief")[1].resume_session_id == f"s-{top.id}"  # the chief picks up where it left off
@@ -167,7 +167,7 @@ async def test_an_escalation_reaches_the_chief_at_once_and_its_answer_resumes_th
     assert "postgres or sqlite?" in escalation["text"] and state["eng"].id in escalation["text"]
     assert [e.data for e in store.events(state["eng"].id) if e.kind == "escalation"] == [{"question": "postgres or sqlite?"}]
     assert messages(store, state["eng"].id)[-1] == {"from": "chief", "text": "use postgres"}
-    final_report = [m["text"] for m in messages(store, top.id) if "delegated task(s) finished" in m["text"]][-1]
+    final_report = [m["text"] for m in messages(store, top.id) if "thread(s) you opened or delegated finished" in m["text"]][-1]
     assert "built with: use postgres" in final_report
 
 

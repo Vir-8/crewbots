@@ -1,7 +1,14 @@
 """Everything the crew has done, in one SQLite file: tasks, and every event of every run.
 
 A task is the unit of work and of conversation. It has exactly one owner bot, its own backend session (so a follow-up
-message resumes where it left off), optionally its own worktree, and a transcript made of its events.
+message resumes where it left off), optionally its own worktree, and a transcript made of its events. There are three
+kinds:
+
+- a **chat**: a bot's one ongoing conversation with the user, which never ends;
+- a **seat**: a bot's own conversation inside a group chat (a room), fed the room's new messages;
+- a **thread**: a piece of work, opened from a chat, a seat, a routine or another thread.
+
+A room is a group chat: the user and some bots, with one of them the lead. Its messages are kept on their own.
 """
 
 import json
@@ -44,6 +51,8 @@ create table if not exists tasks (
     merge_state   text,                        -- null, proposed (by its coordinator), or merged (by the user)
     merged_commit text,
     briefing      text,                        -- where things stood, carried into a fresh session at rollover
+    kind          text not null default 'thread', -- chat, seat or thread
+    room_id       text,                        -- a seat's room
     routine       text,                        -- the routine that started it, on a routine's top-level task
     budget        integer,                     -- tokens it may use, with everything it delegates (a routine's budget)
     created_at    text not null,
@@ -71,6 +80,27 @@ create table if not exists reviews (
 );
 create index if not exists reviews_by_work on reviews(work_id, version);
 create index if not exists events_by_kind on events(kind, at);
+create table if not exists rooms (
+    id         text primary key,
+    title      text not null,
+    lead       text not null,  -- the bot that answers a message that mentions no one
+    members    text not null,  -- JSON list of bot names
+    created_at text not null,
+    updated_at text not null
+);
+create table if not exists room_messages (
+    id      integer primary key autoincrement,
+    room_id text not null references rooms(id),
+    author  text not null,          -- user, or a bot's name
+    text    text not null,
+    depth   integer not null default 0,  -- how many bot replies away from the user's message it is
+    at      text not null
+);
+create index if not exists room_messages_by_room on room_messages(room_id, id);
+create table if not exists reads (   -- how far a conversation has been seen: by the user, or by a seat of a room
+    key  text primary key,
+    seen integer not null
+);
 create table if not exists routines (
     name         text primary key,
     checked_at   text not null,  -- when it was last checked: a schedule runs for a time after this
@@ -116,6 +146,8 @@ MIGRATIONS = {  # columns added after a crew's database may already exist
     "briefing": "alter table tasks add column briefing text",
     "routine": "alter table tasks add column routine text",
     "budget": "alter table tasks add column budget integer",
+    "kind": "alter table tasks add column kind text not null default 'thread'",
+    "room_id": "alter table tasks add column room_id text",
 }
 
 
@@ -156,6 +188,8 @@ class Task:
     merge_state: str | None
     merged_commit: str | None
     briefing: str | None
+    kind: str
+    room_id: str | None
     routine: str | None
     budget: int | None
     created_at: str
@@ -243,7 +277,8 @@ class Store:
     def create_task(
         self, bot: str, goal: str, *, created_by: str = "user", parent_id: str | None = None, workspace: str | None = None,
         review_of: str | None = None, review_version: int | None = None, routine: str | None = None,
-        budget: int | None = None, title: str | None = None,
+        budget: int | None = None, title: str | None = None, kind: str = "thread", room_id: str | None = None,
+        status: "Status | None" = None,
     ) -> Task:
         task_id = f"t_{uuid.uuid4().hex[:10]}"
         now = _now()
@@ -251,9 +286,9 @@ class Store:
         title = first_line if len(first_line) <= TITLE_CHARS else first_line[: TITLE_CHARS - 1] + "…"
         self.db.execute(
             "insert into tasks (id, bot, title, status, created_by, parent_id, workspace, review_of, review_version,"
-            " routine, budget, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (task_id, bot, title, Status.QUEUED, created_by, parent_id, workspace, review_of, review_version, routine,
-             budget, now, now),
+            " routine, budget, kind, room_id, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (task_id, bot, title, status or Status.QUEUED, created_by, parent_id, workspace, review_of, review_version,
+             routine, budget, kind, room_id, now, now),
         )
         self.db.execute("insert into search (text, task_id, event_id, kind, at) values (?, ?, 0, 'task', ?)",
                         (title, task_id, now))
@@ -400,6 +435,17 @@ class Store:
         """Tokens used by a task and everything it delegated, however deep."""
         return self._fresh_tokens("", f"e.task_id in ({TREE})", (root_id,))
 
+    def work_of(self, task_id: str) -> Task:
+        """The piece of work a task belongs to: the outermost thread above it (or itself), stopping at a chat or seat.
+        A budget or a release covers that much, not a bot's whole never-ending chat."""
+        task = self.get_task(task_id)
+        while task.parent_id:
+            parent = self.get_task(task.parent_id)
+            if parent.kind != "thread":
+                break
+            task = parent
+        return task
+
     def root_of(self, task_id: str) -> Task:
         task = self.get_task(task_id)
         while task.parent_id:
@@ -441,11 +487,86 @@ class Store:
                             [(routine, k, now) for k in keys])
 
     def activity(self, since: str, exclude_routine: str | None = None) -> list[Task]:
-        """Top-level tasks with anything new since `since`, oldest first, leaving out one routine's own runs."""
+        """Threads of work with anything new since `since`, oldest first: each one that isn't inside another thread,
+        leaving out one routine's own runs."""
         rows = self.db.execute(
-            "select * from tasks where parent_id is null and updated_at >= ? and coalesce(routine, '') != ?"
-            " order by created_at, id", (since, exclude_routine or "")).fetchall()
+            "select t.* from tasks t left join tasks p on p.id = t.parent_id where t.kind = 'thread'"
+            " and (p.id is null or p.kind != 'thread') and t.updated_at >= ? and coalesce(t.routine, '') != ?"
+            " order by t.created_at, t.id", (since, exclude_routine or "")).fetchall()
         return [_task(r) for r in rows]
+
+    # Chats and rooms.
+
+    def chat_of(self, bot: str) -> Task | None:
+        row = self.db.execute("select * from tasks where kind = 'chat' and bot = ? order by created_at limit 1",
+                              (bot,)).fetchone()
+        return _task(row) if row else None
+
+    def seat_of(self, room_id: str, bot: str) -> Task | None:
+        row = self.db.execute("select * from tasks where kind = 'seat' and room_id = ? and bot = ?",
+                              (room_id, bot)).fetchone()
+        return _task(row) if row else None
+
+    def threads_of(self, bot: str, limit: int = 50) -> list[Task]:
+        rows = self.db.execute("select * from tasks where kind = 'thread' and bot = ? order by updated_at desc limit ?",
+                               (bot, limit)).fetchall()
+        return [_task(r) for r in rows]
+
+    def create_room(self, title: str, lead: str, members: list[str]) -> dict[str, Any]:
+        room_id = f"r_{uuid.uuid4().hex[:10]}"
+        now = _now()
+        self.db.execute("insert into rooms (id, title, lead, members, created_at, updated_at) values (?, ?, ?, ?, ?, ?)",
+                        (room_id, title, lead, json.dumps(members), now, now))
+        return self.room(room_id)
+
+    def room(self, room_id: str) -> dict[str, Any]:
+        row = self.db.execute("select * from rooms where id = ?", (room_id,)).fetchone()
+        if row is None:
+            raise KeyError(room_id)
+        return {**dict(row), "members": json.loads(row["members"])}
+
+    def rooms(self) -> list[dict[str, Any]]:
+        rows = self.db.execute("select * from rooms order by created_at").fetchall()
+        return [{**dict(r), "members": json.loads(r["members"])} for r in rows]
+
+    def add_room_message(self, room_id: str, author: str, text: str, depth: int = 0) -> dict[str, Any]:
+        now = _now()
+        cur = self.db.execute("insert into room_messages (room_id, author, text, depth, at) values (?, ?, ?, ?, ?)",
+                              (room_id, author, text, depth, now))
+        self.db.execute("update rooms set updated_at = ? where id = ?", (now, room_id))
+        return {"id": cur.lastrowid, "room_id": room_id, "author": author, "text": text, "depth": depth, "at": now}
+
+    def room_messages(self, room_id: str, after: int = 0, limit: int = 1000) -> list[dict[str, Any]]:
+        rows = self.db.execute("select * from room_messages where room_id = ? and id > ? order by id limit ?",
+                               (room_id, after, limit)).fetchall()
+        return [dict(r) for r in rows]
+
+    def last_room_message(self, room_id: str) -> dict[str, Any] | None:
+        row = self.db.execute("select * from room_messages where room_id = ? order by id desc limit 1",
+                              (room_id,)).fetchone()
+        return dict(row) if row else None
+
+    def seen(self, key: str) -> int:
+        row = self.db.execute("select seen from reads where key = ?", (key,)).fetchone()
+        return row["seen"] if row else 0
+
+    def mark_seen(self, key: str, seen: int) -> None:
+        self.db.execute("insert into reads (key, seen) values (?, ?) on conflict(key) do update set"
+                        " seen = max(seen, excluded.seen)", (key, seen))
+
+    def last_event(self, task_id: str, kinds: tuple[str, ...]) -> StoredEvent | None:
+        row = self.db.execute(
+            f"select * from events where task_id = ? and kind in ({','.join('?' * len(kinds))}) order by id desc limit 1",
+            (task_id, *kinds)).fetchone()
+        if row is None:
+            return None
+        return StoredEvent(id=row["id"], task_id=row["task_id"], kind=row["kind"], data=json.loads(row["data"]),
+                           at=row["at"])
+
+    def count_events_after(self, task_id: str, after: int, kinds: tuple[str, ...]) -> int:
+        return self.db.execute(
+            f"select count(*) from events where task_id = ? and id > ? and kind in ({','.join('?' * len(kinds))})",
+            (task_id, after, *kinds)).fetchone()[0]
 
     def tree(self, root_id: str) -> list[Task]:
         rows = self.db.execute(f"select * from tasks where id in ({TREE}) order by created_at, id", (root_id,)).fetchall()

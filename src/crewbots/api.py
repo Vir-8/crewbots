@@ -64,6 +64,8 @@ class TaskOut(BaseModel):
     review_version: int | None
     merge_state: Literal["proposed", "merged"] | None
     merged_commit: str | None
+    kind: Literal["chat", "seat", "thread"]
+    room_id: str | None
     routine: str | None
     budget: int | None
     created_at: str
@@ -211,6 +213,68 @@ class LiveCrew(BaseModel):
     crew: CrewState
 
 
+class RoomOut(BaseModel):
+    id: str
+    title: str
+    lead: str
+    members: list[str]
+    created_at: str
+    updated_at: str
+
+
+class RoomMessageOut(BaseModel):
+    id: int
+    room_id: str
+    author: str  # user, or a bot's name
+    text: str
+    depth: int
+    at: str
+
+
+class LastMessage(BaseModel):
+    author: str
+    text: str
+    at: str
+
+
+class ChatOut(BaseModel):
+    key: str  # bot:<name> or room:<id>
+    kind: Literal["direct", "group"]
+    title: str
+    bot: str | None  # a direct chat's bot
+    task_id: str | None  # a direct chat's task, whose events are the conversation
+    room: RoomOut | None
+    last: LastMessage | None
+    unread: int
+    working: bool
+    updated_at: str
+
+
+class OutputOut(BaseModel):
+    path: str
+    task_id: str
+    title: str
+    at: str
+
+
+class ProfileOut(BaseModel):
+    bot: str
+    working: bool
+    last_active: str | None
+    threads: list[TaskOut]
+    outputs: list[OutputOut]
+
+
+class LiveRoom(BaseModel):
+    type: Literal["room"]
+    room: RoomOut
+
+
+class LiveRoomMessage(BaseModel):
+    type: Literal["room_message"]
+    message: RoomMessageOut
+
+
 class LiveTask(BaseModel):
     type: Literal["task"]
     task: TaskOut
@@ -221,7 +285,7 @@ class LiveEvent(BaseModel):
     event: EventOut
 
 
-LiveMessage = Annotated[LiveTask | LiveEvent | LiveCrew, Field(discriminator="type")]
+LiveMessage = Annotated[LiveTask | LiveEvent | LiveCrew | LiveRoom | LiveRoomMessage, Field(discriminator="type")]
 
 
 class NewTask(BaseModel):
@@ -232,6 +296,12 @@ class NewTask(BaseModel):
 
 class Message(BaseModel):
     text: str
+
+
+class NewRoom(BaseModel):
+    title: str = ""
+    members: list[str]
+    lead: str | None = None
 
 
 class Delegation(BaseModel):
@@ -278,6 +348,16 @@ class Remember(BaseModel):
 class Forget(BaseModel):
     name: str
     shared: bool = False
+
+
+class ThreadBody(BaseModel):
+    title: str
+    goal: str
+
+
+class PostBody(BaseModel):
+    text: str
+    room: str | None = None
 
 
 class Recall(BaseModel):
@@ -398,6 +478,97 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
     async def changes(task_id: str):
         task_or_404(task_id)
         return {"diff": runner.changes(task_id)}
+
+    # Chats: a direct one with each bot, and the group chats.
+
+    def busy(task_id: str) -> bool:
+        return any(t.active or t.status is Status.HELD or t.id in runner.running() for t in store.tree(task_id))
+
+    def direct(bot: str) -> dict[str, Any]:
+        chat = runner.chat(bot)
+        said = store.last_event(chat.id, ("text",))
+        asked = store.last_event(chat.id, ("message",))
+        last = None
+        if asked and asked.data.get("from") not in ("crewbots", "room") and (not said or asked.id > said.id):
+            last = {"author": asked.data.get("from", "user"), "text": asked.data.get("text", ""), "at": asked.at}
+        elif said:
+            last = {"author": bot, "text": said.data.get("text", ""), "at": said.at}
+        unread = store.count_events_after(chat.id, store.seen(f"chat:{chat.id}"), ("text", "escalation"))
+        return {"key": f"bot:{bot}", "kind": "direct", "title": runner.crew.bots[bot].title, "bot": bot,
+                "task_id": chat.id, "room": None, "last": last, "unread": unread, "working": busy(chat.id),
+                "updated_at": last["at"] if last else chat.created_at}
+
+    def group(room: dict[str, Any]) -> dict[str, Any]:
+        message = store.last_room_message(room["id"])
+        seen = store.seen(f"room:{room['id']}")
+        unread = sum(1 for m in store.room_messages(room["id"], after=seen) if m["author"] != "user")
+        seats = [store.seat_of(room["id"], b) for b in room["members"]]
+        return {"key": f"room:{room['id']}", "kind": "group", "title": room["title"], "bot": None, "task_id": None,
+                "room": room, "last": {k: message[k] for k in ("author", "text", "at")} if message else None,
+                "unread": unread, "working": any(s and busy(s.id) for s in seats), "updated_at": room["updated_at"]}
+
+    def room_or_404(room_id: str) -> dict[str, Any]:
+        try:
+            return store.room(room_id)
+        except KeyError:
+            raise HTTPException(404, f"no group chat {room_id}") from None
+
+    @v1.get("/chats", response_model=list[ChatOut])
+    async def chats():
+        """Every conversation: one with each bot, then the group chats (the crew's own is made the first time)."""
+        if runner.crew.bots:
+            runner.crew_room()
+        return [direct(b) for b in runner.crew.bots] + [group(r) for r in store.rooms()]
+
+    @v1.post("/chats/bot/{bot}/messages", response_model=TaskOut)
+    async def message_bot(bot: str, body: Message):
+        return runner.say(bot, body.text).to_json()
+
+    @v1.post("/chats/{key}/read")
+    async def read(key: str):
+        """Marks a conversation seen up to now."""
+        kind, _, name = key.partition(":")
+        if kind == "bot":
+            chat = runner.chat(name)
+            store.mark_seen(f"chat:{chat.id}", store.latest_event_id())
+        elif kind == "room":
+            room_or_404(name)
+            last = store.last_room_message(name)
+            store.mark_seen(f"room:{name}", last["id"] if last else 0)
+        else:
+            raise HTTPException(404, f"no conversation {key}")
+        return {"ok": True}
+
+    @v1.post("/rooms", status_code=201, response_model=RoomOut)
+    async def new_room(body: NewRoom):
+        return runner.create_room(body.title, body.members, body.lead)
+
+    @v1.get("/rooms/{room_id}/messages", response_model=list[RoomMessageOut])
+    async def room_messages(room_id: str, after: int = 0, limit: int = Query(1000, le=10_000)):
+        room_or_404(room_id)
+        return store.room_messages(room_id, after=after, limit=limit)
+
+    @v1.post("/rooms/{room_id}/messages", status_code=201, response_model=RoomMessageOut)
+    async def post_message(room_id: str, body: Message):
+        room_or_404(room_id)
+        return runner.post(room_id, "user", body.text)
+
+    @v1.get("/bots/{bot}/profile", response_model=ProfileOut)
+    async def profile(bot: str):
+        """What a bot is doing and has done: its threads, newest first, and the files they handed back."""
+        if bot not in runner.crew.bots:
+            raise HTTPException(404, f"no bot named {bot}")
+        threads = store.threads_of(bot)
+        outputs = []
+        for thread in threads:
+            handoff = store.latest_handoff(thread.id)
+            outputs += [{"path": p, "task_id": thread.id, "title": thread.title, "at": handoff.at}
+                        for p in (handoff.output if handoff else [])]
+        chat = runner.chat(bot)
+        mine = [chat, *threads, *(s for r in store.rooms() if (s := store.seat_of(r["id"], bot)))]
+        return {"bot": bot, "working": any(t.id in runner.running() and t.id not in runner.held() for t in mine),
+                "last_active": max((t.updated_at for t in mine), default=None),
+                "threads": [t.to_json() for t in threads], "outputs": outputs[:30]}
 
     @v1.get("/search", response_model=list[SearchHit])
     async def search(q: str, limit: int = Query(20, le=200)):
@@ -530,6 +701,15 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
     @v1.post("/bot/recall", response_model=list[SearchHit])
     async def bot_recall(request: Request, body: Recall):
         return runner.recall(request.state.task.id, body.query)
+
+    @v1.post("/bot/start_thread", status_code=201)
+    async def bot_start_thread(request: Request, body: ThreadBody):
+        thread = runner.start_thread(request.state.task.id, body.title, body.goal)
+        return {"id": thread.id, "bot": thread.bot, "title": thread.title, "status": thread.status}
+
+    @v1.post("/bot/post", status_code=201)
+    async def bot_post(request: Request, body: PostBody):
+        return runner.post_from(request.state.task.id, body.text, body.room or None)
 
     @v1.post("/bot/escalate")
     async def bot_escalate(request: Request, body: Escalation):

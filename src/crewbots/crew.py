@@ -24,6 +24,18 @@ CARD_FIELDS = {
 }
 BUDGET_WINDOWS = {"day": timedelta(days=1), "week": timedelta(days=7)}
 
+NO_REPLY = "NO_REPLY"  # a bot's whole reply in a group chat when it has nothing to add
+CHAT_SETTING = (
+    "This is your ongoing chat with the user. It doesn't end: it's the same conversation tomorrow. Answer here, and "
+    "keep it conversational. For real work, open a thread with start_thread; its result comes back here. Messages "
+    "that start with [routine: name] come from the crew's routines, not from the user typing."
+)
+SEAT_SETTING = (
+    "This is the group chat {title!r}, with the user and {others}. {lead} New messages reach you as [name]: text. "
+    "Your final message is posted to the room as yours, so write it to the room. If you have nothing to add, reply "
+    "with exactly " + NO_REPLY + ". @mention a teammate by name to bring them in."
+)
+
 CREW_TOOLS = """# Working in the crew
 
 You have crewbots tools, from the MCP server named crewbots:
@@ -32,7 +44,12 @@ You have crewbots tools, from the MCP server named crewbots:
   file paths, branches or links. Then end your reply with a short summary.
 - `escalate(question)`: when you need a decision that is not yours to make (team/rules.md). Ask one clear question,
   then end your turn. The answer arrives as your next message.
-- `review(verdict, summary, findings)`: only when your task is a review. Your verdict is what counts, not your prose."""
+- `review(verdict, summary, findings)`: only when your task is a review. Your verdict is what counts, not your prose.
+- `start_thread(title, goal)`: open a thread for a piece of real work (several steps, files, anything that takes a
+  while), so the conversation you're in stays a conversation. You work the thread in parallel; when it's done, its
+  result comes back here. Write the goal so it stands alone.
+- `post(text, room?)`: say something in a group chat, by default the crew's own. @mention a teammate by name to bring
+  them in; that's how you ask another bot for something."""
 
 DELEGATION_TOOLS = """You can delegate. Only you assign work, and every task has exactly one owner:
 
@@ -117,12 +134,13 @@ class Crew:
         return self.home / "routines"
 
     def system_prompt(self, bot: Bot, delegated_by: str | None = None, reviewing: str | None = None,
-                      briefing: str | None = None, routine: str | None = None) -> str:
+                      briefing: str | None = None, routine: str | None = None, setting: str | None = None) -> str:
         roster = "\n".join(
             f"- {b.name} ({b.title}){' ← you' if b.name == bot.name else ''}: {b.description}" for b in self.bots.values()
         )
         parts = [
             f"You are {bot.name}, the {bot.title} of a crew of AI agents run by crewbots.",
+            setting if setting else
             f"This task was delegated to you by {delegated_by}; your handoff goes back to them."
             if delegated_by else
             f"The crew's routine {routine!r} started this task, not a message from the user. Your final message is what "

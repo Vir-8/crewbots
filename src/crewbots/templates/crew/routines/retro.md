@@ -2,7 +2,6 @@
 description: A Friday look back at the week's reviews and corrections, proposing changes to the crew's own files.
 bot: chief
 schedule: "0 16 * * 5"   # Fridays at 16:00
-budget: 300000
 ---
 Run the weekly retro, over what the crew did since {{since}} (below). Look for patterns, not one-offs:
 

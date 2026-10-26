@@ -66,6 +66,16 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
     def recall(query: str) -> str:
         return recall_text(call("POST", "/bot/recall", {"query": query}))
 
+    @server.tool(description=BY_NAME["start_thread"].description)
+    def start_thread(title: str, goal: str) -> str:
+        thread = call("POST", "/bot/start_thread", {"title": title, "goal": goal})
+        return f"Opened thread {thread['id']}: {thread['title']}. Its result comes back here when it's done."
+
+    @server.tool(description=BY_NAME["post"].description)
+    def post(text: str, room: str | None = None) -> str:
+        message = call("POST", "/bot/post", {"text": text, "room": room})
+        return f"Posted in the group chat ({message['room_id']})."
+
     if not can_delegate:
         return server
 

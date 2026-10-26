@@ -151,7 +151,7 @@ def test_budgets_routines_and_release_over_the_api(store, tmp_path):
         assert listing["routines"][0]["next_run_at"] is not None
 
         task = client.post("/routines/standup/run", headers=auth).json()
-        assert task["routine"] == "standup"
+        assert task["kind"] == "chat" and task["bot"] == "chief"
         assert client.post("/routines/nope/run", headers=auth).status_code == 422
         for _ in range(100):
             if client.get(f"/tasks/{task['id']}", headers=auth).json()["status"] == "idle":

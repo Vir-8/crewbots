@@ -1,5 +1,6 @@
 """Routines: cron schedules, routine files, the scheduler, and GitHub triggers."""
 
+import asyncio
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -47,7 +48,6 @@ def write(home: Path, name: str, text: str) -> Path:
 STANDUP = """---
 bot: chief
 schedule: "0 9 * * 1-5"
-budget: 5000
 ---
 Standup since {{since}}.
 
@@ -99,7 +99,7 @@ def test_routine_files_load_and_one_broken_file_doesnt_stop_the_rest(tmp_path):
 
     loaded, errors = routines.load(tmp_path / "routines", {"chief"})
 
-    assert [r.name for r in loaded] == ["standup"] and loaded[0].budget == 5000
+    assert [r.name for r in loaded] == ["standup"]
     assert "cron has five fields" in errors["broken.md"] and "no bot named 'nobody'" in errors["stranger.md"]
 
 
@@ -116,6 +116,7 @@ def test_on_is_read_as_a_trigger_not_as_yaml_true():
     ("---\nbot: chief\nschedule: '@daily'\n---\n{{pr.url}}", "can't be filled in here"),
     ("---\nbot: chief\non: github.review_requested\nrepo: o/r\n---\n{{pr.failures}}", "can't be filled in here"),
     ("---\nbot: chief\nschedule: '@daily'\nbudget: lots\n---\nx", "budget"),
+    ("---\nbot: chief\nschedule: '@daily'\nbudget: 5000\n---\nx", "per-run budget is for triggers"),
     ("---\nbot: chief\nschedule: '@daily'\nwhen: now\n---\nx", "unknown fields"),
 ])
 def test_routine_mistakes_are_caught_when_the_file_is_read(text, error):
@@ -156,25 +157,30 @@ async def test_a_new_routine_waits_for_its_next_time_then_runs_once(crew, store,
     [task] = await scheduler.tick(at(26, 9, 0))
     assert await scheduler.tick(at(26, 9, 0)) == []
 
-    assert task.bot == "chief" and task.routine == "standup" and task.budget == 5000 and task.created_by == "routine"
-    assert task.title == "Standup, Mon 26 Oct"
+    assert task.bot == "chief" and task.kind == "chat"  # a message in the chief's chat, from the routine
     await wait_until(crew.settled(task.id))
     [spec] = crew.specs_for("chief")
-    assert "routine 'standup' started this task" in spec.system_prompt
-    assert spec.prompt.startswith("Standup since Fri 23 Oct 09:00.")  # the first run looks back to the last time
+    assert "ongoing chat with the user" in spec.system_prompt
+    # The first run looks back to the time it would last have run.
+    assert spec.prompt.startswith("[routine: standup]\n\nStandup since Fri 23 Oct 09:00.")
+    assert [e.data["from"] for e in store.events(task.id) if e.kind == "message"] == ["routine:standup"]
     assert store.routine_state("standup")["last_task_id"] == task.id
 
 
-async def test_a_routine_still_going_is_skipped_rather_than_doubled(crew, store, tmp_path):
+async def test_a_routine_still_waiting_in_a_busy_chat_is_skipped_rather_than_doubled(store, tmp_path):
+    gate = asyncio.Event()
+    busy = ScriptedCrew(store, tmp_path, bot("chief"), gate=gate)
+    (tmp_path / "routines").mkdir()
     write(tmp_path, "hourly", "---\nbot: chief\nschedule: '0 * * * *'\n---\nCheck in.")
-    scheduler = Scheduler(crew.runner)
+    scheduler = Scheduler(busy.runner)
     await scheduler.tick(at(26, 8, 30))
-    [first] = await scheduler.tick(at(26, 9))
-    await wait_until(crew.settled(first.id))
-    store.update_task(first.id, status="running")  # as if it were still going
+    chat = busy.runner.say("chief", "a long question")  # the chief is busy with you
 
-    assert await scheduler.tick(at(26, 10)) == []
+    [first] = await scheduler.tick(at(26, 9))  # waits behind your question
+    assert first.id == chat.id and await scheduler.tick(at(26, 10)) == []
     assert scheduler.views(at(26, 10))[0].skipped_at == at(26, 10).isoformat()
+    gate.set()
+    await wait_until(busy.settled(chat.id))
 
 
 async def test_a_paused_crew_runs_what_came_due_once_it_resumes(crew, tmp_path):
@@ -194,7 +200,7 @@ async def test_a_routine_can_be_run_by_hand(crew, tmp_path):
 
     task = scheduler.run_now("standup")
 
-    assert task.routine == "standup"
+    assert task.kind == "chat" and task.bot == "chief"
     with pytest.raises(RoutineError, match="no routine named"):
         scheduler.run_now("nightly")
 
@@ -327,13 +333,18 @@ def test_pull_requests_are_read_from_githubs_answer():
     assert p.failed == (("tests", "https://github.com/vir/app/actions/runs/1/job/2"), ("deploy", "d"))
 
 
-async def test_a_routine_task_is_held_to_its_budget_with_what_it_delegates(store, tmp_path):
-    # The routine's budget covers its whole run: here, 12 tokens a turn and a budget of 20.
+async def test_a_triggers_thread_is_held_to_its_budget(store, tmp_path):
+    # The trigger's budget covers the thread it opens: here, 12 tokens a turn and a budget of 20.
     scripted = ScriptedCrew(store, tmp_path, bot("chief"))
     (tmp_path / "routines").mkdir()
-    write(tmp_path, "check", "---\nbot: chief\nschedule: '@hourly'\nbudget: 20\n---\nCheck.")
+    write(tmp_path, "ci", "---\nbot: chief\non: github.ci_failed\nrepo: vir/app\nbudget: 20\n---\nFix {{pr.url}}")
     scripted.script["chief"] = lambda spec, me: [*reply(spec)[1:3], Done(final_text="ok")]  # text, usage, done
-    task = Scheduler(scripted.runner).run_now("check")
+    gh = FakeGitHub()
+    scheduler = Scheduler(scripted.runner, github=gh, github_every_s=0)
+    await scheduler.tick(at(26, 9))
+    gh.snapshot = Snapshot(review_requested=[], mine=[pr(9, failed=(("tests", None),))])
+    [task] = await scheduler.tick(at(26, 9, 5))
+    assert task.kind == "thread" and task.parent_id == scripted.runner.chat("chief").id
     await wait_until(scripted.settled(task.id))
     scripted.runner.send(task.id, "and again")
     await wait_until(lambda: store.get_task(task.id).status == "idle")

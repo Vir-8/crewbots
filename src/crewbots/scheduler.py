@@ -1,12 +1,11 @@
 """The daemon's scheduler: starts routines when their time comes, and GitHub triggers when something new happens.
 
 It never runs a burst of catch-ups. A schedule missed while the Mac slept (or the daemon was stopped, or the crew
-paused) runs once when it can, and a routine whose last run is still going is skipped that time. A trigger starts
+paused) runs once when it can, and one whose last message still waits in its bot's chat is skipped that time. A trigger starts
 on what's new since it was added, never on what was already there, and once per pull request version.
 """
 
 import asyncio
-import contextlib
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -17,7 +16,7 @@ from crewbots import github as github_module
 from crewbots import routines as routines_module
 from crewbots.routines import Routine, RoutineError
 from crewbots.runner import Runner
-from crewbots.store import Status, Store, Task
+from crewbots.store import Store, Task
 
 TICK_S = 30.0
 GITHUB_EVERY_S = 300.0
@@ -35,7 +34,7 @@ class RoutineView:
     last_run_at: str | None
     last_task_id: str | None
     next_run_at: str | None
-    skipped_at: str | None  # the last time it was due while its previous run was still going
+    skipped_at: str | None  # the last time it was due while its previous message still waited in the bot's chat
 
 
 class Scheduler:
@@ -129,7 +128,8 @@ class Scheduler:
         due = routine.schedule.due(datetime.fromisoformat(state["checked_at"]), now)
         if due is None:
             return None
-        if self._still_running(state.get("last_task_id")):
+        chat = self.store.chat_of(routine.bot)
+        if chat and any(m.startswith(f"[routine: {routine.name}]") for m in self.runner.queued(chat.id)):
             self._skipped[routine.name] = now.isoformat()
             return None
         return self._start(routine, now)
@@ -144,9 +144,14 @@ class Scheduler:
             values = {"since": _human(since), "now": _human(now)}
             if routine.wants("activity"):
                 values["activity"] = activity(self.store, since, exclude_routine=routine.name)
-        task = self.runner.submit(routine.bot, routine.render(values), created_by="routine",
-                                  workspace=str(routine.workspace) if routine.workspace else None, routine=routine.name,
-                                  budget=routine.budget, title=title)
+        goal = routine.render(values)
+        if routine.schedule:  # a scheduled routine is a message in its bot's chat, from the routine
+            task = self.runner.say(routine.bot, f"[routine: {routine.name}]\n\n{goal}", sender=f"routine:{routine.name}")
+        else:  # a trigger is work: a thread under its bot's chat, which hears how it went
+            chat = self.runner.chat(routine.bot)
+            task = self.runner.submit(routine.bot, goal, created_by="routine", parent_id=chat.id,
+                                      workspace=str(routine.workspace) if routine.workspace else None,
+                                      routine=routine.name, budget=routine.budget, title=title)
         self.store.routine_ran(routine.name, now.isoformat(), task.id)
         return task
 
@@ -155,14 +160,6 @@ class Scheduler:
         Monday's, last week for a retro)."""
         before = routine.schedule.due(now - routines_module.LOOKBACK, now - timedelta(minutes=1)) if routine.schedule else None
         return before or now - FIRST_SINCE
-
-    def _still_running(self, task_id: str | None) -> bool:
-        if not task_id:
-            return False
-        with contextlib.suppress(KeyError):
-            return any(t.active or t.status is Status.HELD or t.id in self.runner.running()
-                       for t in self.store.tree(task_id))
-        return False
 
     # GitHub.
 

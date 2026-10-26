@@ -2,7 +2,6 @@
 description: A short summary each weekday morning of what the crew did, and what needs you.
 bot: chief
 schedule: "0 9 * * 1-5"   # cron, in your time zone: weekdays at 9:00
-budget: 200000            # tokens for one run, with anything it delegates
 ---
 Write the standup for what the crew did since {{since}}, from the record below. Three short parts:
 

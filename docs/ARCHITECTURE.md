@@ -42,7 +42,7 @@ It listens on localhost only. Clients authenticate with the token in a file only
   - a **menu bar item**: crew status, "needs you" count, pause all
   - opening folders and worktrees
 - **The UI** is a sandboxed web view with no direct network access and no token. It gets data only from the Rust side, the same split the Electron prototype proved.
-- **The UI itself** will be redesigned after exploring several layouts (see the plan). The current views were scaffolding.
+- **The UI** is a messaging app: a chat with each bot and group chats, threads beside them, and each bot's profile.
 - **Speed:**
   - the daemon pushes changes; nothing polls
   - long lists render virtualized
@@ -160,11 +160,9 @@ Each step leaves the system working.
    - The Rust side finds or starts the daemon (with a login-like `PATH`), holds the token, proxies calls and relays `/v1/live`.
    - The window's CSP allows only IPC.
    - A self-test mode checks the whole path without anyone watching.
-3. **UI** (done). Of three prototypes (Conversation, Board, Inbox), the conversation won, as in other coding harnesses. Its redesign:
-   - Each goal is one quiet thread, with delegated work as cards that carry their reviews.
-   - A side panel shows any task's own thread.
-   - The sidebar holds what needs you.
-   - Outside Tauri the UI runs on a demo crew, so it can be designed and checked in a browser.
+3. **UI** (done, then redone). Of three prototypes (Conversation, Board, Inbox), the conversation won, one per goal.
+   Used for real, one-off goals turned out to be the wrong unit: the crew is meant to be always on, like ChatGPT
+   Dots or Grok Bot. So it became a messaging app (see "Chats, threads and group chats" below).
 4. **Long-lived sessions** (done).
    - Claude keeps `claude -p --input-format stream-json` running per task, and Codex keeps a `codex app-server` with one thread, whose role card goes in as developer instructions.
    - Sessions close after 10 idle minutes, on cancel, or past 8 open. A dead or unopenable session falls back to one process per turn, resumed from the stored id. `serve --no-sessions` turns sessions off.
@@ -231,6 +229,26 @@ Each step leaves the system working.
      - the GitHub query ran through `gh`; with no open pull requests, nothing was started. Firing on a real pull
        request is covered by tests only
 8. **Sandboxed shells** for writing bots on both backends (done, with the policy). Containers once there's a reason.
+
+## Chats, threads and group chats
+
+- **A chat** is a bot's one ongoing conversation with the user: a task of kind `chat`, made the first time it's
+  needed, that never ends. Its length is handled by the memory work: notes, and a rollover briefing at 70%.
+- **A thread** is work, opened with `start_thread` by any bot (or `delegate` by a coordinator) under the chat, seat
+  or thread it's in. Results come back up as before. Budgets and "Go ahead anyway" apply per thread, the outermost
+  thread above a task, never to a whole chat.
+- **A room** is a group chat with a lead. Each bot in it has a **seat**, its own session for that room, fed the
+  messages it hasn't seen as `[name]: text`; its final message is posted back as its reply, or nothing if it answers
+  `NO_REPLY`. The user's message wakes whoever it mentions, or the lead; a bot's reply wakes whoever it mentions, up
+  to `MAX_ROOM_DEPTH` (4) replies from the user's message, so bots can't talk forever. Checked live: asked to
+  introduce themselves, the reviewer brought in the critic with a question, the critic answered, the reviewer
+  replied, and it stopped.
+- **Routines:** a scheduled one is a message in its bot's chat, from the routine; a trigger opens a thread under the
+  bot's chat, with its per-run budget, and the chat hears how it went.
+- **Unread** is kept in the daemon (`reads`), so the app and the menu bar agree.
+- **Voice:** dictation uses `SFSpeechRecognizer` through a Swift sidecar (`app/src-tauri/dictation`), on device when
+  the Mac supports it. Codex's app-server has an experimental realtime voice API (`thread/realtime/*`): a spoken
+  conversation on the ChatGPT plan, not plain transcription, so it's the base for a later "Call" with a bot.
 
 ## Learned building sessions
 

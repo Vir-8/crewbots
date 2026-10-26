@@ -74,6 +74,20 @@ TOOLS = [
         _object({"query": STRING}, ["query"]),
     ),
     ToolDef(
+        "start_thread",
+        "Open a thread for a piece of real work (several steps, files, anything that takes a while), so the "
+        "conversation you're in stays a conversation. You work the thread yourself, in parallel. title: a few words. "
+        "goal: the outcome, the context, and what done means; it must stand alone. Its result comes back here.",
+        _object({"title": STRING, "goal": STRING}, ["title", "goal"]),
+    ),
+    ToolDef(
+        "post",
+        "Say something in a group chat: by default the crew's own, with every bot in it, or the one you're in. "
+        "@mention a teammate by name to bring them in; that's how you ask another bot for something, and their reply "
+        "comes in the same chat. room: a group chat's id, if not the default.",
+        _object({"text": STRING, "room": STRING}, ["text"]),
+    ),
+    ToolDef(
         "delegate",
         "Give one task to one bot in the crew. It starts at once and runs in parallel with other delegated tasks. "
         "goal: the outcome, the context the bot needs, and what done means; it must stand alone. workspace: a folder "
@@ -181,6 +195,12 @@ class CrewTools:
                     return f"Forgot: {note.title}."
                 case "recall":
                     return recall_text(r.recall(me, args["query"]))
+                case "start_thread":
+                    thread = r.start_thread(me, args["title"], args["goal"])
+                    return f"Opened thread {thread.id}: {thread.title}. Its result comes back here when it's done."
+                case "post":
+                    message = r.post_from(me, args["text"], args.get("room") or None)
+                    return f"Posted in the group chat ({message['room_id']})."
         except (NotAllowed, UnknownBot, MemoryError) as e:
             raise ToolRefused(str(e.args[0] if e.args else e)) from None
         raise ToolRefused(f"{name} is not implemented")

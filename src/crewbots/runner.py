@@ -13,6 +13,11 @@ Delegation: a coordinator bot creates child tasks through the crewbots MCP tools
 children are still running, their handoffs and results go back to it as one message, which starts its next turn. It
 never waits or polls. Each run gets a token that lets its MCP server act for that task only, and only while it runs.
 
+Chats and rooms: each bot has one ongoing chat with the user, which never ends; real work goes into threads opened
+from it. A room is a group chat. A message there wakes the bots it @mentions, or the room's lead if it mentions no
+one; a bot's reply is posted back to the room and wakes whoever it mentions in turn, up to a few replies deep, so bots
+can talk to each other without talking forever.
+
 Budgets: before a turn starts, the runner checks the bot's budget, the budget of the routine run it belongs to, and
 the plan's usage limit. If any is spent, the task is held: the turn waits (holding no run slot), and goes ahead by
 itself once there's room again, or at once when the user releases it. A turn already running is never cut short.
@@ -21,6 +26,7 @@ itself once there's room again, or at once when the user releases it. A turn alr
 import asyncio
 import contextlib
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -35,7 +41,7 @@ from typing import Any
 from crewbots import worktree
 from crewbots.backends import BACKENDS, Access, Backend, McpServer, RunSpec
 from crewbots.backends.base import Session
-from crewbots.crew import Bot, Crew
+from crewbots.crew import CHAT_SETTING, NO_REPLY, SEAT_SETTING, Bot, Crew
 from crewbots.crew_tools import CrewTools
 from crewbots.events import Done, Event, RateLimit, SessionStarted, Usage
 from crewbots.memory import CREW_SCOPE, Note
@@ -57,6 +63,9 @@ BRIEFING_PROMPT = (
 BUDGET_REPORT_WINDOW = timedelta(days=7)  # what `budgets` reports for a bot without a budget
 LIMIT_WINDOWS = {"five_hour": "five-hour", "seven_day": "weekly", "seven_day_opus": "weekly Opus",
                  "seven_day_sonnet": "weekly Sonnet", "5h": "five-hour", "7d": "weekly"}
+MAX_ROOM_DEPTH = 4  # bot replies in a row in a room, after the user's message, before the bots stop waking each other
+CREW_ROOM = "Crew"  # the group chat every bot is in, made when the crew first needs one
+MENTION = re.compile(r"@([\w-]+)")
 HOLD_RECHECK_S = 60.0  # a held task looks again this often: budgets free up as old usage ages out of their window
 MCP_SERVER_NAME = "crewbots"
 MCP_COMMAND = (sys.executable, "-m", "crewbots.mcp_server")
@@ -193,6 +202,7 @@ class Runner:
         self._released: set[str] = set()  # top-level tasks the user let past their budgets, until the daemon stops
         self._recheck = asyncio.Event()  # set when a hold may be over: a release, or a reloaded crew
         self.limits: dict[str, dict[str, RateLimit]] = {}  # plan → window → the latest the CLI reported
+        self._seat_depth: dict[str, int] = {}  # seat task → the depth of the room message that woke it
 
     # Commands from the user (and, through `delegate` and `message_child`, from coordinators).
 
@@ -208,6 +218,104 @@ class Runner:
         self._message(task.id, created_by, goal)
         self._start(task.id, goal)
         return task
+
+    # Chats: a bot's one ongoing conversation with the user.
+
+    def chat(self, bot: str) -> Task:
+        """The bot's chat, made the first time it's needed."""
+        if bot not in self.crew.bots:
+            raise UnknownBot(f"no bot named {bot!r}; the crew is {sorted(self.crew.bots)}")
+        existing = self.store.chat_of(bot)
+        if existing:
+            return existing
+        task = self.store.create_task(bot, f"Chat with {bot}", kind="chat", status=Status.IDLE)
+        self.bus.publish({"type": "task", "task": task.to_json()})
+        return task
+
+    def say(self, bot: str, text: str, sender: str = "user") -> Task:
+        return self.send(self.chat(bot).id, text, sender=sender)
+
+    def start_thread(self, task_id: str, title: str, goal: str) -> Task:
+        """A bot opens a thread for itself, under the conversation it's in. Its result comes back there."""
+        parent = self.store.get_task(task_id)
+        if len(self.store.children(task_id)) >= self.max_children:
+            raise NotAllowed(f"stop condition: this conversation already opened {self.max_children} threads. Finish or "
+                             "report on those before opening more.")
+        return self.submit(parent.bot, goal, created_by=parent.bot, parent_id=task_id, workspace=parent.workspace,
+                           title=title)
+
+    # Rooms: group chats.
+
+    def crew_room(self) -> dict[str, Any]:
+        """The group chat with every bot in it, led by the coordinator."""
+        for room in self.store.rooms():
+            if room["title"] == CREW_ROOM:
+                return room
+        bots = list(self.crew.bots.values())
+        lead = next((b.name for b in bots if b.can_delegate), bots[0].name if bots else "")
+        return self.create_room(CREW_ROOM, [b.name for b in bots], lead)
+
+    def create_room(self, title: str, members: list[str], lead: str | None = None) -> dict[str, Any]:
+        unknown = [m for m in members if m not in self.crew.bots]
+        if unknown or not members:
+            raise UnknownBot(f"no bots named {unknown}; the crew is {sorted(self.crew.bots)}" if unknown
+                             else "a group chat needs at least one bot")
+        lead = lead or members[0]
+        if lead not in members:
+            raise UnknownBot(f"the lead, {lead}, isn't in the group chat")
+        room = self.store.create_room(title.strip() or ", ".join(members), lead, members)
+        self.bus.publish({"type": "room", "room": room})
+        return room
+
+    def post(self, room_id: str, author: str, text: str, depth: int = 0) -> dict[str, Any]:
+        """A message in a room, from the user or a bot. It wakes the bots it mentions; one from the user that mentions
+        no one wakes the lead."""
+        room = self.store.room(room_id)
+        message = self.store.add_room_message(room_id, author, text, depth)
+        self.bus.publish({"type": "room_message", "message": message})
+        members = {m.lower(): m for m in room["members"]}
+        mentioned = list(dict.fromkeys(members[m.lower()] for m in MENTION.findall(text) if m.lower() in members))
+        if author == "user":
+            wake = mentioned or [room["lead"]]
+        else:
+            wake = [m for m in mentioned if m != author] if depth < MAX_ROOM_DEPTH else []
+        for bot in wake:
+            self._wake_seat(room, bot, depth)
+        return message
+
+    def post_from(self, task_id: str, text: str, room_id: str | None = None) -> dict[str, Any]:
+        """The `post` tool: a bot says something in a room, from wherever it's working."""
+        task = self.store.get_task(task_id)
+        if room_id is None:
+            room_id = task.room_id if task.kind == "seat" else self.crew_room()["id"]
+        try:
+            room = self.store.room(room_id)
+        except KeyError:
+            raise NotAllowed(f"no group chat {room_id}") from None
+        if task.bot not in room["members"]:
+            raise NotAllowed(f"{task.bot} isn't in the group chat {room['title']!r}")
+        return self.post(room_id, task.bot, text, depth=self._seat_depth.get(task_id, 0) + 1)
+
+    def _wake_seat(self, room: dict[str, Any], bot: str, depth: int) -> None:
+        if bot not in self.crew.bots:
+            return  # a member since removed from the crew
+        seat = self.store.seat_of(room["id"], bot) or self.store.create_task(
+            bot, f"{room['title']} ({bot})", kind="seat", room_id=room["id"], status=Status.IDLE)
+        key = f"seat:{seat.id}"
+        unseen = [m for m in self.store.room_messages(room["id"], after=self.store.seen(key)) if m["author"] != bot]
+        if not unseen:
+            return
+        self.store.mark_seen(key, unseen[-1]["id"])
+        # Woken again mid-turn, it keeps the deeper of the two, so a back-and-forth can't reset its own count.
+        running = seat.id in self._runs
+        self._seat_depth[seat.id] = max(depth, self._seat_depth.get(seat.id, 0)) if running else depth
+        self.send(seat.id, "\n\n".join(f"[{m['author']}]: {m['text']}" for m in unseen), sender="room")
+
+    def _seat_replied(self, seat: Task, text: str) -> None:
+        text = text.strip()
+        if not text or text.strip("`*_. ") == NO_REPLY:
+            return
+        self.post(seat.room_id, seat.bot, text, depth=self._seat_depth.get(seat.id, 0) + 1)
 
     def send(self, task_id: str, text: str, sender: str = "user") -> Task:
         task = self.store.get_task(task_id)
@@ -253,6 +361,13 @@ class Runner:
     def running(self) -> list[str]:
         return list(self._runs)
 
+    def held(self) -> list[str]:
+        return list(self._held)
+
+    def queued(self, task_id: str) -> list[str]:
+        """Messages waiting for the task's current turn to finish."""
+        return list(self._waiting.get(task_id, []))
+
     # Pausing: no new turn starts while paused; turns already running finish. Waiting tasks stay queued.
 
     @property
@@ -283,7 +398,7 @@ class Runner:
     def release(self, task_id: str) -> Task:
         """The user lets a held task, and the rest of its goal, go past its budgets."""
         task = self.store.get_task(task_id)
-        root = self.store.root_of(task_id)
+        root = self.store.work_of(task_id)
         self._released.add(root.id)
         self._record(task_id, kind="released", data={"goal": root.id})
         self._wake_held()
@@ -302,7 +417,7 @@ class Runner:
 
     def hold_reason(self, task: Task) -> str | None:
         """Why the task's next turn has to wait, or None if it can go ahead."""
-        root = self.store.root_of(task.id)
+        root = self.store.work_of(task.id)
         bot = self.crew.bots.get(task.bot)
         if root.id in self._released or bot is None:
             return None
@@ -599,6 +714,8 @@ class Runner:
                 self._escalated.discard(task_id)
                 self._set(task_id, status=Status.NEEDS_INPUT, result=done.final_text, turns=task.turns + 1)
             else:
+                if task.kind == "seat" and task.room_id:
+                    self._seat_replied(task, done.final_text)
                 if open_session and open_session.session.alive:
                     await self._maybe_roll_over(task_id, open_session)
                 # Not idle yet if messages are waiting: the next turn starts right away, and watchers should not stop.
@@ -612,7 +729,7 @@ class Runner:
             prompt=prompt, cwd=cwd, access=bot.access, model=bot.model,
             system_prompt=self.crew.system_prompt(bot, delegated_by=task.created_by if task.parent_id else None,
                                                   reviewing=self._review_brief(task), briefing=task.briefing,
-                                                  routine=task.routine),
+                                                  routine=task.routine, setting=self._setting(task)),
             resume_session_id=task.session_id,
             mcp_servers={**bot.mcp, **({} if in_process else self._crew_tools(token, bot))},
             crew=CrewTools(self, task.id, bot.can_delegate) if in_process else None,
@@ -708,6 +825,17 @@ class Runner:
             self._awake.terminate()
             self._awake = None
 
+    def _setting(self, task: Task) -> str | None:
+        if task.kind == "chat":
+            return CHAT_SETTING
+        if task.kind == "seat" and task.room_id:
+            room = self.store.room(task.room_id)
+            others = [m for m in room["members"] if m != task.bot]
+            lead = ("You lead it: a message that mentions no one is yours to answer." if room["lead"] == task.bot
+                    else f"{room['lead']} leads it; you're woken when someone mentions you.")
+            return SEAT_SETTING.format(title=room["title"], others=", ".join(others) or "no other bots", lead=lead)
+        return None
+
     def _review_brief(self, task: Task) -> str | None:
         if not task.review_of:
             return None
@@ -763,7 +891,7 @@ class Runner:
         reviewed = dict.fromkeys(s.review_of for s in finished if s.review_of)
         status = "\n".join(_round_status(self.review_state(w), self.store.get_task(w)) for w in reviewed)
         self.send(task.parent_id, sender="crewbots", text=(
-            f"{len(finished)} delegated task(s) finished, and none are still running.\n\n{sections}"
+            f"{len(finished)} thread(s) you opened or delegated finished, and none are still running.\n\n{sections}"
             + (f"\n\n# Review status\n\n{status}" if status else "")))
 
     def _own_child(self, parent_id: str, task_id: str) -> Task:
