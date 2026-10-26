@@ -159,3 +159,18 @@ def test_streaks_count_runs_of_active_days():
     assert _streaks(sorted(days), today) == {"longest": 3, "current": 3}  # ending yesterday still counts
     assert _streaks([today - timedelta(days=5)], today) == {"longest": 1, "current": 0}
     assert _streaks([], today) == {"longest": 0, "current": 0}
+
+
+def test_a_zone_known_only_by_its_new_name_still_reads(monkeypatch):
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    from crewbots import plans
+
+    def strict(name):  # a time zone database without the old names, like Ubuntu's
+        if name == "Asia/Calcutta":
+            raise ZoneInfoNotFoundError(name)
+        return ZoneInfo(name)
+
+    monkeypatch.setattr(plans, "ZoneInfo", strict)
+    assert plans._zone("Asia/Calcutta") == ZoneInfo("Asia/Kolkata")
+    assert plans._zone("Mars/Olympus") is None  # unknown: this Mac's own time

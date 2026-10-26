@@ -17,7 +17,7 @@ import tempfile
 import time
 from datetime import datetime, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from crewbots.backends.base import CLAUDE_BOT_ENV
 
@@ -105,8 +105,24 @@ def _window_name(name: str) -> str:
     return base[:1].upper() + base[1:] + (f" · {detail}" if detail else "")
 
 
+# Old names Claude Code may print for a zone, which some time zone databases only know by their current name.
+RENAMED_ZONES = {"Asia/Calcutta": "Asia/Kolkata", "Asia/Katmandu": "Asia/Kathmandu", "Asia/Saigon": "Asia/Ho_Chi_Minh",
+                 "Asia/Rangoon": "Asia/Yangon", "Europe/Kiev": "Europe/Kyiv", "Atlantic/Faeroe": "Atlantic/Faroe"}
+
+
+def _zone(name: str | None) -> ZoneInfo | None:
+    """The zone Claude Code named, by its current name if need be; None (this Mac's own time) if it's unknown."""
+    for candidate in (name, RENAMED_ZONES.get(name or "")):
+        if candidate:
+            try:
+                return ZoneInfo(candidate)
+            except (ZoneInfoNotFoundError, ValueError):
+                continue
+    return None
+
+
 def _claude_reset(text: str, zone: str | None, now: datetime | None) -> int | None:
-    tz = ZoneInfo(zone) if zone else None
+    tz = _zone(zone)
     now = now or datetime.now(tz)
     for fmt in ("%b %d at %I:%M%p", "%b %d at %I%p", "%I:%M%p", "%I%p"):
         try:
