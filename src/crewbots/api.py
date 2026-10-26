@@ -36,6 +36,7 @@ from crewbots import crew as crew_module
 from crewbots import models as models_module
 from crewbots import plans as plans_module
 from crewbots import routines as routines_module
+from crewbots import service as service_module
 from crewbots import usage as usage_module
 from crewbots.backends import codex_isolation
 from crewbots.crew_tools import ToolRefused
@@ -52,6 +53,7 @@ API_VERSION = 1  # the /v1 in every route; a change the app can't follow raises 
 PROJECT = Path(__file__).resolve().parents[2]  # the checkout the daemon runs from, when it runs from one
 RESTART_EXIT = 75  # EX_TEMPFAIL: stopped to be started again
 CLIENT_ERRORS_PER_MINUTE = 30
+LOG_CHECK_S = 600.0  # how often the daemon looks at its log's size
 RESTART_TIMEOUT_S = 20 * 60.0  # how long a restart waits for running turns; then they're cut off and carried on
 DAEMON_FILE = "daemon.json"  # in the crew's folder: where the daemon is and its token, readable only by the user
 
@@ -1643,6 +1645,13 @@ def openapi_schema() -> dict[str, Any]:
     return create_app(runner, token="schema").openapi()
 
 
+async def _rotate_log_now_and_then() -> None:
+    while True:
+        if service_module.rotate_log():
+            print("started a fresh daemon.log; the last one is daemon.log.1", flush=True)
+        await asyncio.sleep(LOG_CHECK_S)
+
+
 def _commit() -> str | None:
     """The commit the daemon's checkout is at, or None when it isn't one (an installed package)."""
     if not (PROJECT / ".git").exists():
@@ -1704,12 +1713,14 @@ def serve(home: Path, port: int = DEFAULT_PORT, max_parallel: int = 4, sessions:
         if resumed := runner.resume_interrupted():
             print(f"carrying on {len(resumed)} turn(s) the last stop cut off", flush=True)
         ticking = asyncio.create_task(scheduler.run(), name="scheduler")
+        rotating = asyncio.create_task(_rotate_log_now_and_then(), name="log rotation")
         warming = asyncio.gather(  # the CLIs and GitHub take seconds: ask before the app does
             plans_module.plans(), asyncio.to_thread(_warm_inbox, app.state.reviews))
         try:
             yield
         finally:
             ticking.cancel()
+            rotating.cancel()
             warming.cancel()
             await runner.shutdown()
             info_path.unlink(missing_ok=True)

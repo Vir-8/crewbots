@@ -148,6 +148,10 @@ copies in a starter one. `crewbots budgets` shows each bot's use against its bud
 stand, and `release <task>` lets a held task go ahead. Edited role cards, team files, skills and routines count
 within 30 seconds, with nothing to reload.
 
+`crewbots doctor` checks what the crew stands on: the CLIs and their sign-in, the daemon and the login service, the
+database's integrity, and what's taking room on the disk, with how to fix or clean up each thing it finds (it
+changes nothing itself). The daemon starts a fresh `daemon.log` past 10 MB and keeps the last three.
+
 `crewbots tasks` lists everything as a tree, `watch` follows a task and everything it delegates, and `cancel` stops one. A turn the daemon's stopping cut off (or one waiting its turn) carries on by itself once it starts again: the bot is told it was interrupted and picks up where it left off, a held task stays held, and one you cancelled stays cancelled. If that turn is cut off too, it waits for your message. `crewbots run` skips the crew and the daemon entirely and sends one prompt through one backend.
 
 ## The desktop app

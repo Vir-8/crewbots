@@ -15,7 +15,7 @@ from typing import Any
 
 import httpx
 
-from crewbots import api, crew, paths, typescript, worktree
+from crewbots import api, crew, doctor, paths, typescript, worktree
 from crewbots import routines as routines_module
 from crewbots import service as svc
 from crewbots.backends import BACKENDS, Access, RunSpec
@@ -86,6 +86,7 @@ def main(argv: list[str] | None = None) -> int:
     release = sub.add_parser("release", help="let a task held on a budget or plan limit go ahead")
     release.add_argument("task_id")
     sub.add_parser("reload", help="take up edited role cards and budgets without restarting the daemon")
+    sub.add_parser("doctor", help="check the CLIs, the daemon, the database and the disk, and say how to fix or clean up")
     restart = sub.add_parser("restart", help="restart the daemon; turns it cuts off carry on by themselves after")
     restart.add_argument("--when-idle", action="store_true",
                          help="start no new turn, and restart once the ones running have finished")
@@ -291,6 +292,16 @@ def _restart(args: argparse.Namespace) -> int:
     return 1
 
 
+def _doctor(args: argparse.Namespace) -> int:
+    findings = doctor.run(args.home)
+    for f in findings:
+        mark = {True: "✓", False: "✗", None: "·"}[f.ok]
+        print(f"{mark} {f.line}")
+        for line in (f.hint or "").splitlines():
+            print(f"    {line}")
+    return 1 if any(f.ok is False for f in findings) else 0
+
+
 def _watch(args: argparse.Namespace) -> int:
     return _follow(_client(args), args.task_id)
 
@@ -375,7 +386,7 @@ COMMANDS = {
     "init": _init, "serve": _serve, "bots": _bots, "task": _task, "tasks": _tasks, "watch": _watch, "say": _say,
     "cancel": _cancel, "diff": _diff, "review": _review, "merge": _merge, "skills": _skills, "service": _service,
     "openapi": _openapi, "run": _run, "routines": _routines, "budgets": _budgets, "release": _release,
-    "reload": _reload, "restart": _restart,
+    "reload": _reload, "restart": _restart, "doctor": _doctor,
 }
 
 

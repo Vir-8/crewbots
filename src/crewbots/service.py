@@ -97,6 +97,35 @@ def status(label: str = LABEL, launchctl: Sequence[str] = ("launchctl",)) -> Ser
     return ServiceStatus(label=label, installed=path.exists(), running=running, pid=pid, plist=path)
 
 
+LOG_MAX_BYTES = 10_000_000
+LOG_KEEP = 3  # daemon.log.1 to .3
+
+
+def rotate_log(max_bytes: int = LOG_MAX_BYTES, keep: int = LOG_KEEP, log: Path | None = None) -> bool:
+    """Starts a fresh daemon.log once it has grown past `max_bytes`, keeping the last `keep`. launchd opened the file
+    and holds it as the daemon's output, so the daemon moves its own output: it renames the file and points its stdout
+    and stderr at a new one. Only when its output is that file (not a terminal, not the app's pipe)."""
+    log = log or paths.logs() / "daemon.log"
+    try:
+        current = os.stat(log)
+        if current.st_size <= max_bytes or (os.fstat(1).st_ino, os.fstat(1).st_dev) != (current.st_ino, current.st_dev):
+            return False
+    except OSError:
+        return False
+    for n in range(keep - 1, 0, -1):
+        older = log.with_name(f"{log.name}.{n}")
+        if older.exists():
+            older.replace(log.with_name(f"{log.name}.{n + 1}"))
+    log.replace(log.with_name(f"{log.name}.1"))
+    sys.stdout.flush()
+    sys.stderr.flush()
+    fresh = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    os.dup2(fresh, 1)
+    os.dup2(fresh, 2)
+    os.close(fresh)
+    return True
+
+
 def _domain() -> str:
     return f"gui/{os.getuid()}"
 
