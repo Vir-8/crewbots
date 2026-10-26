@@ -31,8 +31,16 @@ export async function selftest() {
 
     // The conversations: a chat with each bot and the group chats in the sidebar, and a chat's profile beside it.
     report.chats = (await until(() => document.querySelectorAll(".chat-row").length, 10_000)) ?? 0;
-    document.querySelector<HTMLElement>(".chat-row")?.click();
+    // Timings (A12's budgets): from the window starting to the first chat drawn, and to open another one.
+    await until(() => document.querySelector(".thread-col"), 10_000);
+    report.firstChatMs = Math.round(performance.now());
+    const rows = [...document.querySelectorAll<HTMLElement>(".chat-row")];
+    const other = rows.find((r) => !r.classList.contains("on")) ?? rows[0];
+    const opening = performance.now();
+    other?.click();
     report.chatOpen = Boolean(await until(() => document.querySelector(".chat-head-title")?.textContent, 10_000));
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    report.openChatMs = Math.round(performance.now() - opening);
     document.querySelector<HTMLElement>(".chat-head-who")?.click();
     report.profileOpened = Boolean(await until(() => document.querySelector(".panel.profile .profile-name"), 10_000));
 
@@ -42,7 +50,10 @@ export async function selftest() {
       if (message.type === "crew") crewMessages.push(message.crew.paused);
     });
     type MenuBar = { title: string; line: string; paused: boolean };
+    const pausing = performance.now();
+    const heard = until(() => (crewMessages.length ? performance.now() - pausing : 0), 10_000);
     await bridge.request("POST", "/crew/pause");
+    report.liveMs = Math.round((await heard) ?? -1); // the daemon's word, through the shell, to the window
     const paused = await until(async () => {
       const bar = await invoke<MenuBar>("menu_bar");
       return bar.paused ? bar : undefined;

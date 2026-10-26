@@ -30,10 +30,13 @@ const steps = [
   { name: "Read", input: { file_path: "web/src/reports/Reports.tsx" } },
 ];
 let step = 0;
-setInterval(() => {
-  const s = steps[step++ % steps.length];
-  say(demo.live.taskId, "tool_call", { id: `live-${step}`, name: s.name, input: s.input });
-}, 3500);
+let ticking: number | undefined; // from the first listener on: nothing runs just because this module was imported
+const tick = () => {
+  ticking ??= window.setInterval(() => {
+    const s = steps[step++ % steps.length];
+    say(demo.live.taskId, "tool_call", { id: `live-${step}`, name: s.name, input: s.input });
+  }, 3500);
+};
 
 const ok = (data: unknown) => ({ ok: true, status: 200, data });
 const missing = (what: string) => ({ ok: false, status: 404, data: { detail: `no ${what}` } });
@@ -379,6 +382,7 @@ export const previewBridge = {
   onStatus: (_callback: Listener<ConnectionStatus>) => () => undefined,
   onLive: (callback: Listener<Live>) => {
     liveListeners.add(callback);
+    tick();
     return () => liveListeners.delete(callback);
   },
   onResync: (_callback: () => void) => () => undefined,

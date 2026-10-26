@@ -292,3 +292,16 @@ export const roomMessages = new Map<string, { id: number; room_id: string; autho
     said("chief", "Thanks both. I'll propose it for merging once both reviews pass.", 1),
   ]);
 }
+
+// ?big=2000 makes the critic's chat that long, to see how a long chat opens.
+{
+  const big = Number(new URLSearchParams(globalThis.location?.search ?? "").get("big") ?? 0);
+  for (let i = 0; i < big; i++) {
+    const id = chatIds.critic;
+    if (i % 5 === 0) emit(id, "message", { from: "user", text: `Can you look at issue ${i}? The **export** breaks on \`page ${i}\`.` });
+    else if (i % 5 === 1) emit(id, "tool_call", { id: `big${i}`, name: "Bash", input: { command: `pytest -q tests/test_${i}.py` } });
+    else if (i % 5 === 2) emit(id, "tool_result", { id: `big${i - 1}`, output: `${i} passed`, is_error: false });
+    else if (i % 5 === 3) emit(id, "text", { text: `Fixed it:\n\n- the cursor resets on page ${i}\n- a test covers it` });
+    else emit(id, "usage", { input_tokens: 1000, output_tokens: 50 });
+  }
+}

@@ -352,6 +352,21 @@ Each step leaves the system working.
   doesn't edit kept, after the crew's own parser accepts the new text, and atomically. YAML comments don't survive.
   A bot's handle stays fixed (tasks and @mentions use it); its display name, which @mentions also match, can change.
 
+## Performance budgets
+
+Speed is a feature, so it's measured, with budgets that fail a check when something gets slow:
+
+- **The daemon** (`uv run scripts/perf.py`): a crew of 10 bots, 2,000 threads, 247,000 events and 20,000 group chat
+  messages, built in a temp folder in about 6s and served over real HTTP. Medians on an M-series Mac, against budgets:
+  `/tasks?limit=1000` 32ms (120), `/chats` 23ms (60), a group chat's messages 5ms (60), a 2,000-event chat's events
+  16ms (80), `/events/recent` 5ms (40), two-word search 2ms (60), a search for a word in everything 67ms (250), a
+  profile 4ms (60), and a message reaching a `/v1/live` client 7ms (30).
+- **The window** (`npm test`): a 2,000-event chat renders in about 33ms in Node (budget 150), before layout. In the
+  design preview (`?big=2000`, React's slower development build) opening it takes about 110 to 125ms with about 6,600
+  elements; windowing long lists comes next.
+- **The app** (`CREWBOTS_SELFTEST=1`): the self-test reports how long the window took to draw its first chat, to open
+  another, and for a word from the daemon to reach it.
+
 ## Learned building sessions
 
 - **Codex bots inherited the user's own MCP servers and plugins.** `-c` overrides are deep-merged into config.toml, so they can add a server but never remove one. Every Codex run (the one-shot `exec` and the app-server) now switches each one off by name:

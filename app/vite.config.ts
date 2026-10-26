@@ -8,5 +8,6 @@ export default defineConfig({
   clearScreen: false,
   server: { port: 5173, strictPort: true },
   build: { target: "safari16" }, // WKWebView on macOS
-  test: { include: ["src/**/*.test.{ts,tsx}"], environment: "node" }, // `npm test`: the UI's logic, no browser
+  // `npm test`: the UI's logic and render times, in Node, with no browser.
+  test: { include: ["src/**/*.test.{ts,tsx}"], environment: "node", setupFiles: ["src/test-setup.ts"] },
 });
