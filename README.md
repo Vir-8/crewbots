@@ -249,6 +249,8 @@ The app works like a messaging app:
     reasoning effort (from the lists the CLIs themselves report), access, network, MCP servers (a new bot starts with
     all of the crew's), budget, and its role card's text. Edit from a bot's profile opens it over the chat. Saving rewrites the card after checking it loads, and the
     crew uses it from the next turn. New bots start here too.
+  - **Activity:** what the bots hand each other, live: work they delegate, reviews they ask for and questions, as
+    chains under the chat or thread they came from, what's in flight, and who works with whom this week.
   - **Tools:** the crew's MCP servers and the skills bots can use. Add a server from your other apps (Claude Code,
     Claude's desktop app, Codex), from the official MCP registry, or by hand; Check starts it and lists its tools.
     Each bot gets the servers you choose in its editor.
@@ -259,7 +261,7 @@ The app works like a messaging app:
     week, for Claude, Codex or both; totals, the peak day, the longest turn and streaks; Claude against Codex; the
     top models and bots; and each bot against its budget.
   - **Settings:** start at login, the crew's folder, pausing, GitHub, and code review's local copies.
-- **Menu bar and notifications:** a bot's reply or a message in a group chat notifies you when the window isn't in
+- **Menu bar and notifications:** a bot's reply or a message in a group chat (unless you muted it) notifies you when the window isn't in
   front, and so do merges to approve, questions and holds.
 
 ## Skills from pstack

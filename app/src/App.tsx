@@ -11,6 +11,7 @@ import { CodeReview } from "./pages/CodeReview";
 import { BotEditor, CrewBots } from "./pages/CrewBots";
 import { Routines } from "./pages/Routines";
 import { Settings } from "./pages/Settings";
+import { Activity } from "./pages/Activity";
 import { Analytics } from "./pages/Analytics";
 import { Tools } from "./pages/Tools";
 import { latestChat } from "./sidebar";
@@ -131,6 +132,8 @@ export function App() {
         <Boundary where={`the main view (${current ?? "none"})`} key={current ?? ""}>
         {current === "page:crew" ? (
           <CrewBots crew={crew} onEdit={setEditing} onChat={(bot) => setCurrent(`bot:${bot}`)} />
+        ) : current === "page:activity" ? (
+          <Activity crew={crew} onOpen={openTask} />
         ) : current === "page:routines" ? (
           <Routines crew={crew} onOpen={openTask} />
         ) : current === "page:tools" ? (

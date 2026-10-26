@@ -1,0 +1,51 @@
+/* The Activity page: chains of work the bots hand each other, and who works with whom. */
+
+.activity-chain {
+  padding-top: 0;
+}
+
+.activity-from {
+  padding: 10px 16px 0;
+  font-size: 12px;
+}
+
+.activity-from + .activity-step {
+  border-top: 0;
+}
+
+.activity-step {
+  width: 100%;
+}
+
+.activity-faces {
+  display: flex;
+  flex: none;
+}
+
+.activity-faces > :last-child {
+  margin-left: -6px;
+  box-shadow: 0 0 0 2px var(--bg);
+  border-radius: 50%;
+}
+
+.activity-age {
+  flex: none;
+  min-width: 28px;
+  text-align: right;
+}
+
+.activity-pairs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.activity-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px 5px 6px;
+  border-radius: 16px;
+  background: var(--raised);
+  font-size: 12.5px;
+}
