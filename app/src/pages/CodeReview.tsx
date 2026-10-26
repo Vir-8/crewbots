@@ -2,6 +2,7 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { api, bridge } from "../api";
 import { Markdown, ago } from "../components/bits";
 import { Composer } from "../components/Composer";
+import { useDraft } from "../drafts";
 import { PullDiff } from "../components/PullDiff";
 import { Icon } from "../components/Icon";
 import { MentionArea } from "../components/Mentions";
@@ -400,7 +401,7 @@ const VERDICTS: [Verdict, string, string][] = [
 /** Your review, posted to GitHub under your name: the only thing crewbots ever submits, and only from here. */
 function SubmitPanel({ pull, drafts, yours, onClose, onDone }: { pull: Pull; drafts: number; yours: boolean; onClose: () => void; onDone: (done: Submitted) => void }) {
   const [verdict, setVerdict] = useState<Verdict>("COMMENT");
-  const [body, setBody] = useState("");
+  const [body, setBody, forgetBody] = useDraft(`review:${pull.repo}#${pull.number}`);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const needsBody = (verdict === "REQUEST_CHANGES" && !body.trim()) || (verdict === "COMMENT" && !body.trim() && drafts === 0);
@@ -439,7 +440,9 @@ function SubmitPanel({ pull, drafts, yours, onClose, onDone }: { pull: Pull; dra
             setSending(true);
             setError(null);
             try {
-              onDone(await api.submitReview(pull.repo, pull.number, { event: verdict, body }));
+              const done = await api.submitReview(pull.repo, pull.number, { event: verdict, body });
+              forgetBody(); // sent, and the panel closes
+              onDone(done);
             } catch (e) {
               setError(String(e).replace(/^Error: /, ""));
               setSending(false);
@@ -564,7 +567,7 @@ function ReviewPane({ crew, pull, reviews, onStarted, onSettings }: { crew: Crew
           </div>
           {shown.id === lead.id ? (
             <div className="review-composer">
-              <Composer key={lead.id} placeholder="Ask about this review" onSend={(text, files) => crew.send(lead.id, text, files)} task={lead.id} />
+              <Composer key={lead.id} placeholder="Ask about this review" onSend={(text, files) => crew.send(lead.id, text, files)} task={lead.id} draft={`task:${lead.id}`} />
             </div>
           ) : (
             <p className="review-hint review-peek faint">

@@ -192,6 +192,8 @@ The app works like a messaging app:
 - **Group chats:** messages with who said them, @mention suggestions as you type, and who's replying. Beside them,
   the group's members (who leads, who's replying) and the threads it has opened. A new group starts with who's in
   it and a few ways to start.
+- **Unsent text is kept:** what you've typed in any message box, with the files you've attached, and a review's
+  summary stay put through a reload or a relaunch, per chat, thread and pull request, until you send them.
 - **Attachments:** attach images and files to any message, with +, by pasting, or by dropping them on the box. They're
   kept in the crew's `attachments/` folder, show under your message, and the bot gets their paths with it: Claude
   reads images and PDFs itself, and Codex views images.

@@ -37,7 +37,7 @@ export function PendingFiles({ items, onRemove }: { items: Pending[]; onRemove: 
     <div className="pending-files" onClick={(e) => e.stopPropagation()}>
       {items.map((p) => (
         <span key={p.key} className={`file-chip ${p.error ? "error" : ""} ${p.id ? "" : "uploading"}`} title={p.error ?? p.name}>
-          {p.kind === "image" && p.preview ? <img src={p.preview} alt="" /> : <Icon name="file" size={14} />}
+          {p.kind === "image" && (p.preview || p.id) ? <Thumb pending={p} /> : <Icon name="file" size={14} />}
           <span className="file-chip-name">{p.error ? `${p.name}: ${p.error}` : p.name}</span>
           <button className="file-chip-x" onClick={() => onRemove(p.key)} title="Remove">
             <Icon name="x" size={11} />
@@ -68,16 +68,28 @@ export function MessageFiles({ items }: { items: Attachment[] }) {
   );
 }
 
-function Picture({ item }: { item: Attachment }) {
-  const [src, setSrc] = useState(shown.get(item.id) ?? null);
+/** An image attachment's picture, asked of the daemon once and kept. */
+function useSrc(id: string | undefined, known?: string): string | null {
+  const [src, setSrc] = useState(known ?? (id ? shown.get(id) : undefined) ?? null);
   useEffect(() => {
-    if (src) return;
-    api.attachment(item.id).then((d) => {
+    if (src || !id) return;
+    api.attachment(id).then((d) => {
       const url = `data:${d.mime};base64,${d.data}`;
-      shown.set(item.id, url);
+      shown.set(id, url);
       setSrc(url);
     }, () => undefined);
-  }, [item.id]);
+  }, [id]);
+  return src;
+}
+
+/** A waiting image: its preview while it uploads, or, kept from before a reload, asked for by its id. */
+function Thumb({ pending }: { pending: Pending }) {
+  const src = useSrc(pending.id, pending.preview);
+  return src ? <img src={src} alt="" /> : <Icon name="file" size={14} />;
+}
+
+function Picture({ item }: { item: Attachment }) {
+  const src = useSrc(item.id);
   return (
     <button className="message-picture" onClick={() => bridge.openPath(item.path)} title={item.name}>
       {src ? <img src={src} alt={item.name} /> : <span className="faint small">{item.name}</span>}

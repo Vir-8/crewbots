@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { bridge } from "../api";
+import { readDraft, writeDraft } from "../drafts";
 import type { Bot } from "../types";
 import { labelOf } from "./Avatar";
 import { Icon } from "./Icon";
@@ -28,11 +29,18 @@ export function Composer(props: {
   workspace?: string;
   onWorkspace?: (path: string) => void;
   task?: string; // the chat or thread this box talks to, for /status
+  draft?: string; // where what's typed but not sent is kept, so a reload or relaunch loses nothing
 }) {
-  const [text, setText] = useState("");
+  const kept = useState(() => readDraft<Draft>(props.draft))[0];
+  const [text, setText] = useState(kept?.text ?? "");
   const [sending, setSending] = useState(false);
   // Images and files to send with it: picked with +, pasted, or dropped on the box.
-  const [files, setFiles] = useState<Pending[]>([]);
+  const [files, setFiles] = useState<Pending[]>(kept?.files ?? []);
+  useEffect(() => {
+    // Only files that finished uploading are kept: they're in the crew's folder, and found again by their id.
+    const uploaded = files.filter((f) => f.id).map(({ key, name, kind, size, id }) => ({ key, name, kind, size, id }));
+    writeDraft(props.draft, { text, files: uploaded }, !text.trim() && !uploaded.length);
+  }, [props.draft, text, files]);
   const [dropping, setDropping] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
   const attach = (list: FileList | File[] | null) => {
@@ -287,6 +295,8 @@ export function Composer(props: {
     </div>
   );
 }
+
+type Draft = { text: string; files: Pending[] };
 
 function joined(typed: string, heard: string): string {
   if (!heard) return typed;
