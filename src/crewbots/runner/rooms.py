@@ -113,7 +113,9 @@ class Rooms:
             raise NotAllowed("a group chat needs at least one teammate besides you")
         if len(members) > MAX_ROOM_BOTS:
             raise NotAllowed(f"a group chat holds at most {MAX_ROOM_BOTS} bots, so they don't talk past each other")
-        return self.create_room(title, members, lead or task.bot)
+        room = self.create_room(title, members, lead or task.bot)
+        self.store.log_agent("open_group", task.bot, room_id=room["id"], text=f"{room['title']}: {', '.join(members)}")
+        return room
 
     def add_to_group(self, task_id: str, bot: str, room_id: str | None = None) -> dict[str, Any]:
         """The `add_to_group` tool: a bot in a group chat brings a teammate in (by default into the one it's in)."""
@@ -135,6 +137,7 @@ class Rooms:
             raise NotAllowed(f"{room['title']!r} already has {MAX_ROOM_BOTS} bots, the most a group chat holds")
         room = self.store.update_room(room_id, members=[*room["members"], bot])
         self.bus.publish({"type": "room", "room": room})
+        self.store.log_agent("add_to_group", task.bot, bot, room_id=room_id, text=room["title"])
         return room
 
     def post(self, room_id: str, author: str, text: str, depth: int = 0,
@@ -146,6 +149,8 @@ class Rooms:
         room = self.store.room(room_id)
         message = self.store.add_room_message(room_id, author, text, depth, attachments)
         self.bus.publish({"type": "room_message", "message": message})
+        if author in self.crew.bots:
+            self.store.log_agent("post", author, room_id=room_id, text=text)
         named, everyone = self._mentions(room, text)
         if author == "user":
             if room["stopped"] or room["archived_at"]:  # saying something carries on, and brings it back

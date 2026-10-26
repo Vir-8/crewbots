@@ -1,4 +1,4 @@
-"""The crew as a whole: its state, the daemon's version, restarting, and the app's errors."""
+"""The crew as a whole: its state, the daemon's version, restarting, the app's errors, and the agent log."""
 
 from typing import Literal
 
@@ -42,3 +42,16 @@ class CrewState(BaseModel):
     held: int
     sessions: int
     limits: list[PlanLimitOut]
+
+class AgentLogOut(BaseModel):
+    """One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
+    group chat; or a tool call of a bot's that crewbots refused."""
+
+    id: int
+    at: str
+    kind: Literal["delegate", "review", "ask", "message", "post", "open_group", "add_to_group", "refused"]
+    bot: str
+    target: str | None  # the bot it was to, if one
+    task_id: str | None
+    room_id: str | None
+    text: str

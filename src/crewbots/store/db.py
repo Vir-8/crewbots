@@ -144,6 +144,21 @@ create table if not exists pending_turns (  -- a turn under way or waiting, so a
 """
 
 # Full-text search over what the crew said and decided: the `recall` tool. Kept in step with events as they're added.
+# What bots did to each other (migration 4), kept when the group chat or task it was about goes.
+AGENT_LOG = """
+create table if not exists agent_log (
+    id      integer primary key autoincrement,
+    at      text not null,
+    kind    text not null,   -- delegate, review, ask, message, post, open_group, add_to_group, refused
+    bot     text not null,   -- the bot that did it
+    target  text,            -- the bot it was to, if one
+    task_id text,            -- the task it made or went to
+    room_id text,            -- the group chat, for a post or a group
+    text    text not null default ''
+);
+"""
+SCHEMA += AGENT_LOG
+
 SEARCH = """
 create virtual table search using fts5(
     text, task_id unindexed, event_id unindexed, kind unindexed, at unindexed, tokenize = 'porter unicode61'
@@ -257,6 +272,7 @@ MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] =
     ("muting and archiving group chats, and marking the crew's own", _add_columns("rooms", {
         "muted": "integer not null default 0", "archived_at": "text", "crew": "integer not null default 0"},
         then="update rooms set crew = 1 where id = (select id from rooms where title = 'Crew' order by created_at)")),
+    ("a log of what bots do to each other", lambda db, _: db.executescript(AGENT_LOG)),
 ]
 
 

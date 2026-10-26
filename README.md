@@ -12,11 +12,11 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
   - The body is the card itself: its mission, what it owns, what it does *not* own, and what done means.
   - See [docs/examples/video-editor.md](docs/examples/video-editor.md).
 - **Chats.** Each bot has one ongoing chat with you. It never resets: the bot's notes, and a briefing when it grows long, carry it from day to day. A scheduled routine posts into its bot's chat too, as a message from the routine.
-- **Threads.** For real work, a bot opens a thread (`start_thread`) beside the chat it's in, works it in parallel, and the result comes back to the chat. A coordinator can also hand a thread to another bot (`delegate`). Threads are where worktrees, reviews and merges happen.
+- **Threads.** For real work, a bot opens a thread (`start_thread`) beside the chat it's in, works it in parallel, and the result comes back to the chat. Any bot can also hand a thread to another (`delegate`). Threads are where worktrees, reviews and merges happen.
 - **Group chats.** You and some bots, with one bot as the lead. A message that mentions no one goes to the lead, who answers it, hands it to the teammate best placed for it, or leaves it to whoever already has it. An @mention brings that bot in and always gets its reply, and `@everyone` brings them all in. Bots @mention each other the same way, up to four replies in a row (each group chat can set its own limit); then the chat says the bots stopped, and **Continue** lets them carry on. A group chat's panel renames it, changes who's in it and who leads, sets its reply limit, mutes it, and archives it (kept, folded away at the foot of the list, until you say something there) or deletes it (the work it handed out stays, reporting to each bot's own chat). The crew's own group chat can't be archived or deleted, and bots new to the crew join it. Every crew has a "Crew" group chat with all its bots, and a bot can speak there from anywhere with `post`. A bot can open a group chat of its own with `open_group` (up to six bots) and bring a teammate into one it's in with `add_to_group`; it shows in the app at once.
 - **A task** is the unit underneath: a chat, a bot's seat in a group chat, or a thread.
   - Each task has exactly one owner bot and its own backend session, so a follow-up message picks up where the bot left off.
-  - A task by a writing bot in a git repo gets its own worktree, on the branch `crewbots/<task id>`.
+  - A task by a writing bot in a git repo gets its own worktree, on the branch `crewbots/<task id>`. A writing bot with no folder of its own works in `<crew>/work/<bot>`, never in the crew's folder, whose role cards, rules and routines are yours.
   - Every event is stored, so you can read the whole transcript later.
 - **Delegation.** Any bot hands a piece of work to the teammate best suited to it through crewbots' own MCP tools:
   - `delegate`, `tasks` and `message` are every bot's, as are `handoff` and `escalate`. A coordinator
@@ -158,7 +158,8 @@ It starts at login and restarts if it ever crashes. `crewbots service status` an
 
 `crewbots routines` lists the routines with their next run, `routines run standup` runs one now, and `routines add`
 copies in a starter one. `crewbots budgets` shows each bot's use against its budget and where the plans' limits
-stand, and `release <task>` lets a held task go ahead. Edited role cards, team files, skills and routines count
+stand, and `release <task>` lets a held task go ahead. `crewbots log` lists what bots did to each other:
+delegations, reviews asked for, questions, messages, group chat posts, and tool calls crewbots refused. Edited role cards, team files, skills and routines count
 within 30 seconds, with nothing to reload.
 
 `crewbots doctor` checks what the crew stands on: the CLIs and their sign-in, the daemon and the login service, the

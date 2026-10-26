@@ -1,5 +1,5 @@
-"""Events: every one a task's run produced, read back by task, by time or as the newest; and the fresh tokens they
-add up to, for budgets and analytics."""
+"""Events: every one a task's run produced, read back by task, by time or as the newest; the fresh tokens they add up
+to, for budgets and analytics; and the log of what bots did to each other."""
 
 import json
 from dataclasses import asdict
@@ -10,9 +10,24 @@ from crewbots.events import Event
 from crewbots.store.records import StoredEvent, Task, _now, _task
 from crewbots.store.tasks import TREE
 
+AGENT_LOG_CHARS = 4000  # of each entry's text: a goal, a question, a message or a post
+
 
 class Events:
-    """The part of Store for events, and the fresh tokens they add up to."""
+    """The part of Store for events, the fresh tokens they add up to, and the agent log."""
+
+    def log_agent(self, kind: str, bot: str, target: str | None = None, task_id: str | None = None,
+                  room_id: str | None = None, text: str = "") -> None:
+        """Records one thing a bot did to another (a delegation, review, question, message, post or group), or one
+        of its tool calls that crewbots refused."""
+        self.db.execute("insert into agent_log (at, kind, bot, target, task_id, room_id, text) values (?, ?, ?, ?, ?, ?, ?)",
+                        (_now(), kind, bot, target, task_id, room_id, text[:AGENT_LOG_CHARS]))
+
+    def agent_log(self, limit: int = 200, before: int | None = None) -> list[dict[str, Any]]:
+        """The agent log, newest first; `before` an entry's id, for the page before it."""
+        rows = self.db.execute("select * from agent_log where id < ? order by id desc limit ?",
+                               (before if before is not None else 2**63 - 1, limit)).fetchall()
+        return [dict(r) for r in rows]
 
     def append_event(self, task_id: str, event: Event | None = None, *, kind: str | None = None,
                      data: dict[str, Any] | None = None) -> StoredEvent:

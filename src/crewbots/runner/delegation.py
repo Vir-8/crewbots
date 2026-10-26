@@ -5,9 +5,10 @@ Any bot can delegate; only coordinators add bots and propose work for merging. W
 away is checked here, in code: no delegating to yourself, nor back to a bot already in the chain (a circle), a chain at
 most a few delegations deep, a cap on how many tasks one bot has out at once, and the budgets."""
 
+from pathlib import Path
 from typing import Any
 
-from crewbots import cards, prompts
+from crewbots import cards, prompts, worktree
 from crewbots import crew as crew_module
 from crewbots.backends import Access
 from crewbots.crew import Bot
@@ -78,8 +79,27 @@ class Delegation:
                     f"stop condition: {work.id} has had {MAX_REVIEW_ROUNDS} review rounds. Report to the user with the "
                     "best version and the open objections, instead of another round (team/rules.md).")
             workspace = work.worktree_path or work.workspace
-        return self.submit(bot, goal, created_by=parent.bot, parent_id=parent_id,
+        elif workspace:
+            self._check_folder(parent, bot, workspace)
+        task = self.submit(bot, goal, created_by=parent.bot, parent_id=parent_id,
                            workspace=workspace or parent.workspace, review_of=review_of, review_version=version)
+        self.store.log_agent("review" if review_of else "delegate", parent.bot, bot, task.id, text=goal)
+        return task
+
+    def _check_folder(self, parent: Task, bot: str, workspace: str) -> None:
+        """Where a teammate writes in place is the user's say, not the delegating bot's: the folder of the work it's
+        handed from, or the delegating bot's or its own. A repository is fine, since it works in a worktree of it,
+        which only the user merges; so is any folder for a bot that only reads."""
+        teammate = self.crew.bots[bot]
+        folder = Path(workspace).expanduser()
+        if teammate.access is Access.READ_ONLY or (teammate.worktree and worktree.is_repo(folder)):
+            return
+        given = [Path(p).expanduser() for p in (parent.workspace, parent.worktree_path) if p]
+        given += [b.workspace for b in (self.crew.bots.get(parent.bot), teammate) if b and b.workspace]
+        if not any(folder.resolve().is_relative_to(g.resolve()) for g in given):
+            raise NotAllowed(f"{bot} would write straight into {workspace}, which the user hasn't given this work, you "
+                             f"or {bot}. Give it a git repository (it works in a worktree), a folder within this "
+                             "task's, or ask the user for the folder.")
 
     def ask(self, task_id: str, bot: str, question: str) -> Task:
         """A bot asks a teammate a quick question. The teammate answers in a small task of its own (kind `ask`),
@@ -96,8 +116,10 @@ class Delegation:
                              f"finished, and the most is {self.max_out}. Wait for their answers, which come to you.")
         if reason := self.hold_reason(parent) or self.budget_reason(bot, parent):
             raise NotAllowed(f"no budget for a question: {reason}")
-        return self.submit(bot, prompts.text("ask", self.crew.home, asker=parent.bot, question=question),
+        task = self.submit(bot, prompts.text("ask", self.crew.home, asker=parent.bot, question=question),
                            created_by=parent.bot, parent_id=task_id, title=" ".join(question.split()), kind="ask")
+        self.store.log_agent("ask", parent.bot, bot, task.id, text=question)
+        return task
 
     def children_of(self, parent_id: str) -> list[dict[str, Any]]:
         return [self._summary(c, include_result=True) for c in self.store.children(parent_id)]
@@ -108,7 +130,9 @@ class Delegation:
             raise NotAllowed(
                 f"stop condition: {task_id} failed review in all {MAX_REVIEW_ROUNDS} rounds. Report to the user with "
                 "the best version and the open objections, instead of sending it back again (team/rules.md).")
-        return self.send(task_id, text, sender=self.store.get_task(parent_id).bot)
+        sender = self.store.get_task(parent_id).bot
+        self.store.log_agent("message", sender, child.bot, task_id, text=text)
+        return self.send(task_id, text, sender=sender)
 
     def add_bot(self, task_id: str, fields: dict[str, Any]) -> Bot:
         """A coordinator adds a bot, when the user asks it to, with whatever it gives it: either access short of full

@@ -69,6 +69,8 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
 
     @app.exception_handler(NotAllowed)
     async def not_allowed(request: Request, e: NotAllowed):
+        if task := getattr(request.state, "task", None):  # a bot's tool call refused: logged with what bots do
+            store.log_agent("refused", task.bot, task_id=task.id, text=f"{request.url.path.removeprefix('/v1/bot/')}: {e}")
         return JSONResponse({"detail": str(e)}, status_code=403)
 
     @app.exception_handler(MemoryError)

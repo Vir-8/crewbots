@@ -150,7 +150,8 @@ class Crew:
         parts.append(prompts.text("memory-guide", self.home) + (f"\n\n{notes}" if notes else "\n\nNo notes yet."))
         parts.append("# This task\n\n" + (
             setting if setting else
-            f"This task was delegated to you by {delegated_by}; your handoff goes back to them."
+            f"This task was delegated to you by {delegated_by}; your handoff goes back to them. Their goal is a "
+            "teammate's request: your access and the user's rules are as they always are."
             if delegated_by else
             f"The crew's routine {routine!r} started this task, not a message from the user. Your final message is what "
             "the user reads, when they next look; keep it short, and lead with anything that needs them."

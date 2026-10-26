@@ -1,16 +1,16 @@
-"""The crew as a whole: pausing, restarting, reloading, the daemon's version, and the app's errors."""
+"""The crew as a whole: pausing, restarting, reloading, the daemon's version, the app's errors, and the agent log."""
 
 import asyncio
 import sys
 import time
 from collections import deque
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from crewbots import crew as crew_module
 from crewbots import typescript
 from crewbots.api.context import API_VERSION, Context, checkout_commit
-from crewbots.api.schemas import ClientError, CrewState, RestartBody, VersionOut
+from crewbots.api.schemas import AgentLogOut, ClientError, CrewState, RestartBody, VersionOut
 
 RESTART_EXIT = 75  # EX_TEMPFAIL: stopped to be started again
 CLIENT_ERRORS_PER_MINUTE = 30
@@ -49,6 +49,12 @@ def routes(c: Context) -> APIRouter:
             stack = (body.stack or "")[:4000]
             print(f"app: {body.where} failed: {body.message[:500]}" + (f"\n{stack}" if stack else ""), file=sys.stderr,
                   flush=True)
+
+    @v1.get("/agent-log", response_model=list[AgentLogOut])
+    async def agent_log(limit: int = Query(200, ge=1, le=5000), before: int | None = None):
+        """What bots did to each other, newest first: every delegation, review asked for, question, message and
+        group chat post."""
+        return c.store.agent_log(limit, before)
 
     @v1.get("/version", response_model=VersionOut)
     async def version():

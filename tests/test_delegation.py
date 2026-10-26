@@ -5,8 +5,11 @@ import asyncio
 
 import pytest
 from fakes import FakeBackend, ScriptedCrew, bot, git_repo, make_crew, wait_until
+from fastapi.testclient import TestClient
 
+from crewbots.api import create_app
 from crewbots.backends import Access
+from crewbots.crew_tools import CrewTools, ToolRefused
 from crewbots.events import Done
 from crewbots.runner import MCP_SERVER_NAME, NotAllowed, Runner
 from crewbots.store import Status, Store
@@ -82,6 +85,21 @@ async def test_children_inherit_the_workspace_and_get_their_own_worktrees(store,
 
     paths = {store.get_task(k.id).worktree_path for k in kids}
     assert len(paths) == 2 and None not in paths  # two parallel engineers, two checkouts
+
+
+async def test_a_teammate_writes_in_place_only_where_the_user_said_work_goes(store, tmp_path):
+    given, elsewhere, repo = tmp_path / "given", tmp_path / "elsewhere", git_repo(tmp_path / "repo")
+    for folder in (given / "cuts", elsewhere):
+        folder.mkdir(parents=True)
+    crew = ScriptedCrew(store, tmp_path / "crew", chief(), bot("editor", access=Access.WORKSPACE_WRITE), bot("reader"))
+    top = store.create_task("chief", "plan the edit", workspace=str(given))
+
+    with pytest.raises(NotAllowed, match="hasn't given this work"):  # the delegating bot's say-so isn't enough
+        crew.runner.delegate(top.id, "editor", "cut it", workspace=str(elsewhere))
+    for fine in (given / "cuts", repo):  # within the work's own folder, or a repository it gets a worktree of
+        crew.runner.delegate(top.id, "editor", "cut it", workspace=str(fine))
+    crew.runner.delegate(top.id, "reader", "look it over", workspace=str(elsewhere))  # reading is fine anywhere
+    await wait_until(lambda: not crew.runner.running())
 
 
 async def test_a_reviewer_reads_the_worktree_of_the_work_it_reviews(store, tmp_path):
@@ -221,7 +239,9 @@ async def test_an_escalation_reaches_the_chief_at_once_and_its_answer_resumes_th
     crew.script = {"chief": plan, "engineer": engineer, "writer": lambda spec, me: [Done(final_text="written")]}
     top = crew.runner.submit("chief", "go")
     await wait_until(lambda: "eng" in state and crew.settled(state["eng"].id)() and
-                     store.get_task(state["eng"].id).result == "built with: use postgres")
+                     "use postgres" in (store.get_task(state["eng"].id).result or ""))
+    # The answer reached the engineer marked as its teammate's, not taken for the user's word.
+    assert store.get_task(state["eng"].id).result.startswith("built with: From chief, your teammate")
     await wait_until(crew.settled(top.id))
 
     escalation = next(m for m in messages(store, top.id) if "escalated" in m["text"])
@@ -229,7 +249,7 @@ async def test_an_escalation_reaches_the_chief_at_once_and_its_answer_resumes_th
     assert [e.data for e in store.events(state["eng"].id) if e.kind == "escalation"] == [{"question": "postgres or sqlite?"}]
     assert messages(store, state["eng"].id)[-1] == {"from": "chief", "text": "use postgres"}
     final_report = [m["text"] for m in messages(store, top.id) if "thread(s) you opened or delegated finished" in m["text"]][-1]
-    assert "built with: use postgres" in final_report
+    assert "use postgres" in final_report
 
 
 async def test_a_top_level_escalation_waits_for_the_user(store, tmp_path):
@@ -329,3 +349,36 @@ async def test_a_question_is_answered_not_turned_into_work(store, tmp_path):
     with pytest.raises(NotAllowed, match="answer it yourself"):
         crew.runner.ask(top.id, "engineer", "what do I think?")
     await crew.runner.shutdown()
+
+
+async def test_what_bots_do_to_each_other_is_logged_and_outlives_a_deleted_group_chat(store, tmp_path):
+    crew = ScriptedCrew(store, tmp_path, chief(), bot("engineer"), bot("critic"))
+    chat = crew.runner.chat("chief")
+    work = crew.runner.delegate(chat.id, "engineer", "build the export")
+    crew.runner.ask(chat.id, "critic", "will the export hold up?")
+    await wait_until(lambda: not crew.runner.running())
+    crew.runner.message_child(chat.id, work.id, "and add a test")
+    room = crew.runner.open_group(chat.id, "Export", ["engineer"])
+    crew.runner.add_to_group(chat.id, "critic", room["id"])
+    crew.runner.post_from(chat.id, "@critic thoughts?", room["id"])
+    crew.runner.post(room["id"], "user", "carry on")  # the user's own posts aren't the log's business
+    with pytest.raises(ToolRefused):
+        await CrewTools(crew.runner, work.id, can_delegate=False).call("delegate", {"bot": "engineer", "goal": "me?"})
+    await wait_until(lambda: not crew.runner.running())
+    await crew.runner.delete_room(room["id"])
+
+    logged = [(e["kind"], e["bot"], e["target"], e["text"]) for e in reversed(store.agent_log())]
+    assert logged[:6] == [
+        ("delegate", "chief", "engineer", "build the export"),
+        ("ask", "chief", "critic", "will the export hold up?"),
+        ("message", "chief", "engineer", "and add a test"),
+        ("open_group", "chief", None, "Export: chief, engineer"),
+        ("add_to_group", "chief", "critic", "Export"),
+        ("post", "chief", None, "@critic thoughts?"),
+    ]
+    assert all(bot != "user" for _, bot, _, _ in logged)
+    assert logged[6][:2] == ("refused", "engineer") and logged[6][3].startswith("delegate: that's you")
+    with TestClient(create_app(crew.runner, "t", 8765), base_url="http://127.0.0.1:8765/v1") as client:
+        page = client.get("/agent-log", params={"limit": 2}, headers={"Authorization": "Bearer t"}).json()
+        older = client.get("/agent-log", params={"before": page[-1]["id"]}, headers={"Authorization": "Bearer t"}).json()
+    assert len(page) == 2 and older[0]["id"] == page[-1]["id"] - 1

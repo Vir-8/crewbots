@@ -43,7 +43,7 @@ from crewbots.api.schemas.chats import (
     RoomOut,
     RoomStop,
 )
-from crewbots.api.schemas.crew import ClientError, CrewState, PlanLimitOut, RestartBody, VersionOut
+from crewbots.api.schemas.crew import AgentLogOut, ClientError, CrewState, PlanLimitOut, RestartBody, VersionOut
 from crewbots.api.schemas.live import (
     LiveCrew,
     LiveEvent,
@@ -115,6 +115,7 @@ from crewbots.api.schemas.usage import (
 )
 
 __all__ = [
+    "AgentLogOut",
     "AskBody",
     "GroupMember",
     "OpenGroup",

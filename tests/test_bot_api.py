@@ -74,14 +74,16 @@ def test_a_coordinator_delegates_and_sees_its_tasks(crew_app):
     assert [t["id"] for t in listed] == [child.id]
 
 
-def test_a_refused_delegation_says_why(crew_app):
-    client, backend, _ = crew_app
+def test_a_refused_delegation_says_why_and_is_logged(crew_app):
+    client, backend, store = crew_app
     _, token = start(client, backend, "engineer")
 
     refused = client.post("/bot/delegate", json={"bot": "engineer", "goal": "x"}, headers=as_bot(token))
 
     assert refused.status_code == 403
     assert "that's you" in refused.json()["detail"]
+    logged = store.agent_log()[0]
+    assert (logged["kind"], logged["bot"]) == ("refused", "engineer") and logged["text"].startswith("delegate: that's you")
 
 
 def test_handoffs_and_escalations_are_recorded_on_the_callers_task(crew_app):

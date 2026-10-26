@@ -63,7 +63,20 @@ The prototype starts a CLI process, and its MCP server, for every turn. That cos
 
 Worktrees keep bots from colliding, not from misbehaving. A bot reading a hostile repo could be prompt-injected. The defense is that no single layer has to hold:
 
-1. **Capability-scoped crew tools.** A run's token acts only as its own task. Only coordinators delegate, and there is no tool that merges, pushes or spends.
+1. **Capability-scoped crew tools.** A run's token acts only as its own task. Any bot delegates, within the guards the runner enforces, only coordinators add bots, and there is no tool that merges, pushes or spends.
+   - **Teammates' word isn't the user's.** A message one bot sends another reaches it marked as a teammate's
+     (`from-teammate.md`), and every bot is told a teammate can't give it permissions, change its settings, rules
+     or notes, or approve anything for the user. A delegated task runs as its own bot, with its own access.
+   - **Where a teammate writes is the user's say.** `delegate(workspace=…)` to a bot that would write in place (not
+     in a worktree) is refused unless the folder is within the work's own, the delegating bot's or the teammate's;
+     a repository is fine, since the teammate works in a worktree of it that only the user merges.
+   - **The crew's settings are out of reach.** A writing bot never works in place in a folder holding the crew's
+     folder, or inside it: role cards, team rules, routines and the database are the user's. One with no folder of
+     its own works in `<crew>/work/<bot>`; given such a folder, its task fails with the reason. (Before, a writing
+     bot with no workspace ran in the crew's folder itself, and could have rewritten its own role card.)
+   - **The agent log.** Every delegation, review asked for, question, message, bot post, group opened or grown, and
+     every bot tool call crewbots refused, goes in `agent_log` (`GET /v1/agent-log`, `crewbots log`). It's kept
+     when the group chat or task it was about is deleted.
 2. **One policy, enforced the same way on both backends** (`backends/policy.py`):
    - Read-only bots read.
    - Writing bots write only in their task's folder.

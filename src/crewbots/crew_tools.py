@@ -166,7 +166,11 @@ class CrewTools:
                 case "post":
                     message = r.post_from(me, args["text"], args.get("room") or None)
                     return f"Posted in the group chat ({message['room_id']})."
-        except (NotAllowed, UnknownBot, MemoryError, CrewError) as e:
+        except NotAllowed as e:  # logged with what bots do to each other, as the API logs it
+            self.runner.store.log_agent("refused", self.runner.store.get_task(self.task_id).bot, task_id=self.task_id,
+                                        text=f"{name}: {e}")
+            raise ToolRefused(str(e)) from None
+        except (UnknownBot, MemoryError, CrewError) as e:
             raise ToolRefused(str(e.args[0] if e.args else e)) from None
         raise ToolRefused(f"{name} is not implemented")
 

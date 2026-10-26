@@ -84,6 +84,8 @@ def main(argv: list[str] | None = None) -> int:
     add_routine = routines_sub.add_parser("add", help="copy a starter routine into the crew (standup, retro, ...)")
     add_routine.add_argument("name", nargs="?")
     sub.add_parser("budgets", help="each bot's token use, against its budget")
+    log = sub.add_parser("log", help="what bots did to each other: delegations, reviews, questions, messages, posts")
+    log.add_argument("-n", type=int, default=50, help="how many, newest last (default 50)")
     release = sub.add_parser("release", help="let a task held on a budget or plan limit go ahead")
     release.add_argument("task_id")
     sub.add_parser("reload", help="take up edited role cards and budgets without restarting the daemon")
@@ -242,6 +244,21 @@ def _routines(args: argparse.Namespace) -> int:
     return 0
 
 
+LOGGED = {"delegate": "delegated to", "review": "asked for a review from", "ask": "asked", "message": "messaged",
+          "post": "posted", "open_group": "opened a group chat", "add_to_group": "added to a group chat",
+          "refused": "was refused"}
+
+
+def _log(args: argparse.Namespace) -> int:
+    for e in reversed(_client(args).get("/agent-log", params={"limit": args.n}).raise_for_status().json()):
+        to = f" {e['target']}" if e["target"] else ""
+        where = e["task_id"] or e["room_id"] or ""
+        text = " ".join(e["text"].split())
+        print(f"{e['at'][:16].replace('T', ' ')}  {e['bot']} {LOGGED.get(e['kind'], e['kind'])}{to}  {where}  "
+              f"{text[:100]}{'…' if len(text) > 100 else ''}")
+    return 0
+
+
 def _budgets(args: argparse.Namespace) -> int:
     for b in _client(args).get("/budgets").raise_for_status().json():
         limit = f"of {b['tokens']:,}" if b["tokens"] else "(no budget)"
@@ -387,7 +404,7 @@ async def _run_direct(args: argparse.Namespace) -> int:
 COMMANDS = {
     "init": _init, "serve": _serve, "bots": _bots, "task": _task, "tasks": _tasks, "watch": _watch, "say": _say,
     "cancel": _cancel, "diff": _diff, "review": _review, "merge": _merge, "skills": _skills, "service": _service,
-    "openapi": _openapi, "run": _run, "routines": _routines, "budgets": _budgets, "release": _release,
+    "openapi": _openapi, "run": _run, "routines": _routines, "budgets": _budgets, "log": _log, "release": _release,
     "reload": _reload, "restart": _restart, "doctor": _doctor,
 }
 

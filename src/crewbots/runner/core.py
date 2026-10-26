@@ -40,7 +40,16 @@ from crewbots.crew import NO_REPLY, Bot, Crew
 from crewbots.crew_tools import CrewTools
 from crewbots.events import Done, Event, Notice, RateLimit, SessionStarted, Usage
 from crewbots.reviews import review_prompt, reviewer_bot
-from crewbots.runner.common import MCP_COMMAND, MCP_SERVER_NAME, Bus, OpenSession, UnknownBot, _duration, _usage_data
+from crewbots.runner.common import (
+    MCP_COMMAND,
+    MCP_SERVER_NAME,
+    Bus,
+    NotAllowed,
+    OpenSession,
+    UnknownBot,
+    _duration,
+    _usage_data,
+)
 from crewbots.runner.delegation import MAX_CHILDREN, MAX_DEPTH, MAX_OUT, Delegation
 from crewbots.runner.holds import Holds
 from crewbots.runner.reviews import Reviewing
@@ -56,6 +65,8 @@ ROLLOVER_PERCENT = 70.0  # past this much of its context window, a conversation 
 # left failed. The CLIs have already retried the API call itself a few times by then, so these are longer.
 RETRY_WAITS_S = (30.0, 120.0, 300.0)
 STALL_S = 1200.0  # no event at all from a turn for this long: it's stuck, so it's stopped and tried again
+
+WORK = "work"  # in the crew's folder: where each writing bot with no folder of its own works
 
 
 class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds):
@@ -151,9 +162,12 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds):
 
     def send(self, task_id: str, text: str, sender: str = "user",
              attachments: list[dict[str, Any]] | None = None) -> Task:
-        """A message to a task. Attachments are shown with it, and listed, with where they are, in what the bot gets."""
+        """A message to a task. Attachments are shown with it, and listed, with where they are, in what the bot gets.
+        One from a teammate reaches the bot marked as a teammate's, so it isn't taken for the user's word."""
         task = self.store.get_task(task_id)
         self._message(task_id, sender, text, attachments)
+        if sender in self.crew.bots and sender != task.bot:
+            text = prompts.text("from-teammate", self.crew.home, teammate=sender, text=text)
         text += attachments_module.listing(attachments or [])
         getting_code = task.parent_id is None and task.status == Status.QUEUED and not task.workspace
         if task.kind == "review" and task_id not in self._runs and sender != "crewbots" and (getting_code or any(
@@ -477,12 +491,28 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds):
         workspace = Path(task.workspace).expanduser() if task.workspace else bot.workspace or self.crew.home
         if not workspace.is_dir():
             raise FileNotFoundError(f"workspace {workspace} does not exist")
-        if bot.access is Access.READ_ONLY or task.kind == "ask" or not bot.worktree or not worktree.is_repo(workspace):
+        if bot.access is Access.READ_ONLY or task.kind == "ask":
             return workspace
+        if not bot.worktree or not worktree.is_repo(workspace):
+            return self._in_place(workspace, bot, chosen=bool(task.workspace or bot.workspace))
         wt = worktree.create(workspace, task.id, root=self.worktree_root)
         self._set(task.id, repo=str(wt.repo), worktree_path=str(wt.path), branch=wt.branch, base=wt.base)  # watchers see it now
         self._record(task.id, kind="worktree", data={"path": str(wt.path), "branch": wt.branch, "base": wt.base})
         return wt.path
+
+    def _in_place(self, workspace: Path, bot: Bot, chosen: bool) -> Path:
+        """Where a bot that writes in place (not in a worktree) works. Never a folder that holds the crew's own
+        settings, which only the user changes: role cards, team rules, routines and the database. A writing bot
+        with no folder of its own gets one in the crew's work/ folder."""
+        home, folder = self.crew.home.resolve(), workspace.resolve()
+        if folder.is_relative_to(home / WORK) or not (home.is_relative_to(folder) or folder.is_relative_to(home)):
+            return workspace
+        if chosen:
+            raise NotAllowed(f"{workspace} holds the crew's own settings, and a bot that writes can't work there; "
+                             "give it a folder of its own")
+        own = home / WORK / bot.name
+        own.mkdir(parents=True, exist_ok=True)
+        return own
 
     def _message(self, task_id: str, sender: str, text: str, attachments: list[dict[str, Any]] | None = None) -> None:
         self._record(task_id, kind="message", data={"from": sender, "text": text,

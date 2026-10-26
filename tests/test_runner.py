@@ -222,12 +222,30 @@ async def test_a_follow_up_stays_in_the_same_worktree(store, tmp_path):
     assert backend.specs[0].cwd == backend.specs[1].cwd != repo
 
 
+async def test_a_writing_bot_never_works_in_the_crews_own_folder(store, tmp_path):
+    home = tmp_path / "crew"
+    (home / "team").mkdir(parents=True)
+    runner, backend = runner_for(store, home, bot("editor", access=Access.WORKSPACE_WRITE), bot("reader"))
+    own = runner.submit("editor", "tidy up")  # no folder of its own: it gets one in the crew's work/
+    look = runner.submit("reader", "look")  # reading the crew's folder is fine
+    await wait_until(settled(store, own.id))
+    await wait_until(settled(store, look.id))
+    assert {s.cwd.resolve() for s in backend.specs} == {home.resolve() / "work" / "editor", home.resolve()}
+
+    for folder in (home, home / "team", tmp_path):  # one that holds the crew's settings, it doesn't start in
+        task = runner.submit("editor", "edit the cards", workspace=str(folder))
+        await wait_until(settled(store, task.id))
+        assert store.get_task(task.id).status is Status.FAILED
+        assert "crew's own settings" in store.get_task(task.id).error
+
+
 async def test_read_only_bots_and_plain_folders_work_in_place(store, tmp_path):
     repo = git_repo(tmp_path / "repo")
     folder = tmp_path / "footage"
     folder.mkdir()
     runner, backend = runner_for(
-        store, tmp_path, bot("reader", workspace=repo), bot("editor", access=Access.WORKSPACE_WRITE, workspace=folder),
+        store, tmp_path / "crew", bot("reader", workspace=repo),
+        bot("editor", access=Access.WORKSPACE_WRITE, workspace=folder),
     )
     a = runner.submit("reader", "look")
     b = runner.submit("editor", "cut")
