@@ -159,6 +159,16 @@ create table if not exists agent_log (
 """
 SCHEMA += AGENT_LOG
 
+# What each task's session started with (migration 5): a digest of each changing part of its bot's instructions, so
+# a resumed session hears what changed since (the runner's `<crew-updates>`).
+PRIMED = """
+create table if not exists primed (
+    task_id text primary key references tasks(id),
+    parts   text not null   -- JSON {part: digest}
+);
+"""
+SCHEMA += PRIMED
+
 SEARCH = """
 create virtual table search using fts5(
     text, task_id unindexed, event_id unindexed, kind unindexed, at unindexed, tokenize = 'porter unicode61'
@@ -273,6 +283,7 @@ MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] =
         "muted": "integer not null default 0", "archived_at": "text", "crew": "integer not null default 0"},
         then="update rooms set crew = 1 where id = (select id from rooms where title = 'Crew' order by created_at)")),
     ("a log of what bots do to each other", lambda db, _: db.executescript(AGENT_LOG)),
+    ("what each task's session started with", lambda db, _: db.executescript(PRIMED)),
 ]
 
 

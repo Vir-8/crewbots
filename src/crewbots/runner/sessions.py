@@ -3,6 +3,7 @@ into a fresh one from a briefing when the conversation grows long."""
 
 import asyncio
 import contextlib
+import hashlib
 import secrets
 from contextlib import aclosing
 from pathlib import Path
@@ -66,6 +67,25 @@ class Sessions:
         opened = OpenSession(session=session, token=token, cwd=cwd, last_used=asyncio.get_running_loop().time())
         self._sessions[task.id] = opened
         return opened
+
+    def _with_updates(self, task: Task, bot: Bot, prompt: str) -> tuple[str, dict[str, str] | None]:
+        """The turn's message, with what changed in the bot's instructions since its session began put in front of it,
+        and what to record as seen once the turn has gone through. A session keeps the instructions it started with
+        (both CLIs do), so a changed note, team file or role card reaches it here, in the turn, and the cached start
+        of the conversation stays as it was."""
+        if task.kind == "review":  # its own instructions, none of the crew's
+            return prompt, None
+        living = self.crew.living_parts(bot)
+        now = {key: hashlib.sha256(text.encode()).hexdigest()[:16] for key, (_, text) in living.items()}
+        seen = self.store.primed(task.id) if task.session_id else None
+        if seen is None:
+            return prompt, now  # a new session starts from these (or one from before they were kept: from now on)
+        changed = [key for key in now if seen.get(key) != now[key]] + [key for key in seen if key not in now]
+        if not changed:
+            return prompt, None
+        updates = "\n\n".join(f"## {living[key][0]}\n\n{living[key][1]}" if key in living else f"## {key}\n\n(removed)"
+                                for key in changed)
+        return prompts.text("crew-updates", self.crew.home, updates=updates, message=prompt), now
 
     async def _maybe_roll_over(self, task_id: str, opened: OpenSession) -> None:
         """A conversation past `rollover_percent` of its context gets a briefing, written by its own bot, and the next

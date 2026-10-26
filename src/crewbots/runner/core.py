@@ -353,6 +353,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds):
                 return None
             backend = self.backends[bot.backend]
             open_session = await self._session_for(task, bot, cwd, backend)
+            prompt, primed = self._with_updates(task, bot, prompt)
             token = open_session.token if open_session else secrets.token_urlsafe(32)
             self._tokens[token] = task_id
             done: Done | None = None
@@ -406,7 +407,9 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds):
                 self._escalated.discard(task_id)
                 return done or Done(final_text="", is_error=True, error="the run ended without a result",
                                     retry="transient")
-            elif task_id in self._escalated:
+            if primed:  # it has these now; a turn that failed hears them again
+                self.store.set_primed(task_id, primed)
+            if task_id in self._escalated:
                 self._escalated.discard(task_id)
                 self._set(task_id, status=Status.NEEDS_INPUT, result=done.final_text, turns=task.turns + 1)
             else:

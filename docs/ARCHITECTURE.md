@@ -311,6 +311,12 @@ Each step leaves the system working.
   stays the same first (who it is, its role card, the roster, the crew tools, skills, team files) and what changes
   last (its notes, the task's setting, a briefing or review), so every session of a bot shares the cached start, and
   a new note only changes the end. Analytics shows how much input came from the cache, per model and bot.
+- **Changes reach a running session in the turn.** A session keeps the instructions it started with (both CLIs do),
+  so the role card, roster, skills, team files and notes index (`Crew.living_parts`) are fingerprinted when a session
+  starts (the `primed` table), and a later turn carries whatever changed since in a `<crew-updates>` block before the
+  message (`crew-updates.md`). The fingerprint moves on only once that turn goes through, so a failed one is told
+  again. The cached start stays as it was: live, a Haiku session told of a team file added after it began read 12.9K
+  of 13.5K tokens from the cache.
 - **The network setting** covers more than shell commands: Claude Code runs WebFetch and WebSearch itself, outside
   the shell's sandbox, so the policy checks them too (a fetch against the host list; a search only with any host),
   and Codex's own web search is switched off (`web_search="disabled"`) for a bot without network.

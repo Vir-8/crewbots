@@ -1,6 +1,7 @@
 """Long-lived sessions in the runner: one per active task, reused across turns, closed when idle, cancelled or done."""
 
 import asyncio
+import dataclasses
 
 import pytest
 from fakes import bot, make_crew, wait_until
@@ -19,6 +20,7 @@ class FakeSession:
         self.turns: list[str] = []
         self.closed = False
         self.die_after_turn = False
+        self.fail_next = False
 
     @property
     def alive(self) -> bool:
@@ -29,6 +31,10 @@ class FakeSession:
         if self.backend.gate:
             await self.backend.gate.wait()
         yield SessionStarted(session_id=self.session_id)
+        if self.fail_next:
+            self.fail_next = False
+            yield Done(final_text="", is_error=True, error="it broke")
+            return
         yield Text(text=f"did: {prompt}")
         yield Done(final_text=f"did: {prompt}")
         if self.die_after_turn:
@@ -89,6 +95,36 @@ async def test_follow_ups_reuse_the_same_session(store, tmp_path):
     assert backend.opened[0].spec.prompt == ""  # each turn brings its own prompt
     assert store.get_task(task.id).result == "did: second"
     assert backend.one_shot == []
+
+
+async def test_what_changes_in_a_bots_instructions_reaches_its_session_in_the_turn_once(store, tmp_path):
+    runner, backend = make(store, tmp_path, None, bot(), bot("helper"))
+    runner.crew.memory.remember("worker", "Standups", "Standups are at 9.", source="test")
+    task = runner.submit("worker", "first")  # a new session starts from the instructions as they are: nothing to add
+    await wait_until(settled(store, runner, task.id))
+    runner.send(task.id, "second")  # nothing changed since
+    await wait_until(lambda: len(backend.opened[0].turns) == 2 and settled(store, runner, task.id)())
+
+    runner.crew.memory.remember("worker", "Deploys", "Deploys go out on Tuesdays.", source="test")
+    worker = dataclasses.replace(bot(), instructions="You are the worker. Be brief.")
+    runner.reload(make_crew(tmp_path, worker, bot("helper"), team={"rules.md": "Ask before merging."}))
+    backend.opened[0].fail_next = True
+    runner.send(task.id, "third")  # this turn fails, so the next hears the changes too
+    await wait_until(lambda: len(backend.opened[0].turns) == 3 and settled(store, runner, task.id)())
+    runner.send(task.id, "fourth")
+    await wait_until(lambda: len(backend.opened[0].turns) == 4 and settled(store, runner, task.id)())
+    runner.send(task.id, "fifth")  # heard once it went through
+    await wait_until(lambda: len(backend.opened[0].turns) == 5 and settled(store, runner, task.id)())
+
+    first, second, third, fourth, fifth = backend.opened[0].turns
+    assert (first, second, fifth) == ("first", "second", "fifth")
+    for turn, message in ((third, "third"), (fourth, "fourth")):
+        assert turn.startswith("<crew-updates>") and turn.rstrip().endswith(message)
+        assert "## Your role card\n\nYou are the worker. Be brief." in turn
+        assert "## team/rules.md\n\nAsk before merging." in turn
+        assert "Deploys: Deploys go out on Tuesdays." in turn and "Standups" in turn  # the notes' index, as it is now
+        assert "## The crew" not in turn  # what didn't change isn't repeated
+    assert "Deploys" not in backend.opened[0].spec.system_prompt  # the session's own instructions stay as they began
 
 
 async def test_a_session_token_works_while_the_session_is_open_and_not_after(store, tmp_path):

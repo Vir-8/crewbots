@@ -132,6 +132,15 @@ class Tasks:
         self.db.execute("update pending_turns set waiting = json_insert(waiting, '$[#]', ?) where task_id = ?",
                         (text, task_id))
 
+    def primed(self, task_id: str) -> dict[str, str] | None:
+        """What the task's session started with, part by part (see `set_primed`); None if it isn't known."""
+        row = self.db.execute("select parts from primed where task_id = ?", (task_id,)).fetchone()
+        return json.loads(row["parts"]) if row else None
+
+    def set_primed(self, task_id: str, parts: dict[str, str]) -> None:
+        self.db.execute("insert into primed (task_id, parts) values (?, ?) on conflict(task_id) do update set "
+                        "parts = excluded.parts", (task_id, json.dumps(parts)))
+
     def clear_pending(self, task_id: str) -> None:
         self.db.execute("delete from pending_turns where task_id = ?", (task_id,))
 

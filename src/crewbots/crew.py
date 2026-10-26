@@ -123,31 +123,42 @@ class Crew:
     def routines_dir(self) -> Path:
         return self.home / "routines"
 
-    def system_prompt(self, bot: Bot, delegated_by: str | None = None, reviewing: str | None = None,
-                      briefing: str | None = None, routine: str | None = None, setting: str | None = None) -> str:
+    def living_parts(self, bot: Bot) -> dict[str, tuple[str, str]]:
+        """The parts of a bot's instructions that change while its sessions run, by key: (heading, text). A session
+        keeps the instructions it started with, so what changes in these reaches it in the turn instead (the runner's
+        `<crew-updates>`)."""
         roster = "\n".join(
             f"- {b.label} (@{b.name}, {b.title}){' ← you' if b.name == bot.name else ''}: {b.description}"
             for b in self.bots.values()
         )
+        parts = {"role": ("Your role card", bot.instructions.strip()), "crew": ("The crew", roster)}
+        if skills := self.skills_for(bot):
+            parts["skills"] = ("Skills", "\n".join(f"- {s.name}: {s.description} ({s.path})" for s in skills))
+        parts |= {f"team/{name}": (f"team/{name}", text.strip()) for name, text in self.team_files.items()}
+        parts["notes"] = ("Notes", self.memory.prompt(bot.name) or "No notes yet.")
+        return parts
+
+    def system_prompt(self, bot: Bot, delegated_by: str | None = None, reviewing: str | None = None,
+                      briefing: str | None = None, routine: str | None = None, setting: str | None = None) -> str:
+        living = self.living_parts(bot)
         # What stays the same for every task of this bot comes first and what changes comes last: the model's prompt
         # cache matches from the start, so a bot's sessions share the cached start, and a new note or a task's own
         # setting only misses from there on.
         parts = [
             f"You are {bot.label}, the {bot.title} of a crew of AI agents run by crewbots. Your handle is @{bot.name}.",
-            f"# Your role card\n\n{bot.instructions.strip()}",
-            f"# The crew\n\n{roster}",
+            f"# Your role card\n\n{living['role'][1]}",
+            f"# The crew\n\n{living['crew'][1]}",
             prompts.text("crew-tools", self.home) + "\n\n" + prompts.text("delegation", self.home)
             + ("\n\n" + prompts.text("coordinating", self.home) if bot.can_delegate else ""),
         ]
-        if skills := self.skills_for(bot):
-            listing = "\n".join(f"- {s.name}: {s.description} ({s.path})" for s in skills)
+        if "skills" in living:
             parts.append(
                 "# Skills\n\nSkills are tested procedures. When a task matches one, read its SKILL.md first and follow "
-                f"it. Where a skill says to spawn subagents, you may use your own; across bots, delegate.\n\n{listing}"
+                f"it. Where a skill says to spawn subagents, you may use your own; across bots, delegate.\n\n"
+                f"{living['skills'][1]}"
             )
-        parts += [f"# team/{name}\n\n{text.strip()}" for name, text in self.team_files.items()]
-        notes = self.memory.prompt(bot.name)
-        parts.append(prompts.text("memory-guide", self.home) + (f"\n\n{notes}" if notes else "\n\nNo notes yet."))
+        parts += [f"# {heading}\n\n{text}" for key, (heading, text) in living.items() if key.startswith("team/")]
+        parts.append(prompts.text("memory-guide", self.home) + f"\n\n{living['notes'][1]}")
         parts.append("# This task\n\n" + (
             setting if setting else
             f"This task was delegated to you by {delegated_by}; your handoff goes back to them. Their goal is a "
