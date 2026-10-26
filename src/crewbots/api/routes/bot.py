@@ -1,0 +1,107 @@
+"""The bot-token API: what a bot's crewbots MCP server calls, acting as its own task and nothing else."""
+
+from typing import Any
+
+from fastapi import APIRouter, HTTPException, Request
+
+from crewbots.api.context import Context
+from crewbots.api.schemas import (
+    ChildMessage,
+    Delegation,
+    Escalation,
+    Forget,
+    HandoffBody,
+    MergeProposal,
+    PostBody,
+    Recall,
+    Remember,
+    ReviewBody,
+    SearchHit,
+    ThreadBody,
+)
+from crewbots.crew_tools import ToolRefused
+
+
+def routes(c: Context) -> APIRouter:
+    runner = c.runner
+    v1 = APIRouter()
+
+    @v1.post("/bot/delegate", status_code=201)
+    async def bot_delegate(request: Request, body: Delegation):
+        child = runner.delegate(request.state.task.id, body.bot, body.goal, workspace=body.workspace,
+                                review_of=body.review_of)
+        return {"id": child.id, "bot": child.bot, "title": child.title, "status": child.status}
+
+    @v1.get("/bot/tasks")
+    async def bot_tasks(request: Request):
+        return runner.children_of(request.state.task.id)
+
+    @v1.post("/bot/message")
+    async def bot_message(request: Request, body: ChildMessage):
+        task = runner.message_child(request.state.task.id, body.task_id, body.text)
+        return {"id": task.id, "status": task.status}
+
+    @v1.post("/bot/handoff", status_code=201)
+    async def bot_handoff(request: Request, body: HandoffBody):
+        return runner.handoff(request.state.task.id, body.done, body.output, body.open, body.needs).to_json()
+
+    @v1.post("/bot/review", status_code=201)
+    async def bot_review(request: Request, body: ReviewBody):
+        findings = [f.model_dump() for f in body.findings]
+        return runner.review(request.state.task.id, body.verdict, body.summary, findings).to_json()
+
+    @v1.post("/bot/propose_merge")
+    async def bot_propose_merge(request: Request, body: MergeProposal):
+        task = runner.propose_merge(request.state.task.id, body.task_id, body.summary)
+        return {"id": task.id, "merge_state": task.merge_state}
+
+    @v1.post("/bot/remember", status_code=201)
+    async def bot_remember(request: Request, body: Remember):
+        note = runner.remember(request.state.task.id, body.title, body.body, shared=body.shared)
+        return {"title": note.title, "path": str(note.path)}
+
+    @v1.post("/bot/forget")
+    async def bot_forget(request: Request, body: Forget):
+        note = runner.forget(request.state.task.id, body.name, shared=body.shared)
+        return {"title": note.title}
+
+    @v1.post("/bot/recall", response_model=list[SearchHit])
+    async def bot_recall(request: Request, body: Recall):
+        return runner.recall(request.state.task.id, body.query)
+
+    @v1.post("/bot/start_thread", status_code=201)
+    async def bot_start_thread(request: Request, body: ThreadBody):
+        thread = runner.start_thread(request.state.task.id, body.title, body.goal)
+        return {"id": thread.id, "bot": thread.bot, "title": thread.title, "status": thread.status}
+
+    @v1.post("/bot/add_bot", status_code=201)
+    async def bot_add_bot(request: Request, body: dict[str, Any]):
+        try:
+            bot = runner.add_bot(request.state.task.id, body)
+        except (KeyError, ValueError) as e:  # a missing field, or an access that isn't one
+            raise HTTPException(422, f"add_bot: {e}") from None
+        return {"name": bot.name, "label": bot.label, "title": bot.title}
+
+    @v1.post("/bot/post", status_code=201)
+    async def bot_post(request: Request, body: PostBody):
+        return runner.post_from(request.state.task.id, body.text, body.room or None)
+
+    @v1.post("/bot/review/{tool}")
+    async def bot_review_tool(request: Request, tool: str, body: dict[str, Any]):
+        """A reviewer's tools, for one that reaches crewbots over MCP. It can only read and draft on its own pull
+        request; nothing here posts to GitHub."""
+        task = request.state.task
+        if task.kind != "review" or not task.pr:
+            raise HTTPException(403, "only a code review has these tools")
+        try:
+            text = await runner.review_tools(task).call(tool, {k: v for k, v in body.items() if v is not None})
+        except ToolRefused as e:
+            raise HTTPException(422, str(e)) from None
+        return {"text": text}
+
+    @v1.post("/bot/escalate")
+    async def bot_escalate(request: Request, body: Escalation):
+        runner.escalate(request.state.task.id, body.question)
+        return {"ok": True}
+
+    return v1

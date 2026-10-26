@@ -298,7 +298,11 @@ src/crewbots/
   plans.py           how much of each plan's limits is used, asked of the Claude and Codex CLIs
   store.py           tasks and events, in SQLite, with full-text search
   runner.py          runs tasks: sessions, worktrees, queued follow-ups, delegation and reporting back
-  api.py             the daemon: HTTP + WebSocket, user and run tokens, host checks
+  api/               the daemon: HTTP + WebSocket, user and run tokens, host checks
+    app.py           who may call it, and how errors answer
+    routes/          one module per area: tasks, chats, bots, crew, routines, mcp, reviews, usage, events, ...
+    schemas/         the models, by area, which the app's types are generated from
+    daemon.py        serve(): the server, its lifespan, daemon.json
   mcp_server.py      the crewbots tools each bot gets (handoff, escalate, review; delegate, tasks, message, propose_merge)
   worktree.py        one git worktree per task
   paths.py           where crewbots keeps things, worked out when asked
