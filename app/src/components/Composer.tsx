@@ -1,9 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { bridge } from "../api";
 import type { Bot } from "../types";
+import { labelOf } from "./Avatar";
 import { Icon } from "./Icon";
+import { UsagePanel } from "./UsagePanel";
 
-/** The one place you type, or talk: the mic dictates into it. In a group chat, typing @ suggests who to mention. */
+// Commands run in the app itself, from the message box: nothing is sent to a bot.
+const COMMANDS: { name: string; icon: "chart"; description: string }[] = [
+  { name: "usage", icon: "chart", description: "What's left on your Claude and Codex plans" },
+];
+
+/** The one place you type, or talk: the mic dictates into it. In a group chat, typing @ suggests who to mention, and
+ * anywhere, typing / offers the app's own commands. */
 export function Composer(props: {
   placeholder: string;
   onSend: (text: string) => Promise<unknown>;
@@ -26,6 +34,18 @@ export function Composer(props: {
   const suggestions = typing === undefined ? [] : (props.mentions ?? []).filter((m) => m.toLowerCase().startsWith(typing.toLowerCase()));
   const mention = (name: string) => {
     setText(text.replace(/@([\w-]*)$/, `@${name} `));
+    area.current?.focus();
+  };
+
+  // "/" and a command's start, nothing else: Tab or Enter runs the one picked, instead of sending.
+  const slash = /^\/(\S*)$/.exec(text)?.[1];
+  const commands = slash === undefined ? [] : COMMANDS.filter((c) => c.name.startsWith(slash.toLowerCase()));
+  const [pick, setPick] = useState(0);
+  const [panel, setPanel] = useState<string | null>(null);
+  const run = (name: string) => {
+    setText("");
+    setPick(0);
+    setPanel(name);
     area.current?.focus();
   };
 
@@ -77,6 +97,7 @@ export function Composer(props: {
     }
     setSending(true);
     setText("");
+    setPanel(null);
     try {
       await props.onSend(value);
     } catch {
@@ -88,11 +109,31 @@ export function Composer(props: {
 
   return (
     <div className={`composer ${props.asking ? "asking" : ""} ${listening ? "listening" : ""}`} onClick={() => area.current?.focus()}>
+      {panel === "usage" && <UsagePanel onClose={() => setPanel(null)} />}
+      {commands.length > 0 && (
+        <div className="commands" role="listbox">
+          {commands.map((c, i) => (
+            <button
+              key={c.name}
+              role="option"
+              aria-selected={i === Math.min(pick, commands.length - 1)}
+              className={`command-option ${i === Math.min(pick, commands.length - 1) ? "on" : ""}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onMouseEnter={() => setPick(i)}
+              onClick={() => run(c.name)}
+            >
+              <Icon name={c.icon} size={15} />
+              <span className="command-name">/{c.name}</span>
+              <span className="command-desc">{c.description}</span>
+            </button>
+          ))}
+        </div>
+      )}
       {suggestions.length > 0 && (
         <div className="mentions">
           {suggestions.map((name) => (
             <button key={name} className="mention-option" onMouseDown={(e) => e.preventDefault()} onClick={() => mention(name)}>
-              @{name}
+              {labelOf(name)} <span className="faint">@{name}</span>
             </button>
           ))}
         </div>
@@ -104,7 +145,17 @@ export function Composer(props: {
         placeholder={props.placeholder}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
-          if ((e.key === "Tab" || e.key === "Enter") && suggestions.length > 0) {
+          if (commands.length > 0 && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) {
+            e.preventDefault();
+            run(commands[Math.min(pick, commands.length - 1)].name);
+          } else if (commands.length > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+            e.preventDefault();
+            setPick((Math.min(pick, commands.length - 1) + (e.key === "ArrowDown" ? 1 : commands.length - 1)) % commands.length);
+          } else if (e.key === "Escape" && (commands.length > 0 || panel)) {
+            e.preventDefault();
+            if (commands.length > 0) setText("");
+            else setPanel(null);
+          } else if ((e.key === "Tab" || e.key === "Enter") && suggestions.length > 0) {
             e.preventDefault();
             mention(suggestions[0]);
           } else if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -149,7 +200,7 @@ export function Composer(props: {
             {micError.length > 60 ? `${micError.slice(0, 59)}…` : micError}
           </span>
         ) : (
-          <span className="composer-hint faint">⇧↩ new line</span>
+          <span className="composer-hint faint">/ for commands · ⇧↩ new line</span>
         )}
         <button
           className={`mic ${listening ? "on" : ""}`}

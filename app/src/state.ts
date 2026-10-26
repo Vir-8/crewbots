@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, bridge } from "./api";
+import { askPlans } from "./plans";
 import { setCrew } from "./components/Avatar";
 import type { Bot, Chat, ConnectionStatus, CrewState, Live, Models, ReviewInbox, RoomMessage, Routines, StoredEvent, Task } from "./types";
 import { ACTIVE } from "./types";
@@ -104,6 +105,7 @@ export function useCrew() {
   useEffect(() => {
     if (status.state !== "connected") return;
     loadReviews();
+    askPlans(); // so /usage and Analytics open with them already there
     const timers = [setInterval(loadRoutines, ROUTINES_EVERY_MS), setInterval(loadReviews, REVIEWS_EVERY_MS)];
     return () => timers.forEach(clearInterval);
   }, [status.state, loadRoutines, loadReviews]);

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { DirectChat, GroupChat } from "./components/ChatView";
 import { Icon } from "./components/Icon";
 import { Panel } from "./components/Panel";
-import { Profile } from "./components/Profile";
+import { Profile, RoomProfile } from "./components/Profile";
 import { Sidebar } from "./components/Sidebar";
 import { CodeReview } from "./pages/CodeReview";
 import { CrewBots } from "./pages/CrewBots";
@@ -40,7 +40,8 @@ export function App() {
   const [current, setCurrent] = useState<string | null>(null); // a chat's key, "review", or a page ("page:crew", ...)
   const [editing, setEditing] = useState<string | null>(null); // a bot being edited on the Crew page; "" for a new one
   const [thread_, setThread] = useState<string | null>(null); // a thread open beside its chat
-  // The profile beside a bot's chat: on unless you turn it off, and remembered, wherever you go in between.
+  // The profile beside a bot's chat, or a group's beside its chat: on unless you turn it off, and remembered, wherever
+  // you go in between.
   const [profileOn, setProfileOn] = useRemembered("crewbots.profile", true);
   const [newGroup, setNewGroup] = useState(false);
   const [sideOff, setSideOff] = useRemembered("crewbots.sidebar-hidden", false);
@@ -76,9 +77,10 @@ export function App() {
   const chat = crew.chats.find((c) => c.key === current);
   const thread = thread_ ? crew.tasks.get(thread_) : undefined;
   const profile = !thread && profileOn && chat?.kind === "direct" && current === chat.key ? chat.bot : null;
+  const room = !thread && profileOn && chat?.kind === "group" && current === chat.key ? chat.room : null;
 
   return (
-    <div className={`app ${thread || profile ? "with-panel" : ""} ${profile ? "with-profile" : ""} ${current === "review" ? "reviewing" : ""} ${sideHidden ? "side-hidden" : ""}`}>
+    <div className={`app ${thread || profile || room ? "with-panel" : ""} ${profile || room ? "with-profile" : ""} ${current === "review" ? "reviewing" : ""} ${sideHidden ? "side-hidden" : ""}`}>
       {/* One place in both states, beside the window's buttons, so it's always under your pointer. */}
       <button className="icon-button side-toggle" onClick={() => setSideHidden(!sideHidden)} title={sideHidden ? "Expand the sidebar" : "Collapse the sidebar"}>
         <Icon name="sidebar" size={15} />
@@ -109,7 +111,7 @@ export function App() {
         ) : chat?.kind === "direct" ? (
           <DirectChat crew={crew} chat={chat} onOpen={openTask} profileOpen={Boolean(profile)} onProfile={() => setProfileOn(!profileOn)} />
         ) : chat?.kind === "group" ? (
-          <GroupChat crew={crew} chat={chat} onOpen={openTask} />
+          <GroupChat crew={crew} chat={chat} onOpen={openTask} panelOpen={Boolean(room)} onPanel={() => setProfileOn(!profileOn)} />
         ) : (
           <div className="thread" />
         )}
@@ -125,6 +127,15 @@ export function App() {
             setEditing(profile);
             setCurrent("page:crew");
           }}
+        />
+      )}
+      {room && (
+        <RoomProfile
+          crew={crew}
+          room={room}
+          onOpen={openTask}
+          onChat={(bot) => setCurrent(`bot:${bot}`)}
+          onClose={() => setProfileOn(false)}
         />
       )}
       {newGroup && (

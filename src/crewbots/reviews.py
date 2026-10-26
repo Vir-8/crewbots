@@ -19,6 +19,7 @@ Everything is read with your own `gh` login, and nothing goes back to GitHub.
 import json
 import re
 import subprocess
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -70,13 +71,14 @@ REPO = re.compile(r"[\w.-]+/[\w.-]+")
 
 # What's waiting on you, one search a list, each asked on its own and all at once: together in one query they took
 # GitHub 7 to 8 seconds for a busy account, close to its GraphQL time limit (a 504), and in parallel the slowest
-# takes about half that.
+# takes about half that. Your teams' list, often the longest, is only asked for when you open it.
 SEARCHES = {
     "assigned": "is:pr is:open archived:false assignee:@me -author:@me",
     "direct": "is:pr is:open archived:false user-review-requested:@me -author:@me",
     "team": "is:pr is:open archived:false review-requested:@me -user-review-requested:@me -author:@me",
     "mine": "is:pr is:open archived:false author:@me",
 }
+INBOX_LISTS = ("assigned", "direct", "mine")  # what the app asks for first; "team" when you open it
 PR_FIELDS = """
 fragment pr on PullRequest {
   number title url isDraft createdAt updatedAt additions deletions changedFiles reviewDecision headRefName baseRefName
@@ -114,18 +116,28 @@ class Reviews:
         self.worktrees = worktrees
         self.snapshots = snapshots
         self._cache: dict[str, _Cached] = {}
+        self._loading: dict[str, threading.Event] = {}  # keys being fetched now, set when each is done
+        self._lock = threading.Lock()
 
     # What's waiting.
 
-    def inbox(self, fresh: bool = False) -> dict[str, Any]:
+    def inbox(self, lists=INBOX_LISTS, fresh: bool = False) -> tuple[dict[str, list[dict[str, Any]]], str | None]:
+        """The asked-for lists of pull requests, and GitHub's error if one couldn't be read (that list is then the
+        last good one, or empty)."""
         def ask(key: str) -> list[dict[str, Any]]:
             data = json.loads(self.gh(["api", "graphql", "-f", f"query={inbox_query([key])}"])).get("data") or {}
             return [_summary(n) for n in (data.get(key) or {}).get("nodes") or [] if n and "number" in n]
 
-        def load() -> dict[str, Any]:
-            with ThreadPoolExecutor(len(SEARCHES)) as pool:
-                return dict(zip(SEARCHES, pool.map(ask, SEARCHES), strict=True))
-        return self._cached("inbox", INBOX_TTL_S, load, fresh)
+        def one(key: str) -> tuple[list[dict[str, Any]], str | None]:
+            try:
+                return self._kept(f"inbox:{key}", INBOX_TTL_S, lambda: ask(key), fresh), None
+            except GitHubError as e:  # the last good list, if there is one, stays up
+                hit = self._cache.get(f"inbox:{key}")
+                return (hit.value if hit else []), str(e)
+
+        with ThreadPoolExecutor(len(lists)) as pool:
+            found = dict(zip(lists, pool.map(one, lists), strict=True))
+        return {k: v for k, (v, _) in found.items()}, next((e for _, e in found.values() if e), None)
 
     def pull(self, repo: str, number: int) -> dict[str, Any]:
         _check(repo)
@@ -159,12 +171,12 @@ class Reviews:
                                  | {int(n) for n in ISSUE_REF.findall(f"{raw['title']}\n{raw.get('body') or ''}")})[:3],
                 "checkout": str(self.checkout_of(repo)) if self.checkout_of(repo) else None,
             }
-        return self._cached(f"pull:{repo}#{number}", DETAIL_TTL_S, load)
+        return self._kept(f"pull:{repo}#{number}", DETAIL_TTL_S, load)
 
     def diff(self, repo: str, number: int, limit: int = VIEW_DIFF_CHARS) -> str:
         _check(repo)
-        text = self._cached(f"diff:{repo}#{number}", DETAIL_TTL_S,
-                            lambda: self.gh(["pr", "diff", str(number), "--repo", repo]))
+        text = self._kept(f"diff:{repo}#{number}", DETAIL_TTL_S,
+                          lambda: self.gh(["pr", "diff", str(number), "--repo", repo]))
         if len(text) > limit:
             return text[:limit] + f"\n… (the diff goes on for {len(text) - limit:,} more characters)"
         return text
@@ -245,7 +257,7 @@ class Reviews:
 
     def read_file(self, repo: str, number: int, path: str, start: int = 1, end: int | None = None) -> str:
         sha = self.pull(repo, number)["head_sha"]
-        text = self._cached(f"blob:{repo}@{sha}:{path}", DETAIL_TTL_S * 10, lambda: self.blobs(repo, sha, [path])[path])
+        text = self._kept(f"blob:{repo}@{sha}:{path}", DETAIL_TTL_S * 10, lambda: self.blobs(repo, sha, [path])[path])
         if text is None:
             return f"{path} isn't a text file at {sha[:12]} (it may not exist there, or be binary)."
         lines = text.splitlines()
@@ -287,7 +299,7 @@ class Reviews:
             except (GitHubError, ValueError):
                 return None  # a pull request, or gone
             return {"number": raw["number"], "title": raw.get("title", ""), "body": raw.get("body") or ""}
-        return self._cached(f"issue:{repo}#{number}", DETAIL_TTL_S * 5, load)
+        return self._kept(f"issue:{repo}#{number}", DETAIL_TTL_S * 5, load)
 
     # Who reviews: models, side by side.
 
@@ -353,13 +365,41 @@ class Reviews:
         folder = self.repos().get(repo)
         return Path(folder).expanduser() if folder else None
 
-    def _cached(self, key: str, ttl: float, load, fresh: bool = False):
+    def _kept(self, key: str, ttl: float, load, fresh: bool = False):
+        """GitHub's answer for `key`, kept: one older than `ttl` comes back at once while a new one is fetched behind
+        it (a failed fetch leaves the old one), and only `fresh`, or nothing kept yet, waits for GitHub. Only one fetch
+        per key runs at a time; a second ask waits for it."""
         hit = self._cache.get(key)
-        if hit and not fresh and time.monotonic() - hit.at < ttl:
+        if hit and not fresh:
+            if time.monotonic() - hit.at >= ttl:
+                threading.Thread(target=self._fetch, args=(key, load), daemon=True).start()
             return hit.value
-        value = load()
-        self._cache[key] = _Cached(time.monotonic(), value)
-        return value
+        return self._fetch(key, load, wait=True)
+
+    def _fetch(self, key: str, load, wait: bool = False):
+        with self._lock:
+            running = self._loading.get(key)
+            if running is None:
+                done = self._loading[key] = threading.Event()
+        if running is not None:  # someone is already asking
+            if not wait:
+                return None
+            running.wait()
+            if key in self._cache:
+                return self._cache[key].value
+            return self._fetch(key, load, wait=True)  # theirs failed: ask ourselves, and raise what GitHub says
+        try:
+            value = load()
+            self._cache[key] = _Cached(time.monotonic(), value)
+            return value
+        except Exception:
+            if wait:
+                raise
+            return None  # behind a kept answer: that one stays
+        finally:
+            with self._lock:
+                self._loading.pop(key, None)
+            done.set()
 
 
 def _summary(node: dict[str, Any]) -> dict[str, Any]:

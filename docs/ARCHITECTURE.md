@@ -278,6 +278,11 @@ Each step leaves the system working.
   fourth try. A plan limit with a known reset waits in the existing hold until it resets instead. A turn with no
   event at all for 20 minutes is stopped and tried the same way (Claude's commands can't run silent past 10). Auth,
   context window, bad request and policy failures aren't retried: they'd fail the same way again.
+- **GitHub's answers are kept** (`Reviews._kept`): an inbox list, a pull request, its diff, a file or an issue comes
+  back at once from the last answer, and one older than a minute or two is fetched again behind it, one fetch per
+  item at a time. Only a refresh you ask for, or nothing kept yet, waits for GitHub, and a failed fetch keeps the
+  last good answer, so a 504 never empties the list. The daemon asks for your lists when it starts; your teams' list
+  only when you open it. The app keeps pull requests and diffs too, so going back to one shows it at once.
 - **GitHub:** every `gh` call is tried again twice, after 2s and 5s, when GitHub or the network failed for a passing
   reason (5xx, GraphQL's "something went wrong", which is its query timeout, timeouts and dropped connections). The
   code review inbox asks for each of its four lists on its own, in parallel: in one query they took GitHub 7 to 8s

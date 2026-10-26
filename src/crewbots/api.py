@@ -34,7 +34,7 @@ from crewbots.backends import codex_isolation
 from crewbots.crew_tools import ToolRefused
 from crewbots.github import GitHubError
 from crewbots.memory import MemoryError
-from crewbots.reviews import ReviewError, Reviews, ReviewTools, reviewer_name
+from crewbots.reviews import INBOX_LISTS, SEARCHES, ReviewError, Reviews, ReviewTools, reviewer_name
 from crewbots.routines import RoutineError
 from crewbots.runner import MergeError, NotAllowed, Runner, UnknownBot
 from crewbots.scheduler import Scheduler
@@ -159,13 +159,14 @@ class PullSummary(BaseModel):
 
 
 class Inbox(BaseModel):
-    """Pull requests waiting on you, which never include your own, and your own, apart."""
+    """Pull requests waiting on you, which never include your own, and your own, apart. Only the lists asked for are
+    there."""
 
-    assigned: list[PullSummary]  # assigned to you
-    direct: list[PullSummary]  # asking you for a review
-    team: list[PullSummary]  # asking one of your teams
-    mine: list[PullSummary]  # yours
-    error: str | None
+    assigned: list[PullSummary] | None = None  # assigned to you
+    direct: list[PullSummary] | None = None  # asking you for a review
+    team: list[PullSummary] | None = None  # asking one of your teams
+    mine: list[PullSummary] | None = None  # yours
+    error: str | None  # GitHub's, for a list it couldn't read; that list is the last good one, or empty
 
 
 class PullFile(BaseModel):
@@ -622,6 +623,11 @@ class MergeRequest(BaseModel):
     force: bool = False
 
 
+def _warm_inbox(reviews: Reviews) -> None:
+    with contextlib.suppress(Exception):  # the app asks again, and shows GitHub's error then
+        reviews.inbox()
+
+
 def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: Scheduler | None = None,
                reviews: Reviews | None = None) -> FastAPI:
     store = runner.store
@@ -635,6 +641,7 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
         return host in hosts and credential is not None and secrets.compare_digest(credential, token)
 
     app = FastAPI(title="crewbots", version="1", openapi_url=None, docs_url=None, redoc_url=None)
+    app.state.reviews = reviews
 
     @app.middleware("http")
     async def guard(request: Request, call_next):
@@ -858,14 +865,13 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
             raise HTTPException(502 if isinstance(e, GitHubError) else 422, str(e)) from None
 
     @v1.get("/reviews/inbox", response_model=Inbox)
-    async def review_inbox(fresh: bool = False):
-        try:
-            inbox = await asyncio.to_thread(reviews.inbox, fresh)
-        except GitHubError as e:
-            return {"assigned": [], "direct": [], "team": [], "mine": [], "error": str(e)}
+    async def review_inbox(lists: str = ",".join(INBOX_LISTS), fresh: bool = False):
+        """`lists`: any of assigned, direct, team and mine. Kept answers come back at once; `fresh` waits for GitHub."""
+        asked = tuple(k for k in lists.split(",") if k in SEARCHES) or INBOX_LISTS
+        inbox, error = await asyncio.to_thread(reviews.inbox, asked, fresh)
         touched = store.reviewed_prs()
         return {k: [p | {"reviewed_at": touched.get(f"{p['repo']}#{p['number']}")} for p in v] for k, v in inbox.items()} | {
-            "error": None}
+            "error": error}
 
     @v1.get("/reviews/{owner}/{name}/{number}", response_model=PullOut)
     async def review_pull(owner: str, name: str, number: int):
@@ -1210,7 +1216,8 @@ def serve(home: Path, port: int = DEFAULT_PORT, max_parallel: int = 4, sessions:
         with os.fdopen(fd, "w") as f:
             json.dump({"url": f"http://127.0.0.1:{port}", "token": token, "pid": os.getpid()}, f)
         ticking = asyncio.create_task(scheduler.run(), name="scheduler")
-        warming = asyncio.create_task(plans_module.plans(), name="plans")  # the CLIs take seconds: ask before the app
+        warming = asyncio.gather(  # the CLIs and GitHub take seconds: ask before the app does
+            plans_module.plans(), asyncio.to_thread(_warm_inbox, app.state.reviews))
         try:
             yield
         finally:

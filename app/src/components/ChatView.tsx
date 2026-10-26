@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { Crew } from "../state";
 import { doing, oneLine } from "../state";
-import type { Chat, RoomMessage } from "../types";
+import type { Chat, Room, RoomMessage } from "../types";
 import { ACTIVE } from "../types";
 import { Avatar, GroupAvatar, labelOf } from "./Avatar";
 import { Markdown, ago } from "./bits";
@@ -63,7 +63,7 @@ export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string)
 }
 
 /** A group chat: you and some bots. The lead answers; whoever is @mentioned joins in, and bots can bring each other in. */
-export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) => void }) {
+export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) => void; panelOpen: boolean; onPanel: () => void }) {
   const { crew, chat } = props;
   const room = chat.room!;
   const messages = crew.roomMessages.get(room.id);
@@ -83,61 +83,99 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
   return (
     <>
       <header className="chat-head" data-tauri-drag-region>
-        <span className="chat-head-who">
+        <button className="chat-head-who" onClick={props.onPanel} title="About this group">
           <GroupAvatar members={room.members} size={30} />
           <span className="chat-head-text">
             <span className="chat-head-title">{room.title}</span>
             <span className="chat-head-sub">
-              {room.members.map(labelOf).join(", ")} · {labelOf(room.lead)} leads
+              {typing.length > 0 ? `${typing.map(labelOf).join(", ")} ${typing.length === 1 ? "is" : "are"} replying` : `${room.members.map(labelOf).join(", ")} · ${labelOf(room.lead)} leads`}
             </span>
           </span>
-        </span>
+        </button>
+        <span className="grow" data-tauri-drag-region />
+        <button className={`icon-button ${props.panelOpen ? "on" : ""}`} onClick={props.onPanel} title="About this group">
+          <Icon name="profile" size={16} />
+        </button>
       </header>
-      <div className="thread" ref={box}>
-        <div className="thread-col chat room">
-          {messages?.length === 0 && (
-            <p className="room-empty faint">
-              {room.lead} answers here, and anyone you @mention joins in. Bots can bring each other in the same way.
-            </p>
-          )}
-          {groups.map((group) =>
-            group.author === "user" ? (
-              group.messages.map((m) => (
-                <div key={m.id} className="you">
-                  <div className="you-text">{withMentions(m.text)}</div>
-                </div>
-              ))
-            ) : (
-              <div key={group.messages[0].id} className="room-group">
-                <Avatar name={group.author} size={28} />
-                <div className="room-group-body">
-                  <div className="room-author">
-                    {labelOf(group.author)}
-                    <span className="faint"> · {ago(group.messages[0].at)}</span>
+      {messages?.length === 0 ? (
+        <GroupWelcome crew={crew} room={room} onSay={(text) => crew.post(room.id, text)} />
+      ) : (
+        <div className="thread" ref={box}>
+          <div className="thread-col chat room">
+            {groups.map((group) =>
+              group.author === "user" ? (
+                group.messages.map((m) => (
+                  <div key={m.id} className="you">
+                    <div className="you-text">{withMentions(m.text)}</div>
                   </div>
-                  {group.messages.map((m) => (
-                    <div key={m.id} className="room-bubble">
-                      <Markdown text={m.text} onSelect={props.onOpen} />
+                ))
+              ) : (
+                <div key={group.messages[0].id} className="room-group">
+                  <Avatar name={group.author} size={28} />
+                  <div className="room-group-body">
+                    <div className="room-author">
+                      {labelOf(group.author)}
+                      <span className="faint"> · {ago(group.messages[0].at)}</span>
                     </div>
-                  ))}
+                    {group.messages.map((m) => (
+                      <div key={m.id} className="room-bubble">
+                        <Markdown text={m.text} onSelect={props.onOpen} />
+                      </div>
+                    ))}
+                  </div>
                 </div>
+              ),
+            )}
+            {typing.length > 0 && (
+              <div className="working">
+                <span className="working-dot" />
+                <span className="shimmer">
+                  {typing.map(labelOf).join(", ")} {typing.length === 1 ? "is" : "are"} replying
+                </span>
               </div>
-            ),
-          )}
-          {typing.length > 0 && (
-            <div className="working">
-              <span className="working-dot" />
-              <span className="shimmer">
-                {typing.map(labelOf).join(", ")} {typing.length === 1 ? "is" : "are"} replying
-              </span>
-            </div>
-          )}
+            )}
+          </div>
         </div>
-      </div>
+      )}
       <div className="dock">
         <Composer key={chat.key} placeholder={`Message ${room.title}`} mentions={room.members} onSend={(text) => crew.post(room.id, text)} autoFocus />
       </div>
     </>
+  );
+}
+
+/** A group chat before its first message: who's in it, how it works, and a few ways to start. */
+function GroupWelcome({ crew, room, onSay }: { crew: Crew; room: Room; onSay: (text: string) => void }) {
+  const members = [room.lead, ...room.members.filter((m) => m !== room.lead)];
+  const starts = ["What's everyone working on?", "Plan this week's work together", `@${members.find((m) => m !== room.lead) ?? room.lead} what do you need from me?`];
+  return (
+    <div className="welcome">
+      <GroupAvatar members={room.members} size={72} />
+      <h2>{room.title}</h2>
+      <div className="welcome-members">
+        {members.map((name) => {
+          const bot = crew.bots.find((b) => b.name === name);
+          return (
+            <span key={name} className="welcome-member">
+              <Avatar name={name} size={34} />
+              <span>{labelOf(name)}</span>
+              <span className="faint small">{name === room.lead ? "Leads" : bot?.display_name ? bot.title : ""}</span>
+            </span>
+          );
+        })}
+      </div>
+      <p>
+        {labelOf(room.lead)} answers what you say here, and anyone you @mention joins in. Bots bring each other in the same way, and hand out work as
+        threads.
+      </p>
+      <div className="welcome-starts">
+        {starts.map((text) => (
+          <button key={text} className="welcome-start" onClick={() => onSay(text)}>
+            {withMentions(text)}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

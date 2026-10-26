@@ -71,7 +71,9 @@ export const api = {
   pause: (on: boolean) => call<CrewState>("POST", on ? "/crew/pause" : "/crew/resume"),
   usageSummary: (days = 365) => call<UsageSummary>("GET", `/usage/summary?days=${days}`),
   plans: (fresh = false) => call<Plans>("GET", `/plans${fresh ? "?fresh=true" : ""}`),
-  reviewInbox: (fresh = false) => call<ReviewInbox>("GET", `/reviews/inbox${fresh ? "?fresh=true" : ""}`),
+  // Kept answers come back at once; `fresh` waits for GitHub. Your teams' list is asked for apart, when it's opened.
+  reviewInbox: (fresh = false, lists = ["assigned", "direct", "mine"]) =>
+    call<ReviewInbox>("GET", `/reviews/inbox?lists=${lists.join(",")}${fresh ? "&fresh=true" : ""}`),
   pull: (repo: string, number: number) => call<Pull>("GET", `/reviews/${repo}/${number}`),
   pullDiff: (repo: string, number: number) => call<{ diff: string | null }>("GET", `/reviews/${repo}/${number}/diff`),
   startReview: (repo: string, number: number, note = "") => call<Task[]>("POST", `/reviews/${repo}/${number}/review`, { note }),

@@ -249,7 +249,11 @@ for (const b of bots) {
 }
 
 // A group chat: the crew's own, where bots talk to each other in the open.
-export const rooms = [{ id: "r_crew000001", title: "Crew", lead: "chief", members: bots.map((b) => b.name), created_at: tick(), updated_at: tick() }];
+// And a new one nobody has written in yet.
+export const rooms = [
+  { id: "r_crew000001", title: "Crew", lead: "chief", members: bots.map((b) => b.name), created_at: tick(), updated_at: tick() },
+  { id: "r_review0002", title: "Review desk", lead: "reviewer", members: ["reviewer", "critic"], created_at: tick(), updated_at: tick() },
+];
 export const roomMessages = new Map<string, { id: number; room_id: string; author: string; text: string; depth: number; at: string }[]>();
 {
   let id = 1;

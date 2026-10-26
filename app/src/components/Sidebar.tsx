@@ -210,9 +210,9 @@ function CrewMenu({ crew, current, onPage, rail }: { crew: Crew; current: string
 
 function ChatRow({ chat, on, onClick }: { chat: Chat; on: boolean; onClick: () => void }) {
   const preview = chat.last
-    ? `${chat.kind === "group" ? `${chat.last.author === "user" ? "You" : chat.last.author}: ` : chat.last.author === "user" ? "You: " : ""}${oneLine(chat.last.text, 90)}`
+    ? `${chat.kind === "group" ? `${chat.last.author === "user" ? "You" : labelOf(chat.last.author)}: ` : chat.last.author === "user" ? "You: " : ""}${oneLine(chat.last.text, 90)}`
     : chat.kind === "group"
-      ? chat.room!.members.join(", ")
+      ? chat.room!.members.map(labelOf).join(", ")
       : "Say hello";
   return (
     <button className={`chat-row ${on ? "on" : ""}`} onClick={onClick}>

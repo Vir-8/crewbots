@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { Crew } from "../state";
 import { oneLine } from "../state";
-import type { Profile as ProfileData } from "../types";
+import type { Profile as ProfileData, Room } from "../types";
 import { ACTIVE } from "../types";
-import { Avatar, labelOf } from "./Avatar";
+import { Avatar, GroupAvatar, labelOf } from "./Avatar";
 import { ago } from "./bits";
 import { Icon } from "./Icon";
 
@@ -137,4 +137,75 @@ function when(iso: string): string {
   const days = Math.round((new Date(d.toDateString()).getTime() - new Date(new Date().toDateString()).getTime()) / 86_400_000);
   const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
   return days === 0 ? time : days === 1 ? `Tomorrow ${time}` : `${d.toLocaleDateString(undefined, { weekday: "short" })} ${time}`;
+}
+
+/** A group chat, beside it: who's in it and what each is doing, who leads, and the threads opened from it. */
+export function RoomProfile(props: { crew: Crew; room: Room; onOpen: (id: string) => void; onChat: (bot: string) => void; onClose: () => void }) {
+  const { crew, room } = props;
+  const [all, setAll] = useState(false);
+  useEffect(() => setAll(false), [room.id]);
+  const seats = [...crew.tasks.values()].filter((t) => t.kind === "seat" && t.room_id === room.id);
+  const threads = seats
+    .flatMap((seat) => crew.family(seat.id))
+    .filter((t) => t.kind === "thread")
+    .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  const members = [room.lead, ...room.members.filter((m) => m !== room.lead)];
+
+  return (
+    <aside className="panel profile">
+      <div className="profile-close">
+        <button className="icon-button" onClick={props.onClose} title="Close">
+          <Icon name="x" size={15} />
+        </button>
+      </div>
+      <div className="profile-body">
+        <div className="profile-head">
+          <GroupAvatar members={room.members} size={64} />
+          <div className="profile-name">{room.title}</div>
+          <div className="faint">
+            {room.members.length} bots · {labelOf(room.lead)} leads
+          </div>
+          <p className="profile-desc">
+            {labelOf(room.lead)} answers what you say here, and anyone you @mention joins in. Bots bring each other in the same way.
+          </p>
+        </div>
+
+        <section>
+          <h3>Members</h3>
+          {members.map((name) => {
+            const bot = crew.bots.find((b) => b.name === name);
+            const seat = seats.find((s) => s.bot === name);
+            const replying = seat && ACTIVE.includes(seat.status);
+            return (
+              <button key={name} className="profile-item link member" onClick={() => props.onChat(name)} title={`Chat with ${labelOf(name)}`}>
+                <Avatar name={name} size={26} working={Boolean(replying)} />
+                <span className="profile-item-text">
+                  <span className="member-name">{labelOf(name)}</span>
+                  {bot?.display_name && <span className="faint small">{bot.title}</span>}
+                </span>
+                {replying ? <span className="faint small">Replying…</span> : name === room.lead ? <span className="lead-tag">Lead</span> : null}
+              </button>
+            );
+          })}
+        </section>
+
+        <section>
+          <h3>Threads</h3>
+          {threads.length === 0 && <p className="faint small">Work the group hands out opens here as threads.</p>}
+          {threads.slice(0, all ? undefined : SHOWN).map((t) => (
+            <button key={t.id} className="profile-item link" onClick={() => props.onOpen(t.id)}>
+              <Avatar name={t.bot} size={16} />
+              <span className="profile-item-text">{oneLine(t.title, 60)}</span>
+              {ACTIVE.includes(t.status) || t.status === "held" ? <span className="unread-dot working" /> : <span className="faint">{ago(t.updated_at, true)}</span>}
+            </button>
+          ))}
+          {threads.length > SHOWN && !all && (
+            <button className="text-button show-more" onClick={() => setAll(true)}>
+              Show {threads.length - SHOWN} more
+            </button>
+          )}
+        </section>
+      </div>
+    </aside>
+  );
 }

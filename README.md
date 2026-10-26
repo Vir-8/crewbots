@@ -171,12 +171,17 @@ The app works like a messaging app:
 - **A chat:** the bot's replies as bubbles, its tool use folded into one line, and its threads as cards that open
   beside the chat, with the thread's own conversation, its changes, its reviews and a Merge button.
 - **Profile:** beside a chat, the bot's status, routines, recent threads, the files its threads produced, and its setup.
-- **Group chats:** messages with who said them, @mention suggestions as you type, and who's replying.
+- **Group chats:** messages with who said them, @mention suggestions as you type, and who's replying. Beside them,
+  the group's members (who leads, who's replying) and the threads it has opened. A new group starts with who's in
+  it and a few ways to start.
+- **Commands:** typing / in any message box offers the app's own commands; Tab or Enter runs one without sending
+  anything. `/usage` shows what's left on your Claude and Codex plans, above the box.
 - **The mic** dictates into any message box with macOS's own speech recognizer, on this Mac when it can, across
   pauses and past the recognizer's one-minute limit. The first time, macOS asks to allow the microphone and speech
   recognition.
 - **Code review**, above the chats: pull requests that ask you for a review, are assigned to you, are yours, or ask
-  your teams, read with your `gh` login. Each has its summary, checks and diff. Review runs the PR reviewer, an agent
+  your teams (asked for only when you open that list), read with your `gh` login. What GitHub said last shows at
+  once while the app asks again. Each has its summary, checks and diff. Review runs the PR reviewer, an agent
   of its own (not one of your bots), on each model you choose in Settings, side by side: by default Claude Sonnet and
   Codex's default model, both at high effort. Each review is a tab you can keep talking to. Nothing is posted to
   GitHub. A reviewer gets the PR's description, the issues it refers to, its files and diff, the failing checks and

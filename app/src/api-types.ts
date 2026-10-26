@@ -186,12 +186,13 @@ export interface HandoffOut {
   at: string;
 }
 
-/** Pull requests waiting on you, which never include your own, and your own, apart. */
+/** Pull requests waiting on you, which never include your own, and your own, apart. Only the lists asked for are
+there. */
 export interface Inbox {
-  assigned: PullSummary[];
-  direct: PullSummary[];
-  team: PullSummary[];
-  mine: PullSummary[];
+  assigned?: PullSummary[] | null;
+  direct?: PullSummary[] | null;
+  team?: PullSummary[] | null;
+  mine?: PullSummary[] | null;
   error: string | null;
 }
 

@@ -80,11 +80,11 @@ def test_the_inbox_and_a_pull_request_come_from_gh_and_are_cached(tmp_path):
     gh = FakeGh()
     reviews = Reviews(tmp_path, gh=gh)
 
-    inbox = reviews.inbox()
+    inbox, error = reviews.inbox()
     assert [p["number"] for p in inbox["direct"]] == [7] and inbox["direct"][0]["checks"] == "SUCCESS"
-    assert [p["number"] for p in inbox["assigned"]] == [7]
+    assert [p["number"] for p in inbox["assigned"]] == [7] and "team" not in inbox and error is None
     reviews.inbox()
-    assert len(gh.calls) == 4  # one a list, then cached
+    assert len(gh.calls) == 3  # one a list, then kept
     pull = reviews.pull("vir/app", 7)
     assert pull["checks"] == {"total": 3, "passed": 1, "failed": 1} and pull["checkout"] is None
     assert pull["failing"] == ["tests"] and pull["issues"] == [5]
@@ -253,7 +253,50 @@ def test_the_inbox_asks_each_list_on_its_own(tmp_path):
         asked.append(searches)
         return json.dumps({"data": {searches[0]: {"nodes": [NODE] if searches[0] == "direct" else []}}})
 
-    inbox = Reviews(tmp_path, gh=gh).inbox()
+    reviews = Reviews(tmp_path, gh=gh)
+    inbox, _ = reviews.inbox()
 
-    assert sorted(asked) == [["assigned"], ["direct"], ["mine"], ["team"]]
+    assert sorted(asked) == [["assigned"], ["direct"], ["mine"]]  # your teams' only when you open it
     assert [p["number"] for p in inbox["direct"]] == [7] and inbox["assigned"] == []
+    assert reviews.inbox(("team",))[0] == {"team": []} and sorted(asked)[-1] == ["team"]
+
+
+def test_a_kept_list_comes_back_at_once_and_is_refreshed_behind_it(tmp_path, monkeypatch):
+    from crewbots import reviews as reviews_module
+
+    answers = iter([[NODE], [NODE, {**NODE, "number": 8}]])
+    fetched = []
+
+    def gh(args):
+        fetched.append(1)
+        return json.dumps({"data": {"direct": {"nodes": next(answers)}}})
+
+    reviews = Reviews(tmp_path, gh=gh)
+    assert [p["number"] for p in reviews.inbox(("direct",))[0]["direct"]] == [7]
+    monkeypatch.setattr(reviews_module, "INBOX_TTL_S", 0.0)  # it's old now
+
+    again, error = reviews.inbox(("direct",))
+    assert [p["number"] for p in again["direct"]] == [7] and error is None  # the kept one, at once
+    for _ in range(100):
+        if len(fetched) == 2 and "inbox:direct" not in reviews._loading:
+            break
+        time.sleep(0.01)
+    monkeypatch.setattr(reviews_module, "INBOX_TTL_S", 60.0)
+    assert [p["number"] for p in reviews.inbox(("direct",))[0]["direct"]] == [7, 8]  # the new one, fetched behind it
+
+
+def test_when_github_fails_the_last_good_list_stays_up(tmp_path):
+    fail = False
+
+    def gh(args):
+        if fail:
+            raise GitHubError("gh: HTTP 504", passing=True)
+        return json.dumps({"data": {"direct": {"nodes": [NODE]}}})
+
+    reviews = Reviews(tmp_path, gh=gh)
+    reviews.inbox(("direct",))
+    fail = True
+
+    inbox, error = reviews.inbox(("direct",), fresh=True)
+    assert [p["number"] for p in inbox["direct"]] == [7] and error == "gh: HTTP 504"
+    assert Reviews(tmp_path, gh=gh).inbox(("direct",)) == ({"direct": []}, "gh: HTTP 504")  # nothing kept yet

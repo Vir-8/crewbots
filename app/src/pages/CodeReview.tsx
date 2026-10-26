@@ -13,13 +13,36 @@ import { ACTIVE } from "../types";
 
 type Selected = { repo: string; number: number };
 
+// Kept while the app is open, so going back to a pull request or the teams' list shows it at once while it refreshes.
+let keptTeam: PullSummary[] | null = null;
+const keptPulls = new Map<string, Pull>();
+const keptDiffs = new Map<string, string>();
+
 /** Pull requests waiting on you, read through your gh login, and private reviews of them. The reviewer isn't one of
  * your bots: it's its own agent, run on each model you choose, side by side. Nothing here posts to GitHub. */
 export function CodeReview({ crew, onSettings }: { crew: Crew; onSettings: () => void }) {
   const [selected, setSelected] = useState<Selected | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const inbox = crew.reviewInbox;
-  const first = inbox?.assigned[0] ?? inbox?.direct[0] ?? inbox?.team[0];
+  // The kept lists show at once; opening code review asks GitHub for new ones behind them.
+  useEffect(() => {
+    setRefreshing(true);
+    crew.loadReviews(true).finally(() => setRefreshing(false));
+  }, []);
+  const first = inbox?.assigned?.[0] ?? inbox?.direct?.[0];
+  // Your teams' pull requests are often the longest list and the slowest to ask for, so only when you open them.
+  const [team, setTeam] = useState<PullSummary[] | null>(keptTeam);
+  const [teamError, setTeamError] = useState<string | null>(null);
+  const loadTeam = async (fresh = false) => {
+    try {
+      const answer = await api.reviewInbox(fresh, ["team"]);
+      keptTeam = answer.team ?? [];
+      setTeam(keptTeam);
+      setTeamError(answer.error);
+    } catch (e) {
+      setTeamError(String(e).replace(/^Error: /, ""));
+    }
+  };
   useEffect(() => {
     if (!selected && first) setSelected({ repo: first.repo, number: first.number });
   }, [first?.repo, first?.number]);
@@ -35,7 +58,7 @@ export function CodeReview({ crew, onSettings }: { crew: Crew; onSettings: () =>
             title="Refresh"
             onClick={async () => {
               setRefreshing(true);
-              await crew.loadReviews(true);
+              await Promise.all([crew.loadReviews(true), team && loadTeam(true)]);
               setRefreshing(false);
             }}
           >
@@ -46,9 +69,17 @@ export function CodeReview({ crew, onSettings }: { crew: Crew; onSettings: () =>
           {inbox?.error && <p className="error-text pad">{inbox.error}</p>}
           {!inbox && <p className="faint pad">Asking GitHub…</p>}
           <PullGroup title="Assigned to you" pulls={inbox?.assigned ?? []} selected={selected} onSelect={setSelected} empty="Nothing is assigned to you." />
-          <PullGroup title="Asks for your review" pulls={(inbox?.direct ?? []).filter((p) => !inbox?.assigned.some((a) => a.repo === p.repo && a.number === p.number))} selected={selected} onSelect={setSelected} />
+          <PullGroup title="Asks for your review" pulls={(inbox?.direct ?? []).filter((p) => !inbox?.assigned?.some((a) => a.repo === p.repo && a.number === p.number))} selected={selected} onSelect={setSelected} />
           <PullGroup title="Authored by you" pulls={inbox?.mine ?? []} selected={selected} onSelect={setSelected} />
-          <PullGroup title="Your teams" pulls={inbox?.team ?? []} selected={selected} onSelect={setSelected} collapsed />
+          <PullGroup
+            title="Your teams"
+            pulls={team}
+            selected={selected}
+            onSelect={setSelected}
+            collapsed
+            onOpen={() => loadTeam()}
+            empty={teamError ?? "Nothing asks your teams for a review."}
+          />
         </div>
       </aside>
       {selected ? (
@@ -60,19 +91,36 @@ export function CodeReview({ crew, onSettings }: { crew: Crew; onSettings: () =>
   );
 }
 
-function PullGroup(props: { title: string; pulls: PullSummary[]; selected: Selected | null; onSelect: (s: Selected) => void; empty?: string; collapsed?: boolean }) {
+/** One list of pull requests. `pulls` is null until it's been asked for: `onOpen` asks, the first time it's opened. */
+function PullGroup(props: {
+  title: string;
+  pulls: PullSummary[] | null;
+  selected: Selected | null;
+  onSelect: (s: Selected) => void;
+  empty?: string;
+  collapsed?: boolean;
+  onOpen?: () => void;
+}) {
   const [open, setOpen] = useState(!props.collapsed);
-  if (props.pulls.length === 0 && !props.empty) return null;
+  const pulls = props.pulls ?? [];
+  if (props.pulls && pulls.length === 0 && !props.empty) return null;
   return (
     <section className="pull-group">
-      <button className="pull-group-head" onClick={() => setOpen(!open)}>
+      <button
+        className="pull-group-head"
+        onClick={() => {
+          if (!open) props.onOpen?.();
+          setOpen(!open);
+        }}
+      >
         <Icon name={open ? "chevronDown" : "chevronRight"} size={12} />
         {props.title}
-        <span className="faint">{props.pulls.length}</span>
+        {props.pulls && <span className="faint">{pulls.length}</span>}
       </button>
-      {open && props.pulls.length === 0 && <p className="faint small pad-x">{props.empty}</p>}
+      {open && !props.pulls && <p className="faint small pad-x">Asking GitHub…</p>}
+      {open && props.pulls && pulls.length === 0 && <p className="faint small pad-x">{props.empty}</p>}
       {open &&
-        props.pulls.map((p) => {
+        pulls.map((p) => {
           const on = props.selected?.repo === p.repo && props.selected?.number === p.number;
           return (
             <button key={`${p.repo}#${p.number}`} className={`pull-row ${on ? "on" : ""}`} onClick={() => props.onSelect({ repo: p.repo, number: p.number })}>
@@ -97,16 +145,32 @@ function PullGroup(props: { title: string; pulls: PullSummary[]; selected: Selec
 }
 
 function PullView({ crew, selected, onSettings }: { crew: Crew; selected: Selected; onSettings: () => void }) {
-  const [pull, setPull] = useState<Pull | null>(null);
+  const key = `${selected.repo}#${selected.number}`;
+  const [pull, setPull] = useState<Pull | null>(keptPulls.get(key) ?? null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"summary" | "changes">("summary");
-  const [diff, setDiff] = useState<string | null>(null);
-  const load = () => api.pull(selected.repo, selected.number).then(setPull, (e) => setError(String(e).replace(/^Error: /, "")));
+  const [diff, setDiff] = useState<string | null>(keptDiffs.get(key) ?? null);
+  // A kept one shows at once; the daemon's answer, kept there too, replaces it a moment later.
+  const load = () =>
+    api.pull(selected.repo, selected.number).then(
+      (p) => {
+        keptPulls.set(key, p);
+        setPull(p);
+      },
+      (e) => keptPulls.has(key) || setError(String(e).replace(/^Error: /, "")),
+    );
   useEffect(() => {
     load();
   }, []);
   useEffect(() => {
-    if (tab === "changes" && diff === null) api.pullDiff(selected.repo, selected.number).then((d) => setDiff(d.diff ?? ""), (e) => setDiff(`Couldn't load the diff: ${e}`));
+    if (tab !== "changes") return;
+    api.pullDiff(selected.repo, selected.number).then(
+      (d) => {
+        keptDiffs.set(key, d.diff ?? "");
+        setDiff(d.diff ?? "");
+      },
+      (e) => keptDiffs.has(key) || setDiff(`Couldn't load the diff: ${e}`),
+    );
   }, [tab]);
 
   if (error) return <div className="review-empty error-text">{error}</div>;

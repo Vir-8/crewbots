@@ -3,30 +3,29 @@ import { api } from "../api";
 import { Avatar, labelOf } from "../components/Avatar";
 import { Icon } from "../components/Icon";
 import { modelLabel } from "../components/ModelPicker";
+import { PlanCard } from "../components/PlanCard";
 import { Page, Segmented } from "../components/ui";
+import { usePlans } from "../plans";
 import type { Crew } from "../state";
-import type { Budget, Plans, UsageSummary } from "../types";
+import type { Budget, UsageSummary } from "../types";
 
 // Each plan keeps one color everywhere on the page (orange and aqua, adjacent slots of the validated palette); the
 // activity grid's magnitude is a separate one-hue blue ramp, so neither reads as one plan's. Both are set in styles.css.
 const PLAN_COLOR: Record<string, string> = { claude: "var(--plan-claude)", codex: "var(--plan-codex)" };
 const RAMP = [1, 2, 3, 4, 5];
 const EFFORT_LABEL: Record<string, string> = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max", ultra: "Ultra", default: "Default" };
-const STALE_S = 120; // the daemon refreshes a plan's answer once it's this old
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const DAYS = 365;
 
 // Kept between visits, so coming back shows the last numbers at once while new ones load.
 let keptData: UsageSummary | null = null;
-let keptPlans: Plans | null = null;
 
 /** What the crew has used over the last year, and what's left on your plans. */
 export function Analytics({ crew }: { crew: Crew }) {
   const [data, setData] = useState<UsageSummary | null>(keptData);
-  const [plans, setPlans] = useState<Plans | null>(keptPlans);
+  const { plans, asking, refresh } = usePlans();
   const [budgets, setBudgets] = useState<Budget[]>([]);
-  const [asking, setAsking] = useState(false);
 
   // The crew's own numbers are quick; the last ones stay up until new ones arrive.
   useEffect(() => {
@@ -43,28 +42,7 @@ export function Analytics({ crew }: { crew: Crew }) {
     };
   }, [crew.running.length]);
 
-  // The plans take the CLIs seconds to answer, so the daemon keeps their last answer: show it, and if it's old, ask
-  // again behind it.
-  const askPlans = async (fresh: boolean) => {
-    setAsking(true);
-    try {
-      let answer = await api.plans(fresh);
-      keptPlans = answer;
-      setPlans(answer);
-      const now = Date.now() / 1000;
-      if (!fresh && [answer.claude, answer.codex].some((p) => now - p.checked_at >= STALE_S)) {
-        answer = await api.plans(true);
-        keptPlans = answer;
-        setPlans(answer);
-      }
-    } catch {
-      // the cards keep what they had
-    } finally {
-      setAsking(false);
-    }
-  };
   useEffect(() => {
-    askPlans(false);
     api.budgets().then(setBudgets, () => {});
     crew.loadModels();
   }, []);
@@ -73,7 +51,7 @@ export function Analytics({ crew }: { crew: Crew }) {
     <Page
       title="Analytics"
       actions={
-        <button className="icon-button" title="Ask the plans again" disabled={asking} onClick={() => askPlans(true)}>
+        <button className="icon-button" title="Ask the plans again" disabled={asking} onClick={refresh}>
           <Icon name="repeat" size={14} className={asking ? "spin" : ""} />
         </button>
       }
@@ -167,39 +145,6 @@ export function Analytics({ crew }: { crew: Crew }) {
         </>
       )}
     </Page>
-  );
-}
-
-function PlanCard({ name, plan, color }: { name: string; plan: Plans["claude"] | undefined; color: string }) {
-  return (
-    <div className="plan-card">
-      <div className="plan-card-head">
-        <span className="key" style={{ background: color }} />
-        <span className="plan-card-name">{name}</span>
-      </div>
-      {!plan && <p className="faint small">Asking…</p>}
-      {plan && !plan.available && <p className="error-text small">{plan.error}</p>}
-      {plan?.available && plan.windows.length === 0 && <p className="faint small">No limits reported.</p>}
-      {plan?.windows.map((w) => {
-        const left = Math.max(0, 100 - w.used_percent);
-        const tone = left <= 0 ? "limited" : left < 20 ? "warning" : "";
-        return (
-          <div key={w.name} className="plan-window">
-            <div className="plan-window-top">
-              <span>{w.name}</span>
-              <span className="plan-left">
-                <strong>{Math.round(left)}%</strong> left
-              </span>
-            </div>
-            <div className={`meter ${tone}`}>
-              <span style={{ width: `${Math.min(100, w.used_percent)}%`, background: tone ? undefined : color }} />
-            </div>
-            {w.resets_at && <div className="faint small">Resets {resets(w.resets_at)}</div>}
-          </div>
-        );
-      })}
-      {plan?.notes.length ? <p className="faint small plan-notes">{plan.notes.join(" · ")}</p> : null}
-    </div>
   );
 }
 
@@ -394,11 +339,4 @@ function short(day: string): string {
 
 function long(day: string): string {
   return dateOf(day).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-}
-
-function resets(unix: number): string {
-  const d = new Date(unix * 1000);
-  const days = Math.round((new Date(d.toDateString()).getTime() - new Date(new Date().toDateString()).getTime()) / 86_400_000);
-  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  return days === 0 ? `at ${time}` : days === 1 ? `tomorrow at ${time}` : `${d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} at ${time}`;
 }
