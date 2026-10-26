@@ -1,11 +1,14 @@
 """The usage page's numbers: the crew's own use, and where the plans' limits stand."""
 
+import asyncio
+import time
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
 from fakes import bot
 
+from crewbots import plans
 from crewbots.plans import parse_claude_usage
 from crewbots.store import Store
 from crewbots.usage import _streaks, summary
@@ -30,6 +33,59 @@ def test_claudes_usage_command_becomes_windows_with_their_resets():
     assert datetime.fromtimestamp(windows[0]["resets_at"], ZoneInfo("Asia/Calcutta")) == datetime(
         2026, 10, 26, 17, 40, tzinfo=ZoneInfo("Asia/Calcutta"))
     assert parse_claude_usage("nothing here") == []
+
+
+@pytest.fixture
+def asks(monkeypatch):
+    """Fake CLIs that count their asks: each answer's weekly window reads as the ask's number."""
+    count = {"claude": 0, "codex": 0}
+
+    def cli(name):
+        async def ask():
+            count[name] += 1
+            await asyncio.sleep(0.01)
+            return {"available": True, "error": None, "plan": None,
+                    "windows": [{"name": "Weekly", "used_percent": count[name], "resets_at": None}]}
+        return ask
+
+    monkeypatch.setattr(plans, "_claude", cli("claude"))
+    monkeypatch.setattr(plans, "_codex", cli("codex"))
+    monkeypatch.setattr(plans, "_cache", {})
+    monkeypatch.setattr(plans, "_asking", {})
+    return count
+
+
+async def test_plans_are_asked_once_at_a_time_and_kept(asks):
+    first, second = await asyncio.gather(plans.plans(), plans.plans())  # the page and the daemon's warm-up at once
+
+    assert asks == {"claude": 1, "codex": 1} and first == second
+    assert (await plans.plans())["claude"]["windows"][0]["used_percent"] == 1  # kept: no new ask
+    assert (await plans.plans(fresh=True))["claude"]["windows"][0]["used_percent"] == 2
+
+
+async def test_a_stale_answer_comes_back_at_once_while_a_fresh_one_is_asked_for(asks):
+    await plans.plans()
+    plans._cache["claude"]["checked_at"] = time.time() - plans.TTL_S - 1
+
+    stale = await plans.plans()
+    await asyncio.sleep(0)
+
+    assert stale["claude"]["windows"][0]["used_percent"] == 1 and asks["claude"] == 2  # asked for, not waited on
+    assert (await plans.plans(fresh=True))["claude"]["windows"][0]["used_percent"] == 2  # joins that ask
+    assert asks["claude"] == 2
+
+
+async def test_a_failed_ask_keeps_the_last_good_answer(asks, monkeypatch):
+    await plans.plans()
+
+    async def broken():
+        raise RuntimeError("claude crashed")
+
+    monkeypatch.setattr(plans, "_claude", broken)
+
+    assert (await plans.plans(fresh=True))["claude"]["available"]
+    plans._cache.clear()
+    assert (await plans.plans(fresh=True))["claude"]["error"] == "claude crashed"
 
 
 @pytest.fixture

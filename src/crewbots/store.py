@@ -526,25 +526,33 @@ class Store:
         rows = self.db.execute("select pr, max(updated_at) as at from tasks where pr is not null group by pr").fetchall()
         return {r["pr"]: r["at"] for r in rows}
 
-    def usage_rows(self, since: str) -> list[dict[str, Any]]:
-        """Every turn's usage since `since`, with its task's bot and kind: what the usage page is made from."""
+    def usage_by(self, since: str) -> list[dict[str, Any]]:
+        """Fresh tokens and turns since `since`, summed by local day, bot, task kind, plan, model and effort: what the
+        usage page is made from. Summed here rather than in Python, so a year of turns comes back as a few rows."""
         rows = self.db.execute(
-            "select e.task_id, e.at, e.data, t.bot, t.kind from events e join tasks t on t.id = e.task_id"
-            " where e.kind = 'usage' and e.at >= ? order by e.id", (since,)).fetchall()
-        return [{"task_id": r["task_id"], "at": r["at"], "bot": r["bot"], "kind": r["kind"], **json.loads(r["data"])}
-                for r in rows]
+            "select date(e.at, 'localtime') as day, t.bot, t.kind, json_extract(e.data, '$.plan') as plan,"
+            " json_extract(e.data, '$.model') as model, json_extract(e.data, '$.effort') as effort,"
+            " sum(max(0, coalesce(json_extract(e.data, '$.input_tokens'), 0)"
+            " - coalesce(json_extract(e.data, '$.cached_input_tokens'), 0))"
+            " + coalesce(json_extract(e.data, '$.output_tokens'), 0)) as fresh, count(*) as turns"
+            " from events e join tasks t on t.id = e.task_id where e.kind = 'usage' and e.at >= ?"
+            " group by day, t.bot, t.kind, plan, model, effort", (since,)).fetchall()
+        return [dict(r) for r in rows]
 
-    def turn_spans(self) -> list[tuple[str, str, str]]:
-        """(task id, when a turn was asked for, when it finished), for every finished turn."""
-        rows = self.db.execute("select task_id, kind, at from events where kind in ('message', 'done') order by id").fetchall()
+    def longest_turn(self, since: str) -> tuple[str, float] | None:
+        """(task id, seconds) of the longest turn that finished since `since`, from its ask to its end."""
+        rows = self.db.execute("select task_id, kind, at from events where kind in ('message', 'done') and at >= ?"
+                               " order by id", (since,)).fetchall()
         asked: dict[str, str] = {}
-        spans = []
+        longest: tuple[str, float] | None = None
         for r in rows:
             if r["kind"] == "message":
                 asked.setdefault(r["task_id"], r["at"])
             elif r["task_id"] in asked:
-                spans.append((r["task_id"], asked.pop(r["task_id"]), r["at"]))
-        return spans
+                seconds = (datetime.fromisoformat(r["at"]) - datetime.fromisoformat(asked.pop(r["task_id"]))).total_seconds()
+                if longest is None or seconds > longest[1]:
+                    longest = (r["task_id"], seconds)
+        return longest
 
     def count_since(self, since: str) -> dict[str, int]:
         one = lambda sql, *a: self.db.execute(sql, a).fetchone()[0]  # noqa: E731

@@ -166,7 +166,8 @@ Outside Tauri, the UI runs on a built-in demo crew (`src/preview/`).
 The app works like a messaging app:
 - **Sidebar:** your conversations, most recent first, each bot with its own face, the last message and an unread
   dot, and the group chats. Above them, work that needs you (merges, questions, holds). Search filters them.
-  Collapsed, it stays as a rail of icons and faces, and its button stays where it is, beside the window's buttons.
+  Collapsed, it stays as a rail of icons and faces, and its button stays where it is, beside the window's buttons,
+  on one line with them and the headers' titles.
 - **A chat:** the bot's replies as bubbles, its tool use folded into one line, and its threads as cards that open
   beside the chat, with the thread's own conversation, its changes, its reviews and a Merge button.
 - **Profile:** beside a chat, the bot's status, routines, recent threads, the files its threads produced, and its setup.
@@ -188,10 +189,10 @@ The app works like a messaging app:
     crew uses it from the next turn. New bots start here too.
   - **Routines:** turn them on and off, run them, edit when and what (schedules as "weekdays at 9:00", or cron),
     and add new ones or the starters.
-  - **Usage:** how much of each plan is left (Claude's 5-hour session and weeks, Codex's windows) and when each
-    resets; the crew's tokens over the year as a grid of days, for Claude, Codex or both (or all of your Codex use,
-    as Codex reports it); totals, the peak day, the longest turn and streaks; Claude against Codex; the top models and
-    bots; and each bot against its budget.
+  - **Analytics:** how much of each plan is left (Claude's 5-hour session and weeks, Codex's windows) and when each
+    resets. Then the crew's own use over a week, a month, three months or a year: its tokens by day, as a row, a
+    calendar or a column a week, for Claude, Codex or both; totals, the peak day, the longest turn and streaks;
+    Claude against Codex; the top models and bots; and each bot against its budget.
   - **Settings:** start at login, the crew's folder, pausing, GitHub, and code review's local copies.
 - **Menu bar and notifications:** a bot's reply or a message in a group chat notifies you when the window isn't in
   front, and so do merges to approve, questions and holds.
@@ -229,7 +230,7 @@ src/crewbots/
   routines.py        routine files, cron schedules and starter routines
   scheduler.py       runs routines when they're due and triggers when GitHub has something new
   github.py          what the GitHub triggers read, through `gh`
-  usage.py           the crew's own use, by day, plan, model and bot, for the usage page
+  usage.py           the crew's own use, by day, plan, model and bot, for the analytics page
   plans.py           how much of each plan's limits is used, asked of the Claude and Codex CLIs
   store.py           tasks and events, in SQLite, with full-text search
   runner.py          runs tasks: sessions, worktrees, queued follow-ups, delegation and reporting back

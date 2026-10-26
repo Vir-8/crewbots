@@ -1,20 +1,5 @@
 // Generated from the crewbots API schema by `crewbots openapi --ts`. Do not edit; regenerate.
 
-export interface AccountDay {
-  date: string;
-  tokens: number;
-}
-
-/** Your whole account's activity, as the CLI reports it (Codex does). */
-export interface AccountUsage {
-  lifetime_tokens: number | null;
-  peak_daily_tokens: number | null;
-  longest_turn_sec: number | null;
-  current_streak_days: number | null;
-  longest_streak_days: number | null;
-  daily: AccountDay[];
-}
-
 export interface Avatar {
   color?: string | null;
   shape?: string | null;
@@ -340,7 +325,7 @@ export interface PlanOut {
   error: string | null;
   plan: string | null;
   windows: PlanWindow[];
-  account: AccountUsage | null;
+  checked_at: number;
 }
 
 export interface PlanWindow {

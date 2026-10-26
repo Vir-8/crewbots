@@ -241,28 +241,12 @@ class PlanWindow(BaseModel):
     resets_at: int | None  # unix time
 
 
-class AccountDay(BaseModel):
-    date: str
-    tokens: int
-
-
-class AccountUsage(BaseModel):
-    """Your whole account's activity, as the CLI reports it (Codex does)."""
-
-    lifetime_tokens: int | None
-    peak_daily_tokens: int | None
-    longest_turn_sec: int | None
-    current_streak_days: int | None
-    longest_streak_days: int | None
-    daily: list[AccountDay]
-
-
 class PlanOut(BaseModel):
     available: bool
     error: str | None
     plan: str | None
     windows: list[PlanWindow]
-    account: AccountUsage | None
+    checked_at: float  # unix time; older than a couple of minutes means a fresh answer is on its way
 
 
 class PlansOut(BaseModel):
@@ -933,7 +917,8 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
 
     @v1.get("/plans", response_model=PlansOut)
     async def get_plans(fresh: bool = False):
-        """How much of each plan's limits is used, and when they reset, asked of the CLIs."""
+        """How much of each plan's limits is used, and when they reset, asked of the CLIs. Kept answers come back at
+        once (`checked_at` says how old they are); `fresh` waits for new ones."""
         return await plans_module.plans(fresh)
 
     @v1.get("/search", response_model=list[SearchHit])
@@ -1225,10 +1210,12 @@ def serve(home: Path, port: int = DEFAULT_PORT, max_parallel: int = 4, sessions:
         with os.fdopen(fd, "w") as f:
             json.dump({"url": f"http://127.0.0.1:{port}", "token": token, "pid": os.getpid()}, f)
         ticking = asyncio.create_task(scheduler.run(), name="scheduler")
+        warming = asyncio.create_task(plans_module.plans(), name="plans")  # the CLIs take seconds: ask before the app
         try:
             yield
         finally:
             ticking.cancel()
+            warming.cancel()
             await runner.shutdown()
             info_path.unlink(missing_ok=True)
             store.close()

@@ -75,7 +75,7 @@ async function request(method: string, path: string, body?: any) {
     return ok({ bot: parts[1], working: threads.some((t) => t.status === "running"), last_active: threads[0]?.updated_at ?? null, threads, outputs });
   }
   if (method === "GET" && url.pathname === "/routines") return ok(routines());
-  if (method === "GET" && url.pathname === "/usage/summary") return ok(usageSummary(Number(url.searchParams.get("days") ?? 371)));
+  if (method === "GET" && url.pathname === "/usage/summary") return ok(usageSummary(Number(url.searchParams.get("days") ?? 30)));
   if (method === "GET" && url.pathname === "/plans") return ok(plans);
   if (method === "GET" && url.pathname === "/reviews/inbox") return ok(reviewInbox);
   if (method === "GET" && url.pathname === "/reviews/repos") return ok({ "acme/web": "~/code/acme-web" });
@@ -207,13 +207,14 @@ const reviewInbox = {
 };
 
 function usageSummary(days: number) {
-  // Quiet at first, busier lately, with weekends mostly off: enough texture for the activity grid.
+  // Quiet half a year ago, busier lately, with weekends mostly off; each day the same whatever the range.
   const daily = Array.from({ length: days }, (_, i) => {
     const date = new Date(Date.now() - (days - 1 - i) * 86400e3);
-    const ramp = Math.max(0, (i - days * 0.55) / (days * 0.45));
+    const n = Math.floor(date.getTime() / 86400e3);
+    const ramp = Math.max(0, 1 - (days - 1 - i) / 180);
     const weekend = date.getDay() === 0 || date.getDay() === 6;
-    const on = ramp > 0 && Math.abs(Math.sin(i * 12.9898) * 43758.5453) % 1 < (weekend ? 0.2 : 0.85) * ramp + 0.1;
-    const size = on ? Math.round(ramp * (180_000 + 420_000 * (Math.abs(Math.sin(i * 78.233)) % 1))) : 0;
+    const on = ramp > 0 && Math.abs(Math.sin(n * 12.9898) * 43758.5453) % 1 < (weekend ? 0.2 : 0.85) * ramp + 0.1;
+    const size = on ? Math.round(ramp * (180_000 + 420_000 * (Math.abs(Math.sin(n * 78.233) * 9973) % 1))) : 0;
     return { date: date.toISOString().slice(0, 10), claude: Math.round(size * 0.45), codex: Math.round(size * 0.55) };
   });
   const totals = { claude: daily.reduce((a, d) => a + d.claude, 0), codex: daily.reduce((a, d) => a + d.codex, 0) };
@@ -241,7 +242,7 @@ function usageSummary(days: number) {
 
 const plans = {
   claude: {
-    available: true, error: null, plan: "subscription", account: null,
+    available: true, error: null, plan: "subscription", checked_at: Date.now() / 1000,
     windows: [
       { name: "5-hour session", used_percent: 37, resets_at: demo.resetsAt },
       { name: "Weekly", used_percent: 12, resets_at: demo.resetsAt + 3 * 86400 },
@@ -249,15 +250,11 @@ const plans = {
     ],
   },
   codex: {
-    available: true, error: null, plan: "pro",
+    available: true, error: null, plan: "prolite", checked_at: Date.now() / 1000,
     windows: [
       { name: "5-hour", used_percent: 84, resets_at: demo.resetsAt - 3600 },
       { name: "Weekly", used_percent: 11, resets_at: demo.resetsAt + 5 * 86400 },
     ],
-    account: {
-      lifetime_tokens: 21_400_000_000, peak_daily_tokens: 610_000_000, longest_turn_sec: 9_120, current_streak_days: 9, longest_streak_days: 41,
-      daily: Array.from({ length: 371 }, (_, i) => ({ date: new Date(Date.now() - (370 - i) * 86400e3).toISOString().slice(0, 10), tokens: Math.round(Math.max(0, Math.sin(i / 9) + 0.4) * 60_000_000) })),
-    },
   },
 };
 

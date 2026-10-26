@@ -8,7 +8,7 @@ import { CodeReview } from "./pages/CodeReview";
 import { CrewBots } from "./pages/CrewBots";
 import { Routines } from "./pages/Routines";
 import { Settings } from "./pages/Settings";
-import { Usage } from "./pages/Usage";
+import { Analytics } from "./pages/Analytics";
 import type { Crew } from "./state";
 import { useCrew } from "./state";
 import type { ConnectionStatus, Task } from "./types";
@@ -100,8 +100,8 @@ export function App() {
           <CrewBots crew={crew} editing={editing} onEdit={setEditing} onChat={(bot) => setCurrent(`bot:${bot}`)} />
         ) : current === "page:routines" ? (
           <Routines crew={crew} onOpen={openTask} />
-        ) : current === "page:usage" ? (
-          <Usage crew={crew} />
+        ) : current === "page:analytics" ? (
+          <Analytics crew={crew} />
         ) : current === "page:settings" ? (
           <Settings crew={crew} />
         ) : current === "review" ? (

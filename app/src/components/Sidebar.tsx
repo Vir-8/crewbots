@@ -25,7 +25,7 @@ const NEED_ICON: Record<InboxItem["reason"], "merge" | "question" | "pause" | "a
 const PAGES: [string, string, "users" | "repeat" | "chart" | "settings"][] = [
   ["page:crew", "Crew", "users"],
   ["page:routines", "Routines", "repeat"],
-  ["page:usage", "Usage", "chart"],
+  ["page:analytics", "Analytics", "chart"],
   ["page:settings", "Settings", "settings"],
 ];
 

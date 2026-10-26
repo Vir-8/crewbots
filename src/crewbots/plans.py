@@ -1,8 +1,9 @@
 """Where your Claude and Codex plans stand: how much of each limit is used, and when it resets.
 
 Asked of the CLIs themselves, without running a model: Claude Code's `/usage` (a local command that prints the
-current session's and week's limits), and Codex's app-server (`account/rateLimits/read`, and `account/usage/read`
-for your whole Codex account's activity). Kept for a couple of minutes between asks.
+current session's and week's limits), and Codex's app-server (`account/rateLimits/read`). Each CLI takes a few
+seconds to start, so answers are kept: the daemon asks once when it starts, an answer older than a couple of minutes
+is still served while a fresh one is asked for behind it, and only one ask per CLI runs at a time.
 """
 
 import asyncio
@@ -12,6 +13,7 @@ import os
 import re
 import shutil
 import signal
+import tempfile
 import time
 from datetime import datetime, timedelta
 from typing import Any
@@ -19,23 +21,43 @@ from zoneinfo import ZoneInfo
 
 TTL_S = 120.0
 USAGE_LINE = re.compile(r"^Current ([^:]+):\s*(\d+(?:\.\d+)?)% used(?:\s*·\s*resets (.+?)(?:\s*\(([^)]+)\))?)?\s*$")
-_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+_cache: dict[str, dict[str, Any]] = {}  # each plan's last good answer, with `checked_at` (unix time)
+_asking: dict[str, asyncio.Task] = {}
 
 
 async def plans(fresh: bool = False) -> dict[str, Any]:
-    async def one(name: str, ask) -> dict[str, Any]:
-        hit = _cache.get(name)
-        if hit and not fresh and time.monotonic() - hit[0] < TTL_S:
-            return hit[1]
-        try:
-            found = await asyncio.wait_for(ask(), 60)
-        except Exception as e:
-            return {"available": False, "error": str(e) or type(e).__name__, "plan": None, "windows": [], "account": None}
-        _cache[name] = (time.monotonic(), found)
-        return found
+    """Each plan's limits. Kept answers come back at once, and one older than `TTL_S` is refreshed behind them;
+    `fresh` waits for a new answer instead. A plan never answered yet is waited for."""
+    async def one(name: str) -> dict[str, Any]:
+        kept = _cache.get(name)
+        if kept and not fresh:
+            if time.time() - kept["checked_at"] >= TTL_S:
+                _ask(name)
+            return kept
+        return await asyncio.shield(_ask(name))
 
-    claude, codex = await asyncio.gather(one("claude", _claude), one("codex", _codex))
+    claude, codex = await asyncio.gather(one("claude"), one("codex"))
     return {"claude": claude, "codex": codex}
+
+
+def _ask(name: str) -> asyncio.Task:
+    """The ask under way for `name`, or a new one. A failed ask leaves the last good answer in place."""
+    if name in _asking:
+        return _asking[name]
+
+    async def ask() -> dict[str, Any]:
+        try:
+            found = await asyncio.wait_for((_claude if name == "claude" else _codex)(), 60)
+        except Exception as e:
+            return _cache.get(name) or {"available": False, "error": str(e) or type(e).__name__, "plan": None,
+                                        "windows": [], "checked_at": time.time()}
+        finally:
+            _asking.pop(name, None)
+        _cache[name] = found | {"checked_at": time.time()}
+        return _cache[name]
+
+    _asking[name] = asyncio.create_task(ask(), name=f"plans:{name}")
+    return _asking[name]
 
 
 async def _claude() -> dict[str, Any]:
@@ -43,12 +65,14 @@ async def _claude() -> dict[str, Any]:
     if not cli:
         raise RuntimeError("Claude Code isn't installed")
     env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}  # the subscription's limits, not an API key's
-    process = await asyncio.create_subprocess_exec(cli, "-p", "/usage", stdout=asyncio.subprocess.PIPE,
-                                                   stderr=asyncio.subprocess.DEVNULL, stdin=asyncio.subprocess.DEVNULL,
-                                                   env=env)
+    # Without MCP servers, Chrome or a saved session, and away from any project's settings, it starts in about two
+    # thirds of the time. `--bare` would be quicker still, but it never reads the sign-in, so it has no limits to show.
+    process = await asyncio.create_subprocess_exec(
+        cli, "-p", "/usage", "--strict-mcp-config", "--no-chrome", "--no-session-persistence",
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, stdin=asyncio.subprocess.DEVNULL, env=env,
+        cwd=tempfile.gettempdir())
     out, _ = await process.communicate()
-    return {"available": True, "error": None, "plan": "subscription", "windows": parse_claude_usage(out.decode()),
-            "account": None}
+    return {"available": True, "error": None, "plan": "subscription", "windows": parse_claude_usage(out.decode())}
 
 
 def parse_claude_usage(text: str, now: datetime | None = None) -> list[dict[str, Any]]:
@@ -119,10 +143,6 @@ async def _codex() -> dict[str, Any]:
                                     "capabilities": {"experimentalApi": True, "requestAttestation": False}})
         process.stdin.write(b'{"jsonrpc": "2.0", "method": "initialized"}\n')
         limits = await ask(2, "account/rateLimits/read", None)
-        try:
-            usage = await ask(3, "account/usage/read", {})
-        except RuntimeError:
-            usage = {}
     finally:
         with contextlib.suppress(ProcessLookupError):
             os.killpg(process.pid, signal.SIGKILL)
@@ -135,11 +155,4 @@ async def _codex() -> dict[str, Any]:
             minutes = w.get("windowDurationMins") or 0
             name = (f"{minutes // 60}-hour" if minutes < 1440 else "Weekly" if minutes == 10080 else f"{minutes // 1440}-day")
             windows.append({"name": name, "used_percent": float(w["usedPercent"]), "resets_at": w.get("resetsAt")})
-    summary = usage.get("summary") or {}
-    account = {
-        "lifetime_tokens": summary.get("lifetimeTokens"), "peak_daily_tokens": summary.get("peakDailyTokens"),
-        "longest_turn_sec": summary.get("longestRunningTurnSec"), "current_streak_days": summary.get("currentStreakDays"),
-        "longest_streak_days": summary.get("longestStreakDays"),
-        "daily": [{"date": d["startDate"], "tokens": d.get("tokens", 0)} for d in usage.get("dailyUsageBuckets") or []],
-    } if summary else None
-    return {"available": True, "error": None, "plan": snapshot.get("planType"), "windows": windows, "account": account}
+    return {"available": True, "error": None, "plan": snapshot.get("planType"), "windows": windows}

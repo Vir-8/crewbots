@@ -29,6 +29,11 @@
   --heat-3: #2a78d6;
   --heat-4: #5598e7;
   --heat-5: #9ec5f4;
+  --heat-ink-1: #ffffff;
+  --heat-ink-2: #ffffff;
+  --heat-ink-3: #ffffff;
+  --heat-ink-4: #0b1b33;
+  --heat-ink-5: #0b1b33;
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
   color-scheme: dark;
@@ -60,6 +65,11 @@
     --heat-3: #5598e7;
     --heat-4: #2a78d6;
     --heat-5: #1c5cab;
+    --heat-ink-1: #0b1b33;
+    --heat-ink-2: #0b1b33;
+    --heat-ink-3: #0b1b33;
+    --heat-ink-4: #ffffff;
+    --heat-ink-5: #ffffff;
     color-scheme: light;
   }
 }
@@ -378,8 +388,10 @@ select {
   border-right: 1px solid var(--line-soft);
 }
 
+/* As tall as the headers beside it: the window's buttons, the sidebar button and the headers' titles all sit on its
+ * centre line (the buttons are moved there by trafficLightPosition in tauri.conf.json). */
 .sidebar-drag {
-  height: 46px;
+  height: 56px;
   flex: none;
   display: flex;
   justify-content: flex-end;
@@ -391,14 +403,14 @@ select {
 }
 
 .app.side-hidden {
-  --side-w: 72px;
+  --side-w: 80px;
 }
 
 /* Beside the window's buttons in both states: the sidebar grows and shrinks under it, it doesn't move. */
 .side-toggle {
   position: fixed;
-  top: 9px;
-  left: 82px;
+  top: 14px;
+  left: 86px;
   z-index: 12;
   color: var(--faint);
 }
@@ -2905,29 +2917,11 @@ button.chat-head-who:hover {
   color: var(--faint);
 }
 
-.heatmap-wrap {
-  overflow-x: auto;
-  padding-bottom: 4px;
-}
-
-.heatmap {
-  display: flex;
-  gap: 3px;
-  width: max-content;
-  min-width: 100%;
-  justify-content: flex-end;
-}
-
-.heat-col {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  position: relative;
-  padding-bottom: 18px;
-}
+/* Token activity: a week as a row of days, a month as a calendar, longer as a column a week */
 
 .heat-cell {
   display: block;
+  flex: none;
   width: 11px;
   height: 11px;
   border-radius: 3px;
@@ -2938,18 +2932,118 @@ button.chat-head-who:hover {
   background: none;
 }
 
-.heat-cell.on {
-  outline: 1.5px solid var(--text);
-  outline-offset: 1px;
+/* Drawn inside the square, so nothing around the grid can cut it off */
+.heat-cell.on,
+.day-cell.on {
+  box-shadow: inset 0 0 0 1.5px var(--text);
+}
+
+.heat-days,
+.heat-calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.heat-weekday {
+  font-size: 11px;
+  color: var(--faint);
+  padding: 0 2px 2px;
+}
+
+.day-cell {
+  height: 60px;
+  min-width: 0;
+  padding: 7px 9px;
+  border-radius: 9px;
+  background: var(--line);
+  color: var(--soft);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  font-size: 11.5px;
+  line-height: 1.3;
+}
+
+.heat-calendar .day-cell {
+  height: 46px;
+  padding: 5px 8px;
+}
+
+.day-label,
+.day-tokens {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.day-tokens {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* After the cells' own rules, so a day's shade wins */
+.heat-1 {
+  background: var(--heat-1);
+  color: var(--heat-ink-1);
+}
+
+.heat-2 {
+  background: var(--heat-2);
+  color: var(--heat-ink-2);
+}
+
+.heat-3 {
+  background: var(--heat-3);
+  color: var(--heat-ink-3);
+}
+
+.heat-4 {
+  background: var(--heat-4);
+  color: var(--heat-ink-4);
+}
+
+.heat-5 {
+  background: var(--heat-5);
+  color: var(--heat-ink-5);
+}
+
+.heat-weeks {
+  display: flex;
+  gap: var(--gap);
+}
+
+.heat-weeks .heat-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  width: var(--cell);
+  flex: none;
+}
+
+.heat-weeks .heat-cell {
+  width: var(--cell);
+  height: var(--cell);
+  border-radius: max(2px, calc(var(--cell) / 4));
 }
 
 .heat-month {
-  position: absolute;
-  bottom: 0;
-  left: 0;
+  height: 16px;
   font-size: 11px;
   color: var(--faint);
   white-space: nowrap;
+}
+
+.heat-weeks .heat-labels {
+  width: auto;
+}
+
+.heat-daylabel {
+  height: var(--cell);
+  font-size: 10px;
+  line-height: var(--cell);
+  color: var(--faint);
 }
 
 .heat-foot {
@@ -2957,7 +3051,7 @@ button.chat-head-who:hover {
   align-items: center;
   gap: 10px;
   min-height: 20px;
-  margin-top: 4px;
+  margin-top: 8px;
 }
 
 .heat-legend {
@@ -3644,7 +3738,7 @@ button.chat-head-who:hover {
 .app.side-hidden .chat-head,
 .app.side-hidden .page-head,
 .app.side-hidden .topbar {
-  padding-left: 54px;
+  padding-left: 48px;
 }
 
 /* A bot's chat before its first message */
