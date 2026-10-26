@@ -7,12 +7,16 @@
 - A bot reaches only the MCP servers its role card grants, plus crewbots' own.
 - Shell commands are confined by the OS (each CLI's sandbox) to the task's folder and a temp folder: a private one on
   Codex. Claude's sandbox also allows /tmp, which it needs for its own temp folder. On Codex every request to leave the
-  sandbox, for the network or anything else, is refused.
+  sandbox is refused.
+- The network is off for shell commands, unless the role card says `network: true` (any host) or lists the hosts.
+  Claude's sandbox asks for each new host, and the list answers. Codex's sandbox only switches the network on or off,
+  so a Codex bot takes `network: true` or nothing.
 
 Claude asks through `can_use_tool` (`check_tool`); Codex asks through its approval requests (`check_command`,
 `check_write`). Each refusal is kept, with its reason, so the backend can show it in the transcript.
 """
 
+import fnmatch
 import os
 import re
 from pathlib import Path
@@ -30,15 +34,16 @@ OUTWARD = re.compile(
 )
 READ_ONLY = "this bot is read-only (its role card says access: read_only)"
 USERS_TO_DO = "pushing, merging, publishing and rewriting history are the user's to do (team/rules.md)"
-NO_NETWORK = "network access outside the sandbox isn't something a crew bot can grant itself"
+NO_NETWORK = "this bot has no network access; its role card can give it some with network: true, or a list of hosts"
 STAY_IN_SANDBOX = "commands run inside this bot's sandbox, and stepping outside it isn't something a bot can grant itself"
 
 
 class Policy:
-    def __init__(self, access: Access, cwd: Path, granted_servers: set[str]):
+    def __init__(self, access: Access, cwd: Path, granted_servers: set[str], network: bool | tuple[str, ...] = False):
         self.access = access
         self.cwd = Path(cwd).resolve()
         self.granted = granted_servers
+        self.network = network
         self._refusals: list[str] = []
 
     # Claude: one decision per tool call.
@@ -56,6 +61,8 @@ class Policy:
             return self.check_write(args.get("file_path") or args.get("notebook_path") or "")
         if name == "Bash":
             return self.check_command(str(args.get("command", "")), sandboxed=False)
+        if name == "SandboxNetworkAccess":  # the sandbox asking for a host a command wants to reach
+            return self.check_network(str(args.get("host", "")))
         return None
 
     # Codex, and the checks Claude's tool calls come down to.
@@ -67,6 +74,15 @@ class Policy:
         if OUTWARD.search(command):
             return USERS_TO_DO
         return None
+
+    def check_network(self, host: str) -> str | None:
+        if self.network is True or self.access is Access.FULL:
+            return None
+        if not self.network:
+            return NO_NETWORK
+        if any(fnmatch.fnmatch(host.lower(), pattern.lower()) for pattern in self.network):
+            return None
+        return f"{host} isn't one of the hosts this bot's role card allows ({', '.join(self.network)})"
 
     def check_write(self, path: str) -> str | None:
         if self.access is Access.READ_ONLY:

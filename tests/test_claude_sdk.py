@@ -83,6 +83,20 @@ def test_only_granted_mcp_servers(worktree):
     assert "isn't granted" in policy.check_tool("mcp__kite__place_order", {})
 
 
+def test_the_network_is_off_unless_the_role_card_opens_it(worktree):
+    # Claude's sandbox asks for each host a command reaches, as a SandboxNetworkAccess tool call.
+    def asks(network, host):
+        return ClaudePolicy(Access.WORKSPACE_WRITE, worktree, set(), network=network).check_tool(
+            "SandboxNetworkAccess", {"host": host})
+
+    assert "no network access" in asks(False, "pypi.org")
+    assert asks(True, "anything.example") is None
+    hosts = ("pypi.org", "files.pythonhosted.org", "*.npmjs.org")
+    assert asks(hosts, "pypi.org") is None and asks(hosts, "registry.npmjs.org") is None
+    assert "isn't one of the hosts" in asks(hosts, "evil.example")
+    assert asks(False, "x") is not None and ClaudePolicy(Access.FULL, worktree, set()).check_network("x") is None
+
+
 async def test_a_refusal_is_reported_and_tells_claude_why(worktree):
     policy = ClaudePolicy(Access.READ_ONLY, worktree, set())
 

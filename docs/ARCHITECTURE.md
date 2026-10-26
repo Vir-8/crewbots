@@ -69,6 +69,8 @@ Worktrees keep bots from colliding, not from misbehaving. A bot reading a hostil
    - Writing bots write only in their task's folder.
    - No bot pushes, merges, publishes or rewrites history.
    - Bots reach only the MCP servers their role card grants.
+   - Shell commands reach the network only as the role card says: not at all (the default), any host
+     (`network: true`), or a list of hosts.
 
    How each backend enforces it:
    - **Claude:** every tool call goes through `can_use_tool`. Writing bots' shell commands run in Claude Code's OS sandbox, with no opting out, so they can't write outside the folder.
@@ -77,6 +79,10 @@ Worktrees keep bots from colliding, not from misbehaving. A bot reading a hostil
      - a shell write inside the folder works
      - a write to the home folder is blocked by the OS
      - `git push` is refused or blocked
+   - **Network:** Claude's sandbox asks for each new host a command reaches, as a `SandboxNetworkAccess` tool call, and
+     the policy answers from the role card, so a list of hosts works. Codex's sandbox has the network on or off for
+     the whole run (`sandbox_workspace_write.network_access`), so a Codex card with a list is refused when the crew
+     loads, rather than quietly given every host. Checked live on both: off, on, and Claude keeping to a list.
    - **Remaining difference:** Claude's sandbox allows `/tmp`, which it needs for its own temp folder.
 3. **Separate checkouts.** Every writing task works in its own worktree, and the user's checkout is only ever touched by the user's merge.
 4. **The user for anything irreversible.** Merges, pushes, publishing and anything outside the crew need you, as team/rules.md says, and the harness enforces it.
@@ -241,6 +247,11 @@ Each step leaves the system working.
 - Accepting a Codex approval request runs that command **outside the sandbox**. Under the `untrusted` approval policy, accepting a harmless command let it write into the home folder. So crewbots never accepts one: commands stay sandboxed, and an approval request is answered as what it really is, a request to step outside.
 - Codex's config no longer accepts `approval_policy = "untrusted"`, though its protocol schema and its threads still do.
 - `codex mcp list` checks HTTP servers' auth over the network. It takes anywhere from 5s to well past 30s, and occasionally hangs. The list is now saved with the config and plugin timestamps it was taken at, and reused while they're unchanged, so Codex is only asked again after a change.
+- Claude Code's sandbox asks for network access one host at a time through `can_use_tool`, as a tool named
+  `SandboxNetworkAccess`. The policy allowed tools it didn't know, so until the `network` setting, Claude's writing
+  bots could reach any host while Codex's could reach none.
+- Codex can approve one host at a time only through its experimental `network_proxy` feature, which is off by
+  default. Worth revisiting once it's stable, for host lists on Codex too.
 - Claude Code's sandbox points `TMPDIR` at `/tmp/claude` without creating it, so tools that need a temp folder fail until crewbots creates it.
 
 ## Still open

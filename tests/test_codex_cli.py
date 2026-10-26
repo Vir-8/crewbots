@@ -84,6 +84,17 @@ def test_sandbox_goes_through_config_so_resume_works_too():
     assert argv[-1] == "-"
 
 
+def test_a_writing_bot_gets_the_network_only_when_its_card_says_so():
+    def argv(network, access=Access.WORKSPACE_WRITE):
+        return CodexExec(isolate=False).argv(RunSpec(prompt="x", cwd=".", access=access, network=network))
+
+    assert "sandbox_workspace_write.network_access=true" in argv(True)
+    assert "sandbox_workspace_write.network_access=true" not in argv(False)
+    assert "sandbox_workspace_write.network_access=true" not in argv(True, Access.READ_ONLY)
+    with pytest.raises(ValueError, match="can't limit the network to some hosts"):
+        argv(("pypi.org",))
+
+
 def test_full_access_bypasses_the_sandbox():
     argv = CodexExec(isolate=False).argv(RunSpec(prompt="x", cwd=".", access=Access.FULL))
 

@@ -20,7 +20,7 @@ from crewbots.memory import MEMORY_GUIDE, Memory
 DEFAULT_HOME = Path.home() / ".crewbots" / "crew"
 CARD_FIELDS = {
     "name", "title", "description", "backend", "model", "access", "workspace", "worktree", "timeout", "mcp",
-    "can_delegate", "skills", "budget",
+    "can_delegate", "skills", "budget", "network",
 }
 BUDGET_WINDOWS = {"day": timedelta(days=1), "week": timedelta(days=7)}
 
@@ -81,6 +81,7 @@ class Bot:
     can_delegate: bool = False  # only coordinators assign work; the harness refuses delegation from anyone else
     skills: tuple[str, ...] = ()  # names from the crew's skills/ folder, or ("all",)
     budget: Budget | None = None
+    network: bool | tuple[str, ...] = False  # for its shell commands: none, any host, or these hosts
 
 
 @dataclass(frozen=True)
@@ -242,6 +243,7 @@ def parse_card(text: str, default_name: str, source: Path | str = "<card>") -> B
         can_delegate=bool(meta.get("can_delegate", False)),
         skills=_skill_names(meta.get("skills"), source),
         budget=_budget(meta.get("budget"), source),
+        network=_network(meta.get("network", False), access, backend, source),
     )
 
 
@@ -267,6 +269,21 @@ def _frontmatter(text: str, source: Path | str) -> tuple[dict[str, Any], str]:
     if not isinstance(meta, dict):
         raise CrewError(f"{source}: frontmatter must be a mapping")
     return meta, body.lstrip("\n")
+
+
+def _network(raw: Any, access: Access, backend: str, source: Path | str) -> bool | tuple[str, ...]:
+    if raw is False or raw is None or raw == []:
+        return False
+    if access is Access.READ_ONLY:
+        raise CrewError(f"{source}: network is for a writing bot's shell commands; this bot is read-only")
+    if raw is True:
+        return True
+    if not isinstance(raw, list) or not all(isinstance(h, str) and h.strip() for h in raw):
+        raise CrewError(f"{source}: network is true, or a list of hosts such as [pypi.org, \"*.npmjs.org\"]")
+    if backend.startswith("codex"):
+        raise CrewError(f"{source}: Codex's sandbox can't keep to a list of hosts; give this bot network: true, or run "
+                        "it on Claude")
+    return tuple(h.strip() for h in raw)
 
 
 def _budget(raw: Any, source: Path | str) -> Budget | None:

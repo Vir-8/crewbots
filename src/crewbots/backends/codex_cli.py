@@ -56,7 +56,7 @@ class CodexExec:
         if spec.access is Access.FULL:
             args.append("--dangerously-bypass-approvals-and-sandbox")
         else:
-            args += ["-c", f'sandbox_mode="{SANDBOX[spec.access]}"']
+            args += ["-c", f'sandbox_mode="{SANDBOX[spec.access]}"', *network_overrides(spec)]
         args += self.config_overrides(spec)
         if spec.model:
             args += ["--model", spec.model]
@@ -193,3 +193,12 @@ def _mcp_overrides(name: str, server: McpServer) -> list[str]:
         table = ", ".join(f"{json.dumps(k)} = {json.dumps(v)}" for k, v in server.env.items())
         args += ["-c", f"{key}.env={{{table}}}"]
     return args
+
+
+def network_overrides(spec: RunSpec) -> list[str]:
+    """Codex's sandbox has the network on or off for the whole run; it can't keep to a list of hosts."""
+    if isinstance(spec.network, tuple) and spec.network:
+        raise ValueError("Codex can't limit the network to some hosts; give this bot network: true, or run it on Claude")
+    if spec.network is True and spec.access is Access.WORKSPACE_WRITE:
+        return ["-c", "sandbox_workspace_write.network_access=true"]
+    return []

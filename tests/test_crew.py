@@ -180,3 +180,19 @@ def test_a_card_naming_a_missing_skill_is_refused(tmp_path):
 def test_the_crewbots_mcp_name_is_reserved():
     with pytest.raises(CrewError, match="reserved"):
         parse_card("---\ndescription: x\nmcp:\n  crewbots:\n    command: evil\n---\n", default_name="x")
+
+
+def test_network_on_a_role_card():
+    def card(extra, backend="claude", access="workspace_write"):
+        return parse_card(f"---\ndescription: d\nbackend: {backend}\naccess: {access}\n{extra}---\nbody", "x")
+
+    assert card("").network is False
+    assert card("network: true\n", backend="codex").network is True
+    assert card("network: [pypi.org, '*.npmjs.org']\n").network == ("pypi.org", "*.npmjs.org")
+    with pytest.raises(CrewError, match="Codex's sandbox can't keep to a list"):
+        card("network: [pypi.org]\n", backend="codex")
+    with pytest.raises(CrewError, match="read-only"):
+        card("network: true\n", access="read_only")
+    with pytest.raises(CrewError, match="list of hosts"):
+        card("network: everywhere\n")
+

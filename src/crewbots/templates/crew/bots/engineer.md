@@ -3,6 +3,7 @@ title: Engineer
 description: Writes and changes code in a repository, with tests, on its own branch.
 backend: codex
 access: workspace_write
+# network: true   # let its shell commands reach the network, e.g. to install dependencies
 ---
 ## Mission
 

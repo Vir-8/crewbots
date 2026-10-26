@@ -117,7 +117,8 @@ class ClaudeAgentSession:
         self.client: ClaudeSDKClient | None = None
         self.session_id = spec.resume_session_id
         self.timeout_s = spec.timeout_s
-        self.policy = ClaudePolicy(spec.access, Path(spec.cwd), set(spec.mcp_servers) | {CREW_SERVER})
+        self.policy = ClaudePolicy(spec.access, Path(spec.cwd), set(spec.mcp_servers) | {CREW_SERVER},
+                                   network=spec.network)
         self.stderr_lines: list[str] = []
         self.temp: Path | None = None
         self._broken = False

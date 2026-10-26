@@ -617,6 +617,7 @@ class Runner:
             mcp_servers={**bot.mcp, **({} if in_process else self._crew_tools(token, bot))},
             crew=CrewTools(self, task.id, bot.can_delegate) if in_process else None,
             read_dirs=[d for d in (self.crew.skills_dir, self.crew.memory.root) if d.is_dir()], timeout_s=bot.timeout_s,
+            network=bot.network,
         )
 
     # Sessions.

@@ -59,6 +59,9 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
     - read-only bots only read
     - writing bots only write in their task's folder
     - nobody pushes, merges or publishes
+    - writing bots' shell commands have no network unless their role card says `network: true`, or lists the hosts
+      (`network: [pypi.org, files.pythonhosted.org, "*.npmjs.org"]`). A list needs Claude: Codex's sandbox only
+      switches the network on or off.
   - **How it's enforced:** Claude asks on every tool call. Codex's sandbox is the boundary, and every request to leave it is declined. Writing bots' shell commands are OS-sandboxed on both.
   - **Claude's tools run inside the daemon.**
   - **Interrupts:** a cancelled or timed-out Claude turn is interrupted, not killed, so its session stays warm.
