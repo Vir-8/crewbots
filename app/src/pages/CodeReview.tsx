@@ -19,7 +19,7 @@ export function CodeReview({ crew, onSettings }: { crew: Crew; onSettings: () =>
   const [selected, setSelected] = useState<Selected | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const inbox = crew.reviewInbox;
-  const first = inbox?.direct[0] ?? inbox?.assigned[0] ?? inbox?.mine[0] ?? inbox?.team[0];
+  const first = inbox?.assigned[0] ?? inbox?.direct[0] ?? inbox?.team[0];
   useEffect(() => {
     if (!selected && first) setSelected({ repo: first.repo, number: first.number });
   }, [first?.repo, first?.number]);
@@ -45,8 +45,8 @@ export function CodeReview({ crew, onSettings }: { crew: Crew; onSettings: () =>
         <div className="review-list-scroll">
           {inbox?.error && <p className="error-text pad">{inbox.error}</p>}
           {!inbox && <p className="faint pad">Asking GitHub…</p>}
-          <PullGroup title="Needs your review" pulls={inbox?.direct ?? []} selected={selected} onSelect={setSelected} empty="Nothing is waiting on you." />
-          <PullGroup title="Assigned to you" pulls={inbox?.assigned ?? []} selected={selected} onSelect={setSelected} />
+          <PullGroup title="Assigned to you" pulls={inbox?.assigned ?? []} selected={selected} onSelect={setSelected} empty="Nothing is assigned to you." />
+          <PullGroup title="Asks for your review" pulls={(inbox?.direct ?? []).filter((p) => !inbox?.assigned.some((a) => a.repo === p.repo && a.number === p.number))} selected={selected} onSelect={setSelected} />
           <PullGroup title="Authored by you" pulls={inbox?.mine ?? []} selected={selected} onSelect={setSelected} />
           <PullGroup title="Your teams" pulls={inbox?.team ?? []} selected={selected} onSelect={setSelected} collapsed />
         </div>
@@ -233,7 +233,7 @@ function ReviewPane({ crew, pull, reviews, onStarted, onSettings }: { crew: Crew
       </header>
       {!pull.checkout && (
         <p className="review-hint faint">
-          Reviewers read the diff only. <a className="task-link" onClick={onSettings}>Point {pull.repo} at your copy</a> to give them the code.
+          Reviewers get the changed files from GitHub and look up the rest there as they need it. <a className="task-link" onClick={onSettings}>Point {pull.repo} at your copy</a> to give them the whole repository.
         </p>
       )}
       {error && <p className="error-text pad">{error}</p>}

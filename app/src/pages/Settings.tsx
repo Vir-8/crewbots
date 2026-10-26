@@ -22,7 +22,7 @@ export function Settings({ crew }: { crew: Crew }) {
     crew.routines?.crew_error && { what: "A role card couldn't be read, so the crew carries on as it was", why: crew.routines.crew_error },
     ...Object.entries(crew.routines?.errors ?? {}).map(([file, why]) => ({ what: `routines/${file} couldn't be read`, why })),
   ].filter(Boolean) as { what: string; why: string }[];
-  const reviewed = new Set([...(crew.reviewInbox?.direct ?? []), ...(crew.reviewInbox?.mine ?? [])].map((p) => p.repo));
+  const reviewed = new Set([...(crew.reviewInbox?.assigned ?? []), ...(crew.reviewInbox?.direct ?? [])].map((p) => p.repo));
   const suggestions = [...reviewed].filter((r) => !repos[r]);
 
   const map = async (name: string) => {
@@ -115,7 +115,7 @@ export function Settings({ crew }: { crew: Crew }) {
       <section className="page-section">
         <h2>Code review's local copies</h2>
         <p className="faint small">
-          A review reads the pull request's diff. Point a repo at your local copy, and the reviewer reads the pull request's own code too, checked out at its head beside your copy.
+          Without a local copy, reviewers get the changed files from GitHub and read anything else there as they need it. Point a repo at your copy, and they get the whole repository at the pull request's head, checked out beside your copy.
         </p>
         <div className="list">
           {Object.entries(repos).map(([name, folder]) => (

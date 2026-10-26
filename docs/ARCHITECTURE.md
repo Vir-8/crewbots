@@ -262,7 +262,11 @@ Each step leaves the system working.
   instructions (`REVIEWER`), read-only, with no roster, crew tools or memory, run once per configured model
   (`reviewers:` in `reviews.yaml`) as tasks of kind `review`, named `reviewer:<backend>:<model>:<effort>` so they can
   be resumed from the name alone. Its brief carries the description, the issues it refers to (closing references and
-  `#N` mentions), the files and diff (capped), the failing checks and the discussion so far. With a mapped local
+  `#N` mentions), the files and diff (capped), the failing checks and the discussion so far. For the code around
+  the change: with a mapped local copy, the PR's head in a worktree; without one, a snapshot folder of the changed
+  files at the head, fetched in batches through GraphQL (`object(expression: "sha:path")`), and three tools,
+  `read_file`, `list_files` and `search_code`, served in-process to Claude and over MCP (`CREWBOTS_TOOLS=review`) to
+  Codex, each fetching only what's asked. Code search covers the default branch, not the PR. With a mapped local
   copy, the PR's head is fetched (`pull/N/head`) into a detached worktree under `~/.crewbots/worktrees/reviews`, and
   the read-only reviewer works there. GitHub's inbox and pull requests are cached for a minute or two.
 - **Editing the crew** (`cards.py`): role cards and routines are rewritten from the app with the frontmatter it
@@ -287,6 +291,13 @@ Each step leaves the system working.
   The Python SDK, `claude-agent-sdk` (0.2.x), has all of these, and `cli_path` keeps it on the user's own signed-in `claude`.
 
 ## Learned polishing the app
+
+- The Intel tools here came from an Intel Homebrew in `/usr/local`, ahead of `/opt/homebrew` in PATH. Installing an
+  Apple silicon node isn't enough: `npm` is a script that runs whichever `node` comes first, so it kept installing
+  Intel binaries (codex picks its native binary by node's architecture) until the Apple silicon node came first.
+- Vite's dev server hangs at start on node 26; node 22 runs it. `vite build` works on both.
+- Claude Code reports its models only by family ("Sonnet"), with the version in the description; the app labels them
+  by version, and lists pinned versions (`claude-opus-4-8`) apart from the names that follow the newest.
 
 - macOS warned that crewbots "includes a component that will not work with a future release": the dictation helper
   was Intel. The `node` here is an x86_64 build, so `npx tauri build` ran under Rosetta and `swiftc` defaulted to

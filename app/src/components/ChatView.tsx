@@ -15,6 +15,9 @@ export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string)
   const task = chat.task_id ? crew.tasks.get(chat.task_id) : undefined;
   const bot = crew.bots.find((b) => b.name === chat.bot);
   useMarkRead(crew, chat);
+  useEffect(() => {
+    if (task) crew.ensureEvents(task.id); // the conversation, or nothing yet: either way it's known
+  }, [task?.id, crew.ensureEvents]);
 
   const threads = task ? crew.family(task.id) : [];
   const busy = threads.filter((t) => ACTIVE.includes(t.status));
@@ -39,7 +42,13 @@ export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string)
           <Icon name="profile" size={16} />
         </button>
       </header>
-      {task ? <Thread crew={crew} task={task} onOpen={props.onOpen} chat /> : <div className="thread" />}
+      {task && isEmpty(crew, task.id) ? (
+        <Welcome crew={crew} bot={chat.bot!} onSay={(text) => crew.say(chat.bot!, text)} />
+      ) : task ? (
+        <Thread crew={crew} task={task} onOpen={props.onOpen} chat />
+      ) : (
+        <div className="thread" />
+      )}
       <div className="dock">
         <Composer
           key={chat.key}
@@ -129,6 +138,35 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
         <Composer key={chat.key} placeholder={`Message ${room.title}`} mentions={room.members} onSend={(text) => crew.post(room.id, text)} autoFocus />
       </div>
     </>
+  );
+}
+
+function isEmpty(crew: Crew, taskId: string): boolean {
+  const events = crew.events.get(taskId);
+  return events !== undefined && events.length === 0;
+}
+
+/** The first time you open a bot's chat: who it is, and a few ways to start. */
+function Welcome({ crew, bot, onSay }: { crew: Crew; bot: string; onSay: (text: string) => void }) {
+  const card = crew.bots.find((b) => b.name === bot);
+  const starts = card?.can_delegate
+    ? ["What can you take off my plate?", "Plan a goal with me", "Who's on the crew, and what does each do?"]
+    : ["What do you do, and how should I work with you?", "What would you need from me to start?", "What have you worked on lately?"];
+  return (
+    <div className="welcome">
+      <Avatar name={bot} size={72} />
+      <h2>{labelOf(bot)}</h2>
+      {card?.display_name && <div className="faint">{card.title}</div>}
+      <p>{card?.description}</p>
+      <div className="welcome-starts">
+        {starts.map((text) => (
+          <button key={text} className="welcome-start" onClick={() => onSay(text)}>
+            {text}
+          </button>
+        ))}
+      </div>
+      <p className="faint small">This chat carries on from day to day. Real work opens as threads beside it.</p>
+    </div>
   );
 }
 

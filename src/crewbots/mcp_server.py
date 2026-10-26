@@ -101,10 +101,41 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
     return server
 
 
+def build_review_server(client: httpx.Client) -> MCPServer:
+    """A code reviewer's tools instead of the crew's: reading the repository on GitHub at the pull request's head."""
+    from crewbots.reviews import _review_tools
+
+    server = MCPServer("crewbots")
+    defs = {t.name: t for t in _review_tools()}
+
+    def call(path: str, body: dict[str, Any]) -> str:
+        response = client.post(path, json=body)
+        if response.status_code >= 400:
+            raise ToolError(response.json().get("detail", response.text))
+        return response.json()["text"]
+
+    @server.tool(description=defs["read_file"].description)
+    def read_file(path: str, start: int | None = None, end: int | None = None) -> str:
+        return call("/bot/review/read_file", {"path": path, "start": start, "end": end})
+
+    @server.tool(description=defs["list_files"].description)
+    def list_files(path: str = "") -> str:
+        return call("/bot/review/list_files", {"path": path})
+
+    @server.tool(description=defs["search_code"].description)
+    def search_code(query: str) -> str:
+        return call("/bot/review/search_code", {"query": query})
+
+    return server
+
+
 def main() -> None:
     url, token = os.environ["CREWBOTS_URL"], os.environ["CREWBOTS_TOKEN"]
-    client = httpx.Client(base_url=url, headers={"Authorization": f"Bearer {token}"}, timeout=30)
-    build_server(client, can_delegate=os.environ.get("CREWBOTS_DELEGATE") == "1").run("stdio")
+    client = httpx.Client(base_url=url, headers={"Authorization": f"Bearer {token}"}, timeout=60)
+    if os.environ.get("CREWBOTS_TOOLS") == "review":
+        build_review_server(client).run("stdio")
+    else:
+        build_server(client, can_delegate=os.environ.get("CREWBOTS_DELEGATE") == "1").run("stdio")
 
 
 if __name__ == "__main__":

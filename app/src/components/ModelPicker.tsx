@@ -23,13 +23,23 @@ export function ModelPicker(props: {
     <span className="model-picker">
       <select value={props.model ?? ""} onChange={(e) => props.onChange(e.target.value || null, keep(props.effort, list.find((m) => m.id === e.target.value)))}>
         <option value="">{crew.models ? `Default${defaultName(list) ? ` (${defaultName(list)})` : ""}` : "Loading models…"}</option>
-        {list
-          .filter((m) => m.id !== "default")
-          .map((m) => (
-            <option key={m.id} value={m.id} title={m.description}>
-              {m.label}
-            </option>
-          ))}
+        {groups(list).map(([title, models]) =>
+          title ? (
+            <optgroup key={title} label={title}>
+              {models.map((m) => (
+                <option key={m.id} value={m.id} title={m.description}>
+                  {m.label}
+                </option>
+              ))}
+            </optgroup>
+          ) : (
+            models.map((m) => (
+              <option key={m.id} value={m.id} title={m.description}>
+                {m.label}
+              </option>
+            ))
+          ),
+        )}
         {props.model && !list.some((m) => m.id === props.model) && <option value={props.model}>{props.model}</option>}
       </select>
       <select value={props.effort ?? ""} onChange={(e) => props.onChange(props.model ?? null, e.target.value || null)} disabled={crew.models !== null && efforts.length === 0}>
@@ -51,6 +61,18 @@ export function modelLabel(crew: Crew, backend: string, model: string | null, ef
   const found = crew.models?.[family]?.find((m) => m.id === model) ?? (model ? null : crew.models?.[family]?.find((m) => m.default));
   const name = found?.id === "default" ? defaultName([found]) || "Claude" : found?.label ?? model ?? (family === "codex" ? "Codex" : "Claude");
   return effort ? `${name} · ${EFFORT_LABEL[effort] ?? effort}` : name;
+}
+
+/** Claude's list has names that follow the newest version ("opus") and specific versions ("claude-opus-4-8"):
+ * grouped, so you can tell a model that moves with releases from one that stays put. */
+function groups(list: Model[]): [string, Model[]][] {
+  const models = list.filter((m) => m.id !== "default");
+  const pinned = models.filter((m) => m.id.startsWith("claude-"));
+  if (pinned.length === 0 || pinned.length === models.length) return [["", models]];
+  return [
+    ["Latest of each", models.filter((m) => !pinned.includes(m))],
+    ["Specific versions", pinned],
+  ];
 }
 
 /** What the CLI's default model is: Codex names it; Claude describes it ("Opus 4.6 with 1M context · …"). */

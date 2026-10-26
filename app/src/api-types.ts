@@ -176,9 +176,10 @@ export interface HandoffOut {
   at: string;
 }
 
+/** Pull requests waiting on you, which never include your own, and your own, apart. */
 export interface Inbox {
-  direct: PullSummary[];
   assigned: PullSummary[];
+  direct: PullSummary[];
   team: PullSummary[];
   mine: PullSummary[];
   error: string | null;

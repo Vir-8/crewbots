@@ -2475,7 +2475,10 @@ button.chat-head-who:hover {
 .segmented.inline {
   display: inline-flex;
   margin: 0;
-  align-self: flex-start;
+}
+
+.field .segmented.inline {
+  align-self: flex-start; /* in a form field's column, don't stretch to its width */
 }
 
 .segmented.inline button {
@@ -3199,6 +3202,8 @@ button.chat-head-who:hover {
 
 .pull-head .segmented {
   flex: none;
+  margin: 0; /* the shared control's margin and top alignment would lift it off the header's centre line */
+  align-self: center;
 }
 
 .pull-head .segmented button {
@@ -3382,4 +3387,53 @@ button.chat-head-who:hover {
 .app.side-hidden .page-head,
 .app.side-hidden .topbar {
   padding-left: 120px;
+}
+
+/* A bot's chat before its first message */
+
+.welcome {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 6px;
+  padding: 24px;
+}
+
+.welcome h2 {
+  margin: 10px 0 0;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+
+.welcome > p {
+  max-width: 460px;
+  color: var(--soft);
+  margin: 6px 0 14px;
+}
+
+.welcome-starts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-width: 560px;
+  margin-bottom: 18px;
+}
+
+.welcome-start {
+  padding: 8px 14px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--soft);
+}
+
+.welcome-start:hover {
+  background: var(--raised);
+  color: var(--text);
 }

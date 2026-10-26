@@ -38,6 +38,7 @@ export function Sidebar(props: {
     .filter((c) => !q || [c.title, c.bot, c.last?.text, ...(c.room?.members ?? [])].some((s) => s?.toLowerCase().includes(q)))
     .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   const needs = crew.inbox.filter((item) => item.task.kind === "thread");
+  const waiting = new Set([...(crew.reviewInbox?.assigned ?? []), ...(crew.reviewInbox?.direct ?? [])].map((p) => `${p.repo}#${p.number}`)).size;
 
   return (
     <aside className="sidebar">
@@ -60,7 +61,7 @@ export function Sidebar(props: {
         <button className={`side-row nav-row ${props.current === "review" ? "on" : ""}`} onClick={() => props.onChat("review")}>
           <Icon name="branch" size={15} />
           <span className="side-title">Code review</span>
-          {(crew.reviewInbox?.direct.length ?? 0) > 0 && <span className="count">{crew.reviewInbox!.direct.length}</span>}
+          {waiting > 0 && <span className="count">{waiting}</span>}
         </button>
       )}
 

@@ -30,9 +30,10 @@ from crewbots import crew as crew_module
 from crewbots import models as models_module
 from crewbots import routines as routines_module
 from crewbots.backends import codex_isolation
+from crewbots.crew_tools import ToolRefused
 from crewbots.github import GitHubError
 from crewbots.memory import MemoryError
-from crewbots.reviews import ReviewError, Reviews, reviewer_name
+from crewbots.reviews import ReviewError, Reviews, ReviewTools, reviewer_name
 from crewbots.routines import RoutineError
 from crewbots.runner import MergeError, NotAllowed, Runner, UnknownBot
 from crewbots.scheduler import Scheduler
@@ -157,8 +158,10 @@ class PullSummary(BaseModel):
 
 
 class Inbox(BaseModel):
-    direct: list[PullSummary]  # asking you for a review
+    """Pull requests waiting on you, which never include your own, and your own, apart."""
+
     assigned: list[PullSummary]  # assigned to you
+    direct: list[PullSummary]  # asking you for a review
     team: list[PullSummary]  # asking one of your teams
     mine: list[PullSummary]  # yours
     error: str | None
@@ -555,6 +558,8 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
     store = runner.store
     scheduler = scheduler or Scheduler(runner)
     reviews = reviews or Reviews(runner.crew.home)
+    runner.review_tools = lambda task: (None if not task.pr or reviews.checkout_of(task.pr.rsplit("#", 1)[0])
+                                        else ReviewTools(reviews, task.pr))
     hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
 
     def allowed(host: str | None, credential: str | None) -> bool:
@@ -788,7 +793,7 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
         try:
             inbox = await asyncio.to_thread(reviews.inbox, fresh)
         except GitHubError as e:
-            return {"direct": [], "assigned": [], "team": [], "mine": [], "error": str(e)}
+            return {"assigned": [], "direct": [], "team": [], "mine": [], "error": str(e)}
         touched = store.reviewed_prs()
         return {k: [p | {"reviewed_at": touched.get(f"{p['repo']}#{p['number']}")} for p in v] for k, v in inbox.items()} | {
             "error": None}
@@ -1025,6 +1030,18 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
     @v1.post("/bot/post", status_code=201)
     async def bot_post(request: Request, body: PostBody):
         return runner.post_from(request.state.task.id, body.text, body.room or None)
+
+    @v1.post("/bot/review/{tool}")
+    async def bot_review_tool(request: Request, tool: str, body: dict[str, Any]):
+        """A reviewer's tools, for one that reaches crewbots over MCP. It can only read its own pull request."""
+        task = request.state.task
+        if task.kind != "review" or not task.pr:
+            raise HTTPException(403, "only a code review has these tools")
+        try:
+            text = await ReviewTools(reviews, task.pr).call(tool, {k: v for k, v in body.items() if v is not None})
+        except ToolRefused as e:
+            raise HTTPException(422, str(e)) from None
+        return {"text": text}
 
     @v1.post("/bot/escalate")
     async def bot_escalate(request: Request, body: Escalation):

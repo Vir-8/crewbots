@@ -31,7 +31,7 @@ import secrets
 import subprocess
 import sys
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import aclosing
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
@@ -204,6 +204,8 @@ class Runner:
         self._recheck = asyncio.Event()  # set when a hold may be over: a release, or a reloaded crew
         self.limits: dict[str, dict[str, RateLimit]] = {}  # plan → window → the latest the CLI reported
         self._seat_depth: dict[str, int] = {}  # seat task → the depth of the room message that woke it
+        # A code review's tools (reading the repo on GitHub), given its task; None where it has your local copy.
+        self.review_tools: Callable[[Task], Any] | None = None
 
     # Commands from the user (and, through `delegate` and `message_child`, from coordinators).
 
@@ -743,9 +745,13 @@ class Runner:
                 self._set(task_id, status=next_status, result=done.final_text, turns=task.turns + 1)
 
     def _spec(self, task: Task, bot: Bot, cwd: Path, token: str, prompt: str, backend: Backend) -> RunSpec:
-        if task.kind == "review":  # its own instructions, and nothing of the crew's: no roster, no tools, no memory
+        if task.kind == "review":  # its own instructions and tools, and nothing of the crew's: no roster, no memory
+            tools = self.review_tools(task) if self.review_tools and self.api_url else None
+            in_process = tools is not None and getattr(backend, "in_process_tools", False)
+            servers = {} if tools is None or in_process else self._crew_tools(token, bot, tools="review")
             return RunSpec(prompt=prompt, cwd=cwd, access=bot.access, model=bot.model, system_prompt=bot.instructions,
-                           resume_session_id=task.session_id, timeout_s=bot.timeout_s, effort=bot.effort)
+                           resume_session_id=task.session_id, timeout_s=bot.timeout_s, effort=bot.effort,
+                           mcp_servers=servers, crew=tools if in_process else None)
         # A backend that hosts tools in-process gets the crew tools as Python; any other, as an MCP server with a token.
         in_process = getattr(backend, "in_process_tools", False) and self.api_url is not None
         return RunSpec(
@@ -871,11 +877,12 @@ class Runner:
                 "finding per problem, each with its location, the problem, and a failure scenario. A pass with "
                 "remaining risks is still a pass; list them as findings.")
 
-    def _crew_tools(self, token: str, bot: Bot) -> dict[str, McpServer]:
+    def _crew_tools(self, token: str, bot: Bot, tools: str = "crew") -> dict[str, McpServer]:
         if not self.api_url:
             return {}
         command, *args = self.mcp_command
-        env = {"CREWBOTS_URL": self.api_url, "CREWBOTS_TOKEN": token, "CREWBOTS_DELEGATE": "1" if bot.can_delegate else "0"}
+        env = {"CREWBOTS_URL": self.api_url, "CREWBOTS_TOKEN": token, "CREWBOTS_DELEGATE": "1" if bot.can_delegate else "0",
+               "CREWBOTS_TOOLS": tools}
         return {MCP_SERVER_NAME: McpServer(command=command, args=list(args), env=env)}
 
     def _cwd(self, task: Task, bot: Bot) -> Path:

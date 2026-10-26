@@ -146,6 +146,9 @@ cd app && npm install
 npm run dev
 ```
 
+The dev server needs node 22 (the long-term-support release): on node 26 Vite's dev server hangs at start, though
+`vite build` works.
+
 To install it, build the `.app` and copy it to Applications:
 
 ```bash
@@ -175,7 +178,9 @@ The app works like a messaging app:
   of its own (not one of your bots), on each model you choose in Settings, side by side: by default Claude Sonnet and
   Codex's default model, both at high effort. Each review is a tab you can keep talking to. Nothing is posted to
   GitHub. A reviewer gets the PR's description, the issues it refers to, its files and diff, the failing checks and
-  the discussion so far; point a repo at your local copy in Settings, and it reads the PR's own code too.
+  the discussion so far, plus the code: the changed files at the PR's head, fetched from GitHub, and tools to read
+  any other file there, list folders and search the repo, fetched only as it asks. Point a repo at your local copy
+  in Settings, and it gets the whole repository at the PR's head instead.
 - **The crew menu**, at the bottom left:
   - **Crew:** your bots, and an editor for each: its name and face, title and description, backend, model and
     reasoning effort (from the lists the CLIs themselves report), access, network, budget, and its role card's text. Saving rewrites the card after checking it loads, and the

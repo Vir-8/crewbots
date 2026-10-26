@@ -5,8 +5,13 @@ models you choose (`reviewers:` in `reviews.yaml`), side by side: two model fami
 review is a conversation you can carry on.
 
 What a reviewer gets: the pull request's title, description, author and branches; the issues it refers to; its files
-and diff; which checks fail; and what's been said on it so far. When the repo is mapped to your local copy (`repos:`
-in `reviews.yaml`), also the pull request's own code, checked out at its head in a worktree of crewbots'.
+and diff; which checks fail; and what's been said on it so far. Then the code around the change:
+
+- With your local copy mapped (`repos:` in `reviews.yaml`), the pull request's own code, checked out at its head in a
+  worktree of crewbots'.
+- Without one, it's read from GitHub, scoped: the changed files at the head are fetched into the reviewer's folder,
+  and it has tools to read any other file at that commit, list a folder, and search the repo's code, fetched only
+  when it asks. Nothing is cloned.
 
 Everything is read with your own `gh` login, and nothing goes back to GitHub.
 """
@@ -25,7 +30,12 @@ from crewbots.github import GitHubError, _gh
 
 REPOS_FILE = "reviews.yaml"  # in the crew's folder: {repos: {owner/name: local checkout}, reviewers: [...]}
 WORKTREES = Path.home() / ".crewbots" / "worktrees" / "reviews"
-BLANK = Path.home() / ".crewbots" / "reviews" / "no-checkout"  # where a reviewer works when there's no local copy
+SNAPSHOTS = Path.home() / ".crewbots" / "reviews"  # a pull request's changed files, fetched from GitHub
+SNAPSHOT_FILES = 200
+FILE_BYTES = 400_000  # a changed file bigger than this is left out of the snapshot; the reviewer can still read it
+FETCH_BATCH = 40  # files per GraphQL query
+READ_LINES = 400
+SEARCH_RESULTS = 20
 DEFAULT_REVIEWERS = [{"backend": "claude", "model": "sonnet", "effort": "high"},
                      {"backend": "codex", "model": None, "effort": "high"}]  # None: Codex's own default model
 MAX_REVIEWERS = 4
@@ -59,10 +69,12 @@ REPO = re.compile(r"[\w.-]+/[\w.-]+")
 
 QUERY = """
 query {
-  direct: search(query: "is:pr is:open archived:false user-review-requested:@me", type: ISSUE, first: 50) { nodes { ...pr } }
-  assigned: search(query: "is:pr is:open archived:false assignee:@me", type: ISSUE, first: 50) { nodes { ...pr } }
-  team: search(query: "is:pr is:open archived:false review-requested:@me -user-review-requested:@me", type: ISSUE,
-               first: 50) { nodes { ...pr } }
+  assigned: search(query: "is:pr is:open archived:false assignee:@me -author:@me", type: ISSUE, first: 50) {
+    nodes { ...pr } }
+  direct: search(query: "is:pr is:open archived:false user-review-requested:@me -author:@me", type: ISSUE, first: 50) {
+    nodes { ...pr } }
+  team: search(query: "is:pr is:open archived:false review-requested:@me -user-review-requested:@me -author:@me",
+               type: ISSUE, first: 50) { nodes { ...pr } }
   mine: search(query: "is:pr is:open archived:false author:@me", type: ISSUE, first: 50) { nodes { ...pr } }
 }
 fragment pr on PullRequest {
@@ -88,10 +100,11 @@ class _Cached:
 
 
 class Reviews:
-    def __init__(self, crew_home: Path, gh=_gh, worktrees: Path = WORKTREES):
+    def __init__(self, crew_home: Path, gh=_gh, worktrees: Path = WORKTREES, snapshots: Path = SNAPSHOTS):
         self.home = crew_home
         self.gh = gh
         self.worktrees = worktrees
+        self.snapshots = snapshots
         self._cache: dict[str, _Cached] = {}
 
     # What's waiting.
@@ -100,7 +113,7 @@ class Reviews:
         def load() -> dict[str, Any]:
             data = (json.loads(self.gh(["api", "graphql", "-f", f"query={QUERY}"])).get("data") or {})
             return {key: [_summary(n) for n in (data.get(key) or {}).get("nodes") or [] if n and "number" in n]
-                    for key in ("direct", "assigned", "team", "mine")}
+                    for key in ("assigned", "direct", "team", "mine")}
         return self._cached("inbox", INBOX_TTL_S, load, fresh)
 
     def pull(self, repo: str, number: int) -> dict[str, Any]:
@@ -171,16 +184,90 @@ class Reviews:
         sections.append(f"## Diff\n\n```diff\n{self.diff(repo, number, PROMPT_DIFF_CHARS)}\n```")
         where = (f"Your working directory is the pull request's own code, checked out at its head ({pr['head_sha'][:12]})."
                  if self.checkout_of(repo) else
-                 "You have the diff, not the repository: say where a finding would need the surrounding code to confirm.")
+                 f"Your working directory has the changed files as they are at the pull request's head ({pr['head_sha'][:12]}), "
+                 "not the whole repository. For anything else, use your tools: read_file and list_files read the "
+                 "repository at that commit, and search_code searches its code (on the default branch). Fetch what a "
+                 "finding depends on, such as callers, types and tests, rather than guessing.")
         sections.insert(1, where)
         return f"Review {repo}#{number}: {pr['title']}", "\n\n".join(sections)
 
     def folder(self, repo: str, number: int) -> str:
-        """Where a reviewer works: the pull request's head in a worktree of your copy, or an empty folder."""
+        """Where a reviewer works: the pull request's head in a worktree of your copy, or its changed files, fetched."""
+        pr = self.pull(repo, number)
         if self.checkout_of(repo):
-            return str(self.worktree(repo, number, self.pull(repo, number)["head_sha"]))
-        BLANK.mkdir(parents=True, exist_ok=True)
-        return str(BLANK)
+            return str(self.worktree(repo, number, pr["head_sha"]))
+        return str(self.snapshot(repo, number, pr["head_sha"], [f["path"] for f in pr["files"]]))
+
+    def snapshot(self, repo: str, number: int, sha: str, paths: list[str]) -> Path:
+        """The changed files as they are at the pull request's head, in a folder of their own: real files the reviewer
+        can read and search, without the rest of a repository that may be huge."""
+        folder = self.snapshots / f"{repo.replace('/', '-')}-{number}-{sha[:10]}"
+        if (folder / ".complete").exists():
+            return folder
+        folder.mkdir(parents=True, exist_ok=True)
+        for batch in range(0, min(len(paths), SNAPSHOT_FILES), FETCH_BATCH):
+            for path, text in self.blobs(repo, sha, paths[batch:batch + FETCH_BATCH]).items():
+                if text is None or len(text) > FILE_BYTES:
+                    continue  # removed, binary or huge: read_file still reaches it
+                target = (folder / path).resolve()
+                if folder.resolve() not in target.parents:
+                    continue  # a path that would leave the folder
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(text)
+        (folder / ".complete").write_text(sha)
+        return folder
+
+    def blobs(self, repo: str, sha: str, paths: list[str]) -> dict[str, str | None]:
+        """Several files' text at a commit, in one GraphQL query; None for one that's missing or binary."""
+        owner, name = repo.split("/")
+        fields = " ".join(f"f{i}: object(expression: {json.dumps(f'{sha}:{p}')}) {{ ... on Blob {{ text isBinary }} }}"
+                          for i, p in enumerate(paths))
+        query = f"query {{ repository(owner: {json.dumps(owner)}, name: {json.dumps(name)}) {{ {fields} }} }}"
+        data = (json.loads(self.gh(["api", "graphql", "-f", f"query={query}"])).get("data") or {}).get("repository") or {}
+        out = {}
+        for i, path in enumerate(paths):
+            blob = data.get(f"f{i}") or {}
+            out[path] = None if blob.get("isBinary") or blob.get("text") is None else blob["text"]
+        return out
+
+    # What the reviewer can ask for, when it doesn't have your copy: GitHub, at the pull request's head, read-only.
+
+    def read_file(self, repo: str, number: int, path: str, start: int = 1, end: int | None = None) -> str:
+        sha = self.pull(repo, number)["head_sha"]
+        text = self._cached(f"blob:{repo}@{sha}:{path}", DETAIL_TTL_S * 10, lambda: self.blobs(repo, sha, [path])[path])
+        if text is None:
+            return f"{path} isn't a text file at {sha[:12]} (it may not exist there, or be binary)."
+        lines = text.splitlines()
+        start = max(1, start)
+        end = min(len(lines), end or start + READ_LINES - 1, start + READ_LINES - 1)
+        shown = "\n".join(f"{n:>5}  {lines[n - 1]}" for n in range(start, end + 1))
+        more = f"\n… {len(lines) - end} more lines (ask for start={end + 1})" if end < len(lines) else ""
+        return f"{path} at {sha[:12]}, lines {start}-{end} of {len(lines)}:\n{shown}{more}"
+
+    def list_files(self, repo: str, number: int, path: str = "") -> str:
+        sha = self.pull(repo, number)["head_sha"]
+        owner, name = repo.split("/")
+        expression = json.dumps(f"{sha}:{path.strip('/')}")
+        query = (f"query {{ repository(owner: {json.dumps(owner)}, name: {json.dumps(name)}) {{ "
+                 f"object(expression: {expression}) {{ ... on Tree {{ entries {{ name type }} }} }} }} }}")
+        data = json.loads(self.gh(["api", "graphql", "-f", f"query={query}"])).get("data") or {}
+        entries = (((data.get("repository") or {}).get("object")) or {}).get("entries")
+        if entries is None:
+            return f"{path or '/'} isn't a folder at {sha[:12]}."
+        return "\n".join(f"{e['name']}{'/' if e['type'] == 'tree' else ''}" for e in entries)
+
+    def search_code(self, repo: str, query: str) -> str:
+        """GitHub's code search, in this repo. It searches the default branch, not the pull request."""
+        raw = self.gh(["api", "-X", "GET", "search/code", "-H", "Accept: application/vnd.github.text-match+json",
+                       "-f", f"q={query} repo:{repo}", "-f", f"per_page={SEARCH_RESULTS}"])
+        items = json.loads(raw).get("items") or []
+        if not items:
+            return "Nothing in the repo matches that (code search covers the default branch)."
+        out = []
+        for item in items:
+            fragments = [m.get("fragment", "").strip() for m in item.get("text_matches") or []][:2]
+            out.append(f"- {item['path']}" + "".join(f"\n    {_clip(f, 300)}" for f in fragments))
+        return "\n".join(out)
 
     def issue(self, repo: str, number: int) -> dict[str, Any] | None:
         def load() -> dict[str, Any] | None:
@@ -324,3 +411,49 @@ def _check(repo: str) -> None:
 
 
 __all__ = ["Reviews", "ReviewError", "GitHubError"]
+
+
+# The reviewer's tools, when it reads from GitHub: defined once, served in-process to Claude and over MCP to Codex.
+
+def _review_tools():
+    from crewbots.crew_tools import STRING, ToolDef, _object
+
+    return [
+        ToolDef("read_file", "Read a file of the repository as it is at the pull request's head, with line numbers. "
+                "path: from the repository's root. start, end: a range of lines, up to 400 at a time.",
+                _object({"path": STRING, "start": {"type": "integer"}, "end": {"type": "integer"}}, ["path"])),
+        ToolDef("list_files", "List a folder of the repository at the pull request's head. path: from the root; "
+                "empty for the root.", _object({"path": STRING}, [])),
+        ToolDef("search_code", "Search the repository's code on GitHub, for callers, definitions and tests. It "
+                "searches the default branch, not the pull request. query: words or an identifier.",
+                _object({"query": STRING}, ["query"])),
+    ]
+
+
+class ReviewTools:
+    """The reviewer's tools for one review, called in the daemon's own process."""
+
+    def __init__(self, reviews: Reviews, pr: str):
+        repo, number = pr.rsplit("#", 1)
+        self.reviews, self.repo, self.number = reviews, repo, int(number)
+
+    def definitions(self):
+        return _review_tools()
+
+    async def call(self, name: str, args: dict[str, Any]) -> str:
+        import asyncio
+
+        from crewbots.crew_tools import ToolRefused
+
+        try:
+            match name:
+                case "read_file":
+                    return await asyncio.to_thread(self.reviews.read_file, self.repo, self.number, str(args["path"]),
+                                                   int(args.get("start") or 1), int(args["end"]) if args.get("end") else None)
+                case "list_files":
+                    return await asyncio.to_thread(self.reviews.list_files, self.repo, self.number, str(args.get("path") or ""))
+                case "search_code":
+                    return await asyncio.to_thread(self.reviews.search_code, self.repo, str(args["query"]))
+        except (GitHubError, KeyError, ValueError) as e:
+            raise ToolRefused(f"{name} failed: {e}") from None
+        raise ToolRefused(f"{name} is not one of the reviewer's tools")

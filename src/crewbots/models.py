@@ -9,6 +9,7 @@ import asyncio
 import contextlib
 import json
 import os
+import re
 import shutil
 import signal
 import time
@@ -79,7 +80,13 @@ async def _claude() -> list[dict[str, Any]]:
         value = m.get("value")
         if not value:
             continue
-        found.append({"id": value, "label": m.get("displayName") or value, "description": m.get("description") or "",
+        # The CLI names models by family ("Sonnet") and puts the version in the description ("Sonnet 5.5 · ...").
+        description = m.get("description") or ""
+        versioned = description.split(" · ")[0].strip()
+        label = versioned if re.fullmatch(r"[A-Z][\w ]* \d+(\.\d+)*", versioned) else m.get("displayName") or value
+        if value == "default":
+            label = f"Default ({versioned})" if versioned else "Default"
+        found.append({"id": value, "label": label, "description": description,
                       "efforts": list(m.get("supportedEffortLevels") or []), "default_effort": None,
                       "default": value == "default"})  # the CLI's own pick, the same as leaving the model blank
     return found

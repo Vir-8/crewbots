@@ -32,14 +32,37 @@ DETAIL = {"number": 7, "title": "Add CSV export", "body": "Adds an export. Fixes
 DIFF = "diff --git a/export.py b/export.py\n+def export(): ...\n"
 
 
+FILES = {"export.py": "def export(): ...\n" + "".join(f"line {n}\n" for n in range(2, 600)), "logo.png": None}
+
+
 class FakeGh:
     def __init__(self):
         self.calls: list[list[str]] = []
         self.detail = dict(DETAIL)
 
+    def objects(self, query):
+        import re
+
+        if "Tree" in query:  # a folder listing
+            return {"object": {"entries": [{"name": "export.py", "type": "blob"}, {"name": "web", "type": "tree"}]}}
+        out = {}
+        for alias, expression in re.findall(r'(\w+): object\(expression: "([^"]*)"\)', query):
+            path = expression.split(":", 1)[1]
+            if path in FILES:
+                out[alias] = {"text": FILES[path], "isBinary": FILES[path] is None}
+            else:
+                out[alias] = None
+        return out
+
     def __call__(self, args):
         self.calls.append(args)
+        if args[:2] == ["api", "graphql"] and "object(expression" in args[-1]:
+            return json.dumps({"data": {"repository": self.objects(args[-1])}})
+        if args[:3] == ["api", "-X", "GET"]:
+            return json.dumps({"items": [{"path": "export.py", "text_matches": [{"fragment": "def export(): ..."}]}]})
         if args[:2] == ["api", "graphql"]:
+            searches = [line for line in args[-1].splitlines() if "search(" in line]
+            assert all("-author:@me" in s for s in searches if "mine:" not in s)  # your own only in their group
             return json.dumps({"data": {"direct": {"nodes": [NODE, {}]}, "assigned": {"nodes": [NODE]}, "team": {"nodes": []},
                                         "mine": {"nodes": []}}})
         if args[:2] == ["pr", "view"]:
@@ -129,3 +152,57 @@ def test_each_reviewer_model_reviews_side_by_side_apart_from_the_crew(tmp_path):
         assert client.put("/reviews/reviewers", json=[], headers=auth).status_code == 422
         assert store.threads_of("reviewer") == [] and store.activity("2000") == []  # not the crew's work
     store.close()
+
+
+def test_without_a_local_copy_the_reviewer_reads_github_scoped_to_what_it_needs(tmp_path):
+    gh = FakeGh()
+    gh.detail = dict(DETAIL, headRefOid="abc123", files=[{"path": "export.py", "additions": 1, "deletions": 0},
+                                                       {"path": "logo.png", "additions": 0, "deletions": 0}])
+    reviews = Reviews(tmp_path, gh=gh, snapshots=tmp_path / "snapshots")
+
+    folder = Path(reviews.folder("vir/app", 7))
+
+    assert sorted(p.name for p in folder.rglob("*") if p.is_file()) == [".complete", "export.py"]  # no binary
+    assert reviews.folder("vir/app", 7) == str(folder) and len([c for c in gh.calls if "Blob" in c[-1]]) == 1  # kept
+    _, goal = reviews.brief("vir/app", 7)
+    assert "use your tools: read_file and list_files" in goal
+    page = reviews.read_file("vir/app", 7, "export.py", 590)
+    assert page.startswith("export.py at abc123, lines 590-599 of 599") and "  599  line 599" in page
+    assert "lines 1-400 of 599" in reviews.read_file("vir/app", 7, "export.py") and "ask for start=401" in \
+        reviews.read_file("vir/app", 7, "export.py")
+    assert "isn't a text file" in reviews.read_file("vir/app", 7, "missing.py")
+    assert reviews.list_files("vir/app", 7) == "export.py\nweb/"
+    assert reviews.search_code("vir/app", "export") == "- export.py\n    def export(): ..."
+
+
+async def test_a_reviewer_gets_its_tools_on_either_backend_but_not_with_a_local_copy(tmp_path):
+    from crewbots.reviews import ReviewTools
+
+    store = Store(tmp_path / "crew.db")
+    claude, codex = FakeBackend(), FakeBackend()
+    claude.in_process_tools = True
+    runner = Runner(store, make_crew(tmp_path, bot("x")), {"claude": claude, "codex": codex},
+                    api_url="http://127.0.0.1:8765/v1")
+    reviews = Reviews(tmp_path, gh=FakeGh())
+    runner.review_tools = lambda task: ReviewTools(reviews, task.pr)
+    for name in ("reviewer:claude:sonnet:high", "reviewer:codex:default:high"):
+        runner.start_review(name, "Review it", title="Review vir/app#7", pr="vir/app#7", folder=str(tmp_path))
+    for _ in range(200):
+        if claude.specs and codex.specs:
+            break
+        await __import__("asyncio").sleep(0.01)
+
+    assert isinstance(claude.specs[0].crew, ReviewTools) and not claude.specs[0].mcp_servers
+    server = codex.specs[0].mcp_servers["crewbots"]
+    assert server.env["CREWBOTS_TOOLS"] == "review" and codex.specs[0].crew is None
+    assert "def export" in await claude.specs[0].crew.call("search_code", {"query": "export"})
+    runner.review_tools = lambda task: None  # a mapped local copy: the worktree has everything
+    runner.start_review("reviewer:codex:default:high", "Again", title="t", pr="vir/app#7", folder=str(tmp_path))
+    for _ in range(200):
+        if len(codex.specs) == 2:
+            break
+        await __import__("asyncio").sleep(0.01)
+    assert codex.specs[1].mcp_servers == {}
+    await runner.shutdown()
+    store.close()
+

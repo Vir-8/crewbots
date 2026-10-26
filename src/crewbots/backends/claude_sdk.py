@@ -78,7 +78,7 @@ class ClaudeAgent:
             name: {"type": "stdio", "command": s.command, "args": s.args, "env": s.env}
             for name, s in spec.mcp_servers.items() if name != CREW_SERVER
         }
-        if isinstance(spec.crew, CrewTools):
+        if spec.crew is not None:  # the crew's tools, or a reviewer's
             servers[CREW_SERVER] = crew_server(spec.crew)
         full = spec.access is Access.FULL
         env = {} if self.use_api_key or "ANTHROPIC_API_KEY" not in os.environ else {"ANTHROPIC_API_KEY": ""}
@@ -284,7 +284,7 @@ class SdkMapper:
         return []
 
 
-def crew_server(crew: CrewTools) -> Any:
+def crew_server(crew: "CrewTools | Any") -> Any:
     """The crew tools as an in-process MCP server: each call goes straight to the runner."""
 
     def make(definition):
