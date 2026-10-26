@@ -1,0 +1,36 @@
+"""Everything the crew has done, in one SQLite file: tasks, and every event of every run.
+
+A task is the unit of work and of conversation. It has exactly one owner bot, its own backend session (so a follow-up
+message resumes where it left off), optionally its own worktree, and a transcript made of its events. There are three
+kinds:
+
+- a **chat**: a bot's one ongoing conversation with the user, which never ends;
+- a **seat**: a bot's own conversation inside a group chat (a room), fed the room's new messages;
+- a **thread**: a piece of work, opened from a chat, a seat, a routine or another thread.
+
+A room is a group chat: the user and some bots, with one of them the lead. Its messages are kept on their own.
+
+Store's parts are by area: tasks, events, rooms, search, code review's drafts and routines; `db.py` has the database
+itself and its migrations.
+"""
+
+from pathlib import Path
+
+from crewbots.store.db import Connection, migrate
+from crewbots.store.drafts import Drafts
+from crewbots.store.events import Events
+from crewbots.store.rooms import Rooms
+from crewbots.store.routines import Routines
+from crewbots.store.search import Search
+from crewbots.store.tasks import Tasks
+
+
+class Store(Tasks, Events, Rooms, Search, Drafts, Routines):
+    def __init__(self, path: Path | str):
+        self.db = Connection(path)
+        self.db.execute("pragma journal_mode=wal")
+        self.db.execute("pragma foreign_keys=on")
+        migrate(self.db, self._index_history)
+
+    def close(self) -> None:
+        self.db.close()

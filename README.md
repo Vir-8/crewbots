@@ -296,7 +296,8 @@ src/crewbots/
   github.py          what the GitHub triggers read, through `gh`
   usage.py           the crew's own use, by day, plan, model and bot, for the analytics page
   plans.py           how much of each plan's limits is used, asked of the Claude and Codex CLIs
-  store.py           tasks and events, in SQLite, with full-text search
+  store/             tasks and events, in SQLite, with full-text search: a part per area (tasks, events, rooms,
+                     search, code review's drafts, routines), and db.py with the layout and numbered migrations
   runner/            runs tasks: core.py (turns, retries) with sessions, rooms, delegation, reviews, work (handoffs,
                      merges, notes) and holds (budgets, pausing, restarting)
   api/               the daemon: HTTP + WebSocket, user and run tokens, host checks

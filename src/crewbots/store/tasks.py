@@ -1,0 +1,181 @@
+"""Tasks: making and reading them, their tree, their handoffs and verdicts, and the turns under way."""
+
+import json
+import uuid
+from typing import Any
+
+from crewbots.store.records import Handoff, Review, Status, Task, Verdict, _now, _review, _task
+
+TITLE_CHARS = 80
+
+# A task and everything it delegated, however deep: the ids, for `id in (...)`.
+TREE = ("with recursive tree(id) as (select ? union select t.id from tasks t join tree on t.parent_id = tree.id)"
+        " select id from tree")
+
+
+class Tasks:
+    """The part of Store for tasks, their tree, handoffs and verdicts, and turns under way."""
+
+    def create_task(
+        self, bot: str, goal: str, *, created_by: str = "user", parent_id: str | None = None, workspace: str | None = None,
+        review_of: str | None = None, review_version: int | None = None, routine: str | None = None,
+        budget: int | None = None, title: str | None = None, kind: str = "thread", room_id: str | None = None,
+        status: "Status | None" = None, pr: str | None = None,
+    ) -> Task:
+        task_id = f"t_{uuid.uuid4().hex[:10]}"
+        now = _now()
+        first_line = title or (goal.strip().splitlines()[0] if goal.strip() else "(empty)")
+        title = first_line if len(first_line) <= TITLE_CHARS else first_line[: TITLE_CHARS - 1] + "…"
+        self.db.execute(
+            "insert into tasks (id, bot, title, status, created_by, parent_id, workspace, review_of, review_version,"
+            " routine, budget, kind, room_id, pr, created_at, updated_at)"
+            " values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (task_id, bot, title, status or Status.QUEUED, created_by, parent_id, workspace, review_of, review_version,
+             routine, budget, kind, room_id, pr, now, now),
+        )
+        self.db.execute("insert into search (text, task_id, event_id, kind, at) values (?, ?, 0, 'task', ?)",
+                        (title, task_id, now))
+        return self.get_task(task_id)
+
+    def get_task(self, task_id: str) -> Task:
+        row = self.db.execute("select * from tasks where id = ?", (task_id,)).fetchone()
+        if row is None:
+            raise KeyError(task_id)
+        return _task(row)
+
+    def list_tasks(self, status: Status | None = None, bot: str | None = None, limit: int = 100) -> list[Task]:
+        where, args = [], []
+        if status:
+            where.append("status = ?")
+            args.append(status)
+        if bot:
+            where.append("bot = ?")
+            args.append(bot)
+        sql = "select * from tasks" + (" where " + " and ".join(where) if where else "")
+        rows = self.db.execute(sql + " order by created_at desc, id desc limit ?", (*args, limit)).fetchall()
+        return [_task(r) for r in rows]
+
+    def children(self, parent_id: str) -> list[Task]:
+        rows = self.db.execute("select * from tasks where parent_id = ? order by created_at, id", (parent_id,)).fetchall()
+        return [_task(r) for r in rows]
+
+    def add_handoff(self, task_id: str, from_bot: str, done: str, output: list[str], open: str, needs: str) -> Handoff:
+        now = _now()
+        cur = self.db.execute(
+            "insert into handoffs (task_id, from_bot, done, output, open, needs, at) values (?, ?, ?, ?, ?, ?, ?)",
+            (task_id, from_bot, done, json.dumps(output), open, needs, now),
+        )
+        return Handoff(id=cur.lastrowid, task_id=task_id, from_bot=from_bot, done=done, output=output, open=open,
+                       needs=needs, at=now)
+
+    def latest_handoff(self, task_id: str) -> Handoff | None:
+        row = self.db.execute("select * from handoffs where task_id = ? order by id desc limit 1", (task_id,)).fetchone()
+        if row is None:
+            return None
+        return Handoff(**{**dict(row), "output": json.loads(row["output"])})
+
+    def reviewers_of(self, work_id: str) -> list[Task]:
+        """The review tasks of a piece of work, oldest first."""
+        rows = self.db.execute("select * from tasks where review_of = ? order by created_at, id", (work_id,)).fetchall()
+        return [_task(r) for r in rows]
+
+    def add_review(self, task_id: str, work_id: str, reviewer: str, version: int, verdict: Verdict, summary: str,
+                   findings: list[dict[str, str]]) -> Review:
+        now = _now()
+        cur = self.db.execute(
+            "insert into reviews (task_id, work_id, reviewer, version, verdict, summary, findings, at)"
+            " values (?, ?, ?, ?, ?, ?, ?, ?)",
+            (task_id, work_id, reviewer, version, verdict, summary, json.dumps(findings), now),
+        )
+        return Review(id=cur.lastrowid, task_id=task_id, work_id=work_id, reviewer=reviewer, version=version,
+                      verdict=verdict, summary=summary, findings=findings, at=now)
+
+    def latest_review(self, task_id: str) -> Review | None:
+        """The verdict a review task gave, if it gave one; a later verdict replaces an earlier one."""
+        row = self.db.execute("select * from reviews where task_id = ? order by id desc limit 1", (task_id,)).fetchone()
+        return _review(row) if row else None
+
+    def update_task(self, task_id: str, **fields: Any) -> Task:
+        allowed = set(Task.__dataclass_fields__) - {"id", "bot", "created_by", "created_at", "updated_at"}
+        if bad := set(fields) - allowed:
+            raise ValueError(f"cannot update {sorted(bad)}")  # the owner, in particular, never changes here
+        fields["updated_at"] = _now()
+        assignments = ", ".join(f"{k} = ?" for k in fields)
+        cur = self.db.execute(f"update tasks set {assignments} where id = ?", (*fields.values(), task_id))
+        if cur.rowcount == 0:
+            raise KeyError(task_id)
+        return self.get_task(task_id)
+
+    def add_usage(self, task_id: str, input_tokens: int, output_tokens: int, cost_usd: float | None) -> None:
+        self.db.execute(
+            "update tasks set input_tokens = input_tokens + ?, output_tokens = output_tokens + ?,"
+            " cost_usd = cost_usd + ? where id = ?",
+            (input_tokens, output_tokens, cost_usd or 0.0, task_id),
+        )
+
+    def mark_interrupted(self) -> list[str]:
+        """On startup: anything still marked running or queued was cut off when the daemon last stopped."""
+        rows = self.db.execute("select id from tasks where status in (?, ?, ?)",
+                               (Status.RUNNING, Status.QUEUED, Status.HELD)).fetchall()
+        for row in rows:
+            self.update_task(row["id"], status=Status.INTERRUPTED, error="the daemon stopped during this task")
+        return [r["id"] for r in rows]
+
+    def set_pending(self, task_id: str, prompt: str, resumed: bool = False) -> None:
+        self.db.execute("insert or replace into pending_turns (task_id, prompt, resumed) values (?, ?, ?)",
+                        (task_id, prompt, int(resumed)))
+
+    def pending_started(self, task_id: str) -> None:
+        self.db.execute("update pending_turns set started = 1 where task_id = ?", (task_id,))
+
+    def pending_waiting(self, task_id: str, text: str) -> None:
+        self.db.execute("update pending_turns set waiting = json_insert(waiting, '$[#]', ?) where task_id = ?",
+                        (text, task_id))
+
+    def clear_pending(self, task_id: str) -> None:
+        self.db.execute("delete from pending_turns where task_id = ?", (task_id,))
+
+    def interrupted_turns(self) -> list[dict[str, Any]]:
+        """The turns of interrupted tasks, oldest first."""
+        rows = self.db.execute(
+            "select p.* from pending_turns p join tasks t on t.id = p.task_id where t.status = ? order by t.updated_at",
+            (Status.INTERRUPTED,)).fetchall()
+        return [{**dict(r), "started": bool(r["started"]), "resumed": bool(r["resumed"]),
+                 "waiting": json.loads(r["waiting"])} for r in rows]
+
+    def work_of(self, task_id: str) -> Task:
+        """The piece of work a task belongs to: the outermost thread above it (or itself), stopping at a chat or seat.
+        A budget or a release covers that much, not a bot's whole never-ending chat."""
+        task = self.get_task(task_id)
+        while task.parent_id:
+            parent = self.get_task(task.parent_id)
+            if parent.kind != "thread":
+                break
+            task = parent
+        return task
+
+    def root_of(self, task_id: str) -> Task:
+        task = self.get_task(task_id)
+        while task.parent_id:
+            task = self.get_task(task.parent_id)
+        return task
+
+    def chat_of(self, bot: str) -> Task | None:
+        row = self.db.execute("select * from tasks where kind = 'chat' and bot = ? order by created_at limit 1",
+                              (bot,)).fetchone()
+        return _task(row) if row else None
+
+    def seat_of(self, room_id: str, bot: str) -> Task | None:
+        row = self.db.execute("select * from tasks where kind = 'seat' and room_id = ? and bot = ?",
+                              (room_id, bot)).fetchone()
+        return _task(row) if row else None
+
+    def threads_of(self, bot: str, limit: int = 50) -> list[Task]:
+        """A bot's work, newest first. Code reviews are kept apart, with their pull requests."""
+        rows = self.db.execute("select * from tasks where kind = 'thread' and pr is null and bot = ?"
+                               " order by updated_at desc limit ?", (bot, limit)).fetchall()
+        return [_task(r) for r in rows]
+
+    def tree(self, root_id: str) -> list[Task]:
+        rows = self.db.execute(f"select * from tasks where id in ({TREE}) order by created_at, id", (root_id,)).fetchall()
+        return [_task(r) for r in rows]

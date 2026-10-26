@@ -155,7 +155,8 @@ def test_an_existing_crews_history_is_indexed_on_first_open(tmp_path):
     s = Store(path)
     task = s.create_task("chief", "Ship the onboarding docs")
     s.append_event(task.id, kind="text", data={"text": "Translated into Spanish."})
-    s.db.execute("drop table search")  # as a database from before recall existed
+    s.db.execute("drop table search")  # as a database from before recall existed,
+    s.db.execute("pragma user_version = 0")  # and from before migrations were numbered
     s.close()
 
     reopened = Store(path)
