@@ -257,6 +257,12 @@ Then list skills on a role card, for example `skills: [pstack:tdd, pstack:archit
 uv run pytest -q
 ```
 
+And the app's own logic (Markdown, diffs and find, mentions, commands, the sidebar's order), with Vitest:
+
+```bash
+cd app && npm test
+```
+
 No test calls a model. Backend tests replay real CLI output (`tests/fixtures/`) through a fake CLI. Runner, delegation and API tests use an in-process fake backend whose scripted bots call the same methods the MCP tools reach.
 
 ## Layout

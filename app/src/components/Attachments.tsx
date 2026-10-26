@@ -74,6 +74,7 @@ function useSrc(id: string | undefined, known?: string): string | null {
   useEffect(() => {
     if (src || !id) return;
     api.attachment(id).then((d) => {
+      if (!d?.mime) return; // gone from the crew's folder
       const url = `data:${d.mime};base64,${d.data}`;
       shown.set(id, url);
       setSrc(url);

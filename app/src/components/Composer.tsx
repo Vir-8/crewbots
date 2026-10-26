@@ -1,19 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { bridge } from "../api";
 import { readDraft, writeDraft } from "../drafts";
+import { commandsFor, finishMention, mentionTyped } from "../typing";
 import type { Bot } from "../types";
 import { labelOf } from "./Avatar";
 import { Icon } from "./Icon";
 import { type Pending, PendingFiles, upload } from "./Attachments";
 import { StatusPanel } from "./StatusPanel";
 import { UsagePanel } from "./UsagePanel";
-
-// Commands run in the app itself, from the message box: nothing is sent to a bot. `task`: only where there's a chat
-// or thread to report on.
-const COMMANDS: { name: string; icon: "chart" | "settings"; description: string; task?: boolean }[] = [
-  { name: "status", icon: "settings", description: "This chat's model, session and context, and its plan's limits", task: true },
-  { name: "usage", icon: "chart", description: "What's left on your Claude and Codex plans" },
-];
 
 /** The one place you type, or talk: the mic dictates into it. In a group chat, typing @ suggests who to mention, and
  * anywhere, typing / offers the app's own commands. */
@@ -58,16 +52,15 @@ export function Composer(props: {
   const area = useRef<HTMLTextAreaElement>(null);
   const before = useRef(""); // what was typed before dictation started; what's heard goes after it
 
-  const typing = /(?:^|\s)@([\w-]*)$/.exec(text)?.[1];
+  const typing = mentionTyped(text);
   const suggestions = typing === undefined ? [] : (props.mentions ?? []).filter((m) => m.toLowerCase().startsWith(typing.toLowerCase()));
   const mention = (name: string) => {
-    setText(text.replace(/@([\w-]*)$/, `@${name} `));
+    setText(finishMention(text, name));
     area.current?.focus();
   };
 
   // "/" and a command's start, nothing else: Tab or Enter runs the one picked, instead of sending.
-  const slash = /^\/(\S*)$/.exec(text)?.[1];
-  const commands = slash === undefined ? [] : COMMANDS.filter((c) => c.name.startsWith(slash.toLowerCase()) && (!c.task || props.task));
+  const commands = commandsFor(text, Boolean(props.task));
   const [pick, setPick] = useState(0);
   const [panel, setPanel] = useState<string | null>(null);
   const run = (name: string) => {

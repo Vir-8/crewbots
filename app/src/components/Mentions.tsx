@@ -1,4 +1,5 @@
 import { type TextareaHTMLAttributes, useRef, useState } from "react";
+import { insertMention, mentionAt } from "../typing";
 
 type Props = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChange"> & {
   value: string;
@@ -22,15 +23,14 @@ export function MentionArea({ value, onChange, people, onKeyDown, onBlur, ...res
   const open = matches.length > 0 && !(matches.length === 1 && matches[0].toLowerCase() === query);
 
   const look = (text: string, caret: number) => {
-    const typed = /(^|[^\w`@])@([\w-]*)$/.exec(text.slice(0, caret));
-    const next = typed ? { start: caret - typed[2].length - 1, query: typed[2] } : null;
+    const next = mentionAt(text, caret);
     if (next?.start !== at?.start || next?.query !== at?.query) setPick(0);
     setAt(next);
   };
   const choose = (login: string) => {
     if (!at) return;
-    const caret = at.start + login.length + 2;
-    onChange(`${value.slice(0, at.start)}@${login} ${value.slice(at.start + 1 + at.query.length)}`);
+    const { value: next, caret } = insertMention(value, at, login);
+    onChange(next);
     setAt(null);
     requestAnimationFrame(() => box.current?.setSelectionRange(caret, caret));
   };

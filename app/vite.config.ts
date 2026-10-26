@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -7,4 +8,5 @@ export default defineConfig({
   clearScreen: false,
   server: { port: 5173, strictPort: true },
   build: { target: "safari16" }, // WKWebView on macOS
+  test: { include: ["src/**/*.test.{ts,tsx}"], environment: "node" }, // `npm test`: the UI's logic, no browser
 });

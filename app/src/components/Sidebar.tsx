@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { Crew, InboxItem } from "../state";
+import { orderChats } from "../sidebar";
 import { oneLine } from "../state";
 import type { Chat } from "../types";
 import { Avatar, GroupAvatar, labelOf } from "./Avatar";
@@ -54,9 +55,7 @@ export function Sidebar(props: {
     setSearching(false);
   }, [props.rail, searching]);
   const q = query.trim().toLowerCase();
-  const chats = [...crew.chats]
-    .filter((c) => props.rail || !q || [c.title, c.bot, c.last?.text, ...(c.room?.members ?? [])].some((s) => s?.toLowerCase().includes(q)))
-    .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  const chats = orderChats(crew.chats, query, props.rail);
   const needs = crew.inbox.filter((item) => item.task.kind === "thread");
   const waiting = crew.reviewInbox?.assigned?.length ?? 0; // assigned to you; review requests are in the list itself
 
