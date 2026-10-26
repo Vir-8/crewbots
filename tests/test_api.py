@@ -123,7 +123,8 @@ def test_the_apps_types_match_the_api():
 
 
 def test_the_crew_can_be_paused_and_resumed_over_the_api(client):
-    assert client.get("/crew", headers=AUTH).json() == {"paused": False, "running": 0, "sessions": 0}
+    assert client.get("/crew", headers=AUTH).json() == {"paused": False, "running": 0, "held": 0, "sessions": 0,
+                                                         "limits": []}
 
     assert client.post("/crew/pause", headers=AUTH).json()["paused"] is True
     task = client.post("/tasks", json={"bot": "worker", "goal": "x"}, headers=AUTH).json()

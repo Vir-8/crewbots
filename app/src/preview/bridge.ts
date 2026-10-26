@@ -49,6 +49,11 @@ async function request(method: string, path: string, body?: any) {
   if (method === "GET" && url.pathname === "/events/recent") return ok(allEvents.slice(-Number(url.searchParams.get("limit") ?? 400)));
   if (method === "GET" && url.pathname === "/events/cursor") return ok({ id: allEvents.at(-1)?.id ?? 0 });
   if (parts[0] === "bot") return { ok: false, status: 0, data: { detail: "not an app path" } };
+  if (method === "GET" && url.pathname === "/crew") return ok(crewState);
+  if (method === "GET" && url.pathname === "/routines") return ok(routines());
+  if (method === "POST" && parts[0] === "routines" && parts[2] === "run") {
+    return request("POST", "/tasks", { bot: "chief", goal: `Write the ${parts[1]} (a routine run by hand).` });
+  }
 
   if (method === "POST" && url.pathname === "/tasks") {
     const id = `t_${Math.random().toString(16).slice(2, 12)}`;
@@ -90,6 +95,12 @@ async function request(method: string, path: string, body?: any) {
     return ok(task);
   }
   if (method === "POST" && action === "cancel") return ok(update(id, { status: "cancelled" }));
+  if (method === "POST" && action === "release") {
+    say(id, "released", { goal: id });
+    update(id, { status: "running" });
+    setTimeout(() => update(id, { status: "idle" }), 1500);
+    return ok(task);
+  }
   if (method === "POST" && action === "merge") {
     say(id, "merged", { commit: "9f8e7d6c5b4a", into: task.repo ?? "~/code", forced: Boolean(body?.force) });
     return ok(update(id, { merge_state: "merged", merged_commit: "9f8e7d6c5b4a" }));
@@ -98,6 +109,30 @@ async function request(method: string, path: string, body?: any) {
 }
 
 const status: ConnectionStatus = { state: "connected", home: "design preview", ownsDaemon: false };
+
+const crewState = {
+  paused: false, running: 1, held: 1, sessions: 2,
+  limits: [{ plan: "claude", window: "five_hour", status: "limited", used_percent: 100, resets_at: demo.resetsAt }],
+};
+
+function routines() {
+  const at = (days: number, hour: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    d.setHours(hour, 0, 0, 0);
+    return d.toISOString();
+  };
+  const base = { workspace: null, repo: null, on: null, budget: null, enabled: true, last_run_at: null, last_task_id: null, skipped_at: null };
+  return {
+    routines: [
+      { ...base, name: "standup", description: "A short summary each weekday morning of what the crew did, and what needs you.", bot: "chief", when: "0 9 * * 1-5", schedule: "0 9 * * 1-5", path: "routines/standup.md", next_run_at: at(1, 9), last_run_at: at(0, 9), last_task_id: "t_stand00001", budget: 200_000 },
+      { ...base, name: "retro", description: "A Friday look back at the week.", bot: "chief", when: "0 16 * * 5", schedule: "0 16 * * 5", path: "routines/retro.md", next_run_at: at(4, 16) },
+      { ...base, name: "review-requests", description: "Drafts a review when someone asks you to review a pull request.", bot: "reviewer", when: "on github.review_requested in acme/web", schedule: null, on: "github.review_requested", repo: "acme/web", path: "routines/review-requests.md", next_run_at: null },
+    ],
+    errors: {},
+    github_error: null,
+  };
+}
 
 export const previewBridge = {
   status: async () => status,

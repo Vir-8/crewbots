@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any
 from crewbots.backends.base import Access, RunSpec, session_temp_dir
 from crewbots.backends.policy import NO_NETWORK, STAY_IN_SANDBOX, Policy
 from crewbots.backends.process import JsonlProcess
-from crewbots.events import Done, Event, Notice, SessionStarted, Text, ToolCall, ToolResult, Usage
+from crewbots.events import Done, Event, Notice, RateLimit, SessionStarted, Text, ToolCall, ToolResult, Usage
 
 if TYPE_CHECKING:
     from crewbots.backends.codex_cli import CodexCLI
@@ -239,6 +239,25 @@ class CodexSession:
                                                    "input": [{"type": "text", "text": text, "text_elements": []}]})
 
 
+CODEX_WARNING_PERCENT = 80.0  # Codex reports how much is used, not a warning; Claude warns at about this point
+
+
+def rate_limits(snapshot: dict[str, Any]) -> list[RateLimit]:
+    """Codex's plan limits: a primary window (a few hours) and a secondary one (a week), each with how much is used."""
+    events = []
+    for window in ("primary", "secondary"):
+        w = snapshot.get(window)
+        if not w or w.get("usedPercent") is None:
+            continue
+        used = float(w["usedPercent"])
+        minutes = w.get("windowDurationMins")
+        name = f"{minutes // 60}h" if minutes and minutes < 24 * 60 else f"{minutes // (24 * 60)}d" if minutes else window
+        status = "limited" if used >= 100 else "warning" if used >= CODEX_WARNING_PERCENT else "ok"
+        events.append(RateLimit(plan="codex", window=name, status=status, used_percent=round(used, 1),
+                                resets_at=w.get("resetsAt")))
+    return events
+
+
 class AppServerParser:
     """App-server notifications to crewbots events, the same events the one-shot backend gives."""
 
@@ -263,6 +282,8 @@ class AppServerParser:
             case "thread/tokenUsage/updated":
                 self._usage = (params.get("tokenUsage") or {}).get("last")
                 return []
+            case "account/rateLimits/updated":
+                return rate_limits(params.get("rateLimits") or {})
             case "error":
                 error = params.get("error") or {}
                 return [Notice(message=error.get("message", "error"))]  # failure itself comes as a failed turn

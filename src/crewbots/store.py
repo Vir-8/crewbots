@@ -44,6 +44,8 @@ create table if not exists tasks (
     merge_state   text,                        -- null, proposed (by its coordinator), or merged (by the user)
     merged_commit text,
     briefing      text,                        -- where things stood, carried into a fresh session at rollover
+    routine       text,                        -- the routine that started it, on a routine's top-level task
+    budget        integer,                     -- tokens it may use, with everything it delegates (a routine's budget)
     created_at    text not null,
     updated_at    text not null
 );
@@ -68,6 +70,19 @@ create table if not exists reviews (
     at       text not null
 );
 create index if not exists reviews_by_work on reviews(work_id, version);
+create index if not exists events_by_kind on events(kind, at);
+create table if not exists routines (
+    name         text primary key,
+    checked_at   text not null,  -- when it was last checked: a schedule runs for a time after this
+    last_run_at  text,
+    last_task_id text
+);
+create table if not exists triggered (  -- what each trigger has already started on, so it starts once
+    routine text not null,
+    key     text not null,
+    at      text not null,
+    primary key (routine, key)
+);
 create table if not exists handoffs (
     id       integer primary key autoincrement,
     task_id  text not null references tasks(id),
@@ -85,6 +100,9 @@ create virtual table search using fts5(
     text, task_id unindexed, event_id unindexed, kind unindexed, at unindexed, tokenize = 'porter unicode61'
 );
 """
+# A task and everything it delegated, however deep: the ids, for `id in (...)`.
+TREE = ("with recursive tree(id) as (select ? union select t.id from tasks t join tree on t.parent_id = tree.id)"
+        " select id from tree")
 SEARCHABLE = {"message", "text", "handoff", "review", "escalation", "merge_proposed"}
 SNIPPET_TOKENS = 18
 
@@ -96,6 +114,8 @@ MIGRATIONS = {  # columns added after a crew's database may already exist
     "merge_state": "alter table tasks add column merge_state text",
     "merged_commit": "alter table tasks add column merged_commit text",
     "briefing": "alter table tasks add column briefing text",
+    "routine": "alter table tasks add column routine text",
+    "budget": "alter table tasks add column budget integer",
 }
 
 
@@ -107,6 +127,7 @@ class Status(StrEnum):
     FAILED = "failed"
     CANCELLED = "cancelled"
     INTERRUPTED = "interrupted"  # the daemon stopped mid-run; a follow-up message resumes it
+    HELD = "held"  # its next turn waits on a budget or the plan's limit; it goes on by itself, or when released
 
 
 @dataclass(frozen=True)
@@ -135,6 +156,8 @@ class Task:
     merge_state: str | None
     merged_commit: str | None
     briefing: str | None
+    routine: str | None
+    budget: int | None
     created_at: str
     updated_at: str
 
@@ -219,16 +242,18 @@ class Store:
 
     def create_task(
         self, bot: str, goal: str, *, created_by: str = "user", parent_id: str | None = None, workspace: str | None = None,
-        review_of: str | None = None, review_version: int | None = None,
+        review_of: str | None = None, review_version: int | None = None, routine: str | None = None,
+        budget: int | None = None, title: str | None = None,
     ) -> Task:
         task_id = f"t_{uuid.uuid4().hex[:10]}"
         now = _now()
-        first_line = goal.strip().splitlines()[0] if goal.strip() else "(empty)"
+        first_line = title or (goal.strip().splitlines()[0] if goal.strip() else "(empty)")
         title = first_line if len(first_line) <= TITLE_CHARS else first_line[: TITLE_CHARS - 1] + "…"
         self.db.execute(
             "insert into tasks (id, bot, title, status, created_by, parent_id, workspace, review_of, review_version,"
-            " created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (task_id, bot, title, Status.QUEUED, created_by, parent_id, workspace, review_of, review_version, now, now),
+            " routine, budget, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (task_id, bot, title, Status.QUEUED, created_by, parent_id, workspace, review_of, review_version, routine,
+             budget, now, now),
         )
         self.db.execute("insert into search (text, task_id, event_id, kind, at) values (?, ?, 0, 'task', ?)",
                         (title, task_id, now))
@@ -312,7 +337,8 @@ class Store:
 
     def mark_interrupted(self) -> list[str]:
         """On startup: anything still marked running or queued was cut off when the daemon last stopped."""
-        rows = self.db.execute("select id from tasks where status in (?, ?)", (Status.RUNNING, Status.QUEUED)).fetchall()
+        rows = self.db.execute("select id from tasks where status in (?, ?, ?)",
+                               (Status.RUNNING, Status.QUEUED, Status.HELD)).fetchall()
         for row in rows:
             self.update_task(row["id"], status=Status.INTERRUPTED, error="the daemon stopped during this task")
         return [r["id"] for r in rows]
@@ -363,6 +389,76 @@ class Store:
                             (row["title"], row["id"], row["created_at"]))
         for row in self.db.execute("select * from events").fetchall():
             self._index(row["task_id"], row["id"], row["kind"], json.loads(row["data"]), row["at"])
+
+    # Budgets. Tokens here are the fresh ones: input the model hadn't cached, plus output. Cached input is most of a
+    # long conversation's input, and costs a plan far less.
+
+    def bot_usage(self, bot: str, since: str) -> int:
+        return self._fresh_tokens("join tasks t on t.id = e.task_id", "t.bot = ? and e.at >= ?", (bot, since))
+
+    def tree_usage(self, root_id: str) -> int:
+        """Tokens used by a task and everything it delegated, however deep."""
+        return self._fresh_tokens("", f"e.task_id in ({TREE})", (root_id,))
+
+    def root_of(self, task_id: str) -> Task:
+        task = self.get_task(task_id)
+        while task.parent_id:
+            task = self.get_task(task.parent_id)
+        return task
+
+    def _fresh_tokens(self, join: str, where: str, args: tuple[Any, ...]) -> int:
+        fresh = ("json_extract(e.data, '$.input_tokens') - coalesce(json_extract(e.data, '$.cached_input_tokens'), 0)"
+                 " + json_extract(e.data, '$.output_tokens')")
+        sql = f"select coalesce(sum({fresh}), 0) from events e {join} where e.kind = 'usage' and {where}"
+        return int(self.db.execute(sql, args).fetchone()[0])
+
+    # Routines.
+
+    def routine_state(self, name: str) -> dict[str, Any] | None:
+        row = self.db.execute("select * from routines where name = ?", (name,)).fetchone()
+        return dict(row) if row else None
+
+    def routine_checked(self, name: str, at: str) -> None:
+        self.db.execute("insert into routines (name, checked_at) values (?, ?) on conflict(name) do update set"
+                        " checked_at = excluded.checked_at", (name, at))
+
+    def routine_ran(self, name: str, at: str, task_id: str) -> None:
+        self.db.execute("insert into routines (name, checked_at, last_run_at, last_task_id) values (?, ?, ?, ?)"
+                        " on conflict(name) do update set last_run_at = excluded.last_run_at,"
+                        " last_task_id = excluded.last_task_id", (name, at, at, task_id))
+
+    def triggered(self, routine: str, keys: list[str]) -> set[str]:
+        """Which of `keys` this trigger already started on."""
+        if not keys:
+            return set()
+        rows = self.db.execute(f"select key from triggered where routine = ? and key in ({','.join('?' * len(keys))})",
+                               (routine, *keys)).fetchall()
+        return {r["key"] for r in rows}
+
+    def mark_triggered(self, routine: str, keys: list[str]) -> None:
+        now = _now()
+        self.db.executemany("insert or ignore into triggered (routine, key, at) values (?, ?, ?)",
+                            [(routine, k, now) for k in keys])
+
+    def activity(self, since: str, exclude_routine: str | None = None) -> list[Task]:
+        """Top-level tasks with anything new since `since`, oldest first, leaving out one routine's own runs."""
+        rows = self.db.execute(
+            "select * from tasks where parent_id is null and updated_at >= ? and coalesce(routine, '') != ?"
+            " order by created_at, id", (since, exclude_routine or "")).fetchall()
+        return [_task(r) for r in rows]
+
+    def tree(self, root_id: str) -> list[Task]:
+        rows = self.db.execute(f"select * from tasks where id in ({TREE}) order by created_at, id", (root_id,)).fetchall()
+        return [_task(r) for r in rows]
+
+    def events_since(self, since: str, kinds: tuple[str, ...], task_ids: list[str]) -> list[StoredEvent]:
+        if not task_ids:
+            return []
+        rows = self.db.execute(
+            f"select * from events where at >= ? and kind in ({','.join('?' * len(kinds))})"
+            f" and task_id in ({','.join('?' * len(task_ids))}) order by id", (since, *kinds, *task_ids)).fetchall()
+        return [StoredEvent(id=r["id"], task_id=r["task_id"], kind=r["kind"], data=json.loads(r["data"]), at=r["at"])
+                for r in rows]
 
     def recent_events(self, limit: int = 200, kinds: tuple[str, ...] | None = None) -> list[StoredEvent]:
         """The newest events across the crew, oldest first."""

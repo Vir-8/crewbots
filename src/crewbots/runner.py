@@ -12,6 +12,10 @@ one process per turn, resuming from the stored session id.
 Delegation: a coordinator bot creates child tasks through the crewbots MCP tools, then ends its turn. When none of its
 children are still running, their handoffs and results go back to it as one message, which starts its next turn. It
 never waits or polls. Each run gets a token that lets its MCP server act for that task only, and only while it runs.
+
+Budgets: before a turn starts, the runner checks the bot's budget, the budget of the routine run it belongs to, and
+the plan's usage limit. If any is spent, the task is held: the turn waits (holding no run slot), and goes ahead by
+itself once there's room again, or at once when the user releases it. A turn already running is never cut short.
 """
 
 import asyncio
@@ -20,9 +24,11 @@ import os
 import secrets
 import subprocess
 import sys
+import time
 from collections.abc import Iterator, Mapping
 from contextlib import aclosing
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +37,7 @@ from crewbots.backends import BACKENDS, Access, Backend, McpServer, RunSpec
 from crewbots.backends.base import Session
 from crewbots.crew import Bot, Crew
 from crewbots.crew_tools import CrewTools
-from crewbots.events import Done, Event, SessionStarted, Usage
+from crewbots.events import Done, Event, RateLimit, SessionStarted, Usage
 from crewbots.memory import CREW_SCOPE, Note
 from crewbots.store import Handoff, Review, Status, Store, Task, Verdict
 
@@ -48,6 +54,10 @@ BRIEFING_PROMPT = (
     "branches, task ids), what's open, and what comes next. Be complete but brief. Reply with only the briefing, and "
     "don't use any tools."
 )
+BUDGET_REPORT_WINDOW = timedelta(days=7)  # what `budgets` reports for a bot without a budget
+LIMIT_WINDOWS = {"five_hour": "five-hour", "seven_day": "weekly", "seven_day_opus": "weekly Opus",
+                 "seven_day_sonnet": "weekly Sonnet", "5h": "five-hour", "7d": "weekly"}
+HOLD_RECHECK_S = 60.0  # a held task looks again this often: budgets free up as old usage ages out of their window
 MCP_SERVER_NAME = "crewbots"
 MCP_COMMAND = (sys.executable, "-m", "crewbots.mcp_server")
 
@@ -179,15 +189,21 @@ class Runner:
         self._awake: subprocess.Popen[bytes] | None = None
         self._resumed = asyncio.Event()  # cleared while the crew is paused: no new turn starts
         self._resumed.set()
+        self._held: set[str] = set()  # tasks whose next turn waits on a budget or a plan limit
+        self._released: set[str] = set()  # top-level tasks the user let past their budgets, until the daemon stops
+        self._recheck = asyncio.Event()  # set when a hold may be over: a release, or a reloaded crew
+        self.limits: dict[str, dict[str, RateLimit]] = {}  # plan → window → the latest the CLI reported
 
     # Commands from the user (and, through `delegate` and `message_child`, from coordinators).
 
     def submit(self, bot: str, goal: str, *, created_by: str = "user", parent_id: str | None = None,
-               workspace: str | None = None, review_of: str | None = None, review_version: int | None = None) -> Task:
+               workspace: str | None = None, review_of: str | None = None, review_version: int | None = None,
+               routine: str | None = None, budget: int | None = None, title: str | None = None) -> Task:
         if bot not in self.crew.bots:
             raise UnknownBot(f"no bot named {bot!r}; the crew is {sorted(self.crew.bots)}")
         task = self.store.create_task(bot, goal, created_by=created_by, parent_id=parent_id, workspace=workspace,
-                                      review_of=review_of, review_version=review_version)
+                                      review_of=review_of, review_version=review_version, routine=routine,
+                                      budget=budget, title=title)
         self.bus.publish({"type": "task", "task": task.to_json()})
         self._message(task.id, created_by, goal)
         self._start(task.id, goal)
@@ -252,7 +268,95 @@ class Runner:
         self.bus.publish({"type": "crew", "crew": self.state()})
 
     def state(self) -> dict[str, Any]:
-        return {"paused": self.paused, "running": len(self._runs), "sessions": len(self._sessions)}
+        limits = [asdict(limit) for windows in self.limits.values() for limit in windows.values()]
+        return {"paused": self.paused, "running": len(self._runs) - len(self._held), "held": len(self._held),
+                "sessions": len(self._sessions), "limits": [{k: v for k, v in x.items() if k != "kind"} for x in limits]}
+
+    def reload(self, crew: Crew) -> None:
+        """Takes up edited role cards (and their budgets). Running turns carry on as they started."""
+        self.crew = crew
+        self._wake_held()
+        self.bus.publish({"type": "crew", "crew": self.state()})
+
+    # Budgets.
+
+    def release(self, task_id: str) -> Task:
+        """The user lets a held task, and the rest of its goal, go past its budgets."""
+        task = self.store.get_task(task_id)
+        root = self.store.root_of(task_id)
+        self._released.add(root.id)
+        self._record(task_id, kind="released", data={"goal": root.id})
+        self._wake_held()
+        return task
+
+    def budgets(self) -> list[dict[str, Any]]:
+        now = datetime.now(UTC)
+        rows = []
+        for bot in self.crew.bots.values():
+            window = bot.budget.window if bot.budget else BUDGET_REPORT_WINDOW
+            rows.append({"bot": bot.name, "tokens": bot.budget.tokens if bot.budget else None,
+                         "per": bot.budget.per if bot.budget else "week",
+                         "used": self.store.bot_usage(bot.name, _iso(now - window)),
+                         "held": sorted(t for t in self._held if self.store.get_task(t).bot == bot.name)})
+        return rows
+
+    def hold_reason(self, task: Task) -> str | None:
+        """Why the task's next turn has to wait, or None if it can go ahead."""
+        root = self.store.root_of(task.id)
+        bot = self.crew.bots.get(task.bot)
+        if root.id in self._released or bot is None:
+            return None
+        if bot.budget:
+            used = self.store.bot_usage(bot.name, _iso(datetime.now(UTC) - bot.budget.window))
+            if used >= bot.budget.tokens:
+                return (f"{bot.name} has used {used:,} of its {bot.budget.tokens:,} tokens for the last {bot.budget.per}. "
+                        "It goes on by itself as older use leaves that window, or when you release it.")
+        if root.budget:
+            used = self.store.tree_usage(root.id)
+            if used >= root.budget:
+                return (f"this run of the routine {root.routine!r} has used {used:,} of its {root.budget:,} tokens. "
+                        "Release it to let the run finish.")
+        plan = _plan(bot.backend)
+        for limit in self.limits.get(plan, {}).values():
+            if limit.status == "limited" and limit.resets_at and limit.resets_at > time.time():
+                resets = datetime.fromtimestamp(limit.resets_at).strftime("%a %H:%M")
+                window = LIMIT_WINDOWS.get(limit.window, limit.window.replace("_", " "))
+                return f"the {plan.title()} plan's {window} limit is reached; it resets {resets}."
+        return None
+
+    async def _within_budget(self, task_id: str) -> None:
+        held = False
+        try:
+            while reason := self.hold_reason(self.store.get_task(task_id)):
+                if not held:
+                    held = True
+                    self._held.add(task_id)
+                    self._stay_awake()  # a held task isn't work in progress
+                    self._set(task_id, status=Status.HELD)
+                    self._record(task_id, kind="held", data={"reason": reason})
+                    self.bus.publish({"type": "crew", "crew": self.state()})
+                recheck = self._recheck
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(recheck.wait(), HOLD_RECHECK_S)
+                await self._resumed.wait()
+        finally:
+            if held:
+                self._held.discard(task_id)
+                self._stay_awake()
+                self.bus.publish({"type": "crew", "crew": self.state()})
+
+    def _wake_held(self) -> None:
+        self._recheck.set()
+        self._recheck = asyncio.Event()
+
+    def _note_limit(self, task_id: str, limit: RateLimit) -> None:
+        """Keeps the plan's latest limit, and tells the crew when its status changes (getting close, reached)."""
+        windows = self.limits.setdefault(limit.plan, {})
+        previous = windows.get(limit.window)
+        windows[limit.window] = limit
+        if (previous.status if previous else "ok") != limit.status:
+            self._record(task_id, kind="rate_limit", data={k: v for k, v in asdict(limit).items() if k != "kind"})
+            self.bus.publish({"type": "crew", "crew": self.state()})
 
     def open_sessions(self) -> list[str]:
         return list(self._sessions)
@@ -441,6 +545,7 @@ class Runner:
 
     async def _run(self, task_id: str, prompt: str) -> None:
         await self._resumed.wait()
+        await self._within_budget(task_id)
         async with self._slots:
             task = self._set(task_id, status=Status.RUNNING, error=None)
             try:
@@ -462,6 +567,9 @@ class Runner:
                     stream = backend.run(self._spec(task, bot, cwd, token, prompt, backend))
                 async with aclosing(stream) as stream:
                     async for event in stream:
+                        if isinstance(event, RateLimit):
+                            self._note_limit(task_id, event)
+                            continue
                         self._record(task_id, event)
                         match event:
                             case SessionStarted(session_id=sid):
@@ -503,7 +611,8 @@ class Runner:
         return RunSpec(
             prompt=prompt, cwd=cwd, access=bot.access, model=bot.model,
             system_prompt=self.crew.system_prompt(bot, delegated_by=task.created_by if task.parent_id else None,
-                                                  reviewing=self._review_brief(task), briefing=task.briefing),
+                                                  reviewing=self._review_brief(task), briefing=task.briefing,
+                                                  routine=task.routine),
             resume_session_id=task.session_id,
             mcp_servers={**bot.mcp, **({} if in_process else self._crew_tools(token, bot))},
             crew=CrewTools(self, task.id, bot.can_delegate) if in_process else None,
@@ -554,7 +663,8 @@ class Runner:
                         briefing = event.final_text
         except Exception:
             briefing = ""
-        if usage:
+        if usage:  # it counts toward budgets like any turn
+            self.store.append_event(task_id, usage)
             self.store.add_usage(task_id, usage.input_tokens, usage.output_tokens, usage.cost_usd)
         if not briefing.strip():
             return  # no briefing, no rollover: the CLI's own compaction carries on
@@ -588,7 +698,7 @@ class Runner:
         because the Mac went to sleep, but an idle crew shouldn't keep it awake."""
         if not self.keep_awake:
             return
-        busy = bool(self._runs)
+        busy = any(t not in self._held for t in self._runs)
         if busy and (self._awake is None or self._awake.poll() is not None):
             # -w: let go if the daemon itself dies, so a crash never leaves the Mac unable to sleep.
             self._awake = subprocess.Popen([*self.keep_awake, "-w", str(os.getpid())],
@@ -726,6 +836,15 @@ def _round_status(state: ReviewState, work: Task) -> str:
                 f"{work.id!r}, ...); its next version needs a new review round ({state.round + 1} of "
                 f"{MAX_REVIEW_ROUNDS}).")
     return f"{head}: reviewed an older version ({state.rounds[-1]}); the work has changed since, so review it again."
+
+
+def _plan(backend: str) -> str:
+    """The subscription a backend runs on: both Claude backends share Claude's limits, both Codex ones Codex's."""
+    return backend.split("-")[0]
+
+
+def _iso(t: datetime) -> str:
+    return t.isoformat(timespec="milliseconds")
 
 
 def _clip(text: str | None) -> str | None:

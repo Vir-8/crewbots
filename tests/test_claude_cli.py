@@ -4,7 +4,7 @@ from helpers import collect, fake_command, kinds, lines, write_fixture
 
 from crewbots.backends import Access, ClaudeCLI, McpServer, RunSpec
 from crewbots.backends.claude_cli import ClaudeParser
-from crewbots.events import Done, SessionStarted, Text, ToolCall, ToolResult, Usage
+from crewbots.events import Done, RateLimit, SessionStarted, Text, ToolCall, ToolResult, Usage
 
 
 def parse(objs: list[dict]):
@@ -16,9 +16,11 @@ def test_a_real_run_becomes_the_common_events():
     events = parse(lines("claude_read.jsonl"))
 
     assert kinds(events) == [
-        "session_started", "tool_call", "tool_result", "tool_call", "tool_result", "text", "usage", "done",
+        "session_started", "tool_call", "tool_result", "rate_limit", "tool_call", "tool_result", "text", "usage", "done",
     ]
     assert events[0] == SessionStarted(session_id="2510de92-aaa0-4873-aaca-8540fec35076")
+    assert events[3] == RateLimit(plan="claude", window="five_hour", status="ok", resets_at=1792964400)
+    events = [e for e in events if not isinstance(e, RateLimit)]
     read = events[3]
     assert isinstance(read, ToolCall) and read.name == "Read" and read.input == {"file_path": "/work/a.txt"}
     assert isinstance(events[4], ToolResult) and "hi" in events[4].output and events[4].id == read.id

@@ -23,6 +23,7 @@ from claude_agent_sdk import (
     ClaudeSDKClient,
     PermissionResultAllow,
     PermissionResultDeny,
+    RateLimitEvent,
     ResultMessage,
     SystemMessage,
     TextBlock,
@@ -35,7 +36,7 @@ from claude_agent_sdk import (
 )
 
 from crewbots.backends.base import Access, RunSpec
-from crewbots.backends.claude_cli import READ_ONLY_TOOLS, _stringify
+from crewbots.backends.claude_cli import READ_ONLY_TOOLS, _stringify, rate_limit
 from crewbots.backends.policy import Policy
 from crewbots.crew_tools import CrewTools, ToolRefused
 from crewbots.events import Done, Event, Notice, SessionStarted, Text, ToolCall, ToolResult, Usage
@@ -241,6 +242,9 @@ class SdkMapper:
         match message:
             case SystemMessage(subtype="init", data=data):
                 return [SessionStarted(session_id=data.get("session_id", ""))]
+            case RateLimitEvent(rate_limit_info=info):
+                return [rate_limit(info.raw or {"status": info.status, "resetsAt": info.resets_at,
+                                                "rateLimitType": info.rate_limit_type, "utilization": info.utilization})]
             case AssistantMessage(content=blocks):
                 events: list[Event] = []
                 for block in blocks:

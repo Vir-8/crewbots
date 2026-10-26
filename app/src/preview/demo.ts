@@ -25,7 +25,8 @@ function task(id: string, bot: string, title: string, fields: Partial<Task> = {}
     id, bot, title, status: "idle", created_by: "user", parent_id: null, workspace: "~/code/acme-web", repo: null,
     worktree_path: null, branch: null, base: null, session_id: `s-${id}`, result: null, error: null,
     input_tokens: 40_000, output_tokens: 1_200, cost_usd: 0, reported: true, turns: 1, review_of: null,
-    review_version: null, merge_state: null, merged_commit: null, created_at: at, updated_at: at, ...fields,
+    review_version: null, merge_state: null, merged_commit: null, routine: null, budget: null, created_at: at,
+    updated_at: at, ...fields,
   };
   tasks.set(id, t);
   events.set(id, []);
@@ -112,12 +113,27 @@ function verdict(reviewTask: string, work: string, reviewer: string, version: nu
   diffs.set(e.id, "diff --git a/text.py b/text.py\n--- a/text.py\n+++ b/text.py\n@@ -1,2 +1,12 @@\n def shout(s):\n     return s.upper() + \"!\"\n+\n+\n+def truncate(s, n):\n+    if n < 0:\n+        return \"\"\n+    if len(s) <= n:\n+        return s\n+    if n < 3:\n+        return \".\" * n\n+    return s[: n - 3] + \"...\"\n");
 }
 
-// 2. Failed: hit the plan's usage limit.
+// 2. Held: the plan's five-hour limit was reached, so its next turn waits for the reset.
+export const resetsAt = Math.floor(Date.now() / 1000) + 2 * 3600;
 {
-  const g = task("t_docs000001", "chief", "Translate the onboarding docs into Spanish", { status: "failed", error: "usage limit reached for this week" });
+  const g = task("t_docs000001", "chief", "Translate the onboarding docs into Spanish", { status: "held" });
   message(g.id, "user", "Translate the onboarding docs in docs/onboarding/ into Spanish, keeping the formatting.");
   say(g.id, "There are 14 files. I'll split them across two tasks.");
-  emit(g.id, "done", { final_text: "", is_error: true, error: "usage limit reached for this week" });
+  usage(g.id);
+  done(g.id, "There are 14 files. I'll split them across two tasks.");
+  emit(g.id, "rate_limit", { plan: "claude", window: "five_hour", status: "limited", used_percent: 100, resets_at: resetsAt });
+  message(g.id, "user", "Go ahead.");
+  const resets = new Date(resetsAt * 1000).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+  emit(g.id, "held", { reason: `the Claude plan's five-hour limit is reached; it resets ${resets}.` });
+}
+
+// A routine: this morning's standup.
+{
+  const g = task("t_stand00001", "chief", "Standup, Mon 26 Oct", { created_by: "routine", routine: "standup", budget: 200_000, workspace: null });
+  message(g.id, "routine", "Write the standup for what the crew did since Fri 23 Oct 09:00, from the record below.");
+  say(g.id, "**Needs you**\n- **Upgrade to React 19**: replace legacy-charts with recharts, or stay on React 18?\n- **Fix the flaky login test** is reviewed and ready to merge.\n\n**Done**\n- `truncate` helper: passed review in round 2.\n\n**In progress**\n- CSV export: the engineer is on the endpoint and the button.");
+  usage(g.id);
+  done(g.id);
 }
 
 // 3. Waiting on you: approved and proposed for merging, after a failed first round.

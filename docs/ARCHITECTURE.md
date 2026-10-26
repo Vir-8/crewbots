@@ -193,7 +193,30 @@ Each step leaves the system working.
      - a Codex critic in a new task answered from that note, with no tool call
      - a Codex bot used `recall` to find which earlier task decided an edge case
      - the rollover is covered by tests only, since filling a real context window costs too much to run
-7. **Routines, triggers, budgets.** The scheduler, GitHub triggers, per-bot budgets, and the standup and retro routines.
+7. **Routines, triggers, budgets** (done).
+   - **Routines:** `crew/routines/*.md`, re-read every tick (30s), so adding or editing one needs no restart. A file
+     that doesn't parse is listed with why, and the others still run.
+   - **Missed runs:** each routine keeps when it was last checked. A tick runs it if a scheduled minute fell after that,
+     so a week of sleep is one run (looking back at most 7 days). Paused, nothing is checked, so it runs on resume.
+     A new routine starts from its next time. One whose last run is still going is skipped and marked so.
+   - **GitHub:** one GraphQL query through `gh` every five minutes: open pull requests that ask the user directly for
+     a review (`user-review-requested:@me`; team requests left out, since on a big project they're dozens), and the
+     user's own with their checks. Each trigger needs a `repo`. It starts on what's new since it was added, once per
+     head commit, at most three a poll. Diffs and failed logs are fetched only when the goal uses them.
+   - **Budgets:** per bot over a rolling day or week, and per routine run over the run's whole task tree, in fresh
+     tokens. Checked before a turn, not during one. A held task holds no run slot and doesn't keep the Mac awake.
+     Release lasts until the daemon stops; a reloaded crew or a release wakes held tasks to look again.
+   - **Plan limits:** Claude's `rate_limit_event` and Codex's `account/rateLimits/updated` become one `RateLimit`
+     event. A change of status is recorded and notified; a reached limit holds every bot on that plan until it resets.
+   - **The app:** routines in the sidebar with their next run and Run now, held tasks under Needs you with "Go ahead
+     anyway", plan limits above the crew, and a notification when a task is held.
+   - **Checked live**, on a scratch crew:
+     - an every-minute routine ran on the minute; the next run, over the critic's budget, was held and said why
+     - the run after that was skipped, since the held one was still going, and releasing the held one let it finish
+     - the standup ran from the real activity, looking back to the previous scheduled time
+     - Claude's five-hour and Codex's weekly limits (45% used) came through the CLIs
+     - the GitHub query ran through `gh`; with no open pull requests, nothing was started. Firing on a real pull
+       request is covered by tests only
 8. **Sandboxed shells** for writing bots on both backends (done, with the policy). Containers once there's a reason.
 
 ## Learned building sessions

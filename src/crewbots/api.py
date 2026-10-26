@@ -27,7 +27,9 @@ from pydantic import BaseModel, Field
 from crewbots import crew as crew_module
 from crewbots.backends import codex_isolation
 from crewbots.memory import MemoryError
+from crewbots.routines import RoutineError
 from crewbots.runner import MergeError, NotAllowed, Runner, UnknownBot
+from crewbots.scheduler import Scheduler
 from crewbots.store import Status, Store, Verdict
 
 DEFAULT_PORT = 8765
@@ -61,6 +63,8 @@ class TaskOut(BaseModel):
     review_version: int | None
     merge_state: Literal["proposed", "merged"] | None
     merged_commit: str | None
+    routine: str | None
+    budget: int | None
     created_at: str
     updated_at: str
 
@@ -140,10 +144,52 @@ class ChangesOut(BaseModel):
     diff: str | None
 
 
+class PlanLimitOut(BaseModel):
+    plan: str
+    window: str
+    status: Literal["ok", "warning", "limited"]
+    used_percent: float | None
+    resets_at: int | None
+
+
 class CrewState(BaseModel):
     paused: bool
     running: int
+    held: int
     sessions: int
+    limits: list[PlanLimitOut]
+
+
+class RoutineOut(BaseModel):
+    name: str
+    description: str
+    bot: str
+    when: str  # the cron schedule, or the trigger
+    schedule: str | None
+    on: str | None
+    repo: str | None
+    workspace: str | None
+    budget: int | None
+    enabled: bool
+    path: str
+    last_run_at: str | None
+    last_task_id: str | None
+    next_run_at: str | None
+    skipped_at: str | None
+
+
+class RoutinesOut(BaseModel):
+    routines: list[RoutineOut]
+    errors: dict[str, str]  # routine file → why it couldn't be read
+    github_error: str | None
+
+
+class BudgetOut(BaseModel):
+    bot: str
+    tokens: int | None  # None: no budget
+    per: Literal["day", "week"]
+    used: int  # fresh tokens over the last day or week
+    held: list[str]
 
 
 class LiveCrew(BaseModel):
@@ -242,8 +288,9 @@ class MergeRequest(BaseModel):
     force: bool = False
 
 
-def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT) -> FastAPI:
+def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: Scheduler | None = None) -> FastAPI:
     store = runner.store
+    scheduler = scheduler or Scheduler(runner)
     hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
 
     def allowed(host: str | None, credential: str | None) -> bool:
@@ -270,6 +317,14 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT) -> FastAPI:
 
     @app.exception_handler(MemoryError)
     async def memory_error(request: Request, e: MemoryError):
+        return JSONResponse({"detail": str(e)}, status_code=422)
+
+    @app.exception_handler(RoutineError)
+    async def routine_error(request: Request, e: RoutineError):
+        return JSONResponse({"detail": str(e)}, status_code=422)
+
+    @app.exception_handler(crew_module.CrewError)
+    async def crew_error(request: Request, e: crew_module.CrewError):
         return JSONResponse({"detail": str(e)}, status_code=422)
 
     @app.exception_handler(MergeError)
@@ -347,6 +402,33 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT) -> FastAPI:
     async def resume():
         runner.resume()
         return runner.state()
+
+    @v1.post("/crew/reload", response_model=CrewState)
+    async def reload():
+        """Reads the crew's folder again: edited role cards and budgets count from the next turn."""
+        runner.reload(crew_module.load(runner.crew.home))
+        return runner.state()
+
+    @v1.get("/routines", response_model=RoutinesOut)
+    async def routines():
+        scheduler.load()
+        return {"routines": [_routine_out(v) for v in scheduler.views()], "errors": scheduler.errors,
+                "github_error": scheduler.github_error}
+
+    @v1.post("/routines/{name}/run", status_code=201, response_model=TaskOut)
+    async def run_routine(name: str):
+        """Runs a scheduled routine now, as if its time had come."""
+        return scheduler.run_now(name).to_json()
+
+    @v1.get("/budgets", response_model=list[BudgetOut])
+    async def budgets():
+        return runner.budgets()
+
+    @v1.post("/tasks/{task_id}/release", response_model=TaskOut)
+    async def release(task_id: str):
+        """Lets a task held on a budget or plan limit go ahead, with the rest of its goal."""
+        task_or_404(task_id)
+        return runner.release(task_id).to_json()
 
     @v1.get("/events/recent", response_model=list[EventOut])
     async def recent_events(limit: int = Query(200, le=2000), kinds: str | None = None):
@@ -474,6 +556,15 @@ def openapi_schema() -> dict[str, Any]:
     return create_app(runner, token="schema").openapi()
 
 
+def _routine_out(view: Any) -> dict[str, Any]:
+    r = view.routine
+    return {"name": r.name, "description": r.description, "bot": r.bot, "when": r.when,
+            "schedule": r.schedule.text if r.schedule else None, "on": r.on, "repo": r.repo,
+            "workspace": str(r.workspace) if r.workspace else None, "budget": r.budget, "enabled": r.enabled,
+            "path": str(r.path), "last_run_at": view.last_run_at, "last_task_id": view.last_task_id,
+            "next_run_at": view.next_run_at, "skipped_at": view.skipped_at}
+
+
 async def _until_closed(ws: WebSocket) -> None:
     with contextlib.suppress(Exception):
         while True:
@@ -513,9 +604,11 @@ def serve(home: Path, port: int = DEFAULT_PORT, max_parallel: int = 4, sessions:
         os.fchmod(fd, 0o600)  # in case an older file was readable by others
         with os.fdopen(fd, "w") as f:
             json.dump({"url": f"http://127.0.0.1:{port}", "token": token, "pid": os.getpid()}, f)
+        ticking = asyncio.create_task(scheduler.run(), name="scheduler")
         try:
             yield
         finally:
+            ticking.cancel()
             await runner.shutdown()
             info_path.unlink(missing_ok=True)
             store.close()
@@ -523,7 +616,8 @@ def serve(home: Path, port: int = DEFAULT_PORT, max_parallel: int = 4, sessions:
     keep_awake = ("caffeinate", "-i") if sys.platform == "darwin" else None
     runner = Runner(store, crew, max_parallel=max_parallel, api_url=f"http://127.0.0.1:{port}/v1", sessions=sessions,
                     keep_awake=keep_awake)
-    app = create_app(runner, token, port)
+    scheduler = Scheduler(runner)
+    app = create_app(runner, token, port, scheduler)
     app.router.lifespan_context = lifespan
     print(f"crewbots: {len(crew.bots)} bots ({', '.join(crew.bots)}) from {home}, on http://127.0.0.1:{port}")
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")

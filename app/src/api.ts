@@ -1,4 +1,4 @@
-import type { Bot, ReviewState, StoredEvent, Task } from "./types";
+import type { Bot, CrewState, ReviewState, Routines, StoredEvent, Task } from "./types";
 
 import { bridge } from "./bridge";
 
@@ -30,4 +30,8 @@ export const api = {
   send: (taskId: string, text: string) => call<Task>("POST", `/tasks/${taskId}/messages`, { text }),
   cancel: (taskId: string) => call<Task>("POST", `/tasks/${taskId}/cancel`),
   merge: (taskId: string, force = false) => call<Task>("POST", `/tasks/${taskId}/merge`, { force }),
+  release: (taskId: string) => call<Task>("POST", `/tasks/${taskId}/release`),
+  crew: () => call<CrewState>("GET", "/crew"),
+  routines: () => call<Routines>("GET", "/routines"),
+  runRoutine: (name: string) => call<Task>("POST", `/routines/${encodeURIComponent(name)}/run`),
 };

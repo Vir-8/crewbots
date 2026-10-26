@@ -10,6 +10,14 @@ export interface BotOut {
   workspace: string | null;
 }
 
+export interface BudgetOut {
+  bot: string;
+  tokens: number | null;
+  per: "day" | "week";
+  used: number;
+  held: string[];
+}
+
 export interface ChangesOut {
   diff: string | null;
 }
@@ -34,7 +42,9 @@ export interface ChildOut {
 export interface CrewState {
   paused: boolean;
   running: number;
+  held: number;
   sessions: number;
+  limits: PlanLimitOut[];
 }
 
 export interface CursorOut {
@@ -133,6 +143,14 @@ export interface NewTask {
   workspace?: string | null;
 }
 
+export interface PlanLimitOut {
+  plan: string;
+  window: string;
+  status: "ok" | "warning" | "limited";
+  used_percent: number | null;
+  resets_at: number | null;
+}
+
 export interface Recall {
   query: string;
 }
@@ -169,6 +187,30 @@ export interface ReviewStateOut {
   reviews: ReviewEntryOut[];
 }
 
+export interface RoutineOut {
+  name: string;
+  description: string;
+  bot: string;
+  when: string;
+  schedule: string | null;
+  on: string | null;
+  repo: string | null;
+  workspace: string | null;
+  budget: number | null;
+  enabled: boolean;
+  path: string;
+  last_run_at: string | null;
+  last_task_id: string | null;
+  next_run_at: string | null;
+  skipped_at: string | null;
+}
+
+export interface RoutinesOut {
+  routines: RoutineOut[];
+  errors: Record<string, string>;
+  github_error: string | null;
+}
+
 export interface SearchHit {
   task_id: string;
   kind: string;
@@ -178,7 +220,7 @@ export interface SearchHit {
   title: string;
 }
 
-export type Status = "queued" | "running" | "idle" | "needs_input" | "failed" | "cancelled" | "interrupted";
+export type Status = "queued" | "running" | "idle" | "needs_input" | "failed" | "cancelled" | "interrupted" | "held";
 
 export interface TaskOut {
   id: string;
@@ -204,6 +246,8 @@ export interface TaskOut {
   review_version: number | null;
   merge_state: "proposed" | "merged" | null;
   merged_commit: string | null;
+  routine: string | null;
+  budget: number | null;
   created_at: string;
   updated_at: string;
 }

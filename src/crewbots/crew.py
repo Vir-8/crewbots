@@ -7,6 +7,7 @@ servers); the body is the card itself (mission, owns, does not own, done means),
 
 import shutil
 from dataclasses import dataclass, field
+from datetime import timedelta
 from importlib import resources
 from pathlib import Path
 from typing import Any
@@ -19,8 +20,9 @@ from crewbots.memory import MEMORY_GUIDE, Memory
 DEFAULT_HOME = Path.home() / ".crewbots" / "crew"
 CARD_FIELDS = {
     "name", "title", "description", "backend", "model", "access", "workspace", "worktree", "timeout", "mcp",
-    "can_delegate", "skills",
+    "can_delegate", "skills", "budget",
 }
+BUDGET_WINDOWS = {"day": timedelta(days=1), "week": timedelta(days=7)}
 
 CREW_TOOLS = """# Working in the crew
 
@@ -52,6 +54,18 @@ turn. When all of your running tasks have finished, or one escalates, their resu
 
 
 @dataclass(frozen=True)
+class Budget:
+    """Tokens a bot may use over a rolling window, e.g. 2,000,000 a week. Once they're used, its next turns wait."""
+
+    tokens: int
+    per: str  # day or week
+
+    @property
+    def window(self) -> timedelta:
+        return BUDGET_WINDOWS[self.per]
+
+
+@dataclass(frozen=True)
 class Bot:
     name: str
     title: str
@@ -66,6 +80,7 @@ class Bot:
     mcp: dict[str, McpServer] = field(default_factory=dict)
     can_delegate: bool = False  # only coordinators assign work; the harness refuses delegation from anyone else
     skills: tuple[str, ...] = ()  # names from the crew's skills/ folder, or ("all",)
+    budget: Budget | None = None
 
 
 @dataclass(frozen=True)
@@ -95,15 +110,22 @@ class Crew:
     def memory(self) -> Memory:
         return Memory(self.home)
 
+    @property
+    def routines_dir(self) -> Path:
+        return self.home / "routines"
+
     def system_prompt(self, bot: Bot, delegated_by: str | None = None, reviewing: str | None = None,
-                      briefing: str | None = None) -> str:
+                      briefing: str | None = None, routine: str | None = None) -> str:
         roster = "\n".join(
             f"- {b.name} ({b.title}){' ← you' if b.name == bot.name else ''}: {b.description}" for b in self.bots.values()
         )
         parts = [
             f"You are {bot.name}, the {bot.title} of a crew of AI agents run by crewbots.",
             f"This task was delegated to you by {delegated_by}; your handoff goes back to them."
-            if delegated_by else "This task comes from the user; your final message is what they read.",
+            if delegated_by else
+            f"The crew's routine {routine!r} started this task, not a message from the user. Your final message is what "
+            "the user reads, when they next look; keep it short, and lead with anything that needs them."
+            if routine else "This task comes from the user; your final message is what they read.",
             f"# Your role card\n\n{bot.instructions.strip()}",
             f"# The crew\n\n{roster}",
             CREW_TOOLS + ("\n\n" + DELEGATION_TOOLS if bot.can_delegate else ""),
@@ -219,6 +241,7 @@ def parse_card(text: str, default_name: str, source: Path | str = "<card>") -> B
         mcp=_mcp(meta.get("mcp") or {}, source),
         can_delegate=bool(meta.get("can_delegate", False)),
         skills=_skill_names(meta.get("skills"), source),
+        budget=_budget(meta.get("budget"), source),
     )
 
 
@@ -244,6 +267,16 @@ def _frontmatter(text: str, source: Path | str) -> tuple[dict[str, Any], str]:
     if not isinstance(meta, dict):
         raise CrewError(f"{source}: frontmatter must be a mapping")
     return meta, body.lstrip("\n")
+
+
+def _budget(raw: Any, source: Path | str) -> Budget | None:
+    if raw is None:
+        return None
+    tokens = raw.get("tokens") if isinstance(raw, dict) else None
+    per = raw.get("per", "week") if isinstance(raw, dict) else None
+    if not isinstance(tokens, int) or isinstance(tokens, bool) or tokens <= 0 or per not in BUDGET_WINDOWS:
+        raise CrewError(f"{source}: budget is {{tokens: <number>, per: day or week}}")
+    return Budget(tokens=tokens, per=per)
 
 
 def _skill_names(raw: Any, source: Path | str) -> tuple[str, ...]:

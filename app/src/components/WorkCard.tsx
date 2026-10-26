@@ -13,6 +13,7 @@ const STATUS: Record<Task["status"], string> = {
   failed: "Failed",
   cancelled: "Stopped",
   interrupted: "Interrupted",
+  held: "Waiting to continue",
 };
 
 /** Work a bot was given, inside the conversation it came from: who, what, where it is, and its review. */

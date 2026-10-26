@@ -52,6 +52,19 @@ class Notice:
 
 
 @dataclass(frozen=True)
+class RateLimit:
+    """Where the subscription plan's usage limit stands, as the CLI reports it: `ok`, `warning` (getting close), or
+    `limited` (reached, until `resets_at`)."""
+
+    plan: str  # claude or codex: the limit is the plan's, shared by every bot on it
+    window: str  # which limit, e.g. five_hour or seven_day
+    status: str
+    used_percent: float | None = None
+    resets_at: int | None = None  # unix time
+    kind: str = field(default="rate_limit", init=False)
+
+
+@dataclass(frozen=True)
 class Done:
     """Always the last event of a run, exactly once."""
 
@@ -61,10 +74,11 @@ class Done:
     kind: str = field(default="done", init=False)
 
 
-Event = SessionStarted | Text | ToolCall | ToolResult | Usage | Notice | Done
+Event = SessionStarted | Text | ToolCall | ToolResult | Usage | RateLimit | Notice | Done
 
 BY_KIND: dict[str, type[Event]] = {
-    cls.__dataclass_fields__["kind"].default: cls for cls in (SessionStarted, Text, ToolCall, ToolResult, Usage, Notice, Done)
+    cls.__dataclass_fields__["kind"].default: cls
+    for cls in (SessionStarted, Text, ToolCall, ToolResult, Usage, RateLimit, Notice, Done)
 }
 
 

@@ -8,7 +8,7 @@ from typing import Any
 
 from crewbots.backends.base import Access, RunSpec, mcp_servers_json
 from crewbots.backends.process import JsonlProcess, stream_jsonl
-from crewbots.events import Done, Event, Notice, SessionStarted, Text, ToolCall, ToolResult, Usage
+from crewbots.events import Done, Event, Notice, RateLimit, SessionStarted, Text, ToolCall, ToolResult, Usage
 
 READ_ONLY_TOOLS = "Read,Glob,Grep"
 
@@ -122,6 +122,18 @@ class ClaudeSession:
         await self.process.stop()
 
 
+CLAUDE_LIMIT_STATUS = {"allowed": "ok", "allowed_warning": "warning", "rejected": "limited"}
+
+
+def rate_limit(info: dict[str, Any]) -> RateLimit:
+    """Claude's rate_limit_info, which it sends whenever the plan's limit status changes."""
+    used = info.get("utilization")
+    return RateLimit(plan="claude", window=info.get("rateLimitType") or "plan",
+                     status=CLAUDE_LIMIT_STATUS.get(info.get("status", ""), "ok"),
+                     used_percent=round(used * 100, 1) if isinstance(used, int | float) else None,
+                     resets_at=info.get("resetsAt"))
+
+
 class ClaudeParser:
     def __init__(self) -> None:
         self._last_text = ""
@@ -148,8 +160,10 @@ class ClaudeParser:
                 ]
             case "result":
                 return self._result(obj)
+            case "rate_limit_event":
+                return [rate_limit(obj.get("rate_limit_info") or {})]
             case _:
-                return []  # rate limit notices, hook output and so on
+                return []  # hook output and so on
 
     def _assistant(self, blocks: list[dict[str, Any]]) -> list[Event]:
         events: list[Event] = []

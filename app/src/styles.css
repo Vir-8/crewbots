@@ -444,6 +444,84 @@ select {
   color: var(--amber);
 }
 
+.side-routine {
+  color: var(--faint);
+  flex: none;
+}
+
+.routines {
+  flex: none;
+  margin-bottom: 10px;
+}
+
+.routine-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.routine-row:hover {
+  background: var(--hover);
+}
+
+.routine-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.routine-name {
+  color: var(--soft);
+}
+
+.routine-row.off .routine-name,
+.routine-row.broken .routine-name {
+  color: var(--faint);
+}
+
+.routine-row.broken .side-sub {
+  color: var(--red);
+}
+
+.routine-run {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--faint);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.routine-row:hover .routine-run {
+  opacity: 1;
+}
+
+.routine-run:hover {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.plan-limit {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--amber);
+  padding-bottom: 6px;
+}
+
+.plan-limit.limited {
+  color: var(--red);
+}
+
 .side-row.need.merge .icon {
   color: var(--green);
 }
@@ -655,6 +733,43 @@ select {
 
 .line.bad {
   color: var(--red);
+}
+
+.line.warn {
+  color: var(--amber);
+}
+
+.hold-card {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--raised);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.hold-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--amber);
+}
+
+.hold-card.over .hold-head {
+  color: var(--faint);
+}
+
+.hold-text {
+  font-size: 13.5px;
+  color: var(--soft);
+}
+
+.hold-go {
+  align-self: flex-start;
+  margin-top: 6px;
+  background: var(--bg);
 }
 
 .ask {
@@ -1290,7 +1405,8 @@ button.verdict:hover {
   background: var(--green);
 }
 
-.dot.needs_input {
+.dot.needs_input,
+.dot.held {
   background: var(--amber);
 }
 

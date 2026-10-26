@@ -37,9 +37,10 @@ impl TaskLite {
         self.parent_id.is_none()
     }
 
-    /// Waiting on the user: a merge to approve, or a goal that asks, failed, or was cut off.
+    /// Waiting on the user: a merge to approve, a task held on a budget, or a goal that asks, failed, or was cut off.
     fn needs_you(&self) -> bool {
         self.merge_state.as_deref() == Some("proposed")
+            || self.status == "held"
             || (self.top_level() && matches!(self.status.as_str(), "needs_input" | "failed" | "interrupted"))
     }
 }
@@ -49,6 +50,7 @@ pub enum Alert {
     Question { bot: String, title: String },
     Merge { title: String },
     Failed { bot: String, title: String },
+    Held { bot: String, title: String },
     Done { title: String },
 }
 
@@ -58,6 +60,7 @@ impl Alert {
             Alert::Question { bot, title } => (format!("{bot} has a question"), title.clone()),
             Alert::Merge { title } => ("Ready to merge".into(), title.clone()),
             Alert::Failed { bot, title } => (format!("{bot} couldn't finish"), title.clone()),
+            Alert::Held { bot, title } => (format!("{bot} is waiting on a budget or plan limit"), title.clone()),
             Alert::Done { title } => ("Done".into(), title.clone()),
         }
     }
@@ -118,7 +121,13 @@ impl CrewView {
         if before.merge_state.as_deref() != Some("proposed") && now.merge_state.as_deref() == Some("proposed") {
             return Some(Alert::Merge { title: now.title });
         }
-        if !now.top_level() || before.status == now.status {
+        if before.status == now.status {
+            return None;
+        }
+        if now.status == "held" {
+            return Some(Alert::Held { bot: now.bot, title: now.title }); // at any depth: it holds up its goal
+        }
+        if !now.top_level() {
             return None;
         }
         match now.status.as_str() {
@@ -185,6 +194,16 @@ mod tests {
         let mut proposed = task("c", "idle", Some("g"));
         proposed["merge_state"] = json!("proposed");
         assert!(matches!(view.update(&proposed), Some(Alert::Merge { .. })));
+    }
+
+    #[test]
+    fn a_held_task_is_announced_and_needs_you_at_any_depth() {
+        let mut view = CrewView::default();
+        view.load(&[task("g", "idle", None), task("c", "queued", Some("g"))], false);
+        assert!(matches!(view.update(&task("c", "held", Some("g"))), Some(Alert::Held { .. })));
+        assert_eq!(view.summary().needs_you, 1);
+        assert_eq!(view.update(&task("c", "running", Some("g"))), None);
+        assert_eq!(view.summary().needs_you, 0);
     }
 
     #[test]

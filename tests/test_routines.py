@@ -1,0 +1,342 @@
+"""Routines: cron schedules, routine files, the scheduler, and GitHub triggers."""
+
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import pytest
+from fakes import ScriptedCrew, bot, reply, wait_until
+
+from crewbots import crew as crew_module
+from crewbots import routines
+from crewbots.events import Done
+from crewbots.github import PullRequest, Snapshot, _prs
+from crewbots.routines import Cron, RoutineError
+from crewbots.scheduler import MAX_STARTS_PER_POLL, Scheduler, activity
+from crewbots.store import Store, Verdict
+
+TZ = datetime.now().astimezone().tzinfo
+MONDAY_9 = datetime(2026, 10, 26, 9, 0, tzinfo=TZ)  # a Monday
+
+
+def at(day: int, hour: int, minute: int = 0) -> datetime:
+    return datetime(2026, 10, day, hour, minute, tzinfo=TZ)
+
+
+@pytest.fixture
+def store(tmp_path):
+    s = Store(tmp_path / "crew.db")
+    yield s
+    s.close()
+
+
+@pytest.fixture
+def crew(store, tmp_path):
+    scripted = ScriptedCrew(store, tmp_path, bot("chief"), bot("reviewer"))
+    (tmp_path / "routines").mkdir()
+    return scripted
+
+
+def write(home: Path, name: str, text: str) -> Path:
+    path = home / "routines" / f"{name}.md"
+    path.write_text(text)
+    return path
+
+
+STANDUP = """---
+bot: chief
+schedule: "0 9 * * 1-5"
+budget: 5000
+---
+Standup since {{since}}.
+
+{{activity}}
+"""
+
+
+# Schedules.
+
+
+def test_cron_matches_weekdays_names_and_steps():
+    weekdays = Cron.parse("0 9 * * mon-fri")
+    assert weekdays.matches(MONDAY_9) and not weekdays.matches(at(25, 9))  # Sunday
+    assert not weekdays.matches(at(26, 9, 1))
+    every_15 = Cron.parse("*/15 * * * *")
+    assert [m for m in range(60) if every_15.matches(at(26, 3, m))] == [0, 15, 30, 45]
+    assert Cron.parse("@hourly").matches(at(26, 14)) and Cron.parse("0 0 * * 7").matches(at(25, 0))
+
+
+def test_cron_with_a_day_and_a_weekday_runs_on_either_like_cron():
+    first_or_friday = Cron.parse("0 12 1 * fri")
+    assert first_or_friday.matches(at(1, 12)) and first_or_friday.matches(at(30, 12))  # the 1st; a Friday
+    assert not first_or_friday.matches(at(29, 12))
+
+
+@pytest.mark.parametrize("bad", ["0 9 * *", "61 * * * *", "0 9 * * funday", "*/0 * * * *", "5-1 * * * *"])
+def test_bad_schedules_say_what_is_wrong(bad):
+    with pytest.raises(RoutineError, match="schedule"):
+        Cron.parse(bad)
+
+
+def test_a_week_away_still_runs_a_routine_only_once():
+    cron = Cron.parse("0 9 * * *")
+    asleep, awake = at(19, 23), at(26, 10, 30)
+
+    assert cron.due(asleep, awake) == MONDAY_9  # the latest one missed, not one per day
+    assert cron.due(MONDAY_9, awake) is None  # and it was already run
+    assert cron.next(at(26, 10)) == at(27, 9)
+
+
+# Routine files.
+
+
+def test_routine_files_load_and_one_broken_file_doesnt_stop_the_rest(tmp_path):
+    (tmp_path / "routines").mkdir()
+    write(tmp_path, "standup", STANDUP)
+    write(tmp_path, "broken", "---\nbot: chief\nschedule: often\n---\nx")
+    write(tmp_path, "stranger", "---\nbot: nobody\nschedule: '@daily'\n---\nx")
+
+    loaded, errors = routines.load(tmp_path / "routines", {"chief"})
+
+    assert [r.name for r in loaded] == ["standup"] and loaded[0].budget == 5000
+    assert "cron has five fields" in errors["broken.md"] and "no bot named 'nobody'" in errors["stranger.md"]
+
+
+def test_on_is_read_as_a_trigger_not_as_yaml_true():
+    r = routines.parse("---\nbot: reviewer\non: github.review_requested\nrepo: o/r\n---\nReview {{pr.url}}", "x", Path("x"))
+
+    assert r.on == "github.review_requested" and r.when == "on github.review_requested in o/r"
+
+
+@pytest.mark.parametrize("text, error", [
+    ("---\nbot: chief\n---\nx", "either a schedule or an on trigger"),
+    ("---\nbot: chief\nschedule: '@daily'\non: github.ci_failed\n---\nx", "either a schedule"),
+    ("---\nbot: chief\non: github.ci_failed\n---\nx", "needs a repo"),
+    ("---\nbot: chief\nschedule: '@daily'\n---\n{{pr.url}}", "can't be filled in here"),
+    ("---\nbot: chief\non: github.review_requested\nrepo: o/r\n---\n{{pr.failures}}", "can't be filled in here"),
+    ("---\nbot: chief\nschedule: '@daily'\nbudget: lots\n---\nx", "budget"),
+    ("---\nbot: chief\nschedule: '@daily'\nwhen: now\n---\nx", "unknown fields"),
+])
+def test_routine_mistakes_are_caught_when_the_file_is_read(text, error):
+    with pytest.raises(RoutineError, match=error):
+        routines.parse(text, "x", Path("x"))
+
+
+def test_the_starter_routines_all_load_and_a_new_crew_has_them(tmp_path):
+    for name, text in routines.starters().items():
+        routines.parse(text, name, Path(name))
+    home = crew_module.init(tmp_path / "crew")
+
+    loaded, errors = routines.load(home / "routines", set(crew_module.load(home).bots))
+
+    assert not errors
+    assert {r.name: r.enabled for r in loaded} == {"standup": True, "retro": True, "review-requests": False,
+                                                   "ci-failed": False}
+
+
+def test_adding_a_starter_routine_to_an_existing_crew(tmp_path):
+    path = routines.add_starter(tmp_path, "standup")
+
+    assert path == tmp_path / "routines" / "standup.md" and "{{activity}}" in path.read_text()
+    with pytest.raises(RoutineError, match="already exists"):
+        routines.add_starter(tmp_path, "standup")
+    with pytest.raises(RoutineError, match="no starter routine"):
+        routines.add_starter(tmp_path, "nightly")
+
+
+# The scheduler.
+
+
+async def test_a_new_routine_waits_for_its_next_time_then_runs_once(crew, store, tmp_path):
+    write(tmp_path, "standup", STANDUP)
+    scheduler = Scheduler(crew.runner)
+
+    assert await scheduler.tick(at(26, 8, 59)) == []  # first seen: nothing runs for times before it existed
+    [task] = await scheduler.tick(at(26, 9, 0))
+    assert await scheduler.tick(at(26, 9, 0)) == []
+
+    assert task.bot == "chief" and task.routine == "standup" and task.budget == 5000 and task.created_by == "routine"
+    assert task.title == "Standup, Mon 26 Oct"
+    await wait_until(crew.settled(task.id))
+    [spec] = crew.specs_for("chief")
+    assert "routine 'standup' started this task" in spec.system_prompt
+    assert spec.prompt.startswith("Standup since Fri 23 Oct 09:00.")  # the first run looks back to the last time
+    assert store.routine_state("standup")["last_task_id"] == task.id
+
+
+async def test_a_routine_still_going_is_skipped_rather_than_doubled(crew, store, tmp_path):
+    write(tmp_path, "hourly", "---\nbot: chief\nschedule: '0 * * * *'\n---\nCheck in.")
+    scheduler = Scheduler(crew.runner)
+    await scheduler.tick(at(26, 8, 30))
+    [first] = await scheduler.tick(at(26, 9))
+    await wait_until(crew.settled(first.id))
+    store.update_task(first.id, status="running")  # as if it were still going
+
+    assert await scheduler.tick(at(26, 10)) == []
+    assert scheduler.views(at(26, 10))[0].skipped_at == at(26, 10).isoformat()
+
+
+async def test_a_paused_crew_runs_what_came_due_once_it_resumes(crew, tmp_path):
+    write(tmp_path, "standup", STANDUP)
+    scheduler = Scheduler(crew.runner)
+    await scheduler.tick(at(26, 8))
+    crew.runner.pause()
+
+    assert await scheduler.tick(at(26, 9)) == []
+    crew.runner.resume()
+    assert len(await scheduler.tick(at(26, 11))) == 1
+
+
+async def test_a_routine_can_be_run_by_hand(crew, tmp_path):
+    write(tmp_path, "standup", STANDUP)
+    scheduler = Scheduler(crew.runner)
+
+    task = scheduler.run_now("standup")
+
+    assert task.routine == "standup"
+    with pytest.raises(RoutineError, match="no routine named"):
+        scheduler.run_now("nightly")
+
+
+async def test_the_activity_a_routine_reads(crew, store, tmp_path):
+    since = datetime.now().astimezone() - timedelta(minutes=1)
+    goal = crew.runner.submit("chief", "Add CSV export")
+    await wait_until(crew.settled(goal.id))
+    crew.runner.send(goal.id, "Use semicolons, not commas")
+    await wait_until(crew.settled(goal.id))
+    review = store.create_task("reviewer", "Review the export", parent_id=goal.id, created_by="chief")
+    store.append_event(review.id, kind="review", data={
+        "reviewer": "reviewer", "version": 1, "verdict": Verdict.FAIL, "summary": "Quotes aren't escaped",
+        "findings": [{"location": "export.py:12", "problem": "a comma in a name splits the row"}]})
+    earlier_standup = store.create_task("chief", "Standup", routine="standup")
+
+    text = activity(store, since, exclude_routine="standup")
+
+    assert "## Add CSV export" in text and f"delegated {review.id} to reviewer" in text
+    assert "you said: Use semicolons, not commas" in text
+    assert "reviewed version 1: FAIL, Quotes aren't escaped Findings: export.py:12" in text
+    assert "Standup" not in text and earlier_standup.id not in text
+    assert activity(store, datetime.now().astimezone() + timedelta(minutes=1)) == "Nothing happened in the crew in that time."
+
+
+# GitHub triggers.
+
+
+def pr(number=7, head="a1", repo="vir/app", failed=()):
+    return PullRequest(repo=repo, number=number, title=f"PR {number}", url=f"https://github.com/{repo}/pull/{number}",
+                       author="sam", branch=f"feature-{number}", head=head, checks="FAILURE" if failed else "SUCCESS",
+                       failed=failed)
+
+
+class FakeGitHub:
+    def __init__(self):
+        self.snapshot = Snapshot(review_requested=[], mine=[])
+        self.diffs: list[int] = []
+        self.error: Exception | None = None
+
+    def fetch(self):
+        if self.error:
+            raise self.error
+        return self.snapshot
+
+    def diff(self, p):
+        self.diffs.append(p.number)
+        return f"diff of {p.number}"
+
+    def failures(self, p):
+        return "\n".join(name for name, _ in p.failed)
+
+
+REVIEW = """---
+bot: reviewer
+on: github.review_requested
+repo: vir/app
+---
+Review {{pr.repo}}#{{pr.number}} by {{pr.author}}: {{pr.title}}
+{{pr.diff}}
+"""
+
+
+async def test_a_trigger_starts_on_whats_new_once_per_version(crew, tmp_path):
+    write(tmp_path, "reviews", REVIEW)
+    gh = FakeGitHub()
+    gh.snapshot = Snapshot(review_requested=[pr(1), pr(2, repo="someone/else")], mine=[])
+    scheduler = Scheduler(crew.runner, github=gh, github_every_s=0)
+
+    assert await scheduler.tick(at(26, 9)) == []  # what was already waiting isn't new
+    gh.snapshot = Snapshot(review_requested=[pr(1), pr(3), pr(4, repo="someone/else")], mine=[])
+    [task] = await scheduler.tick(at(26, 9, 5))
+    assert await scheduler.tick(at(26, 9, 10)) == []
+    gh.snapshot = Snapshot(review_requested=[pr(1), pr(3, head="b2")], mine=[])  # a new push to #3
+    [again] = await scheduler.tick(at(26, 9, 15))
+
+    assert task.bot == "reviewer" and task.title == "Reviews: vir/app#3 PR 3"
+    await wait_until(crew.settled(task.id))
+    assert "diff of 3" in crew.specs_for("reviewer")[0].prompt
+    assert again.title == task.title and gh.diffs == [3, 3]
+
+
+async def test_failed_checks_start_the_ci_trigger_with_the_failures(crew, tmp_path):
+    write(tmp_path, "ci", "---\nbot: chief\non: github.ci_failed\nrepo: vir/app\n---\nFix {{pr.branch}}:\n{{pr.failures}}")
+    gh = FakeGitHub()
+    scheduler = Scheduler(crew.runner, github=gh, github_every_s=0)
+    await scheduler.tick(at(26, 9))
+    gh.snapshot = Snapshot(review_requested=[], mine=[pr(5), pr(6, failed=(("tests", None), ("lint", None)))])
+
+    [task] = await scheduler.tick(at(26, 9, 5))
+
+    await wait_until(crew.settled(task.id))
+    assert crew.specs_for("chief")[0].prompt == "Fix feature-6:\ntests\nlint"
+
+
+async def test_a_flood_of_new_pull_requests_starts_a_few_at_a_time(crew, tmp_path):
+    write(tmp_path, "reviews", REVIEW)
+    gh = FakeGitHub()
+    scheduler = Scheduler(crew.runner, github=gh, github_every_s=0)
+    await scheduler.tick(at(26, 9))
+    gh.snapshot = Snapshot(review_requested=[pr(n) for n in range(10, 20)], mine=[])
+
+    assert len(await scheduler.tick(at(26, 9, 5))) == MAX_STARTS_PER_POLL
+    assert len(await scheduler.tick(at(26, 9, 10))) == MAX_STARTS_PER_POLL
+
+
+async def test_github_being_unreachable_is_reported_not_fatal(crew, tmp_path):
+    write(tmp_path, "reviews", REVIEW)
+    gh = FakeGitHub()
+    gh.error = RuntimeError("gh: not logged in")
+    scheduler = Scheduler(crew.runner, github=gh, github_every_s=0)
+
+    assert await scheduler.tick(at(26, 9)) == []
+    assert scheduler.github_error == "gh: not logged in"
+
+
+def test_pull_requests_are_read_from_githubs_answer():
+    node = {"number": 4, "title": "Fix it", "url": "u", "headRefName": "fix", "headRefOid": "abc",
+            "author": {"login": "sam"}, "repository": {"nameWithOwner": "vir/app"},
+            "commits": {"nodes": [{"commit": {"statusCheckRollup": {"state": "FAILURE", "contexts": {"nodes": [
+                {"__typename": "CheckRun", "name": "tests", "conclusion": "FAILURE",
+                 "detailsUrl": "https://github.com/vir/app/actions/runs/1/job/2"},
+                {"__typename": "CheckRun", "name": "lint", "conclusion": "SUCCESS", "detailsUrl": None},
+                {"__typename": "StatusContext", "context": "deploy", "state": "ERROR", "targetUrl": "d"},
+            ]}}}}]}}
+
+    [p] = _prs({"nodes": [node, {}]})
+
+    assert p.key == "vir/app#4@abc" and p.checks == "FAILURE"
+    assert p.failed == (("tests", "https://github.com/vir/app/actions/runs/1/job/2"), ("deploy", "d"))
+
+
+async def test_a_routine_task_is_held_to_its_budget_with_what_it_delegates(store, tmp_path):
+    # The routine's budget covers its whole run: here, 12 tokens a turn and a budget of 20.
+    scripted = ScriptedCrew(store, tmp_path, bot("chief"))
+    (tmp_path / "routines").mkdir()
+    write(tmp_path, "check", "---\nbot: chief\nschedule: '@hourly'\nbudget: 20\n---\nCheck.")
+    scripted.script["chief"] = lambda spec, me: [*reply(spec)[1:3], Done(final_text="ok")]  # text, usage, done
+    task = Scheduler(scripted.runner).run_now("check")
+    await wait_until(scripted.settled(task.id))
+    scripted.runner.send(task.id, "and again")
+    await wait_until(lambda: store.get_task(task.id).status == "idle")
+    scripted.runner.send(task.id, "once more")
+
+    await wait_until(lambda: store.get_task(task.id).status == "held")
+    assert "used 24 of its 20 tokens" in [e for e in store.events(task.id) if e.kind == "held"][0].data["reason"]
+    await scripted.runner.cancel(task.id)

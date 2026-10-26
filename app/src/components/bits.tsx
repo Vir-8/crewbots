@@ -9,6 +9,7 @@ const STATUS_LABEL: Record<Status, string> = {
   failed: "failed",
   cancelled: "cancelled",
   interrupted: "interrupted",
+  held: "waiting",
 };
 
 export function StatusDot({ status }: { status: Status }) {

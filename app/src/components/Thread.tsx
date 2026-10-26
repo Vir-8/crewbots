@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Crew } from "../state";
-import { describeCall, doing, oneLine } from "../state";
+import { describeCall, doing, limitText, oneLine } from "../state";
 import type { StoredEvent, Task } from "../types";
 import { ACTIVE } from "../types";
 import { Markdown } from "./bits";
@@ -13,8 +13,9 @@ type Block =
   | { kind: "say"; id: number; text: string }
   | { kind: "steps"; id: number; calls: { call: StoredEvent; result?: StoredEvent }[] }
   | { kind: "work"; id: number; task: Task }
-  | { kind: "line"; id: number; text: string; icon?: "check" | "merge" | "branch" | "alert"; tone?: string }
+  | { kind: "line"; id: number; text: string; icon?: "check" | "merge" | "branch" | "alert" | "play"; tone?: string }
   | { kind: "ask"; id: number; question: string }
+  | { kind: "held"; id: number; taskId: string; reason: string }
   | { kind: "handoff"; id: number; data: Record<string, any> }
   | { kind: "verdict"; id: number; data: Record<string, any> };
 
@@ -94,6 +95,7 @@ function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>
       case "message":
         flush();
         if (d.from === "user") out.push({ kind: "you", id: e.id, text: d.text });
+        else if (d.from === "routine") out.push({ kind: "brief", id: e.id, from: `the ${tasks.get(e.task_id)?.routine ?? ""} routine`, text: d.text });
         else if (d.from !== "crewbots") out.push({ kind: "brief", id: e.id, from: d.from, text: d.text });
         break;
       case "text":
@@ -127,6 +129,20 @@ function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>
           text: `${d.action === "remember" ? "Remembered" : "Forgot"}${d.scope === "crew" ? " for the crew" : ""}: ${d.title}`,
           icon: "check",
         });
+        break;
+      case "held":
+        flush();
+        out.push({ kind: "held", id: e.id, taskId: e.task_id, reason: d.reason });
+        break;
+      case "released":
+        flush();
+        out.push({ kind: "line", id: e.id, text: "You let it go ahead", icon: "play" });
+        break;
+      case "rate_limit":
+        if (d.status !== "ok") {
+          flush();
+          out.push({ kind: "line", id: e.id, text: limitText(d as Parameters<typeof limitText>[0]), icon: "alert", tone: d.status === "limited" ? "bad" : "warn" });
+        }
         break;
       case "rollover":
         flush();
@@ -190,6 +206,23 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
           <div className="ask-text">{block.question}</div>
         </div>
       );
+    case "held": {
+      const still = props.crew.tasks.get(block.taskId)?.status === "held";
+      return (
+        <div className={`hold-card ${still ? "" : "over"}`}>
+          <div className="hold-head">
+            <Icon name="pause" size={14} />
+            {still ? "Waiting before its next turn" : "Waited before a turn"}
+          </div>
+          <div className="hold-text">{block.reason.charAt(0).toUpperCase() + block.reason.slice(1)}</div>
+          {still && (
+            <button className="button small hold-go" onClick={() => props.crew.release(block.taskId)}>
+              Go ahead anyway
+            </button>
+          )}
+        </div>
+      );
+    }
     case "handoff":
       return (
         <div className="handoff">

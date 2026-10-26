@@ -15,6 +15,9 @@ const PATHS = {
   diff: "M8 3v5M5.5 5.5h5M5.5 12h5",
   panelClose: "M3 3.5h10v9H3zM9.5 3.5v9",
   compose: "M11 2.5l2.5 2.5L6 12.5H3.5V10zM9.5 4l2.5 2.5",
+  pause: "M6 4.5v7M10 4.5v7",
+  play: "M5.5 3.8v8.4L12 8z",
+  repeat: "M3 7.5V7a3 3 0 0 1 3-3h6.5M10.5 2l2 2-2 2M13 8.5V9a3 3 0 0 1-3 3H3.5M5.5 14l-2-2 2-2",
 } as const;
 
 export type IconName = keyof typeof PATHS;

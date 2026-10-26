@@ -17,6 +17,7 @@ from typing import Any
 import httpx
 
 from crewbots import api, crew, typescript, worktree
+from crewbots import routines as routines_module
 from crewbots import service as svc
 from crewbots.backends import BACKENDS, Access, RunSpec
 from crewbots.events import Done, Event, Notice, SessionStarted, Text, ToolCall, ToolResult, Usage, from_json
@@ -75,6 +76,18 @@ def main(argv: list[str] | None = None) -> int:
     add.add_argument("path", type=Path)
     add.add_argument("--name", help="the folder name in skills/; a pack's skills are named <name>:<skill>")
 
+    routines = sub.add_parser("routines", help="list the crew's routines, run one now, or add a starter one")
+    routines_sub = routines.add_subparsers(dest="routines_command")
+    run_routine = routines_sub.add_parser("run", help="run a scheduled routine now")
+    run_routine.add_argument("name")
+    run_routine.add_argument("--no-watch", action="store_true")
+    add_routine = routines_sub.add_parser("add", help="copy a starter routine into the crew (standup, retro, ...)")
+    add_routine.add_argument("name", nargs="?")
+    sub.add_parser("budgets", help="each bot's token use, against its budget")
+    release = sub.add_parser("release", help="let a task held on a budget or plan limit go ahead")
+    release.add_argument("task_id")
+    sub.add_parser("reload", help="take up edited role cards and budgets without restarting the daemon")
+
     openapi = sub.add_parser("openapi", help="print the API's OpenAPI schema (what the app's types are generated from)")
     openapi.add_argument("--out", type=Path)
     openapi.add_argument("--ts", action="store_true", help="print TypeScript types instead of the schema")
@@ -93,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return COMMANDS[args.command](args)
-    except (crew.CrewError, FileNotFoundError, RuntimeError) as e:
+    except (crew.CrewError, routines_module.RoutineError, FileNotFoundError, RuntimeError) as e:
         print(f"crewbots: {e}", file=sys.stderr)
         return 1
     except httpx.HTTPStatusError as e:
@@ -192,6 +205,60 @@ def _skills(args: argparse.Namespace) -> int:
     return 0
 
 
+def _routines(args: argparse.Namespace) -> int:
+    if args.routines_command == "add":
+        if not args.name:
+            for name, text in sorted(routines_module.starters().items()):
+                starter = routines_module.parse(text, name, Path(name))
+                print(f"{name:<18} {starter.when:<40} {starter.description}")
+            return 0
+        path = routines_module.add_starter(args.home, args.name)
+        print(f"added {path}; edit it to change when it runs or what it does")
+        return 0
+    client = _client(args)
+    if args.routines_command == "run":
+        task = client.post(f"/routines/{args.name}/run").raise_for_status().json()
+        print(f"{task['id']} → {task['bot']}: {task['title']}")
+        return 0 if args.no_watch else _follow(client, task["id"])
+    listing = client.get("/routines").raise_for_status().json()
+    for r in listing["routines"]:
+        state = "" if r["enabled"] else " (off)"
+        upcoming = f"  next {r['next_run_at'][:16].replace('T', ' ')}" if r["next_run_at"] and r["enabled"] else ""
+        last = f", last {r['last_run_at'][:16].replace('T', ' ')} ({r['last_task_id']})" if r["last_run_at"] else ""
+        print(f"{r['name']:<18} {r['bot']:<10} {r['when']}{upcoming}{last}{state}")
+    for name, error in listing["errors"].items():
+        print(f"{name}: couldn't be read: {error}", file=sys.stderr)
+    if listing["github_error"]:
+        print(f"GitHub: {listing['github_error']}", file=sys.stderr)
+    if not listing["routines"] and not listing["errors"]:
+        print("no routines; `crewbots routines add` lists the starter ones")
+    return 0
+
+
+def _budgets(args: argparse.Namespace) -> int:
+    for b in _client(args).get("/budgets").raise_for_status().json():
+        limit = f"of {b['tokens']:,}" if b["tokens"] else "(no budget)"
+        held = f", holding {', '.join(b['held'])}" if b["held"] else ""
+        print(f"{b['bot']:<12} {b['used']:>12,} {limit} in the last {b['per']}{held}")
+    state = _client(args).get("/crew").raise_for_status().json()
+    for limit in state["limits"]:
+        used = f", {limit['used_percent']:g}% used" if limit["used_percent"] is not None else ""
+        print(f"{limit['plan']} plan, {limit['window'].replace('_', ' ')} limit: {limit['status']}{used}")
+    return 0
+
+
+def _release(args: argparse.Namespace) -> int:
+    task = _client(args).post(f"/tasks/{args.task_id}/release").raise_for_status().json()
+    print(f"{task['id']}: released; it goes ahead past its budgets")
+    return 0
+
+
+def _reload(args: argparse.Namespace) -> int:
+    _client(args).post("/crew/reload").raise_for_status()
+    print("reloaded the crew's role cards")
+    return 0
+
+
 def _watch(args: argparse.Namespace) -> int:
     return _follow(_client(args), args.task_id)
 
@@ -275,7 +342,8 @@ async def _run_direct(args: argparse.Namespace) -> int:
 COMMANDS = {
     "init": _init, "serve": _serve, "bots": _bots, "task": _task, "tasks": _tasks, "watch": _watch, "say": _say,
     "cancel": _cancel, "diff": _diff, "review": _review, "merge": _merge, "skills": _skills, "service": _service,
-    "openapi": _openapi, "run": _run,
+    "openapi": _openapi, "run": _run, "routines": _routines, "budgets": _budgets, "release": _release,
+    "reload": _reload,
 }
 
 
@@ -343,6 +411,14 @@ def _format_stored(e: dict[str, Any]) -> str:
             d = e["data"]
             where = "the crew's notes" if d["scope"] == "crew" else "its notes"
             return f"✎ {'remembered' if d['action'] == 'remember' else 'forgot'} in {where}: {d['title']}"
+        case "held":
+            return f"⏸ held: {e['data']['reason']} (crewbots release {e['task_id']})"
+        case "released":
+            return "▶ released past its budgets"
+        case "rate_limit":
+            d = e["data"]
+            used = f" at {d['used_percent']:g}%" if d.get("used_percent") is not None else ""
+            return f"! the {d['plan']} plan's {d['window'].replace('_', ' ')} limit: {d['status']}{used}"
         case "rollover":
             return f"↻ continued in a fresh session; the conversation was {e['data']['percent']}% of its context"
     event = from_json(e["kind"], e["data"])

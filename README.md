@@ -36,6 +36,21 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
   - Notes are files in `crew/memory/<bot>/notes/`, listed in each bot's instructions, so you can read, edit or delete them.
   - `recall` searches the whole record with SQLite FTS5, and so does `GET /v1/search?q=`.
   - A conversation that fills 70% of its context continues in a fresh session, from a briefing the bot writes.
+- **Routines** are work the crew starts on its own: Markdown files in `routines/`, each naming a bot, a goal, and when.
+  - A `schedule` is cron in your time zone. A routine missed while the Mac slept runs once when it wakes, never once
+    per miss, and one whose last run is still going is skipped that time.
+  - `on: github.review_requested` or `on: github.ci_failed` starts it when a pull request in its `repo` asks you for a
+    review, or one of yours fails its checks. The daemon asks GitHub every five minutes with your `gh` login, so
+    nothing listens on the internet. A trigger only starts on what's new after it's added, and once per pushed version.
+  - The goal can use what the run is about: `{{activity}}` (what the crew did since the last run), `{{pr.diff}}`,
+    `{{pr.failures}}` (failed checks with the end of their logs), and more (`src/crewbots/routines.py`).
+  - A new crew comes with a weekday standup and a Friday retro, which proposes edits to the crew's own files, plus two
+    GitHub triggers that start switched off.
+- **Budgets.** A role card can set `budget: {tokens: 2000000, per: week}`, and a routine a token budget for one run,
+  counting everything it delegates. Tokens are the fresh ones: input the model hadn't cached, plus output.
+  - Before each turn the runner checks them, and the plan's own limit, which both CLIs report. When one is spent, the
+    task is **held**: its next turn waits, it tells you, and it goes on by itself once there's room, or at once when you
+    release it. A turn already running is never cut short.
 - **The daemon** runs the tasks and serves an HTTP and WebSocket API on localhost. The desktop app and the `crewbots` command both use that API.
   - Every request needs the daemon's token, which is written to `daemon.json` and readable only by you.
   - The daemon also checks the Host header, so no web page you have open can drive your bots.
@@ -102,6 +117,10 @@ uv run crewbots service install
 ```
 
 It starts at login and restarts if it ever crashes. `crewbots service status` and `crewbots service uninstall` check on it and remove it, and its log is `~/.crewbots/logs/daemon.log`. The app's menu bar item has the same switch ("Start at login"). While tasks are running, the daemon keeps the Mac from sleeping (`caffeinate`), and it lets go as soon as the crew is idle.
+
+`crewbots routines` lists the routines with their next run, `routines run standup` runs one now, and `routines add`
+copies in a starter one. `crewbots budgets` shows each bot's use against its budget and where the plans' limits
+stand, `release <task>` lets a held task go ahead, and `reload` takes up edited role cards without a restart.
 
 `crewbots tasks` lists everything as a tree, `watch` follows a task and everything it delegates, and `cancel` stops one. Tasks still running when the daemon stops are marked interrupted; send them a message to carry on. `crewbots run` skips the crew and the daemon entirely and sends one prompt through one backend.
 
@@ -183,6 +202,9 @@ src/crewbots/
   backends/          claude_cli, codex_cli, and the subprocess runner they share
   crew.py            role cards and team files → bots and their instructions
   memory.py          bot and crew notes, as files
+  routines.py        routine files, cron schedules and starter routines
+  scheduler.py       runs routines when they're due and triggers when GitHub has something new
+  github.py          what the GitHub triggers read, through `gh`
   store.py           tasks and events, in SQLite, with full-text search
   runner.py          runs tasks: sessions, worktrees, queued follow-ups, delegation and reporting back
   api.py             the daemon: HTTP + WebSocket, user and run tokens, host checks
