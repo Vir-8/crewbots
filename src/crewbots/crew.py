@@ -144,6 +144,7 @@ class Crew:
     skills: dict[str, Skill] = field(default_factory=dict)
     global_skill_dirs: tuple[Path, ...] = ()
     mcp_servers: dict[str, McpServer] = field(default_factory=dict)  # the crew's own list (mcp.json)
+    shadowed_skills: tuple[Skill, ...] = ()  # skills named like one found first, so not used
 
     @property
     def skills_dir(self) -> Path:
@@ -227,9 +228,13 @@ def load(home: Path) -> Crew:
     team_files = {p.name: p.read_text() for p in sorted(team_dir.glob("*.md"))} if team_dir.is_dir() else {}
     skills = load_skills(home / "skills")
     global_dirs = tuple(d.expanduser() for d in GLOBAL_SKILL_DIRS)
+    shadowed: list[Skill] = []  # the same name in a later folder: listed, but the first one is the one used
     for folder in global_dirs:
         for name, skill in load_global_skills(folder).items():
-            skills.setdefault(name, skill)
+            if name in skills:
+                shadowed.append(skill)
+            else:
+                skills[name] = skill
     for bot in bots.values():
         if missing := [s for s in bot.skills if s not in ("all", "none") and s not in skills]:
             raise CrewError(f"{bot.name}: no skills named {missing} in {home / 'skills'} or your global skills")
@@ -243,7 +248,7 @@ def load(home: Path) -> Crew:
                             "use the server's streamable HTTP address")
         bots[name] = replace(bot, mcp={**named, **bot.mcp})
     return Crew(home=home, bots=bots, team_files=team_files, skills=skills, global_skill_dirs=global_dirs,
-                mcp_servers=servers)
+                mcp_servers=servers, shadowed_skills=tuple(shadowed))
 
 
 def stamp(home: Path) -> tuple[tuple[str, int], ...]:

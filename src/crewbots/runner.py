@@ -38,6 +38,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from crewbots import attachments as attachments_module
 from crewbots import cards, worktree
 from crewbots import crew as crew_module
 from crewbots.backends import BACKENDS, Access, Backend, McpServer, RunSpec
@@ -251,8 +252,8 @@ class Runner:
         self.bus.publish({"type": "task", "task": task.to_json()})
         return task
 
-    def say(self, bot: str, text: str, sender: str = "user") -> Task:
-        return self.send(self.chat(bot).id, text, sender=sender)
+    def say(self, bot: str, text: str, sender: str = "user", attachments: list[dict[str, Any]] | None = None) -> Task:
+        return self.send(self.chat(bot).id, text, sender=sender, attachments=attachments)
 
     def start_thread(self, task_id: str, title: str, goal: str) -> Task:
         """A bot opens a thread for itself, under the conversation it's in. Its result comes back there."""
@@ -286,11 +287,12 @@ class Runner:
         self.bus.publish({"type": "room", "room": room})
         return room
 
-    def post(self, room_id: str, author: str, text: str, depth: int = 0) -> dict[str, Any]:
+    def post(self, room_id: str, author: str, text: str, depth: int = 0,
+             attachments: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         """A message in a room, from the user or a bot. It wakes the bots it mentions; one from the user that mentions
         no one wakes the lead."""
         room = self.store.room(room_id)
-        message = self.store.add_room_message(room_id, author, text, depth)
+        message = self.store.add_room_message(room_id, author, text, depth, attachments)
         self.bus.publish({"type": "room_message", "message": message})
         members = {m.lower(): m for m in room["members"]}
         for m in room["members"]:  # a bot can also be mentioned by the name you gave it, written as one word
@@ -331,7 +333,8 @@ class Runner:
         # Woken again mid-turn, it keeps the deeper of the two, so a back-and-forth can't reset its own count.
         running = seat.id in self._runs
         self._seat_depth[seat.id] = max(depth, self._seat_depth.get(seat.id, 0)) if running else depth
-        self.send(seat.id, "\n\n".join(f"[{m['author']}]: {m['text']}" for m in unseen), sender="room")
+        self.send(seat.id, "\n\n".join(f"[{m['author']}]: {m['text']}{attachments_module.listing(m['attachments'])}"
+                                       for m in unseen), sender="room")
 
     def _seat_replied(self, seat: Task, text: str) -> None:
         text = text.strip()
@@ -339,9 +342,12 @@ class Runner:
             return
         self.post(seat.room_id, seat.bot, text, depth=self._seat_depth.get(seat.id, 0) + 1)
 
-    def send(self, task_id: str, text: str, sender: str = "user") -> Task:
+    def send(self, task_id: str, text: str, sender: str = "user",
+             attachments: list[dict[str, Any]] | None = None) -> Task:
+        """A message to a task. Attachments are shown with it, and listed, with where they are, in what the bot gets."""
         task = self.store.get_task(task_id)
-        self._message(task_id, sender, text)
+        self._message(task_id, sender, text, attachments)
+        text += attachments_module.listing(attachments or [])
         if task.reported:
             self.store.update_task(task_id, reported=False)  # its next outcome goes back to the parent too
         if task_id in self._runs:
@@ -853,7 +859,8 @@ class Runner:
         if task.kind == "review":  # its own instructions and tools, and nothing of the crew's: no roster, no memory
             tools = self.review_tools(task) if self.review_tools and self.api_url else None
             in_process = tools is not None and getattr(backend, "in_process_tools", False)
-            servers = {} if tools is None or in_process else self._crew_tools(token, bot, tools="review")
+            kind = "review" if tools is not None and getattr(tools, "reads_github", True) else "review-drafts"
+            servers = {} if tools is None or in_process else self._crew_tools(token, bot, tools=kind)
             return RunSpec(prompt=prompt, cwd=cwd, access=bot.access, model=bot.model, system_prompt=bot.instructions,
                            resume_session_id=task.session_id, timeout_s=bot.timeout_s, effort=bot.effort,
                            mcp_servers=servers, crew=tools if in_process else None)
@@ -867,7 +874,8 @@ class Runner:
             resume_session_id=task.session_id,
             mcp_servers={**bot.mcp, **({} if in_process else self._crew_tools(token, bot))},
             crew=CrewTools(self, task.id, bot.can_delegate) if in_process else None,
-            read_dirs=[*self.crew.skill_dirs, *[d for d in (self.crew.memory.root,) if d.is_dir()]], timeout_s=bot.timeout_s,
+            read_dirs=[*self.crew.skill_dirs, *[d for d in (self.crew.memory.root, self.crew.home / attachments_module.FOLDER)
+                                                 if d.is_dir()]], timeout_s=bot.timeout_s,
             network=bot.network, effort=bot.effort,
         )
 
@@ -1057,8 +1065,9 @@ class Runner:
 
     # Bookkeeping.
 
-    def _message(self, task_id: str, sender: str, text: str) -> None:
-        self._record(task_id, kind="message", data={"from": sender, "text": text})
+    def _message(self, task_id: str, sender: str, text: str, attachments: list[dict[str, Any]] | None = None) -> None:
+        self._record(task_id, kind="message", data={"from": sender, "text": text,
+                                                    **({"attachments": attachments} if attachments else {})})
 
     def _record(self, task_id: str, event: Event | None = None, *, kind: str | None = None,
                 data: dict[str, Any] | None = None) -> None:

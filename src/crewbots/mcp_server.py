@@ -113,8 +113,9 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
     return server
 
 
-def build_review_server(client: httpx.Client) -> MCPServer:
-    """A code reviewer's tools instead of the crew's: reading the repository on GitHub at the pull request's head."""
+def build_review_server(client: httpx.Client, reads_github: bool = True) -> MCPServer:
+    """A code reviewer's tools instead of the crew's: drafting line comments for the user, and reading the repository
+    on GitHub at the pull request's head when there's no local copy. None of them posts anything."""
     from crewbots.reviews import _review_tools
 
     server = MCPServer("crewbots")
@@ -125,6 +126,13 @@ def build_review_server(client: httpx.Client) -> MCPServer:
         if response.status_code >= 400:
             raise ToolError(response.json().get("detail", response.text))
         return response.json()["text"]
+
+    @server.tool(description=defs["draft_comment"].description)
+    def draft_comment(path: str, line: int, body: str, side: str = "RIGHT") -> str:
+        return call("/bot/review/draft_comment", {"path": path, "line": line, "body": body, "side": side})
+
+    if not reads_github:
+        return server
 
     @server.tool(description=defs["read_file"].description)
     def read_file(path: str, start: int | None = None, end: int | None = None) -> str:
@@ -144,8 +152,8 @@ def build_review_server(client: httpx.Client) -> MCPServer:
 def main() -> None:
     url, token = os.environ["CREWBOTS_URL"], os.environ["CREWBOTS_TOKEN"]
     client = httpx.Client(base_url=url, headers={"Authorization": f"Bearer {token}"}, timeout=60)
-    if os.environ.get("CREWBOTS_TOOLS") == "review":
-        build_review_server(client).run("stdio")
+    if os.environ.get("CREWBOTS_TOOLS") in ("review", "review-drafts"):
+        build_review_server(client, reads_github=os.environ["CREWBOTS_TOOLS"] == "review").run("stdio")
     else:
         build_server(client, can_delegate=os.environ.get("CREWBOTS_DELEGATE") == "1").run("stdio")
 

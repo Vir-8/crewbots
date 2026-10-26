@@ -2,14 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { api, bridge } from "../api";
 import { Markdown, ago } from "../components/bits";
 import { Composer } from "../components/Composer";
-import { DiffText } from "../components/DiffView";
+import { PullDiff } from "../components/PullDiff";
 import { Icon } from "../components/Icon";
 import { modelLabel } from "../components/ModelPicker";
 import { Resizer, useWidth } from "../components/Resizer";
 import { Thread } from "../components/Thread";
 import { Segmented } from "../components/ui";
 import type { Crew } from "../state";
-import type { Pull, PullSummary, Reviewer, Task } from "../types";
+import type { Draft, Pull, PullSummary, Reviewer, Submitted, Task } from "../types";
 import { ACTIVE } from "../types";
 
 type Selected = { repo: string; number: number };
@@ -155,6 +155,11 @@ function PullView({ crew, selected, onSettings }: { crew: Crew; selected: Select
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<"summary" | "changes">("summary");
   const [diff, setDiff] = useState<string | null>(keptDiffs.get(key) ?? null);
+  // Line comments for your review: yours, and the ones the reviewers draft as they go.
+  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState<Submitted | null>(null);
+  const loadDrafts = () => api.drafts(selected.repo, selected.number).then(setDrafts, () => undefined);
   // A kept one shows at once; the daemon's answer, kept there too, replaces it a moment later.
   const load = () =>
     api.pull(selected.repo, selected.number).then(
@@ -178,9 +183,24 @@ function PullView({ crew, selected, onSettings }: { crew: Crew; selected: Select
     );
   }, [tab]);
 
+  const reviewTasks = (pull?.reviews ?? []).map((r) => crew.tasks.get(r.id) ?? (r as Task));
+  useEffect(() => {
+    loadDrafts();
+  }, [reviewTasks.map((r) => r.updated_at).join()]);
+  const authorOf = (who: string) => {
+    if (who === "user") return "You";
+    const [, backend, model, effort] = who.split(":");
+    return modelLabel(crew, backend ?? "claude", model === "default" ? null : model, effort === "default" ? null : effort);
+  };
+  const goTo = (id: number) => {
+    setTab("changes");
+    setTimeout(() => document.getElementById(`draft-${id}`)?.scrollIntoView({ block: "center", behavior: "smooth" }), 400);
+  };
+
   if (error) return <div className="review-empty error-text">{error}</div>;
   if (!pull) return <div className="review-empty faint">Loading {selected.repo}#{selected.number}…</div>;
-  const reviews = pull.reviews.map((r) => crew.tasks.get(r.id) ?? (r as Task));
+  const reviews = reviewTasks;
+  const yours = Boolean(crew.reviewInbox?.mine?.some((p) => p.repo === pull.repo && p.number === pull.number));
   return (
     <>
       <main className="pull-view">
@@ -190,10 +210,47 @@ function PullView({ crew, selected, onSettings }: { crew: Crew; selected: Select
             <span className="add">+{pull.additions}</span> <span className="del">−{pull.deletions}</span>
           </span>
           <span className="grow" data-tauri-drag-region />
+          <span className="submit-anchor">
+            <button className={`button small ${drafts.length ? "primary" : ""}`} onClick={() => setSubmitting(!submitting)} title="Approve, request changes or comment, on GitHub">
+              Submit review{drafts.length ? ` (${drafts.length})` : ""}
+            </button>
+            {submitting && (
+              <SubmitPanel
+                pull={pull}
+                drafts={drafts.length}
+                yours={yours}
+                onClose={() => setSubmitting(false)}
+                onDone={(done) => {
+                  setSubmitted(done);
+                  setSubmitting(false);
+                  loadDrafts();
+                  load();
+                }}
+              />
+            )}
+          </span>
           <button className="icon-button" onClick={() => bridge.openUrl(pull.url)} title="Open on GitHub">
             <Icon name="external" size={14} />
           </button>
         </header>
+        {submitted && (
+          <div className="submitted">
+            <Icon name="check" size={14} />
+            <span>
+              {submitted.state === "APPROVED" ? "Approved" : submitted.state === "CHANGES_REQUESTED" ? "Requested changes" : "Commented"} on GitHub
+              {submitted.comments ? `, with ${submitted.comments} line comment${submitted.comments === 1 ? "" : "s"}` : ""}.
+            </span>
+            {submitted.url && (
+              <button className="text-button" onClick={() => bridge.openUrl(submitted.url)}>
+                See it
+              </button>
+            )}
+            <span className="grow" />
+            <button className="icon-button" onClick={() => setSubmitted(null)} title="Dismiss">
+              <Icon name="x" size={13} />
+            </button>
+          </div>
+        )}
         <div className="pull-scroll">
           {tab === "summary" ? (
             <div className="pull-col">
@@ -223,17 +280,111 @@ function PullView({ crew, selected, onSettings }: { crew: Crew; selected: Select
                   </div>
                 )}
               </div>
+              {drafts.length > 0 && (
+                <div className="pending-comments">
+                  <h3>Your review's line comments · {drafts.length}, not submitted</h3>
+                  {drafts.map((d) => (
+                    <button key={d.id} className="pending-comment" onClick={() => goTo(d.id)}>
+                      <span className="mono small">
+                        {d.path}:{d.line}
+                      </span>
+                      <span className="faint small">{authorOf(d.author)}</span>
+                      <span className="pending-text">{d.body.split("\n")[0]}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="pull-body">{pull.body.trim() ? <Markdown text={pull.body} onSelect={() => undefined} /> : <p className="faint">No description.</p>}</div>
             </div>
           ) : diff === null ? (
             <p className="faint pad">Loading the diff…</p>
           ) : (
-            <DiffText diff={diff} />
+            <PullDiff
+              diff={diff}
+              drafts={drafts}
+              author={authorOf}
+              onAdd={async (spot, body) => {
+                await api.addDraft(pull.repo, pull.number, { ...spot, body });
+                await loadDrafts();
+              }}
+              onEdit={async (id, body) => {
+                await api.editDraft(id, body);
+                await loadDrafts();
+              }}
+              onDelete={async (id) => {
+                await api.deleteDraft(id);
+                await loadDrafts();
+              }}
+              image={(path, side) => api.pullImage(pull.repo, pull.number, path, side).then((i) => `data:${i.mime};base64,${i.data}`)}
+            />
           )}
         </div>
       </main>
       <ReviewPane crew={crew} pull={pull} reviews={reviews} onStarted={load} onSettings={onSettings} />
     </>
+  );
+}
+
+type Verdict = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
+const VERDICTS: [Verdict, string, string][] = [
+  ["COMMENT", "Comment", "Feedback, without approving or holding it up"],
+  ["APPROVE", "Approve", "Good to merge"],
+  ["REQUEST_CHANGES", "Request changes", "Must be addressed before it's merged"],
+];
+
+/** Your review, posted to GitHub under your name: the only thing crewbots ever submits, and only from here. */
+function SubmitPanel({ pull, drafts, yours, onClose, onDone }: { pull: Pull; drafts: number; yours: boolean; onClose: () => void; onDone: (done: Submitted) => void }) {
+  const [verdict, setVerdict] = useState<Verdict>("COMMENT");
+  const [body, setBody] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const needsBody = (verdict === "REQUEST_CHANGES" && !body.trim()) || (verdict === "COMMENT" && !body.trim() && drafts === 0);
+  return (
+    <div className="submit-panel" onClick={(e) => e.stopPropagation()}>
+      <div className="command-panel-head">
+        <span className="command-panel-title">Submit your review</span>
+        <span className="grow" />
+        <button className="icon-button" onClick={onClose} title="Close">
+          <Icon name="x" size={13} />
+        </button>
+      </div>
+      <textarea rows={4} autoFocus value={body} onChange={(e) => setBody(e.target.value)} placeholder="Leave a summary (optional when approving)" />
+      <div className="verdicts">
+        {VERDICTS.map(([value, label, hint]) => {
+          const blocked = yours && value !== "COMMENT";
+          return (
+            <label key={value} className={`verdict ${verdict === value ? "on" : ""} ${blocked ? "blocked" : ""}`} title={blocked ? "GitHub doesn't let you approve or request changes on your own pull request" : undefined}>
+              <input type="radio" name="verdict" checked={verdict === value} disabled={blocked} onChange={() => setVerdict(value)} />
+              <span>
+                <span className="verdict-label">{label}</span>
+                <span className="faint small">{hint}</span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+      {error && <p className="error-text small">{error}</p>}
+      <div className="form-actions">
+        <span className="faint small">{drafts ? `${drafts} line comment${drafts === 1 ? "" : "s"} go with it` : "No line comments"}</span>
+        <span className="grow" />
+        <button
+          className="button small primary"
+          disabled={sending || needsBody}
+          onClick={async () => {
+            setSending(true);
+            setError(null);
+            try {
+              onDone(await api.submitReview(pull.repo, pull.number, { event: verdict, body }));
+            } catch (e) {
+              setError(String(e).replace(/^Error: /, ""));
+              setSending(false);
+            }
+          }}
+        >
+          {sending ? "Submitting…" : "Submit review"}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -334,7 +485,7 @@ function ReviewPane({ crew, pull, reviews, onStarted, onSettings }: { crew: Crew
             <Thread crew={crew} task={shown} onOpen={() => undefined} compact />
           </div>
           <div className="review-composer">
-            <Composer key={shown.id} placeholder="Ask about this review" onSend={(text) => crew.send(shown.id, text)} task={shown.id} />
+            <Composer key={shown.id} placeholder="Ask about this review" onSend={(text, files) => crew.send(shown.id, text, files)} task={shown.id} />
           </div>
         </>
       ) : (

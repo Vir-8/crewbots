@@ -1,5 +1,29 @@
 // Generated from the crewbots API schema by `crewbots openapi --ts`. Do not edit; regenerate.
 
+export interface AttachmentCopy {
+  path: string;
+}
+
+export interface AttachmentData {
+  name: string;
+  mime: string;
+  data: string;
+}
+
+export interface AttachmentOut {
+  id: string;
+  name: string;
+  path: string;
+  mime: string;
+  size: number;
+  kind: "image" | "file";
+}
+
+export interface AttachmentUpload {
+  name: string;
+  data: string;
+}
+
 export interface Avatar {
   color?: string | null;
   shape?: string | null;
@@ -139,6 +163,31 @@ export interface Delegation {
   review_of?: string | null;
 }
 
+export interface DraftBody {
+  path: string;
+  line: number;
+  side?: "RIGHT" | "LEFT";
+  body: string;
+}
+
+export interface DraftEdit {
+  body: string;
+}
+
+/** A line comment for a review, private until the user submits it. */
+export interface DraftOut {
+  id: number;
+  path: string;
+  line: number;
+  side: "RIGHT" | "LEFT";
+  body: string;
+  author: string;
+  task_id: string | null;
+  commit_sha: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface EffortUse {
   effort: string;
   turns: number;
@@ -193,6 +242,11 @@ export interface HandoffOut {
   open: string;
   needs: string;
   at: string;
+}
+
+export interface ImageOut {
+  mime: string;
+  data: string;
 }
 
 export interface ImportBody {
@@ -298,7 +352,8 @@ export interface MergeRequest {
 }
 
 export interface Message {
-  text: string;
+  text?: string;
+  attachments?: string[];
 }
 
 export interface ModelOut {
@@ -429,6 +484,7 @@ export interface PullOut {
   head: string;
   base: string;
   head_sha: string;
+  base_sha?: string;
   additions: number;
   deletions: number;
   changed_files: number;
@@ -551,6 +607,7 @@ export interface RoomMessageOut {
   text: string;
   depth: number;
   at: string;
+  attachments?: AttachmentOut[];
 }
 
 export interface RoomOut {
@@ -627,6 +684,8 @@ export interface SkillOut {
   description: string;
   source: string;
   path: string;
+  used: boolean;
+  same_as: string | null;
 }
 
 export interface StarterOut {
@@ -640,6 +699,18 @@ export type Status = "queued" | "running" | "idle" | "needs_input" | "failed" | 
 export interface Streak {
   longest: number;
   current: number;
+}
+
+export interface SubmitReview {
+  event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
+  body?: string;
+  drafts?: number[] | null;
+}
+
+export interface Submitted {
+  url: string;
+  state: string;
+  comments: number;
 }
 
 export interface TaskOut {

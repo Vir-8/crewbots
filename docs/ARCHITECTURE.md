@@ -293,6 +293,20 @@ Each step leaves the system working.
   the element while dragging (so a re-render mid-drag can't undo it) and kept in localStorage when the drag ends. The
   handle limits a drag to what the middle column can give up, the grid's `minmax` tracks let side panes give way in a
   narrow window, and the CSS defaults stand in until a pane is dragged.
+- **Review comments** (`review_drafts` in the store): a reviewer's `draft_comment` and the user's own drafts are
+  checked against the PR's diff the way GitHub checks them (`commentable`: RIGHT is the head's added and unchanged
+  lines, LEFT the base's removed and unchanged ones) and kept with the head they were written on. Submitting is a
+  single `gh api POST /repos/{repo}/pulls/{n}/reviews` with the event, the summary and the drafts, sent once (a
+  write isn't retried: one that timed out may have happened), under the `/v1/reviews` routes, which only the user's
+  token opens; a bot's token reaches `/v1/bot` alone. Every review gets `draft_comment`, local copy or not, so its
+  tools are crewbots' MCP server for Codex either way.
+- **Changed images** in a PR come from GitHub's contents API at the head and the base commit (the blobs API past a
+  megabyte), kept like other GitHub answers.
+- **Attachments** (`attachments.py`) are files in the crew's `attachments/<id>/`, which Claude bots may read (an
+  `add_dirs` entry) and Codex bots read anyway. A message records them (a task event's `attachments`, a room
+  message's column) and the text a bot gets lists their names, types and paths. The app uploads bytes (picked,
+  pasted or dropped: the window's own file-drop handling is off so the page gets the files) and shows images by
+  asking for them back.
 - **`/status`** asks the runner for a task's session and context: measured live when its session is open and idle,
   else the last measurement, kept after every turn.
 - **When a turn fails:** the CLIs retry a failed API call themselves first (Claude Code with backoff, Codex per

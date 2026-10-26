@@ -167,6 +167,7 @@ def test_global_skills_are_there_for_every_bot_after_the_crews_own(tmp_path, mon
     assert loaded.skills["arena"].source == "crew" and loaded.skills["pdf"].source == str(mine)
     assert loaded.skills["pdf"] in loaded.skills_for(loaded.bots["engineer"])
     assert mine in loaded.skill_dirs  # so a Claude bot may read them
+    assert [(s.name, s.source) for s in loaded.shadowed_skills] == [("arena", str(mine))]  # listed, not used
 
 
 def write_skill(folder: Path, name: str, description: str = "does a thing") -> None:

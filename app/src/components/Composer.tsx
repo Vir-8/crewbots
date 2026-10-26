@@ -3,6 +3,7 @@ import { bridge } from "../api";
 import type { Bot } from "../types";
 import { labelOf } from "./Avatar";
 import { Icon } from "./Icon";
+import { type Pending, PendingFiles, upload } from "./Attachments";
 import { StatusPanel } from "./StatusPanel";
 import { UsagePanel } from "./UsagePanel";
 
@@ -17,7 +18,7 @@ const COMMANDS: { name: string; icon: "chart" | "settings"; description: string;
  * anywhere, typing / offers the app's own commands. */
 export function Composer(props: {
   placeholder: string;
-  onSend: (text: string) => Promise<unknown>;
+  onSend: (text: string, attachments: string[]) => Promise<unknown>;
   asking?: boolean;
   autoFocus?: boolean;
   mentions?: string[];
@@ -30,6 +31,21 @@ export function Composer(props: {
 }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  // Images and files to send with it: picked with +, pasted, or dropped on the box.
+  const [files, setFiles] = useState<Pending[]>([]);
+  const [dropping, setDropping] = useState(false);
+  const picker = useRef<HTMLInputElement>(null);
+  const attach = (list: FileList | File[] | null) => {
+    if (!list || !list.length) return;
+    upload(
+      [...list],
+      (key, fields) => setFiles((fs) => fs.map((f) => (f.key === key ? { ...f, ...fields } : f))),
+      (p) => setFiles((fs) => [...fs, p]),
+    );
+    area.current?.focus();
+  };
+  const uploading = files.some((f) => !f.id && !f.error);
+  const ready = files.filter((f) => f.id);
   const [listening, setListening] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
   const before = useRef(""); // what was typed before dictation started; what's heard goes after it
@@ -94,7 +110,7 @@ export function Composer(props: {
 
   const send = async () => {
     const value = text.trim();
-    if (!value || sending) return;
+    if ((!value && !ready.length) || sending || uploading) return;
     if (listening) {
       setListening(false);
       bridge.dictation.stop();
@@ -102,17 +118,37 @@ export function Composer(props: {
     setSending(true);
     setText("");
     setPanel(null);
+    const sent = files;
+    setFiles([]);
     try {
-      await props.onSend(value);
+      await props.onSend(value, ready.map((f) => f.id!));
     } catch {
       setText(value);
+      setFiles(sent);
     } finally {
       setSending(false);
     }
   };
 
   return (
-    <div className={`composer ${props.asking ? "asking" : ""} ${listening ? "listening" : ""}`} onClick={() => area.current?.focus()}>
+    <div
+      className={`composer ${props.asking ? "asking" : ""} ${listening ? "listening" : ""} ${dropping ? "dropping" : ""}`}
+      onClick={() => area.current?.focus()}
+      onDragOver={(e) => {
+        if (![...e.dataTransfer.types].includes("Files")) return;
+        e.preventDefault();
+        setDropping(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropping(false);
+      }}
+      onDrop={(e) => {
+        if (!e.dataTransfer.files.length) return;
+        e.preventDefault();
+        setDropping(false);
+        attach(e.dataTransfer.files);
+      }}
+    >
       {panel === "usage" && <UsagePanel onClose={() => setPanel(null)} />}
       {panel === "status" && props.task && <StatusPanel taskId={props.task} onClose={() => setPanel(null)} />}
       {commands.length > 0 && (
@@ -143,8 +179,15 @@ export function Composer(props: {
           ))}
         </div>
       )}
+      {files.length > 0 && <PendingFiles items={files} onRemove={(key) => setFiles((fs) => fs.filter((f) => f.key !== key))} />}
       <textarea
         ref={area}
+        onPaste={(e) => {
+          const pasted = [...e.clipboardData.files];
+          if (!pasted.length) return;
+          e.preventDefault();
+          attach(pasted);
+        }}
         rows={1}
         value={text}
         placeholder={props.placeholder}
@@ -170,6 +213,26 @@ export function Composer(props: {
         }}
       />
       <div className="composer-bar">
+        <input
+          ref={picker}
+          type="file"
+          multiple
+          hidden
+          onChange={(e) => {
+            attach(e.target.files);
+            e.target.value = "";
+          }}
+        />
+        <button
+          className="icon-button attach"
+          onClick={(e) => {
+            e.stopPropagation();
+            picker.current?.click();
+          }}
+          title="Attach images or files (or paste, or drop them here)"
+        >
+          <Icon name="plus" size={15} />
+        </button>
         {props.bots && props.onBot && (
           <label className="chip select" onClick={(e) => e.stopPropagation()}>
             <span className="faint">To</span>
@@ -217,7 +280,7 @@ export function Composer(props: {
         >
           <Icon name="mic" size={15} />
         </button>
-        <button className="send" disabled={!text.trim() || sending} onClick={send} title="Send">
+        <button className="send" disabled={(!text.trim() && !ready.length) || sending || uploading} onClick={send} title={uploading ? "Waiting for attachments to finish" : "Send"}>
           <Icon name="arrowUp" size={15} />
         </button>
       </div>

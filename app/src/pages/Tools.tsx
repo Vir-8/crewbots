@@ -84,7 +84,7 @@ export function Tools({ crew }: { crew: Crew }) {
 
       <section className="page-section">
         <h2>Skills</h2>
-        <p className="faint small">Every bot sees these and reads one when a task matches it, unless its card names only some. The crew's own come first; your global ones are the same skills Claude Code and Codex use.</p>
+        <p className="faint small">Every bot sees these and reads one when a task matches it, unless its card names only some. The crew's own come first, then your global ones, the same skills Claude Code and Codex use; where two folders have a skill of the same name, the first is the one used.</p>
         {groups.map((source) => (
           <div key={source} className="skill-group">
             <h3>{source === "crew" ? "The crew's" : source}</h3>
@@ -92,9 +92,12 @@ export function Tools({ crew }: { crew: Crew }) {
               {skills
                 .filter((s) => s.source === source)
                 .map((s) => (
-                  <button key={s.name} className="list-row skill-row" onClick={() => bridge.reveal(s.path)} title={s.path}>
+                  <button key={`${s.name}-${s.path}`} className={`list-row skill-row ${s.used ? "" : "unused"}`} onClick={() => bridge.reveal(s.path)} title={s.path}>
                     <span className="list-text">
-                      <span className="list-title">{s.name}</span>
+                      <span className="list-title">
+                        {s.name}
+                        {!s.used && <span className="tag">Also in {s.same_as === "crew" ? "the crew's" : s.same_as}, which is used</span>}
+                      </span>
                       <span className="faint small ellipsis">{s.description}</span>
                     </span>
                   </button>

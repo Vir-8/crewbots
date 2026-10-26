@@ -20,6 +20,9 @@ import type {
   RegistryEntry,
   McpCheck,
   SkillOut,
+  DraftOut,
+  AttachmentOut,
+  Submitted as SubmittedOut,
   CrewState as CrewStateOut,
   EventOut,
   FindingOut,
@@ -59,6 +62,9 @@ export type InstalledMcp = InstalledServer;
 export type RegistryServer = RegistryEntry;
 export type McpCheckResult = McpCheck;
 export type Skill = SkillOut;
+export type Draft = DraftOut;
+export type Attachment = AttachmentOut;
+export type Submitted = SubmittedOut;
 export type ReviewInbox = InboxOut;
 export type PullSummary = PullSummaryOut;
 export type Pull = PullOut;

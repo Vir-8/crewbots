@@ -9,6 +9,8 @@ that is what a bot's crewbots MCP server holds, so a bot can never act for anoth
 """
 
 import asyncio
+import base64
+import binascii
 import contextlib
 import json
 import os
@@ -25,6 +27,7 @@ from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, WebSocket
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from crewbots import attachments as attachments_module
 from crewbots import cards, mcp_catalog
 from crewbots import crew as crew_module
 from crewbots import models as models_module
@@ -39,7 +42,7 @@ from crewbots.reviews import INBOX_LISTS, SEARCHES, ReviewError, Reviews, Review
 from crewbots.routines import RoutineError
 from crewbots.runner import MergeError, NotAllowed, Runner, UnknownBot
 from crewbots.scheduler import Scheduler
-from crewbots.store import Status, Store, Verdict
+from crewbots.store import Status, Store, Task, Verdict
 
 DEFAULT_PORT = 8765
 DAEMON_FILE = "daemon.json"  # in the crew's folder: where the daemon is and its token, readable only by the user
@@ -142,6 +145,49 @@ class CardOut(CardBody):
     name: str
 
 
+class DraftOut(BaseModel):
+    """A line comment for a review, private until the user submits it."""
+
+    id: int
+    path: str
+    line: int
+    side: Literal["RIGHT", "LEFT"]
+    body: str
+    author: str  # "user", or the reviewer that drafted it
+    task_id: str | None
+    commit_sha: str | None  # the head it was written against
+    created_at: str
+    updated_at: str
+
+
+class DraftBody(BaseModel):
+    path: str
+    line: int
+    side: Literal["RIGHT", "LEFT"] = "RIGHT"
+    body: str
+
+
+class DraftEdit(BaseModel):
+    body: str
+
+
+class SubmitReview(BaseModel):
+    event: Literal["APPROVE", "REQUEST_CHANGES", "COMMENT"]
+    body: str = ""
+    drafts: list[int] | None = None  # which drafts go with it; None: all of them
+
+
+class Submitted(BaseModel):
+    url: str
+    state: str  # GitHub's: APPROVED, CHANGES_REQUESTED or COMMENTED
+    comments: int
+
+
+class ImageOut(BaseModel):
+    mime: str
+    data: str  # base64
+
+
 class McpServerOut(BaseModel):
     """One of the crew's MCP servers, without the values of its env or headers, which can be keys."""
 
@@ -221,6 +267,8 @@ class SkillOut(BaseModel):
     description: str
     source: str  # "crew", or the global folder it's in, such as ~/.claude/skills
     path: str
+    used: bool  # False: a skill of the same name was found first, and that one is used
+    same_as: str | None  # for one not used, where the one used is
 
 
 class McpCheck(BaseModel):
@@ -282,6 +330,7 @@ class PullOut(BaseModel):
     head: str
     base: str
     head_sha: str
+    base_sha: str = ""
     additions: int
     deletions: int
     changed_files: int
@@ -578,6 +627,15 @@ class RoomOut(BaseModel):
     updated_at: str
 
 
+class AttachmentOut(BaseModel):
+    id: str
+    name: str
+    path: str  # in the crew's folder, where bots read it
+    mime: str
+    size: int
+    kind: Literal["image", "file"]
+
+
 class RoomMessageOut(BaseModel):
     id: int
     room_id: str
@@ -585,6 +643,7 @@ class RoomMessageOut(BaseModel):
     text: str
     depth: int
     at: str
+    attachments: list[AttachmentOut] = []
 
 
 class LastMessage(BaseModel):
@@ -651,7 +710,23 @@ class NewTask(BaseModel):
 
 
 class Message(BaseModel):
-    text: str
+    text: str = ""
+    attachments: list[str] = []  # ids from POST /attachments
+
+
+class AttachmentUpload(BaseModel):
+    name: str
+    data: str  # base64
+
+
+class AttachmentCopy(BaseModel):
+    path: str  # a file you picked
+
+
+class AttachmentData(BaseModel):
+    name: str
+    mime: str
+    data: str  # base64
 
 
 class NewRoom(BaseModel):
@@ -748,8 +823,14 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
     store = runner.store
     scheduler = scheduler or Scheduler(runner)
     reviews = reviews or Reviews(runner.crew.home)
-    runner.review_tools = lambda task: (None if not task.pr or reviews.checkout_of(task.pr.rsplit("#", 1)[0])
-                                        else ReviewTools(reviews, task.pr))
+    def review_tools(task: Task) -> ReviewTools | None:
+        """A review's tools: drafting line comments always, and reading the repository on GitHub without a local copy."""
+        if not task.pr:
+            return None
+        return ReviewTools(reviews, task.pr, drafts=store, task_id=task.id, author=task.bot,
+                           reads_github=not reviews.checkout_of(task.pr.rsplit("#", 1)[0]))
+
+    runner.review_tools = review_tools
     hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
 
     def allowed(host: str | None, credential: str | None) -> bool:
@@ -889,8 +970,11 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
     @v1.get("/skills", response_model=list[SkillOut])
     async def skills():
         """Every skill the bots can use: the crew's own, then your global ones."""
-        return [{"name": s.name, "description": s.description, "source": s.source, "path": str(s.path)}
-                for s in runner.crew.skills.values()]
+        found = runner.crew.skills
+        return [{"name": s.name, "description": s.description, "source": s.source, "path": str(s.path), "used": True,
+                 "same_as": None} for s in found.values()] + [
+            {"name": s.name, "description": s.description, "source": s.source, "path": str(s.path), "used": False,
+             "same_as": found[s.name].source if s.name in found else None} for s in runner.crew.shadowed_skills]
 
     @v1.get("/mcp/installed", response_model=list[InstalledServer])
     async def installed_mcp():
@@ -960,10 +1044,44 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
         task_or_404(task_id)
         return [e.to_json() for e in store.events(task_id, after=after, limit=limit)]
 
+    def attached(body: Message) -> list[dict[str, Any]]:
+        if not body.text.strip() and not body.attachments:
+            raise HTTPException(422, "a message needs text, or an attachment")
+        try:
+            return [attachments_module.find(runner.crew.home, a) for a in body.attachments]
+        except attachments_module.AttachmentError as e:
+            raise HTTPException(422, str(e)) from None
+
     @v1.post("/tasks/{task_id}/messages", response_model=TaskOut)
     async def message(task_id: str, body: Message):
         task_or_404(task_id)
-        return runner.send(task_id, body.text).to_json()
+        return runner.send(task_id, body.text, attachments=attached(body)).to_json()
+
+    @v1.post("/attachments", response_model=AttachmentOut, status_code=201)
+    async def upload_attachment(body: AttachmentUpload):
+        """Keeps a file sent from the app (a pasted image, a dropped file), for a message to carry."""
+        try:
+            return attachments_module.save(runner.crew.home, body.name, base64.b64decode(body.data))
+        except (attachments_module.AttachmentError, binascii.Error) as e:
+            raise HTTPException(422, str(e)) from None
+
+    @v1.post("/attachments/copy", response_model=AttachmentOut, status_code=201)
+    async def copy_attachment(body: AttachmentCopy):
+        """Keeps a copy of a file you picked."""
+        try:
+            return await asyncio.to_thread(attachments_module.copy_in, runner.crew.home, Path(body.path))
+        except attachments_module.AttachmentError as e:
+            raise HTTPException(422, str(e)) from None
+
+    @v1.get("/attachments/{attachment_id}", response_model=AttachmentData)
+    async def attachment(attachment_id: str):
+        """An attachment's bytes, for the app to show an image."""
+        try:
+            found = attachments_module.find(runner.crew.home, attachment_id)
+        except attachments_module.AttachmentError as e:
+            raise HTTPException(404, str(e)) from None
+        data = await asyncio.to_thread(Path(found["path"]).read_bytes)
+        return {"name": found["name"], "mime": found["mime"], "data": base64.b64encode(data).decode()}
 
     @v1.post("/tasks/{task_id}/cancel", response_model=TaskOut)
     async def cancel(task_id: str):
@@ -1018,7 +1136,7 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
 
     @v1.post("/chats/bot/{bot}/messages", response_model=TaskOut)
     async def message_bot(bot: str, body: Message):
-        return runner.say(bot, body.text).to_json()
+        return runner.say(bot, body.text, attachments=attached(body)).to_json()
 
     @v1.post("/chats/{key}/read")
     async def read(key: str):
@@ -1047,7 +1165,7 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
     @v1.post("/rooms/{room_id}/messages", status_code=201, response_model=RoomMessageOut)
     async def post_message(room_id: str, body: Message):
         room_or_404(room_id)
-        return runner.post(room_id, "user", body.text)
+        return runner.post(room_id, "user", body.text, attachments=attached(body))
 
     @v1.get("/bots/{bot}/profile", response_model=ProfileOut)
     async def profile(bot: str):
@@ -1082,6 +1200,46 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
         touched = store.reviewed_prs()
         return {k: [p | {"reviewed_at": touched.get(f"{p['repo']}#{p['number']}")} for p in v] for k, v in inbox.items()} | {
             "error": error}
+
+    # Review comments and submitting a review: the user's token only. A reviewer drafts through its own tool, and
+    # nothing a bot can reach submits or posts.
+
+    @v1.get("/reviews/{owner}/{name}/{number}/drafts", response_model=list[DraftOut])
+    async def review_drafts(owner: str, name: str, number: int):
+        return store.drafts(f"{owner}/{name}", number)
+
+    @v1.post("/reviews/{owner}/{name}/{number}/drafts", response_model=DraftOut, status_code=201)
+    async def add_review_draft(owner: str, name: str, number: int, body: DraftBody):
+        repo = f"{owner}/{name}"
+        spot = await asyncio.to_thread(reviewing, reviews.check_draft, repo, number, body.path, body.line, body.side)
+        return store.add_draft(repo, number, spot["path"], spot["line"], spot["side"], body.body, "user",
+                               commit_sha=spot["commit_sha"])
+
+    @v1.put("/reviews/drafts/{draft_id}", response_model=DraftOut)
+    async def edit_review_draft(draft_id: int, body: DraftEdit):
+        try:
+            return store.edit_draft(draft_id, body.body)
+        except KeyError:
+            raise HTTPException(404, "that draft is gone") from None
+
+    @v1.delete("/reviews/drafts/{draft_id}")
+    async def delete_review_draft(draft_id: int):
+        store.delete_drafts([draft_id])
+        return {"deleted": draft_id}
+
+    @v1.post("/reviews/{owner}/{name}/{number}/submit", response_model=Submitted)
+    async def submit_review(owner: str, name: str, number: int, body: SubmitReview):
+        """Posts the user's review to GitHub, approving, requesting changes or commenting, with the drafts chosen."""
+        repo = f"{owner}/{name}"
+        drafts = [d for d in store.drafts(repo, number) if body.drafts is None or d["id"] in body.drafts]
+        done = await asyncio.to_thread(reviewing, reviews.submit, repo, number, body.event, body.body, drafts)
+        store.delete_drafts([d["id"] for d in drafts])
+        return done
+
+    @v1.get("/reviews/{owner}/{name}/{number}/image", response_model=ImageOut)
+    async def review_image(owner: str, name: str, number: int, path: str, side: Literal["head", "base"] = "head"):
+        """An image the pull request adds or changes, for the diff to show."""
+        return await asyncio.to_thread(reviewing, reviews.image, f"{owner}/{name}", number, path, side)
 
     @v1.get("/reviews/{owner}/{name}/{number}", response_model=PullOut)
     async def review_pull(owner: str, name: str, number: int):
@@ -1320,12 +1478,13 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
 
     @v1.post("/bot/review/{tool}")
     async def bot_review_tool(request: Request, tool: str, body: dict[str, Any]):
-        """A reviewer's tools, for one that reaches crewbots over MCP. It can only read its own pull request."""
+        """A reviewer's tools, for one that reaches crewbots over MCP. It can only read and draft on its own pull
+        request; nothing here posts to GitHub."""
         task = request.state.task
         if task.kind != "review" or not task.pr:
             raise HTTPException(403, "only a code review has these tools")
         try:
-            text = await ReviewTools(reviews, task.pr).call(tool, {k: v for k, v in body.items() if v is not None})
+            text = await review_tools(task).call(tool, {k: v for k, v in body.items() if v is not None})
         except ToolRefused as e:
             raise HTTPException(422, str(e)) from None
         return {"text": text}

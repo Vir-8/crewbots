@@ -75,3 +75,12 @@ export function Segmented<T extends string>(props: { value: T; options: [T, stri
     </span>
   );
 }
+
+/** For a toggle's onClick: drops its hover highlight until the pointer leaves, so it doesn't look still pressed once
+ * what it toggles has moved (the system only rechecks hover when the pointer moves). */
+export function settle(e: React.MouseEvent<HTMLElement>) {
+  const button = e.currentTarget;
+  button.classList.add("settled");
+  button.blur();
+  button.addEventListener("pointerleave", () => button.classList.remove("settled"), { once: true });
+}

@@ -114,8 +114,11 @@ def _prs(search: dict | None) -> list[PullRequest]:
     return prs
 
 
-def _gh(args: list[str]) -> str:
-    """Runs gh, and again after a short wait when GitHub or the network failed for a passing reason."""
+def _gh(args: list[str], stdin: str | None = None) -> str:
+    """Runs gh, and again after a short wait when GitHub or the network failed for a passing reason. With `stdin` (a
+    request body: a write), it runs once, since a write that timed out may have happened anyway."""
+    if stdin is not None:
+        return _gh_once(args, stdin)
     for attempt, wait in enumerate((0.0, *GH_WAITS_S)):
         time.sleep(wait)
         try:
@@ -126,10 +129,10 @@ def _gh(args: list[str]) -> str:
     raise AssertionError("unreachable")
 
 
-def _gh_once(args: list[str]) -> str:
+def _gh_once(args: list[str], stdin: str | None = None) -> str:
     try:
         done = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=GH_TIMEOUT_S,
-                              stdin=subprocess.DEVNULL)
+                              **({"input": stdin} if stdin is not None else {"stdin": subprocess.DEVNULL}))
     except FileNotFoundError:
         raise GitHubError("the GitHub CLI (gh) isn't installed") from None
     except subprocess.TimeoutExpired:

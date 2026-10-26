@@ -56,7 +56,7 @@ class FakeGh:
                 out[alias] = None
         return out
 
-    def __call__(self, args):
+    def __call__(self, args, stdin=None):
         self.calls.append(args)
         if args[:2] == ["api", "graphql"] and "object(expression" in args[-1]:
             return json.dumps({"data": {"repository": self.objects(args[-1])}})

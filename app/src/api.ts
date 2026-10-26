@@ -25,6 +25,9 @@ import type {
   RegistryServer,
   McpCheckResult,
   Skill,
+  Draft,
+  Submitted,
+  Attachment,
 } from "./types";
 
 import { bridge } from "./bridge";
@@ -54,7 +57,7 @@ export const api = {
   changes: (taskId: string) => call<{ diff: string | null }>("GET", `/tasks/${taskId}/changes`),
   newTask: (bot: string, goal: string, workspace?: string) =>
     call<Task>("POST", "/tasks", { bot, goal, workspace: workspace || null }),
-  send: (taskId: string, text: string) => call<Task>("POST", `/tasks/${taskId}/messages`, { text }),
+  send: (taskId: string, text: string, attachments: string[] = []) => call<Task>("POST", `/tasks/${taskId}/messages`, { text, attachments }),
   cancel: (taskId: string) => call<Task>("POST", `/tasks/${taskId}/cancel`),
   merge: (taskId: string, force = false) => call<Task>("POST", `/tasks/${taskId}/merge`, { force }),
   release: (taskId: string) => call<Task>("POST", `/tasks/${taskId}/release`),
@@ -62,10 +65,12 @@ export const api = {
   routines: () => call<Routines>("GET", "/routines"),
   budgets: () => call<Budget[]>("GET", "/budgets"),
   chats: () => call<Chat[]>("GET", "/chats"),
-  say: (bot: string, text: string) => call<Task>("POST", `/chats/bot/${encodeURIComponent(bot)}/messages`, { text }),
+  say: (bot: string, text: string, attachments: string[] = []) => call<Task>("POST", `/chats/bot/${encodeURIComponent(bot)}/messages`, { text, attachments }),
   read: (key: string) => call<{ ok: boolean }>("POST", `/chats/${encodeURIComponent(key)}/read`),
   roomMessages: (roomId: string) => call<RoomMessage[]>("GET", `/rooms/${roomId}/messages?limit=5000`),
-  post: (roomId: string, text: string) => call<RoomMessage>("POST", `/rooms/${roomId}/messages`, { text }),
+  post: (roomId: string, text: string, attachments: string[] = []) => call<RoomMessage>("POST", `/rooms/${roomId}/messages`, { text, attachments }),
+  uploadAttachment: (name: string, data: string) => call<Attachment>("POST", "/attachments", { name, data }),
+  attachment: (id: string) => call<{ name: string; mime: string; data: string }>("GET", `/attachments/${id}`),
   newRoom: (title: string, members: string[], lead?: string) => call<Room>("POST", "/rooms", { title, members, lead: lead ?? null }),
   card: (bot: string) => call<Card>("GET", `/bots/${encodeURIComponent(bot)}/card`),
   saveCard: (bot: string, fields: Partial<Card>) => call<Card>("PUT", `/bots/${encodeURIComponent(bot)}/card`, fields),
@@ -87,6 +92,15 @@ export const api = {
   addFromRegistry: (body: { server: string; version: string; option: string; name: string; values: Record<string, string> }) =>
     call<McpServerInfo>("POST", "/mcp/registry", body),
   skills: () => call<Skill[]>("GET", "/skills"),
+  drafts: (repo: string, number: number) => call<Draft[]>("GET", `/reviews/${repo}/${number}/drafts`),
+  addDraft: (repo: string, number: number, body: { path: string; line: number; side: "RIGHT" | "LEFT"; body: string }) =>
+    call<Draft>("POST", `/reviews/${repo}/${number}/drafts`, body),
+  editDraft: (id: number, body: string) => call<Draft>("PUT", `/reviews/drafts/${id}`, { body }),
+  deleteDraft: (id: number) => call<{ deleted: number }>("DELETE", `/reviews/drafts/${id}`),
+  submitReview: (repo: string, number: number, body: { event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT"; body: string }) =>
+    call<Submitted>("POST", `/reviews/${repo}/${number}/submit`, body),
+  pullImage: (repo: string, number: number, path: string, side: "head" | "base") =>
+    call<{ mime: string; data: string }>("GET", `/reviews/${repo}/${number}/image?path=${encodeURIComponent(path)}&side=${side}`),
   taskStatus: (id: string) => call<TaskStatus>("GET", `/tasks/${id}/status`),
   plans: (fresh = false) => call<Plans>("GET", `/plans${fresh ? "?fresh=true" : ""}`),
   // Kept answers come back at once; `fresh` waits for GitHub. Your teams' list is asked for apart, when it's opened.

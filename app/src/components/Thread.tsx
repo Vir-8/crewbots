@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Crew } from "../state";
 import { describeCall, doing, limitText, oneLine } from "../state";
-import type { StoredEvent, Task } from "../types";
+import type { Attachment, StoredEvent, Task } from "../types";
 import { ACTIVE } from "../types";
+import { MessageFiles } from "./Attachments";
 import { Markdown } from "./bits";
 import { Icon } from "./Icon";
 import { WorkCard } from "./WorkCard";
 
 type Block =
-  | { kind: "you"; id: number; text: string }
+  | { kind: "you"; id: number; text: string; files: Attachment[] }
   | { kind: "brief"; id: number; from: string; text: string }
   | { kind: "say"; id: number; text: string }
   | { kind: "steps"; id: number; calls: { call: StoredEvent; result?: StoredEvent }[] }
@@ -99,7 +100,7 @@ function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>
     switch (e.kind) {
       case "message":
         flush();
-        if (d.from === "user") out.push({ kind: "you", id: e.id, text: d.text });
+        if (d.from === "user") out.push({ kind: "you", id: e.id, text: d.text, files: d.attachments ?? [] });
         else if (String(d.from).startsWith("routine:")) out.push({ kind: "brief", id: e.id, from: `the ${String(d.from).slice(8)} routine`, text: String(d.text).replace(/^\[routine: [^\]]+\]\s*/, "") });
         else if (d.from === "room") continue;
         else if (d.from === "routine") out.push({ kind: "brief", id: e.id, from: `the ${tasks.get(e.task_id)?.routine ?? ""} routine`, text: d.text });
@@ -181,7 +182,8 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
     case "you":
       return (
         <div className="you">
-          <div className="you-text">{block.text}</div>
+          {block.text && <div className="you-text">{block.text}</div>}
+          <MessageFiles items={block.files} />
         </div>
       );
     case "brief":

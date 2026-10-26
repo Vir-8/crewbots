@@ -51,8 +51,12 @@ changes that don't do what the pull request says. Check claims against the code;
 When you have the repository, read around the change: the callers, the types, the tests, how the touched code is used
 elsewhere. Run read-only commands if you can (git log, git grep, a type check) to confirm a finding.
 
-Never change files, and never post, comment, approve, request changes or submit anything anywhere: what you find
-stays in this conversation.
+Never change files, and never post, comment, approve, request changes or submit anything anywhere yourself. For each
+finding that belongs on a line, draft a review comment there with `draft_comment(path, line, body)`: `line` is the
+line's number in the pull request's version of the file (`side: LEFT` for a removed line, by its old number), and it
+must be a line the diff shows. Drafts are private; the user reads them, edits or deletes them, and decides whether to
+submit a review. Write each as the comment a careful reviewer would leave: the problem, why it matters, and what would
+fix it.
 
 Reply in this shape:
 1. One line: no blocking issues, or how many issues you found.
@@ -93,7 +97,7 @@ def inbox_query(keys) -> str:
                           for k in keys)
     return f"query {{\n{searches}\n}}\n{PR_FIELDS}"
 
-DETAIL_FIELDS = ("number,title,body,url,state,isDraft,author,headRefName,baseRefName,headRefOid,additions,deletions,"
+DETAIL_FIELDS = ("number,title,body,url,state,isDraft,author,headRefName,baseRefName,headRefOid,baseRefOid,additions,deletions,"
                  "changedFiles,files,reviewDecision,createdAt,updatedAt,statusCheckRollup,labels,reviews,comments,"
                  "closingIssuesReferences")
 ISSUE_REF = re.compile(r"(?<![\w/])#(\d{1,7})\b")
@@ -157,6 +161,7 @@ class Reviews:
                 "url": raw["url"], "state": raw.get("state"), "draft": raw.get("isDraft", False),
                 "author": (raw.get("author") or {}).get("login", ""), "head": raw.get("headRefName", ""),
                 "base": raw.get("baseRefName", ""), "head_sha": raw.get("headRefOid", ""),
+                "base_sha": raw.get("baseRefOid", ""),
                 "additions": raw.get("additions", 0), "deletions": raw.get("deletions", 0),
                 "changed_files": raw.get("changedFiles", 0), "review_decision": raw.get("reviewDecision"),
                 "created_at": raw.get("createdAt"), "updated_at": raw.get("updatedAt"),
@@ -180,6 +185,61 @@ class Reviews:
         if len(text) > limit:
             return text[:limit] + f"\n… (the diff goes on for {len(text) - limit:,} more characters)"
         return text
+
+    # Review comments, and submitting a review: the user's alone. No tool reaches these but `check_draft`.
+
+    def check_draft(self, repo: str, number: int, path: str, line: int, side: str = "RIGHT") -> dict[str, Any]:
+        """Where a comment can go: a line the diff shows, on that side. Raises ReviewError with where it can't."""
+        _check(repo)
+        if side not in ("RIGHT", "LEFT"):
+            raise ReviewError("side is RIGHT, for the pull request's version, or LEFT, for a removed line")
+        lines = commentable(self.diff(repo, number, limit=10**9))
+        if path not in lines:
+            raise ReviewError(f"{path} isn't one of this pull request's changed files")
+        if line not in lines[path][side]:
+            shown = sorted(lines[path][side])
+            span = f"{shown[0]} to {shown[-1]}" if shown else "none"
+            raise ReviewError(f"line {line} of {path} isn't in the diff on the {side} side (it shows {span}, in places); "
+                              "comment on a line the diff shows, or put it in the summary")
+        return {"path": path, "line": line, "side": side, "commit_sha": self.pull(repo, number)["head_sha"]}
+
+    def submit(self, repo: str, number: int, event: str, body: str, comments: list[dict[str, Any]]) -> dict[str, Any]:
+        """Posts the user's review to GitHub, with its line comments, as one review: what the app's Submit does. The
+        only write to GitHub crewbots makes."""
+        _check(repo)
+        if event not in REVIEW_EVENTS:
+            raise ReviewError("a review approves, requests changes, or comments")
+        if event != "APPROVE" and not body.strip() and not comments:
+            raise ReviewError("a review that doesn't approve needs a comment, or line comments")
+        if event == "REQUEST_CHANGES" and not body.strip():
+            raise ReviewError("requesting changes needs a comment saying what to change")
+        payload = {"commit_id": self.pull(repo, number)["head_sha"], "event": event, "body": body,
+                   "comments": [{"path": c["path"], "line": c["line"], "side": c["side"], "body": c["body"]}
+                                for c in comments]}
+        posted = json.loads(self.gh(["api", "-X", "POST", f"repos/{repo}/pulls/{number}/reviews", "--input", "-"],
+                                    stdin=json.dumps(payload)))
+        self._cache.pop(f"pull:{repo}#{number}", None)
+        return {"url": posted.get("html_url", ""), "state": posted.get("state", ""), "comments": len(comments)}
+
+    def image(self, repo: str, number: int, path: str, side: str) -> dict[str, str]:
+        """An image the pull request changes, as it is at its head or on its base: base64, for the diff to show."""
+        _check(repo)
+        mime = IMAGE_TYPES.get(Path(path).suffix.lower())
+        if mime is None:
+            raise ReviewError(f"{path} isn't an image")
+        pr = self.pull(repo, number)
+        sha = pr["head_sha"] if side == "head" else pr.get("base_sha") or pr["base"]
+
+        def load() -> str:
+            found = json.loads(self.gh(["api", f"repos/{repo}/contents/{path}?ref={sha}"]))
+            data = found.get("content") or ""
+            if not data and found.get("sha"):  # over a megabyte: the contents API leaves it out
+                if int(found.get("size") or 0) > IMAGE_BYTES:
+                    raise ReviewError(f"{path} is too big to show here")
+                data = json.loads(self.gh(["api", f"repos/{repo}/git/blobs/{found['sha']}"])).get("content") or ""
+            return data.replace("\n", "")
+
+        return {"mime": mime, "data": self._kept(f"image:{repo}@{sha}:{path}", DETAIL_TTL_S * 30, load)}
 
     # Reviewing.
 
@@ -466,10 +526,60 @@ __all__ = ["Reviews", "ReviewError", "GitHubError"]
 
 # The reviewer's tools, when it reads from GitHub: defined once, served in-process to Claude and over MCP to Codex.
 
-def _review_tools():
+REVIEW_EVENTS = {"APPROVE", "REQUEST_CHANGES", "COMMENT"}
+IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
+               ".webp": "image/webp", ".svg": "image/svg+xml", ".bmp": "image/bmp", ".ico": "image/x-icon"}
+IMAGE_BYTES = 15_000_000
+
+
+def commentable(diff: str) -> dict[str, dict[str, set[int]]]:
+    """The lines a review comment can go on, file by file: what GitHub accepts, the lines the diff shows. RIGHT is the
+    pull request's version of the file (added and unchanged lines, by their new numbers), LEFT the base's (removed
+    and unchanged lines, by their old numbers)."""
+    files: dict[str, dict[str, set[int]]] = {}
+    path = old_path = None
+    old = new = 0
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            path = old_path = None
+        elif line.startswith("--- "):
+            old_path = line[6:] if line.startswith("--- a/") else None
+        elif line.startswith("+++ "):
+            path = line[6:] if line.startswith("+++ b/") else old_path
+            if path:
+                files.setdefault(path, {"RIGHT": set(), "LEFT": set()})
+        elif line.startswith("@@"):
+            hunk = re.match(r"@@ -(\d+)(?:,\d+)? \+(\d+)", line)
+            if hunk:
+                old, new = int(hunk.group(1)), int(hunk.group(2))
+        elif path is None:
+            continue
+        elif line.startswith("+"):
+            files[path]["RIGHT"].add(new)
+            new += 1
+        elif line.startswith("-"):
+            files[path]["LEFT"].add(old)
+            old += 1
+        elif line.startswith(" "):  # unchanged; git writes a blank one as a single space
+            files[path]["RIGHT"].add(new)
+            files[path]["LEFT"].add(old)
+            old, new = old + 1, new + 1
+    return files
+
+
+def _review_tools(reads_github: bool = True):
     from crewbots.crew_tools import STRING, ToolDef, _object
 
-    return [
+    drafting = ToolDef(
+        "draft_comment", "Draft a review comment on one line of the pull request, for the user to read, edit or drop "
+        "before they decide whether to submit a review. path: the file, from the repository's root. line: its number "
+        "in the pull request's version of the file, a line the diff shows. side: RIGHT (the default) or LEFT for a "
+        "removed line, by its old number. body: the comment, in markdown. Nothing is posted.",
+        _object({"path": STRING, "line": {"type": "integer"}, "side": {"type": "string", "enum": ["RIGHT", "LEFT"]},
+                 "body": STRING}, ["path", "line", "body"]))
+    if not reads_github:
+        return [drafting]
+    return [drafting,
         ToolDef("read_file", "Read a file of the repository as it is at the pull request's head, with line numbers. "
                 "path: from the repository's root. start, end: a range of lines, up to 400 at a time.",
                 _object({"path": STRING, "start": {"type": "integer"}, "end": {"type": "integer"}}, ["path"])),
@@ -482,14 +592,17 @@ def _review_tools():
 
 
 class ReviewTools:
-    """The reviewer's tools for one review, called in the daemon's own process."""
+    """The reviewer's tools for one review, called in the daemon's own process: drafting comments, and, without a
+    local copy of the repository, reading it on GitHub. None of them posts anything."""
 
-    def __init__(self, reviews: Reviews, pr: str):
+    def __init__(self, reviews: Reviews, pr: str, drafts=None, task_id: str | None = None, author: str = "reviewer",
+                 reads_github: bool = True):
         repo, number = pr.rsplit("#", 1)
         self.reviews, self.repo, self.number = reviews, repo, int(number)
+        self.drafts, self.task_id, self.author, self.reads_github = drafts, task_id, author, reads_github
 
     def definitions(self):
-        return _review_tools()
+        return _review_tools(self.reads_github)
 
     async def call(self, name: str, args: dict[str, Any]) -> str:
         import asyncio
@@ -498,13 +611,22 @@ class ReviewTools:
 
         try:
             match name:
-                case "read_file":
+                case "draft_comment" if self.drafts is not None:
+                    draft = await asyncio.to_thread(self.reviews.check_draft, self.repo, self.number, str(args["path"]),
+                                                    int(args["line"]), str(args.get("side") or "RIGHT").upper())
+                    saved = self.drafts.add_draft(self.repo, self.number, draft["path"], draft["line"], draft["side"],
+                                                  str(args["body"]), self.author, self.task_id, draft["commit_sha"])
+                    return (f"Drafted comment {saved['id']} on {saved['path']}:{saved['line']}. It stays private until "
+                            "the user submits a review.")
+                case "read_file" if self.reads_github:
                     return await asyncio.to_thread(self.reviews.read_file, self.repo, self.number, str(args["path"]),
                                                    int(args.get("start") or 1), int(args["end"]) if args.get("end") else None)
-                case "list_files":
+                case "list_files" if self.reads_github:
                     return await asyncio.to_thread(self.reviews.list_files, self.repo, self.number, str(args.get("path") or ""))
-                case "search_code":
+                case "search_code" if self.reads_github:
                     return await asyncio.to_thread(self.reviews.search_code, self.repo, str(args["query"]))
+        except ReviewError as e:
+            raise ToolRefused(str(e)) from None
         except (GitHubError, KeyError, ValueError) as e:
             raise ToolRefused(f"{name} failed: {e}") from None
         raise ToolRefused(f"{name} is not one of the reviewer's tools")

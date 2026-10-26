@@ -13,6 +13,7 @@ import { Analytics } from "./pages/Analytics";
 import { Tools } from "./pages/Tools";
 import type { Crew } from "./state";
 import { useCrew } from "./state";
+import { settle } from "./components/ui";
 import type { ConnectionStatus, Task } from "./types";
 
 /** A preference kept in this browser profile, surviving restarts; a storage that won't work just forgets. */
@@ -91,7 +92,14 @@ export function App() {
   return (
     <div ref={shell} className={`app ${thread || profile || room ? "with-panel" : ""} ${profile || room ? "with-profile" : ""} ${current === "review" ? "reviewing" : ""} ${sideHidden ? "side-hidden" : ""}`}>
       {/* One place in both states, beside the window's buttons, so it's always under your pointer. */}
-      <button className="icon-button side-toggle" onClick={() => setSideHidden(!sideHidden)} title={sideHidden ? "Expand the sidebar" : "Collapse the sidebar"}>
+      <button
+        className="icon-button side-toggle"
+        onClick={(e) => {
+          settle(e);
+          setSideHidden(!sideHidden);
+        }}
+        title={sideHidden ? "Expand the sidebar" : "Collapse the sidebar"}
+      >
         <Icon name="sidebar" size={15} />
       </button>
       <Sidebar

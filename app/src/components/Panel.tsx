@@ -83,7 +83,7 @@ export function Panel(props: { crew: Crew; task: Task; onOpen: (id: string) => v
         <Composer
           placeholder={task.status === "needs_input" ? `Answer ${task.bot}` : `Message ${task.bot}`}
           asking={task.status === "needs_input"}
-          onSend={(text) => crew.send(task.id, text)}
+          onSend={(text, files) => crew.send(task.id, text, files)}
           task={task.id}
         />
       </div>

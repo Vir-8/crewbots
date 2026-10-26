@@ -187,18 +187,26 @@ The app works like a messaging app:
 - **Group chats:** messages with who said them, @mention suggestions as you type, and who's replying. Beside them,
   the group's members (who leads, who's replying) and the threads it has opened. A new group starts with who's in
   it and a few ways to start.
+- **Attachments:** attach images and files to any message, with +, by pasting, or by dropping them on the box. They're
+  kept in the crew's `attachments/` folder, show under your message, and the bot gets their paths with it: Claude
+  reads images and PDFs itself, and Codex views images.
 - **Commands:** typing / in any message box offers the app's own commands; Tab or Enter runs one without sending
   anything. `/usage` shows what's left on your Claude and Codex plans, above the box. `/status` shows the chat's model
   and effort, its session, how full its context is, and its plan's limits.
 - **The mic** dictates into any message box with macOS's own speech recognizer, on this Mac when it can, across
   pauses and past the recognizer's one-minute limit. The first time, macOS asks to allow the microphone and speech
   recognition.
-- **Code review**, above the chats: pull requests that ask you for a review, are assigned to you, are yours, or ask
-  your teams (asked for only when you open that list), read with your `gh` login. What GitHub said last shows at
+- **Code review**, above the chats (its count is what's assigned to you): pull requests that ask you for a review,
+  are assigned to you, are yours, or ask your teams (asked for only when you open that list), read with your `gh`
+  login. What GitHub said last shows at
   once while the app asks again. Each has its summary, checks and diff. Review runs the PR reviewer, an agent
   of its own (not one of your bots), on each model you choose in Settings, side by side: by default Claude Sonnet and
   Codex's default model, both at high effort. Each review is a tab you can keep talking to. Nothing is posted to
-  GitHub. A reviewer gets the PR's description, the issues it refers to, its files and diff, the failing checks and
+  GitHub by a reviewer: it drafts line comments (`draft_comment`, on lines the diff shows), which appear in the diff
+  beside yours. You add, edit and delete drafts, and Submit review sends your review, approving, requesting changes or
+  commenting, with the drafts, under your name: the one write to GitHub, and only from the app with your token. No
+  reviewer can submit, and none can post a comment anywhere. The diff has line numbers, and changed images show
+  before and after. A reviewer gets the PR's description, the issues it refers to, its files and diff, the failing checks and
   the discussion so far, plus the code: the changed files at the PR's head, fetched from GitHub, and tools to read
   any other file there, list folders and search the repo, fetched only as it asks. Point a repo at your local copy
   in Settings, and it gets the whole repository at the PR's head instead.

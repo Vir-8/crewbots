@@ -124,6 +124,21 @@ create table if not exists handoffs (
     needs    text not null,
     at       text not null
 );
+create table if not exists review_drafts (  -- line comments for a pull request review, private until the user submits
+    id          integer primary key autoincrement,
+    repo        text not null,
+    number      integer not null,
+    path        text not null,
+    line        integer not null,
+    side        text not null default 'RIGHT',  -- RIGHT: the pull request's version of the file; LEFT: the base's
+    body        text not null,
+    author      text not null,  -- "user", or the reviewer that drafted it (reviewer:<backend>:<model>:<effort>)
+    task_id     text,           -- the review it came from
+    commit_sha  text,           -- the head it was written against
+    created_at  text not null,
+    updated_at  text not null
+);
+create index if not exists review_drafts_by_pr on review_drafts(repo, number, id);
 """
 # Full-text search over what the crew said and decided: the `recall` tool. Kept in step with events as they're added.
 SEARCH = """
@@ -150,6 +165,9 @@ MIGRATIONS = {  # columns added after a crew's database may already exist
     "kind": "alter table tasks add column kind text not null default 'thread'",
     "room_id": "alter table tasks add column room_id text",
     "pr": "alter table tasks add column pr text",
+}
+ROOM_MIGRATIONS = {  # the same, for group chat messages
+    "attachments": "alter table room_messages add column attachments text",  # JSON list, like a message event's
 }
 
 
@@ -269,6 +287,10 @@ class Store:
         columns = {r["name"] for r in self.db.execute("pragma table_info(tasks)")}
         for column, sql in MIGRATIONS.items():
             if column not in columns:
+                self.db.execute(sql)
+        room_columns = {r["name"] for r in self.db.execute("pragma table_info(room_messages)")}
+        for column, sql in ROOM_MIGRATIONS.items():
+            if column not in room_columns:
                 self.db.execute(sql)
         if not self.db.execute("select 1 from sqlite_master where name = 'search'").fetchone():
             self.db.executescript(SEARCH)
@@ -521,6 +543,36 @@ class Store:
         rows = self.db.execute("select * from tasks where pr = ? order by created_at", (pr,)).fetchall()
         return [_task(r) for r in rows]
 
+    # Review comments drafted for a pull request: the reviewers', and the user's own.
+
+    def add_draft(self, repo: str, number: int, path: str, line: int, side: str, body: str, author: str,
+                  task_id: str | None = None, commit_sha: str | None = None) -> dict[str, Any]:
+        now = _now()
+        cursor = self.db.execute(
+            "insert into review_drafts (repo, number, path, line, side, body, author, task_id, commit_sha, created_at,"
+            " updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (repo, number, path, line, side, body, author, task_id, commit_sha, now, now))
+        return self.draft(cursor.lastrowid)
+
+    def draft(self, draft_id: int) -> dict[str, Any]:
+        row = self.db.execute("select * from review_drafts where id = ?", (draft_id,)).fetchone()
+        if row is None:
+            raise KeyError(draft_id)
+        return dict(row)
+
+    def drafts(self, repo: str, number: int) -> list[dict[str, Any]]:
+        rows = self.db.execute("select * from review_drafts where repo = ? and number = ? order by path, line, id",
+                               (repo, number)).fetchall()
+        return [dict(r) for r in rows]
+
+    def edit_draft(self, draft_id: int, body: str) -> dict[str, Any]:
+        self.draft(draft_id)
+        self.db.execute("update review_drafts set body = ?, updated_at = ? where id = ?", (body, _now(), draft_id))
+        return self.draft(draft_id)
+
+    def delete_drafts(self, ids: list[int]) -> None:
+        self.db.executemany("delete from review_drafts where id = ?", [(i,) for i in ids])
+
     def reviewed_prs(self) -> dict[str, str]:
         """Each pull request that has a review, with when it was last touched."""
         rows = self.db.execute("select pr, max(updated_at) as at from tasks where pr is not null group by pr").fetchall()
@@ -583,22 +635,25 @@ class Store:
         rows = self.db.execute("select * from rooms order by created_at").fetchall()
         return [{**dict(r), "members": json.loads(r["members"])} for r in rows]
 
-    def add_room_message(self, room_id: str, author: str, text: str, depth: int = 0) -> dict[str, Any]:
+    def add_room_message(self, room_id: str, author: str, text: str, depth: int = 0,
+                         attachments: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         now = _now()
-        cur = self.db.execute("insert into room_messages (room_id, author, text, depth, at) values (?, ?, ?, ?, ?)",
-                              (room_id, author, text, depth, now))
+        cur = self.db.execute(
+            "insert into room_messages (room_id, author, text, depth, at, attachments) values (?, ?, ?, ?, ?, ?)",
+            (room_id, author, text, depth, now, json.dumps(attachments) if attachments else None))
         self.db.execute("update rooms set updated_at = ? where id = ?", (now, room_id))
-        return {"id": cur.lastrowid, "room_id": room_id, "author": author, "text": text, "depth": depth, "at": now}
+        return {"id": cur.lastrowid, "room_id": room_id, "author": author, "text": text, "depth": depth, "at": now,
+                "attachments": attachments or []}
 
     def room_messages(self, room_id: str, after: int = 0, limit: int = 1000) -> list[dict[str, Any]]:
         rows = self.db.execute("select * from room_messages where room_id = ? and id > ? order by id limit ?",
                                (room_id, after, limit)).fetchall()
-        return [dict(r) for r in rows]
+        return [_room_message(r) for r in rows]
 
     def last_room_message(self, room_id: str) -> dict[str, Any] | None:
         row = self.db.execute("select * from room_messages where room_id = ? order by id desc limit 1",
                               (room_id,)).fetchone()
-        return dict(row) if row else None
+        return _room_message(row) if row else None
 
     def seen(self, key: str) -> int:
         row = self.db.execute("select seen from reads where key = ?", (key,)).fetchone()
@@ -683,6 +738,12 @@ def _task(row: sqlite3.Row) -> Task:
     values["status"] = Status(values["status"])
     values["reported"] = bool(values["reported"])
     return Task(**values)
+
+
+def _room_message(row: sqlite3.Row) -> dict[str, Any]:
+    message = dict(row)
+    message["attachments"] = json.loads(message.get("attachments") or "[]")
+    return message
 
 
 def _now() -> str:

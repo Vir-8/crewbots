@@ -3,11 +3,13 @@ import type { Crew } from "../state";
 import { doing, oneLine } from "../state";
 import type { Chat, Room, RoomMessage } from "../types";
 import { ACTIVE } from "../types";
+import { MessageFiles } from "./Attachments";
 import { Avatar, GroupAvatar, labelOf } from "./Avatar";
 import { Markdown, ago } from "./bits";
 import { Composer } from "./Composer";
 import { Icon } from "./Icon";
 import { Thread } from "./Thread";
+import { settle } from "./ui";
 
 /** Your ongoing chat with one bot. Work it takes on shows as thread cards, which open beside the chat. */
 export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) => void; onProfile: () => void; profileOpen: boolean }) {
@@ -38,7 +40,14 @@ export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string)
           </span>
         </button>
         <span className="grow" data-tauri-drag-region />
-        <button className={`icon-button ${props.profileOpen ? "on" : ""}`} onClick={props.onProfile} title="Profile">
+        <button
+          className={`icon-button ${props.profileOpen ? "on" : ""}`}
+          onClick={(e) => {
+            settle(e);
+            props.onProfile();
+          }}
+          title="Profile"
+        >
           <Icon name="profile" size={16} />
         </button>
       </header>
@@ -54,7 +63,7 @@ export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string)
           key={chat.key}
           placeholder={task?.status === "needs_input" ? `Answer ${labelOf(chat.bot!)}` : `Message ${labelOf(chat.bot!)}`}
           asking={task?.status === "needs_input"}
-          onSend={(text) => crew.say(chat.bot!, text)}
+          onSend={(text, files) => crew.say(chat.bot!, text, files)}
           task={task?.id}
           autoFocus
         />
@@ -94,7 +103,14 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
           </span>
         </button>
         <span className="grow" data-tauri-drag-region />
-        <button className={`icon-button ${props.panelOpen ? "on" : ""}`} onClick={props.onPanel} title="About this group">
+        <button
+          className={`icon-button ${props.panelOpen ? "on" : ""}`}
+          onClick={(e) => {
+            settle(e);
+            props.onPanel();
+          }}
+          title="About this group"
+        >
           <Icon name="profile" size={16} />
         </button>
       </header>
@@ -107,7 +123,8 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
               group.author === "user" ? (
                 group.messages.map((m) => (
                   <div key={m.id} className="you">
-                    <div className="you-text">{withMentions(m.text)}</div>
+                    {m.text && <div className="you-text">{withMentions(m.text)}</div>}
+                    <MessageFiles items={m.attachments ?? []} />
                   </div>
                 ))
               ) : (
@@ -139,7 +156,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
         </div>
       )}
       <div className="dock">
-        <Composer key={chat.key} placeholder={`Message ${room.title}`} mentions={room.members} onSend={(text) => crew.post(room.id, text)} autoFocus />
+        <Composer key={chat.key} placeholder={`Message ${room.title}`} mentions={room.members} onSend={(text, files) => crew.post(room.id, text, files)} autoFocus />
       </div>
     </>
   );

@@ -58,7 +58,7 @@ export function Sidebar(props: {
     .filter((c) => props.rail || !q || [c.title, c.bot, c.last?.text, ...(c.room?.members ?? [])].some((s) => s?.toLowerCase().includes(q)))
     .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   const needs = crew.inbox.filter((item) => item.task.kind === "thread");
-  const waiting = new Set([...(crew.reviewInbox?.assigned ?? []), ...(crew.reviewInbox?.direct ?? [])].map((p) => `${p.repo}#${p.number}`)).size;
+  const waiting = crew.reviewInbox?.assigned?.length ?? 0; // assigned to you; review requests are in the list itself
 
   if (props.rail) {
     return (
@@ -78,7 +78,7 @@ export function Sidebar(props: {
         <button className="rail-button" onClick={props.onNewGroup} title="New group chat">
           <Icon name="compose" size={15} />
         </button>
-        <button className={`rail-button ${props.current === "review" ? "on" : ""}`} onClick={() => props.onChat("review")} title={waiting ? `Code review · ${waiting} waiting on you` : "Code review"}>
+        <button className={`rail-button ${props.current === "review" ? "on" : ""}`} onClick={() => props.onChat("review")} title={waiting ? `Code review · ${waiting} assigned to you` : "Code review"}>
           <Icon name="branch" size={15} />
           {waiting > 0 && <span className="rail-count">{waiting}</span>}
         </button>

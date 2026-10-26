@@ -111,9 +111,41 @@ async function request(method: string, path: string, body?: any) {
       ],
     });
   }
+  if (method === "POST" && url.pathname === "/attachments") {
+    const id = Math.random().toString(16).slice(2, 14).padEnd(12, "0");
+    const mime = /\.(png|jpe?g|gif|webp)$/i.test(body.name) ? "image/png" : "application/octet-stream";
+    previewFiles.set(id, { name: body.name, mime, data: body.data });
+    return ok({ id, name: body.name, path: `~/.crewbots/crew/attachments/${id}/${body.name}`, mime, size: Math.round((body.data.length * 3) / 4), kind: mime.startsWith("image/") ? "image" : "file" });
+  }
+  if (method === "GET" && parts[0] === "attachments") return ok(previewFiles.get(parts[1]));
+  if (parts[0] === "reviews" && parts[1] === "drafts") {
+    const id = Number(parts[2]);
+    if (method === "DELETE") reviewDrafts.splice(reviewDrafts.findIndex((d) => d.id === id), 1);
+    const draft = reviewDrafts.find((d) => d.id === id);
+    if (method === "PUT" && draft) Object.assign(draft, { body: body.body, updated_at: new Date().toISOString() });
+    return ok(method === "DELETE" ? { deleted: id } : draft);
+  }
+  if (parts[0] === "reviews" && parts[4] === "drafts") {
+    if (method === "POST") {
+      const at = new Date().toISOString();
+      const draft = { id: reviewDrafts.length + 10, ...body, author: "user", task_id: null, commit_sha: "abc", created_at: at, updated_at: at };
+      reviewDrafts.push(draft);
+      return ok(draft);
+    }
+    return ok(reviewDrafts);
+  }
+  if (parts[0] === "reviews" && parts[4] === "submit") {
+    const comments = reviewDrafts.length;
+    reviewDrafts.splice(0);
+    return ok({ url: "https://github.com/acme/web/pull/412#pullrequestreview-1", state: body.event === "APPROVE" ? "APPROVED" : body.event === "REQUEST_CHANGES" ? "CHANGES_REQUESTED" : "COMMENTED", comments });
+  }
+  if (parts[0] === "reviews" && parts[4] === "image") {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="120"><rect width="240" height="120" rx="16" fill="${url.searchParams.get("side") === "head" ? "#3987e5" : "#d95926"}"/><text x="120" y="68" font-size="22" text-anchor="middle" fill="white" font-family="sans-serif">${url.searchParams.get("side") === "head" ? "After" : "Before"}</text></svg>`;
+    return ok({ mime: "image/svg+xml", data: btoa(svg) });
+  }
   if (parts[0] === "reviews" && parts.length >= 4) {
     const pr = reviewInbox.direct.find((p) => p.number === Number(parts[3])) ?? reviewInbox.direct[0];
-    if (parts[4] === "diff") return ok({ diff: demo.diffs.get("t_csv0000002") ?? "" });
+    if (parts[4] === "diff") return ok({ diff: (demo.diffs.get("t_csv0000002") ?? "") + "diff --git a/web/public/export-icon.png b/web/public/export-icon.png\nindex 1111111..2222222 100644\nBinary files a/web/public/export-icon.png and b/web/public/export-icon.png differ\n" });
     if (parts[4] === "review") return ok(demo.tasks.get("t_truncate03"));
     return ok({ ...pr, body: "Moves the export button into the toolbar and adds a test for the filters.\n\n- [x] Tests added\n- [x] Screenshots updated", state: "OPEN", head: "toolbar-export", base: "main", head_sha: "abc", labels: [], files: [{ path: "web/src/reports/Toolbar.tsx", additions: 40, deletions: 12 }], checks: { total: 12, passed: 12, failed: 0 }, failing: [], issues: [], checkout: null, reviews: [] });
   }
@@ -165,7 +197,11 @@ async function request(method: string, path: string, body?: any) {
   if (method === "GET" && action === "changes") return ok({ diff: task.worktree_path ? demo.diffs.get(id) ?? "" : null });
   if (method === "GET" && action === "children") return ok(all.filter((t) => t.parent_id === id));
   if (method === "POST" && action === "messages") {
-    say(id, "message", { from: "user", text: body.text });
+    const files = (body.attachments ?? []).map((a: string) => {
+      const f = previewFiles.get(a)!;
+      return { id: a, name: f.name, path: `~/.crewbots/crew/attachments/${a}/${f.name}`, mime: f.mime, size: Math.round((f.data.length * 3) / 4), kind: f.mime.startsWith("image/") ? "image" : "file" };
+    });
+    say(id, "message", { from: "user", text: body.text, ...(files.length ? { attachments: files } : {}) });
     update(id, { status: "running" });
     setTimeout(() => {
       say(id, "text", { text: "Got it. (This is the design preview; in the app the bot would act on that.)" });
@@ -277,17 +313,24 @@ const plans = {
   },
 };
 
+const previewFiles = new Map<string, { name: string; mime: string; data: string }>();
+
+const reviewDrafts: { id: number; path: string; line: number; side: string; body: string; author: string; task_id: string | null; commit_sha: string; created_at: string; updated_at: string }[] = [
+  { id: 1, path: "server/reports.py", line: 64, side: "RIGHT", body: "`filename` is fixed, so two exports in a row overwrite each other in the browser's downloads. Put the date in it.", author: "reviewer:claude:sonnet:high", task_id: null, commit_sha: "abc", created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+];
+
 const mcpServers = [
   { name: "blender", transport: "stdio", command: "uv", args: ["--directory", "~/blender_mcp/mcp", "run", "blender-mcp"], url: null, env_keys: ["BLENDER_MCP_PORT"], header_keys: [], bots: ["engineer"] },
   { name: "davinci-resolve", transport: "stdio", command: "/bin/sh", args: ["start-resolve-mcp.sh"], url: null, env_keys: ["RESOLVE_SCRIPT_API"], header_keys: [], bots: [] },
 ];
 
 const skills = [
-  { name: "arena", description: "Two or more agents attempt the same task independently; pick the best.", source: "crew", path: "~/.crewbots/crew/skills/arena/SKILL.md" },
-  { name: "interrogate", description: "Question the user until the goal is unambiguous.", source: "crew", path: "~/.crewbots/crew/skills/interrogate/SKILL.md" },
-  { name: "pdf", description: "Read, fill and make PDF files.", source: "~/.claude/skills", path: "~/.claude/skills/synced/x/pdf/SKILL.md" },
-  { name: "unity-mcp-orchestrator", description: "Orchestrate the Unity Editor through MCP for Unity.", source: "~/.claude/skills", path: "~/.claude/skills/unity-mcp-skill/SKILL.md" },
-  { name: "graphify", description: "Turn a codebase into a knowledge graph.", source: "~/.codex/skills", path: "~/.codex/skills/graphify/SKILL.md" },
+  { name: "arena", description: "Two or more agents attempt the same task independently; pick the best.", source: "crew", path: "~/.crewbots/crew/skills/arena/SKILL.md", used: true, same_as: null },
+  { name: "interrogate", description: "Question the user until the goal is unambiguous.", source: "crew", path: "~/.crewbots/crew/skills/interrogate/SKILL.md", used: true, same_as: null },
+  { name: "pdf", description: "Read, fill and make PDF files.", source: "~/.claude/skills", path: "~/.claude/skills/synced/x/pdf/SKILL.md", used: true, same_as: null },
+  { name: "unity-mcp-orchestrator", description: "Orchestrate the Unity Editor through MCP for Unity.", source: "~/.claude/skills", path: "~/.claude/skills/unity-mcp-skill/SKILL.md", used: true, same_as: null },
+  { name: "graphify", description: "Turn a codebase into a knowledge graph.", source: "~/.claude/skills", path: "~/.claude/skills/graphify/SKILL.md", used: true, same_as: null },
+  { name: "graphify", description: "Turn a codebase into a knowledge graph.", source: "~/.codex/skills", path: "~/.codex/skills/graphify/SKILL.md", used: false, same_as: "~/.claude/skills" },
 ];
 
 const crewState = {

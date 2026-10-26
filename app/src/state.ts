@@ -152,8 +152,8 @@ export function useCrew() {
     chats,
     roomMessages,
     ensureRoom,
-    say: (bot: string, text: string) => act(api.say(bot, text)),
-    post: (roomId: string, text: string) => act(api.post(roomId, text)),
+    say: (bot: string, text: string, attachments: string[] = []) => act(api.say(bot, text, attachments)),
+    post: (roomId: string, text: string, attachments: string[] = []) => act(api.post(roomId, text, attachments)),
     read: (key: string) => api.read(key).then(reloadChats, () => undefined),
     newRoom: async (title: string, members: string[], lead?: string) => {
       const room = await act(api.newRoom(title, members, lead));
@@ -182,7 +182,7 @@ export function useCrew() {
       loadRoutines();
     },
     newTask: (bot: string, goal: string, workspace?: string) => act(api.newTask(bot, goal, workspace)),
-    send: (taskId: string, text: string) => act(api.send(taskId, text)),
+    send: (taskId: string, text: string, attachments: string[] = []) => act(api.send(taskId, text, attachments)),
     cancel: (taskId: string) => act(api.cancel(taskId)),
     merge: (taskId: string, force: boolean) => act(api.merge(taskId, force)),
     release: (taskId: string) => act(api.release(taskId)),
