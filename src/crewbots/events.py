@@ -86,6 +86,10 @@ BY_KIND: dict[str, type[Event]] = {
 
 
 def from_json(kind: str, data: dict[str, Any]) -> Event | None:
-    """Rebuilds a stored event; None for kinds that are not backend events (messages, worktrees)."""
+    """Rebuilds a stored event; None for kinds that are not backend events (messages, worktrees). What the store
+    keeps beside an event's own fields (a usage event's plan, model and effort) is left out."""
     cls = BY_KIND.get(kind)
-    return cls(**data) if cls else None
+    if cls is None:
+        return None
+    fields = {name for name, f in cls.__dataclass_fields__.items() if f.init}
+    return cls(**{k: v for k, v in data.items() if k in fields})
