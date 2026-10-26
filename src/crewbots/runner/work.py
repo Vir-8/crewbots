@@ -40,8 +40,10 @@ class Work:
             if len(hits) == limit:
                 break
         bot = self.store.get_task(task_id).bot
-        return hits + [{"task_id": "", "kind": m["kind"], "at": m["day"], "snippet": m["text"], "bot": m["scope"],
-                        "title": m["path"]} for m in self.crew.memory.search([bot, CREW_SCOPE], query)]
+        hits += [{"task_id": "", "kind": m["kind"], "at": m["day"], "snippet": m["text"], "bot": m["scope"],
+                  "title": m["path"]} for m in self.crew.memory.search([bot, CREW_SCOPE], query)]
+        self.store.log_recall(task_id, bot, query, [h["task_id"] or h["title"] for h in hits])
+        return hits
 
     def update_state(self, task_id: str, state: str) -> Path:
         """The `update_state` tool: where this task stands, whole, for a fresh session of it to start from."""

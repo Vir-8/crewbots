@@ -33,8 +33,7 @@ class Tasks:
             (task_id, bot, title, status or Status.QUEUED, created_by, parent_id, workspace, review_of, review_version,
              routine, budget, kind, room_id, pr, now, now),
         )
-        self.db.execute("insert into search (text, task_id, event_id, kind, at) values (?, ?, 0, 'task', ?)",
-                        (title, task_id, now))
+        self._add_search_row(title, task_id, 0, "task", now)
         return self.get_task(task_id)
 
     def get_task(self, task_id: str) -> Task:

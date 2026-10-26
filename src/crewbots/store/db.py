@@ -143,7 +143,6 @@ create table if not exists pending_turns (  -- a turn under way or waiting, so a
 );
 """
 
-# Full-text search over what the crew said and decided: the `recall` tool. Kept in step with events as they're added.
 # What bots did to each other (migration 4), kept when the group chat or task it was about goes.
 AGENT_LOG = """
 create table if not exists agent_log (
@@ -169,11 +168,32 @@ create table if not exists primed (
 """
 SCHEMA += PRIMED
 
+# The queries bots ask `recall` and what came back (migration 6), to build an evaluation from real use.
+RECALL_LOG = """
+create table if not exists recall_log (
+    id      integer primary key autoincrement,
+    at      text not null,
+    task_id text not null,
+    bot     text not null,
+    query   text not null,
+    hits    text not null   -- JSON list of what came back: task ids, or log and note paths
+);
+"""
+SCHEMA += RECALL_LOG
+
+# Full-text search over what the crew said and decided: the `recall` tool. Kept in step with events as they're added.
+# `search` matches words (stemmed); `trigrams`, the same rows, matches any three or more characters, for ids, paths
+# and parts of code names (migration 6).
+TRIGRAMS = """
+create virtual table if not exists trigrams using fts5(
+    text, task_id unindexed, event_id unindexed, kind unindexed, at unindexed, tokenize = 'trigram'
+);
+"""
 SEARCH = """
 create virtual table search using fts5(
     text, task_id unindexed, event_id unindexed, kind unindexed, at unindexed, tokenize = 'porter unicode61'
 );
-"""
+""" + TRIGRAMS
 
 
 # Columns added before migrations were numbered: the first step adds whichever an older database lacks.
@@ -260,6 +280,15 @@ def _catch_up(db: Connection, index_history: Callable[[], None]) -> None:
         index_history()
 
 
+def _better_recall(db: Connection) -> None:
+    """Step 6: the trigram index, filled from the word index's rows (unless step 1 just built both), and the recall
+    log."""
+    db.executescript(TRIGRAMS + RECALL_LOG)
+    if not db.execute("select 1 from trigrams limit 1").fetchone():
+        db.execute("insert into trigrams (text, task_id, event_id, kind, at) select text, task_id, event_id, kind, at "
+                   "from search")
+
+
 def _add_columns(table: str, columns: dict[str, str],
                  then: str | None = None) -> Callable[[Connection, Callable[[], None]], None]:
     """A step that adds columns to a table, each unless it's there already (a table step 1 made has today's), and then
@@ -284,6 +313,7 @@ MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] =
         then="update rooms set crew = 1 where id = (select id from rooms where title = 'Crew' order by created_at)")),
     ("a log of what bots do to each other", lambda db, _: db.executescript(AGENT_LOG)),
     ("what each task's session started with", lambda db, _: db.executescript(PRIMED)),
+    ("trigram search, and a log of recall's queries", lambda db, _: _better_recall(db)),
 ]
 
 

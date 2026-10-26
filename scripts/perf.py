@@ -51,6 +51,7 @@ BUDGETS_MS = {
     "GET /events/cursor": 10,
     "GET /search (two words)": 60,
     "GET /search (a word in everything)": 250,
+    "GET /search (part of a name)": 250,
     "GET /bots/{bot}/profile": 60,
     "live: a message reaches a client": 30,
 }
@@ -179,6 +180,7 @@ def measure(home: Path) -> dict[str, list[float]]:
             "GET /events/cursor": "/events/cursor",
             "GET /search (two words)": "/search?q=pagination%20export",
             "GET /search (a word in everything)": "/search?q=the",
+            "GET /search (part of a name)": "/search?q=aginati",  # matched anywhere, by trigrams
             "GET /bots/{bot}/profile": f"/bots/{bots[0]}/profile",
         }
         for name, path in paths.items():

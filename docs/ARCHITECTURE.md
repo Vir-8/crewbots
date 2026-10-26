@@ -144,7 +144,9 @@ Nothing is hidden: every layer is a file or a SQLite row you can open, edit or d
 3. **The crew's record (everything that happened).**
    - SQLite already holds every transcript, handoff, review and decision.
    - An **FTS5** index over it gives bots `recall(query)`, for questions like "what did we decide about auth?", answered with task ids so they can look closer.
-   - Embeddings, through sqlite-vec in the same file, are added only if keyword search proves too weak.
+   - A second FTS5 index of the same rows, with the trigram tokenizer, matches ids, paths and parts of code names anywhere in the text ("ExportButt", "acme/web#412"); a query's id-like pieces go to it, and so does a query whose words match nothing. Matches rank by bm25, then a task's title (×2) and a handoff (×1.6) above chatter, then by age (half weight at 90 days); when no row has every word, tasks covering more of them come first. Every recall is logged (`recall_log`), to build an evaluation from real use.
+   - `scripts/recall_eval.py` measures it: 40 queries of every kind (words, paraphrases, exact and partial ids, paths, error text, decisions that changed) over 20 distinctive tasks among 300 noisy ones. Before: hit@1 0.875, MRR 0.90. After: hit@1 0.975, MRR 0.975; the one miss is ambiguous by design. A test keeps it at 0.95 or more. Trigram search costs 2.7ms over 247,000 events (`scripts/perf.py`).
+   - Embeddings, through sqlite-vec in the same file, are added only if keyword search proves too weak: on this evaluation it isn't, so there are none, and no new dependency. The recall log is where real misses will show.
 
 **Learning from the record.** A weekly retro routine (decision 7) reads the week's reviews and corrections and proposes edits to `team/standards.md` and role cards. You approve them, so lessons become structure rather than more memory. This is pstack's `reflect` and `correct` idea.
 

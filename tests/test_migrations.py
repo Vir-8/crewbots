@@ -38,6 +38,7 @@ def test_an_old_crews_database_comes_up_to_date_and_keeps_its_history(tmp_path):
     assert engineer.parent_id == chief.id and engineer.result == "Done: --verbose prints each step."
     assert [e.kind for e in store.events(engineer.id)] == ["text", "usage"]
     assert store.search("verbose flag")[0]["task_id"] in {chief.id, engineer.id}  # the old history was indexed
+    assert store.search("rbose")[0]["task_id"] in {chief.id, engineer.id}  # by trigrams too
     room = store.create_room("Crew", "chief", ["chief", "engineer"])  # and what came later works on it
     store.add_room_message(room["id"], "user", "hello", attachments=[{"id": "a1"}])
     store.close()

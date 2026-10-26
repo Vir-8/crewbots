@@ -1,6 +1,9 @@
 """Memory: notes a bot keeps across tasks, recall over the crew's record, and rolling long conversations over."""
 
+import runpy
+import tempfile
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 from fakes import ScriptedCrew, bot, make_crew, wait_until
@@ -213,6 +216,59 @@ def test_recall_falls_back_to_any_word_when_none_match_all(store):
     a = store.create_task("chief", "Add CSV export")
 
     assert [h["task_id"] for h in store.search("csv parquet export")] == [a.id]
+
+
+def test_ids_paths_and_parts_of_names_are_found_anywhere_in_the_text(store):
+    a = store.create_task("engineer", "Add CSV export")
+    store.append_event(a.id, kind="handoff", data={"done": "Added web/src/ExportButton.tsx; PR acme/web#412",
+                                                   "output": [], "open": "", "needs": ""})
+    store.create_task("engineer", "Export the button styles")
+
+    for query in ("ExportButt", "web/src/Export", "acme/web#412", "portButto"):
+        assert [h["task_id"] for h in store.search(query)][:1] == [a.id], query
+
+
+def test_titles_and_handoffs_outrank_chatter_and_newer_outranks_older(store):
+    said = store.create_task("chief", "Weekly planning")
+    store.append_event(said.id, kind="message", data={"from": "user", "text": "the ingest worker crashed again"})
+    titled = store.create_task("engineer", "Ingest worker crash")
+    assert [h["task_id"] for h in store.search("ingest worker crash")][0] == titled.id
+
+    old = store.create_task("chief", "Release day")
+    store.append_event(old.id, kind="handoff", data={"done": "We release on Fridays", "output": [], "open": "",
+                                                     "needs": ""})
+    for table in ("search", "trigrams"):
+        store.db.execute(f"update {table} set at = '2026-06-01T00:00:00+00:00' where task_id = ?", (old.id,))
+    new = store.create_task("chief", "Release day")
+    store.append_event(new.id, kind="handoff", data={"done": "We release on Tuesdays", "output": [], "open": "",
+                                                     "needs": ""})
+    assert list(dict.fromkeys(h["task_id"] for h in store.search("which day do we release")))[:2] == [new.id, old.id]
+
+
+def test_a_task_with_all_the_words_across_its_messages_comes_first(store):
+    rate = store.create_task("engineer", "Add rate limiting to the public API")
+    cache = store.create_task("engineer", "Cache GitHub responses")
+    store.append_event(cache.id, kind="message", data={"from": "user", "text": "The inbox hits GitHub's rate limit"})
+    assert [h["task_id"] for h in store.search("github rate limit cache")][0] == cache.id
+    assert rate.id in [h["task_id"] for h in store.search("github rate limit cache")]
+
+
+def test_recalls_are_logged_to_evaluate_from_real_use(store, tmp_path):
+    runner = Runner(store, make_crew(tmp_path, bot("engineer")), {"fake": object()})
+    found = store.create_task("engineer", "Add CSV export")
+    asking = store.create_task("engineer", "Where's the export?")
+    runner.recall(asking.id, "csv export")
+    assert store.recall_log()[0] | {"at": ""} == {"id": 1, "at": "", "task_id": asking.id, "bot": "engineer",
+                                                  "query": "csv export", "hits": [found.id]}
+
+
+def test_the_recall_evaluation_stays_high():
+    evaluation = runpy.run_path(str(Path(__file__).parents[1] / "scripts" / "recall_eval.py"))
+    with tempfile.TemporaryDirectory() as folder:
+        runner, ids = evaluation["build"](Path(folder))
+        score = evaluation["evaluate"](runner, ids, evaluation["CASES"])
+        runner.store.close()
+    assert score["hit@1"] >= 0.95 and score["mrr"] >= 0.95, score
 
 
 def test_tool_noise_isnt_searchable(store):
