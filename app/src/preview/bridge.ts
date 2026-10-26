@@ -147,7 +147,7 @@ async function request(method: string, path: string, body?: any) {
     const pr = reviewInbox.direct.find((p) => p.number === Number(parts[3])) ?? reviewInbox.direct[0];
     if (parts[4] === "diff") return ok({ diff: (demo.diffs.get("t_csv0000002") ?? "") + "diff --git a/web/public/export-icon.png b/web/public/export-icon.png\nindex 1111111..2222222 100644\nBinary files a/web/public/export-icon.png and b/web/public/export-icon.png differ\n" });
     if (parts[4] === "review") return ok(demo.tasks.get("t_truncate03"));
-    return ok({ ...pr, body: "Moves the export button into the toolbar and adds a test for the filters.\n\n- [x] Tests added\n- [x] Screenshots updated", state: "OPEN", head: "toolbar-export", base: "main", head_sha: "abc", labels: [], files: [{ path: "web/src/reports/Toolbar.tsx", additions: 40, deletions: 12 }], checks: { total: 12, passed: 12, failed: 0 }, failing: [], issues: [], people: [pr.author, "lee", "kim"], checkout: null, reviews: pr.number === 412 ? demo.pullReviews : [] });
+    return ok({ ...pr, body: "Moves the export button into the toolbar and adds a test for the filters.\r\n\r\n1. Fixes part of #400.\r\n2. Moves the button:\r\n   - [x] Tests added\r\n   - [x] Screenshots updated\r\n", state: "OPEN", head: "toolbar-export", base: "main", head_sha: "abc", labels: [], files: [{ path: "web/src/reports/Toolbar.tsx", additions: 40, deletions: 12 }], checks: { total: 12, passed: 12, failed: 0 }, failing: [], issues: [], people: [pr.author, "lee", "kim"], checkout: null, reviews: pr.number === 412 ? demo.pullReviews : [] });
   }
   if (method === "GET" && parts[0] === "bots" && parts[2] === "card") {
     const b = demo.bots.find((x) => x.name === parts[1])!;

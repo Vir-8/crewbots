@@ -64,11 +64,12 @@ export function ago(iso: string, short = false): string {
  */
 export function Markdown({ text, onSelect }: { text: string; onSelect: (id: string) => void }) {
   const blocks: ReactNode[] = [];
-  const lines = text.split("\n");
+  const lines = text.split(/\r\n?|\n|\u2028|\u2029/); // GitHub's text often has Windows line endings
   let i = 0;
   const inline = (s: string) => <Inline text={s} onSelect={onSelect} />;
   while (i < lines.length) {
     const line = lines[i];
+    const at = i;
     if (line.startsWith("```")) {
       const code: string[] = [];
       for (i++; i < lines.length && !lines[i].startsWith("```"); i++) code.push(lines[i]);
@@ -86,17 +87,21 @@ export function Markdown({ text, onSelect }: { text: string; onSelect: (id: stri
       i++;
     } else {
       const para: string[] = [];
-      while (i < lines.length && lines[i].trim() && !/^(```|#{1,6}\s|\s*([-*]|\d+\.)\s)/.test(lines[i])) {
+      while (i < lines.length && lines[i].trim() && !/^(```|#{1,6}\s)/.test(lines[i]) && !ITEM.test(lines[i])) {
         para.push(lines[i]);
         i++;
       }
-      blocks.push(<p key={blocks.length}>{inline(para.join("\n"))}</p>);
+      if (para.length) blocks.push(<p key={blocks.length}>{inline(para.join("\n"))}</p>);
+    }
+    if (i === at) {
+      blocks.push(<p key={blocks.length}>{inline(line)}</p>); // never stuck on a line nothing above took
+      i++;
     }
   }
   return <div className="md">{blocks}</div>;
 }
 
-const ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
+const ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)/;
 const indentOf = (line: string) => (/^\s*/.exec(line)?.[0] ?? "").replace(/\t/g, "    ").length;
 
 /** The list starting at `start`, and the line after it. An item takes the lines indented under it, its own list
@@ -141,7 +146,7 @@ function list(lines: string[], start: number, inline: (s: string) => ReactNode, 
       {item.children}
     </li>
   ));
-  return [ordered ? <ol key={key} start={first === 1 ? undefined : first}>{body}</ol> : <ul key={key}>{body}</ul>, i];
+  return [ordered ? <ol key={key} start={first === 1 ? undefined : first}>{body}</ol> : <ul key={key}>{body}</ul>, Math.max(i, start + 1)];
 }
 
 export function Inline({ text, onSelect }: { text: string; onSelect: (id: string) => void }) {
