@@ -183,6 +183,10 @@ function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>
         flush();
         out.push({ kind: "line", id: e.id, text: `${d.trigger === "auto" ? "The CLI compacted" : "Compacted"} the conversation${d.before && d.after ? ` (${tokens(d.before)} → ${tokens(d.after)} tokens)` : ""}` });
         break;
+      case "consolidated":
+        flush();
+        out.push({ kind: "line", id: e.id, text: `${d.text}${d.commit ? ` · memory commit ${d.commit}` : ""}`, icon: "check" });
+        break;
       case "fresh_session":
         flush();
         out.push({ kind: "line", id: e.id, text: d.why === "idle" ? "Carried on in a fresh session from memory, since the conversation sat idle past its cache" : "Carried on in a fresh session from memory, since the conversation couldn't be compacted" });
