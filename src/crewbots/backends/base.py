@@ -44,11 +44,21 @@ def codex_retry(info: Any) -> str | None:
 
 @dataclass(frozen=True)
 class McpServer:
-    """A stdio MCP server to start alongside the CLI. This is how crewbots gives bots its orchestration tools."""
+    """An MCP server a bot can use: a program the CLI starts (stdio), or one already running at a URL (http, or the
+    older sse). The crew's own tools reach Codex this way too."""
 
-    command: str
+    command: str = ""
     args: list[str] = field(default_factory=list)
     env: dict[str, str] = field(default_factory=dict)
+    url: str | None = None
+    headers: dict[str, str] = field(default_factory=dict)
+    transport: str = "stdio"  # stdio, http or sse
+
+    def config(self) -> dict[str, Any]:
+        """The server in Claude's mcpServers shape, which the Agent SDK, `claude --mcp-config` and mcp.json all use."""
+        if self.transport == "stdio":
+            return {"type": "stdio", "command": self.command, "args": self.args, "env": self.env}
+        return {"type": self.transport, "url": self.url, **({"headers": self.headers} if self.headers else {})}
 
 
 @dataclass(frozen=True)
@@ -111,7 +121,4 @@ def session_temp_dir() -> Path:
 
 
 def mcp_servers_json(servers: dict[str, McpServer]) -> dict[str, Any]:
-    return {
-        name: {"type": "stdio", "command": s.command, "args": s.args, "env": s.env}
-        for name, s in servers.items()
-    }
+    return {name: s.config() for name, s in servers.items()}

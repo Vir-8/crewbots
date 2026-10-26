@@ -97,6 +97,30 @@ def test_the_network_is_off_unless_the_role_card_opens_it(worktree):
     assert asks(False, "x") is not None and ClaudePolicy(Access.FULL, worktree, set()).check_network("x") is None
 
 
+def test_web_search_and_pages_follow_the_network_setting(worktree):
+    # Claude Code fetches pages itself, outside the shell's sandbox: without this a bot with network off could
+    # still reach any site.
+    def asks(network, tool, args, access=Access.WORKSPACE_WRITE):
+        return ClaudePolicy(access, worktree, set(), network=network).check_tool(tool, args)
+
+    assert "no network access" in asks(False, "WebFetch", {"url": "https://evil.example/x"})
+    assert "no network access" in asks(False, "WebSearch", {"query": "x"})
+    assert asks(True, "WebSearch", {"query": "x"}) is None
+    assert asks(True, "WebFetch", {"url": "https://docs.python.org"}, access=Access.READ_ONLY) is None
+    assert asks(("docs.python.org",), "WebFetch", {"url": "https://docs.python.org/3/"}) is None
+    assert "isn't one of the hosts" in asks(("docs.python.org",), "WebFetch", {"url": "https://evil.example"})
+    assert "limited to some hosts" in asks(("docs.python.org",), "WebSearch", {"query": "x"})
+
+
+def test_a_read_only_bot_gets_the_web_tools_only_with_network(worktree):
+    def tools(network):
+        spec = RunSpec(prompt="x", cwd=worktree, access=Access.READ_ONLY, network=network)
+        return ClaudeAgent(cli_path="claude").options(spec, ClaudeAgentSession(spec)).tools
+
+    assert tools(False) == ["Read", "Glob", "Grep"]
+    assert tools(True) == ["Read", "Glob", "Grep", "WebFetch", "WebSearch"]
+
+
 async def test_a_refusal_is_reported_and_tells_claude_why(worktree):
     policy = ClaudePolicy(Access.READ_ONLY, worktree, set())
 
@@ -288,7 +312,8 @@ async def test_workers_cant_reach_coordinator_tools(store, tmp_path):
     tools = CrewTools(crew.runner, task.id, can_delegate=False)
 
     assert {d.name for d in tools.definitions()} == {
-        "handoff", "escalate", "review", "remember", "forget", "recall", "start_thread", "post"}
+        "handoff", "escalate", "review", "remember", "forget", "recall", "start_thread", "post",
+                     "add_bot"}
     with pytest.raises(ToolRefused, match="not one of this bot's crew tools"):
         await tools.call("delegate", {"bot": "engineer", "goal": "x"})
     reply = await tools.call("handoff", {"done": "built", "output": ["a.py"]})

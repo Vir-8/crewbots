@@ -62,16 +62,26 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
     - read-only bots only read
     - writing bots only write in their task's folder
     - nobody pushes, merges or publishes
-    - writing bots' shell commands have no network unless their role card says `network: true`, or lists the hosts
-      (`network: [pypi.org, files.pythonhosted.org, "*.npmjs.org"]`). A list needs Claude: Codex's sandbox only
-      switches the network on or off.
+    - a bot has no network unless its role card says `network: true`, or lists the hosts
+      (`network: [pypi.org, files.pythonhosted.org, "*.npmjs.org"]`). That covers web search and fetching pages, for
+      any bot, and a writing bot's shell commands. A list needs Claude, which checks each page's host: Codex only
+      switches the network on or off, and a web search can lead anywhere, so a list allows pages but not search.
     - writing bots' shells never get your logins: `gh` sees an empty config, git has no credential helper and offers
       no SSH key, and there's no SSH agent. Your git name and email stay. This stops ordinary signing in, not a
       determined command, which could still read a key file; containers are that boundary.
   - **How it's enforced:** Claude asks on every tool call. Codex's sandbox is the boundary, and every request to leave it is declined. Writing bots' shell commands are OS-sandboxed on both.
   - **Claude's tools run inside the daemon.**
   - **Interrupts:** a cancelled or timed-out Claude turn is interrupted, not killed, so its session stays warm.
-  - Bots get crewbots' MCP servers and their own, never your personal ones. On Claude that's `--strict-mcp-config`. On Codex, which has no such switch, every server, plugin and app from your config is turned off by name.
+  - Bots get crewbots' MCP servers and the ones their role card names (`mcp: [blender, gimp]`), from the crew's own
+    list in `mcp.json`, never your personal ones. On Claude that's `--strict-mcp-config`. On Codex, which has no such
+    switch, every server, plugin and app from your config is turned off by name. A server is a program the CLI
+    starts, or a URL (streamable HTTP, or SSE on Claude).
+  - **Skills:** every bot sees the crew's skills and your global ones (`~/.claude/skills`, with those synced from
+    claude.ai, `~/.agents/skills` and `~/.codex/skills`), by name and description, and reads a skill's `SKILL.md` when
+    a task matches it, the way Claude Code does. A role card's `skills:` can name only some, or `none`.
+  - **Adding bots:** any bot can add a bot when you ask it to (`add_bot`), with a role card it writes. The new bot
+    gets no more access, network or MCP servers than its maker, and delegates only if its maker does. No tool removes
+    or changes a bot: that's yours, in the app.
   - Each active task keeps its CLI running between turns, so follow-ups skip start-up. Idle sessions close after 10 minutes, and `serve --no-sessions` turns this off.
   - `ANTHROPIC_API_KEY` is hidden from Claude by default, so a run stays on your subscription.
 
@@ -175,7 +185,8 @@ The app works like a messaging app:
   the group's members (who leads, who's replying) and the threads it has opened. A new group starts with who's in
   it and a few ways to start.
 - **Commands:** typing / in any message box offers the app's own commands; Tab or Enter runs one without sending
-  anything. `/usage` shows what's left on your Claude and Codex plans, above the box.
+  anything. `/usage` shows what's left on your Claude and Codex plans, above the box. `/status` shows the chat's model
+  and effort, its session, how full its context is, and its plan's limits.
 - **The mic** dictates into any message box with macOS's own speech recognizer, on this Mac when it can, across
   pauses and past the recognizer's one-minute limit. The first time, macOS asks to allow the microphone and speech
   recognition.
@@ -190,8 +201,12 @@ The app works like a messaging app:
   in Settings, and it gets the whole repository at the PR's head instead.
 - **The crew menu**, at the bottom left:
   - **Crew:** your bots, and an editor for each: its name and face, title and description, backend, model and
-    reasoning effort (from the lists the CLIs themselves report), access, network, budget, and its role card's text. Saving rewrites the card after checking it loads, and the
+    reasoning effort (from the lists the CLIs themselves report), access, network, MCP servers, budget, and its role
+    card's text. Saving rewrites the card after checking it loads, and the
     crew uses it from the next turn. New bots start here too.
+  - **Tools:** the crew's MCP servers and the skills bots can use. Add a server from your other apps (Claude Code,
+    Claude's desktop app, Codex), from the official MCP registry, or by hand; Check starts it and lists its tools.
+    Each bot gets the servers you choose in its editor.
   - **Routines:** turn them on and off, run them, edit when and what (schedules as "weekdays at 9:00", or cron),
     and add new ones or the starters.
   - **Analytics:** how much of each limit is left, in the CLIs' own terms (Claude's session and weeks, Codex's windows

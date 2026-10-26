@@ -9,6 +9,7 @@ import { CrewBots } from "./pages/CrewBots";
 import { Routines } from "./pages/Routines";
 import { Settings } from "./pages/Settings";
 import { Analytics } from "./pages/Analytics";
+import { Tools } from "./pages/Tools";
 import type { Crew } from "./state";
 import { useCrew } from "./state";
 import type { ConnectionStatus, Task } from "./types";
@@ -102,6 +103,8 @@ export function App() {
           <CrewBots crew={crew} editing={editing} onEdit={setEditing} onChat={(bot) => setCurrent(`bot:${bot}`)} />
         ) : current === "page:routines" ? (
           <Routines crew={crew} onOpen={openTask} />
+        ) : current === "page:tools" ? (
+          <Tools crew={crew} />
         ) : current === "page:analytics" ? (
           <Analytics crew={crew} />
         ) : current === "page:settings" ? (

@@ -75,8 +75,8 @@ class CodexSession:
             env |= without_credentials()
             overrides += ["-c", "sandbox_workspace_write.exclude_slash_tmp=true",
                           "-c", "sandbox_workspace_write.exclude_tmpdir_env_var=true",
-                          "-c", f"sandbox_workspace_write.writable_roots={json.dumps([str(temp)])}",
-                          *network_overrides(spec)]
+                          "-c", f"sandbox_workspace_write.writable_roots={json.dumps([str(temp)])}"]
+        overrides += network_overrides(spec)
         argv = [*cli.command, "app-server", "-c", f'approval_policy="{policy}"', *overrides, *spec.extra_args]
         session = cls(await JsonlProcess.start(argv, cwd=spec.cwd, env=env), spec)
         session.temp = temp

@@ -55,6 +55,7 @@ export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string)
           placeholder={task?.status === "needs_input" ? `Answer ${labelOf(chat.bot!)}` : `Message ${labelOf(chat.bot!)}`}
           asking={task?.status === "needs_input"}
           onSend={(text) => crew.say(chat.bot!, text)}
+          task={task?.id}
           autoFocus
         />
       </div>

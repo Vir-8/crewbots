@@ -269,6 +269,27 @@ Each step leaves the system working.
   Codex, each fetching only what's asked. Code search covers the default branch, not the PR. With a mapped local
   copy, the PR's head is fetched (`pull/N/head`) into a detached worktree under `~/.crewbots/worktrees/reviews`, and
   the read-only reviewer works there. GitHub's inbox and pull requests are cached for a minute or two.
+- **Prompt caching** is the CLIs' and the APIs', matched from the start of the prompt. A bot's instructions put what
+  stays the same first (who it is, its role card, the roster, the crew tools, skills, team files) and what changes
+  last (its notes, the task's setting, a briefing or review), so every session of a bot shares the cached start, and
+  a new note only changes the end. Analytics shows how much input came from the cache, per model and bot.
+- **The network setting** covers more than shell commands: Claude Code runs WebFetch and WebSearch itself, outside
+  the shell's sandbox, so the policy checks them too (a fetch against the host list; a search only with any host),
+  and Codex's own web search is switched off (`web_search="disabled"`) for a bot without network.
+- **MCP servers** (`mcp_catalog.py`): the crew's are in `mcp.json`, in Claude's `mcpServers` shape, and role cards
+  name the ones their bot gets. Codex takes them as `-c mcp_servers.<name>.*` (a `url` and `http_headers` for HTTP;
+  it can't do SSE), Claude as the Agent SDK's `mcp_servers`. The app can copy a server from Claude Code's,
+  Claude's desktop app's or Codex's config, add one from the official registry (`registry.modelcontextprotocol.io`:
+  a package becomes `npx`, `uvx` or `docker run`; a remote becomes a URL), and check one by starting it and listing
+  its tools with the MCP client. The file can hold keys, so it's the user's alone (0600), and the API reports only
+  which env and header names a server has, never their values.
+- **Skills** come from the crew's `skills/` and the user's global folders; a global one that can't be read, or one a
+  CLI keeps for itself (Codex's `.system`), is left out, and the crew's own win a clash of names.
+- **`add_bot`**, for any bot: it writes the role card through the same code as the app, checks the crew still loads
+  (or takes the card back), and reloads the crew. Its maker's access, network, MCP servers and delegation are the
+  ceiling. There is no tool to remove or edit a bot.
+- **`/status`** asks the runner for a task's session and context: measured live when its session is open and idle,
+  else the last measurement, kept after every turn.
 - **When a turn fails:** the CLIs retry a failed API call themselves first (Claude Code with backoff, Codex per
   request and per stream, `request_max_retries` and `stream_max_retries`). When they give up, the backend says whether the failure is
   passing, from what the CLI reports rather than its wording: Codex's `codexErrorInfo` (overloaded, server error,

@@ -188,21 +188,34 @@ def _mcp_overrides(name: str, server: McpServer) -> list[str]:
     if not MCP_NAME.fullmatch(name):
         raise ValueError(f"MCP server name {name!r} must be letters, digits, - or _ (it becomes a config key)")
     key = f"mcp_servers.{name}"
-    args = ["-c", f"{key}.command={json.dumps(server.command)}", "-c", f"{key}.args={json.dumps(server.args)}",
-            # A headless run has nobody to approve a call, so a tool needing approval would always be refused
-            # ("requires approval, but approval policy is never"). The role card granting the server is the approval,
-            # the same as Claude's --allowedTools.
-            "-c", f'{key}.default_tools_approval_mode="approve"']
+    # A headless run has nobody to approve a call, so a tool needing approval would always be refused ("requires
+    # approval, but approval policy is never"). The role card granting the server is the approval, the same as
+    # Claude's --allowedTools.
+    args = ["-c", f'{key}.default_tools_approval_mode="approve"']
+    if server.transport == "sse":
+        raise ValueError(f"MCP server {name!r} uses SSE, which Codex can't; run this bot on Claude, or use the "
+                         "server's streamable HTTP address")
+    if server.transport == "http":
+        args += ["-c", f"{key}.url={json.dumps(server.url)}"]
+        if server.headers:
+            args += ["-c", f"{key}.http_headers={_toml_table(server.headers)}"]
+        return args
+    args += ["-c", f"{key}.command={json.dumps(server.command)}", "-c", f"{key}.args={json.dumps(server.args)}"]
     if server.env:
-        table = ", ".join(f"{json.dumps(k)} = {json.dumps(v)}" for k, v in server.env.items())
-        args += ["-c", f"{key}.env={{{table}}}"]
+        args += ["-c", f"{key}.env={_toml_table(server.env)}"]
     return args
+
+
+def _toml_table(values: dict[str, str]) -> str:
+    return "{" + ", ".join(f"{json.dumps(k)} = {json.dumps(v)}" for k, v in values.items()) + "}"
 
 
 def network_overrides(spec: RunSpec) -> list[str]:
     """Codex's sandbox has the network on or off for the whole run; it can't keep to a list of hosts."""
     if isinstance(spec.network, tuple) and spec.network:
         raise ValueError("Codex can't limit the network to some hosts; give this bot network: true, or run it on Claude")
+    if not spec.network and spec.access is not Access.FULL:
+        return ['-c', 'web_search="disabled"']  # its web search runs on OpenAI's side, past the sandbox
     if spec.network is True and spec.access is Access.WORKSPACE_WRITE:
         return ["-c", "sandbox_workspace_write.network_access=true"]
     return []

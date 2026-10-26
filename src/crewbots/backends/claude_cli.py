@@ -11,6 +11,7 @@ from crewbots.backends.process import JsonlProcess, stream_jsonl
 from crewbots.events import Done, Event, Notice, RateLimit, SessionStarted, Text, ToolCall, ToolResult, Usage
 
 READ_ONLY_TOOLS = "Read,Glob,Grep"
+WEB_TOOLS = "WebFetch,WebSearch"  # with network on; this backend can't check a fetch's host, so a host list is off
 
 
 class ClaudeCLI:
@@ -52,14 +53,15 @@ class ClaudeCLI:
             "--setting-sources", "project,local",
         ]
         mcp_tools = [f"mcp__{name}" for name in spec.mcp_servers]
+        web = [WEB_TOOLS] if spec.network is True else []
         match spec.access:
             case Access.READ_ONLY:
-                args += ["--permission-mode", "dontAsk", "--tools", READ_ONLY_TOOLS]
-                args += ["--allowedTools", ",".join([READ_ONLY_TOOLS, *mcp_tools])]
+                args += ["--permission-mode", "dontAsk", "--tools", ",".join([READ_ONLY_TOOLS, *web])]
+                args += ["--allowedTools", ",".join([READ_ONLY_TOOLS, *web, *mcp_tools])]
             case Access.WORKSPACE_WRITE:
                 # acceptEdits allows edits inside the working directory; Bash has to be allowed by name. With
                 # --print there is nobody to ask, so anything else is denied.
-                args += ["--permission-mode", "acceptEdits", "--allowedTools", ",".join(["Bash", *mcp_tools])]
+                args += ["--permission-mode", "acceptEdits", "--allowedTools", ",".join(["Bash", *web, *mcp_tools])]
             case Access.FULL:
                 args += ["--permission-mode", "bypassPermissions"]
         for path in spec.read_dirs:

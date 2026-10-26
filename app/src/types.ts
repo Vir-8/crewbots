@@ -14,6 +14,12 @@ import type {
   RoutineFileOut,
   UsageSummary as UsageSummaryOut,
   PlansOut,
+  TaskStatus as TaskStatusOut,
+  McpServerOut,
+  InstalledServer,
+  RegistryEntry,
+  McpCheck,
+  SkillOut,
   CrewState as CrewStateOut,
   EventOut,
   FindingOut,
@@ -47,6 +53,12 @@ export type Card = CardOut;
 export type RoutineFile = RoutineFileOut;
 export type UsageSummary = UsageSummaryOut;
 export type Plans = PlansOut;
+export type TaskStatus = TaskStatusOut;
+export type McpServerInfo = McpServerOut;
+export type InstalledMcp = InstalledServer;
+export type RegistryServer = RegistryEntry;
+export type McpCheckResult = McpCheck;
+export type Skill = SkillOut;
 export type ReviewInbox = InboxOut;
 export type PullSummary = PullSummaryOut;
 export type Pull = PullOut;

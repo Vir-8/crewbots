@@ -17,7 +17,8 @@ from crewbots import routines as routines_module
 from crewbots.crew import CrewError, parse_card
 
 HANDLE = re.compile(r"[a-z][a-z0-9-]{0,30}")
-BOT_FIELDS = ("display_name", "title", "description", "backend", "model", "effort", "access", "network", "avatar", "budget")
+BOT_FIELDS = ("display_name", "title", "description", "backend", "model", "effort", "access", "network", "avatar", "budget",
+              "mcp", "skills", "can_delegate")
 ROUTINE_FIELDS = ("description", "bot", "schedule", "on", "repo", "workspace", "budget", "enabled")
 
 
@@ -31,7 +32,10 @@ def read(path: Path) -> tuple[dict[str, Any], str]:
 
 def card(home: Path, name: str) -> dict[str, Any]:
     meta, body = read(_bot_path(home, name))
-    return {"name": name, **{k: meta.get(k) for k in BOT_FIELDS}, "instructions": body}
+    out = {"name": name, **{k: meta.get(k) for k in BOT_FIELDS}, "instructions": body}
+    if isinstance(out.get("mcp"), dict):  # servers defined on the card itself: the app shows them by name
+        out["mcp"] = sorted(out["mcp"])
+    return out
 
 
 def save_card(home: Path, name: str, fields: dict[str, Any], instructions: str | None, create: bool = False) -> Path:

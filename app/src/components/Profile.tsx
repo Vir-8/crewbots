@@ -27,7 +27,7 @@ export function Profile(props: { crew: Crew; bot: string; onOpen: (id: string) =
   const routines = (crew.routines?.routines ?? []).filter((r) => r.bot === bot.name);
   const threads = data?.threads ?? [];
   const outputs = data?.outputs ?? [];
-  const network = bot.access === "read_only" ? null : bot.network === true ? "Any host" : Array.isArray(bot.network) && bot.network.length ? bot.network.join(", ") : "Off";
+  const network = bot.network === true ? "Any host" : Array.isArray(bot.network) && bot.network.length ? bot.network.join(", ") : "Off";
 
   return (
     <aside className="panel profile">

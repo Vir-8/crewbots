@@ -95,6 +95,14 @@ def test_a_writing_bot_gets_the_network_only_when_its_card_says_so():
         argv(("pypi.org",))
 
 
+def test_codex_searches_the_web_only_with_network():
+    def argv(network, access=Access.WORKSPACE_WRITE):
+        return CodexExec(isolate=False).argv(RunSpec(prompt="x", cwd=".", access=access, network=network))
+
+    assert 'web_search="disabled"' in argv(False) and 'web_search="disabled"' in argv(False, Access.READ_ONLY)
+    assert 'web_search="disabled"' not in argv(True) and 'web_search="disabled"' not in argv(True, Access.READ_ONLY)
+
+
 def test_full_access_bypasses_the_sandbox():
     argv = CodexExec(isolate=False).argv(RunSpec(prompt="x", cwd=".", access=Access.FULL))
 

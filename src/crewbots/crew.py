@@ -5,6 +5,8 @@ A role card is Markdown with YAML frontmatter. The frontmatter is what the harne
 servers); the body is the card itself (mission, owns, does not own, done means), given to the bot as instructions.
 """
 
+import json
+import re
 import shutil
 from dataclasses import dataclass, field, replace
 from datetime import timedelta
@@ -53,7 +55,9 @@ You have crewbots tools, from the MCP server named crewbots:
   while), so the conversation you're in stays a conversation. You work the thread in parallel; when it's done, its
   result comes back here. Write the goal so it stands alone.
 - `post(text, room?)`: say something in a group chat, by default the crew's own. @mention a teammate by name to bring
-  them in; that's how you ask another bot for something."""
+  them in; that's how you ask another bot for something.
+- `add_bot(name, title, description, instructions, ...)`: when the user asks for a new bot, add it, with a role card
+  you write. It gets no more access, network or MCP servers than you have. You can't remove or change bots."""
 
 DELEGATION_TOOLS = """You can delegate. Only you assign work, and every task has exactly one owner:
 
@@ -98,11 +102,12 @@ class Bot:
     workspace: Path | None = None  # where its tasks run unless a task says otherwise
     worktree: bool = True  # give each writing task its own git worktree when the workspace is a repo
     timeout_s: float | None = None
-    mcp: dict[str, McpServer] = field(default_factory=dict)
+    mcp: dict[str, McpServer] = field(default_factory=dict)  # once loaded: the crew's servers it names, and its own
+    mcp_names: tuple[str, ...] = ()  # the crew's servers (mcp.json) its role card names
     can_delegate: bool = False  # only coordinators assign work; the harness refuses delegation from anyone else
-    skills: tuple[str, ...] = ()  # names from the crew's skills/ folder, or ("all",)
+    skills: tuple[str, ...] = ()  # () or ("all",): every skill, the crew's and global; ("none",); or just these
     budget: Budget | None = None
-    network: bool | tuple[str, ...] = False  # for its shell commands: none, any host, or these hosts
+    network: bool | tuple[str, ...] = False  # web search and pages, and a writer's commands: none, any, or these hosts
     path: Path | None = None  # its role card
     display_name: str | None = None  # what you call it, e.g. Roger; `name` stays its handle, for @mentions and tasks
     avatar: dict[str, str] | None = None  # {color, shape}, from AVATAR_COLORS and AVATAR_SHAPES
@@ -118,6 +123,16 @@ class Skill:
     name: str
     description: str
     path: Path  # the SKILL.md; bots read it when a task matches
+    source: str = "crew"  # the crew's skills/ folder, or the global folder it came from
+
+
+MCP_FILE = "mcp.json"  # the crew's MCP servers, in Claude's mcpServers shape
+MCP_NAME = re.compile(r"[A-Za-z0-9_-]+")  # a server's name becomes a config key in Codex
+
+# Skills installed for you everywhere, which every bot can use too: Claude Code's (with the ones synced from
+# claude.ai), the cross-agent folder, and Codex's. The crew's own come first; a global one of the same name is left out.
+GLOBAL_SKILL_DIRS = (Path.home() / ".claude" / "skills", Path.home() / ".agents" / "skills",
+                     Path.home() / ".codex" / "skills")
 
 
 @dataclass(frozen=True)
@@ -126,15 +141,22 @@ class Crew:
     bots: dict[str, Bot]
     team_files: dict[str, str]  # file name → contents, from team/
     skills: dict[str, Skill] = field(default_factory=dict)
+    global_skill_dirs: tuple[Path, ...] = ()
+    mcp_servers: dict[str, McpServer] = field(default_factory=dict)  # the crew's own list (mcp.json)
 
     @property
     def skills_dir(self) -> Path:
         return self.home / "skills"
 
     def skills_for(self, bot: Bot) -> list[Skill]:
-        if "all" in bot.skills:
+        if not bot.skills or "all" in bot.skills:
             return list(self.skills.values())
-        return [self.skills[name] for name in bot.skills]
+        return [self.skills[name] for name in bot.skills if name != "none"]
+
+    @property
+    def skill_dirs(self) -> list[Path]:
+        """Where the skills bots can use live, for backends that need read access granted to a folder."""
+        return [d for d in (self.skills_dir, *self.global_skill_dirs) if d.is_dir()]
 
     @property
     def memory(self) -> Memory:
@@ -150,25 +172,15 @@ class Crew:
             f"- {b.label} (@{b.name}, {b.title}){' ← you' if b.name == bot.name else ''}: {b.description}"
             for b in self.bots.values()
         )
+        # What stays the same for every task of this bot comes first and what changes comes last: the model's prompt
+        # cache matches from the start, so a bot's sessions share the cached start, and a new note or a task's own
+        # setting only misses from there on.
         parts = [
             f"You are {bot.label}, the {bot.title} of a crew of AI agents run by crewbots. Your handle is @{bot.name}.",
-            setting if setting else
-            f"This task was delegated to you by {delegated_by}; your handoff goes back to them."
-            if delegated_by else
-            f"The crew's routine {routine!r} started this task, not a message from the user. Your final message is what "
-            "the user reads, when they next look; keep it short, and lead with anything that needs them."
-            if routine else "This task comes from the user; your final message is what they read.",
             f"# Your role card\n\n{bot.instructions.strip()}",
             f"# The crew\n\n{roster}",
             CREW_TOOLS + ("\n\n" + DELEGATION_TOOLS if bot.can_delegate else ""),
         ]
-        if reviewing:
-            parts.insert(2, f"# This review\n\n{reviewing}")
-        if briefing:
-            parts.insert(2, "# Where things stand\n\nThis task's conversation grew long, so it continues in a fresh session. "
-                         f"This is the briefing you wrote for it:\n\n{briefing}")
-        notes = self.memory.prompt(bot.name)
-        parts.append(MEMORY_GUIDE + (f"\n\n{notes}" if notes else "\n\nNo notes yet."))
         if skills := self.skills_for(bot):
             listing = "\n".join(f"- {s.name}: {s.description} ({s.path})" for s in skills)
             parts.append(
@@ -176,6 +188,20 @@ class Crew:
                 f"it. Where a skill says to spawn subagents, you may use your own; across bots, delegate.\n\n{listing}"
             )
         parts += [f"# team/{name}\n\n{text.strip()}" for name, text in self.team_files.items()]
+        notes = self.memory.prompt(bot.name)
+        parts.append(MEMORY_GUIDE + (f"\n\n{notes}" if notes else "\n\nNo notes yet."))
+        parts.append("# This task\n\n" + (
+            setting if setting else
+            f"This task was delegated to you by {delegated_by}; your handoff goes back to them."
+            if delegated_by else
+            f"The crew's routine {routine!r} started this task, not a message from the user. Your final message is what "
+            "the user reads, when they next look; keep it short, and lead with anything that needs them."
+            if routine else "This task comes from the user; your final message is what they read."))
+        if reviewing:
+            parts.append(f"# This review\n\n{reviewing}")
+        if briefing:
+            parts.append("# Where things stand\n\nThis task's conversation grew long, so it continues in a fresh session. "
+                         f"This is the briefing you wrote for it:\n\n{briefing}")
         return "\n\n".join(parts)
 
 
@@ -199,20 +225,35 @@ def load(home: Path) -> Crew:
     team_dir = home / "team"
     team_files = {p.name: p.read_text() for p in sorted(team_dir.glob("*.md"))} if team_dir.is_dir() else {}
     skills = load_skills(home / "skills")
+    global_dirs = tuple(d.expanduser() for d in GLOBAL_SKILL_DIRS)
+    for folder in global_dirs:
+        for name, skill in load_global_skills(folder).items():
+            skills.setdefault(name, skill)
     for bot in bots.values():
-        if missing := [s for s in bot.skills if s != "all" and s not in skills]:
-            raise CrewError(f"{bot.name}: no skills named {missing} in {home / 'skills'}")
-    return Crew(home=home, bots=bots, team_files=team_files, skills=skills)
+        if missing := [s for s in bot.skills if s not in ("all", "none") and s not in skills]:
+            raise CrewError(f"{bot.name}: no skills named {missing} in {home / 'skills'} or your global skills")
+    servers = load_mcp(home)
+    for name, bot in list(bots.items()):
+        if missing := [n for n in bot.mcp_names if n not in servers]:
+            raise CrewError(f"{bot.name}: no MCP servers named {missing} in the crew's {MCP_FILE}")
+        named = {n: servers[n] for n in bot.mcp_names}
+        if bot.backend.startswith("codex") and (sse := [n for n, s in {**named, **bot.mcp}.items() if s.transport == "sse"]):
+            raise CrewError(f"{bot.name}: Codex can't use SSE MCP servers ({', '.join(sse)}); run it on Claude, or "
+                            "use the server's streamable HTTP address")
+        bots[name] = replace(bot, mcp={**named, **bot.mcp})
+    return Crew(home=home, bots=bots, team_files=team_files, skills=skills, global_skill_dirs=global_dirs,
+                mcp_servers=servers)
 
 
 def stamp(home: Path) -> tuple[tuple[str, int], ...]:
     """What the crew is made of on disk, as names and modification times: when it changes, the crew is read again."""
     home = home.expanduser()
-    paths = [*home.glob("bots/*.md"), *home.glob("team/*.md"), *home.glob("skills/**/SKILL.md")]
+    paths = [*home.glob("bots/*.md"), *home.glob("team/*.md"), *home.glob("skills/**/SKILL.md"), *home.glob(MCP_FILE),
+             *(p for d in GLOBAL_SKILL_DIRS if d.is_dir() for p in d.expanduser().rglob("SKILL.md"))]
     found = []
     for p in sorted(paths):
         try:
-            found.append((str(p.relative_to(home)), p.stat().st_mtime_ns))
+            found.append((str(p.relative_to(home) if p.is_relative_to(home) else p), p.stat().st_mtime_ns))
         except OSError:
             continue  # deleted while looking
     return tuple(found)
@@ -234,6 +275,26 @@ def load_skills(skills_dir: Path) -> dict[str, Skill]:
         if "description" not in meta:
             raise CrewError(f"{path}: a skill needs a description; it is how a bot knows when to use it")
         skills[name] = Skill(name=name, description=" ".join(str(meta["description"]).split()), path=path)
+    return skills
+
+
+def load_global_skills(folder: Path) -> dict[str, Skill]:
+    """Skills in one of your global folders, named as each SKILL.md names itself. Not the crew's to vouch for, so one
+    that can't be read is left out rather than stopping the crew."""
+    skills: dict[str, Skill] = {}
+    if not folder.is_dir():
+        return skills
+    for path in sorted(folder.rglob("SKILL.md")):
+        if any(part.startswith(".") for part in path.relative_to(folder).parts):
+            continue  # a CLI's own built-in ones (Codex keeps them in .system), which it gives itself
+        try:
+            meta, _ = _frontmatter(path.read_text(), path)
+        except (CrewError, OSError, UnicodeDecodeError, yaml.YAMLError):
+            continue
+        name = str(meta.get("name") or path.parent.name)
+        if meta.get("description") and name not in skills:
+            skills[name] = Skill(name=name, description=" ".join(str(meta["description"]).split()), path=path,
+                                 source=str(folder).replace(str(Path.home()), "~"))
     return skills
 
 
@@ -283,7 +344,8 @@ def parse_card(text: str, default_name: str, source: Path | str = "<card>") -> B
         workspace=Path(workspace).expanduser() if workspace else None,
         worktree=bool(meta.get("worktree", True)),
         timeout_s=meta.get("timeout"),
-        mcp=_mcp(meta.get("mcp") or {}, source),
+        mcp=_mcp(meta.get("mcp") if isinstance(meta.get("mcp"), dict) else {}, source),
+        mcp_names=_mcp_names(meta.get("mcp"), source),
         can_delegate=bool(meta.get("can_delegate", False)),
         skills=_skill_names(meta.get("skills"), source),
         budget=_budget(meta.get("budget"), source),
@@ -338,8 +400,6 @@ def _avatar(raw: Any, source: Path | str) -> dict[str, str] | None:
 def _network(raw: Any, access: Access, backend: str, source: Path | str) -> bool | tuple[str, ...]:
     if raw is False or raw is None or raw == []:
         return False
-    if access is Access.READ_ONLY:
-        raise CrewError(f"{source}: network is for a writing bot's shell commands; this bot is read-only")
     if raw is True:
         return True
     if not isinstance(raw, list) or not all(isinstance(h, str) and h.strip() for h in raw):
@@ -363,23 +423,52 @@ def _budget(raw: Any, source: Path | str) -> Budget | None:
 def _skill_names(raw: Any, source: Path | str) -> tuple[str, ...]:
     if raw is None:
         return ()
-    if raw == "all":
-        return ("all",)
+    if raw in ("all", "none"):
+        return (raw,)
     if not isinstance(raw, list) or not all(isinstance(s, str) for s in raw):
-        raise CrewError(f"{source}: skills must be a list of skill names, or all")
+        raise CrewError(f"{source}: skills must be a list of skill names, all, or none")
     return tuple(raw)
 
 
 def _mcp(raw: dict[str, Any], source: Path | str) -> dict[str, McpServer]:
     """The same shape as Claude's mcpServers config, so entries can be copied from it."""
-    servers = {}
-    for name, spec in raw.items():
-        if name == "crewbots":
-            raise CrewError(f"{source}: the mcp server name crewbots is reserved for the crew's own tools")
-        if not isinstance(spec, dict) or "command" not in spec:
-            raise CrewError(f"{source}: mcp server {name!r} needs a command")
-        servers[name] = McpServer(
-            command=spec["command"], args=[str(a) for a in spec.get("args", [])],
-            env={k: str(v) for k, v in (spec.get("env") or {}).items()},
-        )
-    return servers
+    return {name: mcp_server(name, spec, source) for name, spec in raw.items()}
+
+
+def mcp_server(name: str, spec: Any, source: Path | str) -> McpServer:
+    """One server, as Claude's config writes it: a `command` (with `args` and `env`) it starts, or a `url` (with
+    `headers`), `type: http` unless it says `sse`."""
+    if name == "crewbots":
+        raise CrewError(f"{source}: the mcp server name crewbots is reserved for the crew's own tools")
+    if not MCP_NAME.fullmatch(name):
+        raise CrewError(f"{source}: mcp server name {name!r} must be letters, digits, - or _")
+    if not isinstance(spec, dict) or not (spec.get("command") or spec.get("url")):
+        raise CrewError(f"{source}: mcp server {name!r} needs a command, or a url")
+    if spec.get("url"):
+        transport = "sse" if spec.get("type") == "sse" else "http"
+        return McpServer(url=str(spec["url"]), headers={k: str(v) for k, v in (spec.get("headers") or {}).items()},
+                         transport=transport)
+    return McpServer(command=str(spec["command"]), args=[str(a) for a in spec.get("args") or []],
+                     env={k: str(v) for k, v in (spec.get("env") or {}).items()})
+
+
+def _mcp_names(raw: Any, source: Path | str) -> tuple[str, ...]:
+    """A role card's `mcp` as a list: the names of the crew's servers (mcp.json) the bot may use."""
+    if raw is None or isinstance(raw, dict):
+        return ()
+    if not isinstance(raw, list) or not all(isinstance(n, str) for n in raw):
+        raise CrewError(f"{source}: mcp is a list of the crew's MCP server names, or servers of its own")
+    return tuple(raw)
+
+
+def load_mcp(home: Path) -> dict[str, McpServer]:
+    """The crew's MCP servers, `mcp.json` in Claude's `{"mcpServers": {...}}` shape: ones you add in the app or copy
+    from your other apps, for role cards to name."""
+    path = home / MCP_FILE
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text()).get("mcpServers") or {}
+    except (ValueError, AttributeError) as e:
+        raise CrewError(f"{path}: not readable as JSON with an mcpServers object ({e})") from None
+    return {name: mcp_server(name, spec, path) for name, spec in raw.items()}

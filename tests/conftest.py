@@ -12,3 +12,11 @@ from crewbots import runner  # noqa: E402
 def quick_retries(monkeypatch):
     """A turn that failed for a passing reason is tried again at once in tests, not after minutes."""
     monkeypatch.setattr(runner, "RETRY_WAITS_S", (0.0, 0.0, 0.0))
+
+
+@pytest.fixture(autouse=True)
+def no_global_skills(monkeypatch):
+    """Tests see only the skills they make, not the ones installed on this machine."""
+    from crewbots import crew
+
+    monkeypatch.setattr(crew, "GLOBAL_SKILL_DIRS", ())

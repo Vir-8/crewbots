@@ -38,7 +38,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from crewbots import worktree
+from crewbots import cards, worktree
+from crewbots import crew as crew_module
 from crewbots.backends import BACKENDS, Access, Backend, McpServer, RunSpec
 from crewbots.backends.base import Session
 from crewbots.crew import CHAT_SETTING, NO_REPLY, SEAT_SETTING, Bot, Crew
@@ -78,6 +79,7 @@ RETRY_PROMPT = (
     "your answer again."
 )
 MCP_SERVER_NAME = "crewbots"
+ACCESS_RANK = {Access.READ_ONLY: 0, Access.WORKSPACE_WRITE: 1, Access.FULL: 2}
 MCP_COMMAND = (sys.executable, "-m", "crewbots.mcp_server")
 
 
@@ -204,6 +206,7 @@ class Runner:
         self.idle_timeout_s = idle_timeout_s
         self.max_sessions = max_sessions
         self._sessions: dict[str, OpenSession] = {}
+        self._context_seen: dict[str, float] = {}  # task id → how full its context was, when last measured
         self._reaper: asyncio.Task[None] | None = None
         self.keep_awake = keep_awake
         self.rollover_percent = rollover_percent
@@ -509,6 +512,27 @@ class Runner:
     def open_sessions(self) -> list[str]:
         return list(self._sessions)
 
+    async def status(self, task_id: str) -> dict[str, Any]:
+        """What `/status` shows for a chat or thread: its bot's model and effort, its session, and how full the
+        session's context is: measured now if the session is open and idle, else as last measured."""
+        task = self.store.get_task(task_id)
+        bot = self.bot_for(task.bot)
+        opened = self._sessions.get(task_id)
+        percent = self._context_seen.get(task_id)
+        measure = getattr(opened.session, "context_percent", None) if opened and opened.session.alive else None
+        if measure and task_id not in self._runs:
+            with contextlib.suppress(Exception):
+                percent = await asyncio.wait_for(measure(), 10) or percent
+                if percent is not None:
+                    self._context_seen[task_id] = percent
+        return {
+            "task_id": task.id, "bot": task.bot, "backend": bot.backend if bot else None,
+            "plan": _plan(bot.backend) if bot else None, "model": bot.model if bot else None,
+            "effort": bot.effort if bot else None, "session_id": task.session_id, "open": opened is not None,
+            "context_percent": round(percent, 1) if percent is not None else None,
+            "rollover_percent": self.rollover_percent, "turns": task.turns,
+        }
+
     def changes(self, task_id: str) -> str | None:
         """The task's diff against where its worktree started, or None if it has no worktree."""
         task = self.store.get_task(task_id)
@@ -565,6 +589,42 @@ class Runner:
                 f"stop condition: {task_id} failed review in all {MAX_REVIEW_ROUNDS} rounds. Report to the user with "
                 "the best version and the open objections, instead of sending it back again (team/rules.md).")
         return self.send(task_id, text, sender=self.store.get_task(parent_id).bot)
+
+    def add_bot(self, task_id: str, fields: dict[str, Any]) -> Bot:
+        """A bot adds a bot, when the user asks it to. The new one gets no more than its maker has: no more access or
+        network, only MCP servers the maker has itself, and delegation only from a bot that delegates. Nothing lets a
+        bot remove or change one: that's the user's."""
+        maker = self.bot_for(self.store.get_task(task_id).bot)
+        if maker is None:
+            raise NotAllowed("only a bot of the crew can add one")
+        access = Access(fields.get("access") or Access.READ_ONLY)
+        if ACCESS_RANK[access] > ACCESS_RANK[maker.access]:
+            raise NotAllowed(f"a new bot can't have more access than you ({maker.access}); ask the user to raise it")
+        network = fields.get("network", maker.network)
+        if network and not (maker.access is Access.FULL or maker.network is True or network == maker.network):
+            raise NotAllowed("a new bot can't have more network than you; ask the user to give it more")
+        if fields.get("can_delegate") and not maker.can_delegate:
+            raise NotAllowed("only a bot that delegates can add one that does")
+        mcp = list(fields.get("mcp") or [])
+        if extra := [n for n in mcp if n not in maker.mcp_names]:
+            raise NotAllowed(f"you can only pass on MCP servers you have yourself, and not {', '.join(extra)}; the "
+                             "user can add more in the app")
+        name = str(fields["name"]).strip().lower()
+        card = {"display_name": fields.get("display_name"), "title": fields["title"],
+                "description": fields["description"], "backend": fields.get("backend") or maker.backend,
+                "model": fields.get("model"), "effort": fields.get("effort"), "access": access.value,
+                "network": list(network) if isinstance(network, tuple) else network, "mcp": mcp,
+                "skills": list(fields.get("skills") or []), "can_delegate": bool(fields.get("can_delegate")) or None}
+        path = cards.save_card(self.crew.home, name, card, str(fields["instructions"]), create=True)
+        try:
+            crew = crew_module.load(self.crew.home)
+        except crew_module.CrewError:
+            path.unlink(missing_ok=True)  # the crew must still load without it
+            raise
+        self.reload(crew)
+        added = crew.bots[name]
+        self._record(task_id, Notice(message=f"Added {added.label} (@{added.name}), {added.title}, to the crew."))
+        return added
 
     def remember(self, task_id: str, title: str, body: str, shared: bool = False) -> Note:
         task = self.store.get_task(task_id)
@@ -813,7 +873,7 @@ class Runner:
             resume_session_id=task.session_id,
             mcp_servers={**bot.mcp, **({} if in_process else self._crew_tools(token, bot))},
             crew=CrewTools(self, task.id, bot.can_delegate) if in_process else None,
-            read_dirs=[d for d in (self.crew.skills_dir, self.crew.memory.root) if d.is_dir()], timeout_s=bot.timeout_s,
+            read_dirs=[*self.crew.skill_dirs, *[d for d in (self.crew.memory.root,) if d.is_dir()]], timeout_s=bot.timeout_s,
             network=bot.network, effort=bot.effort,
         )
 
@@ -849,6 +909,8 @@ class Runner:
         if not self.rollover_percent or measure is None:
             return
         percent = await measure()
+        if percent is not None:
+            self._context_seen[task_id] = percent
         if percent is None or percent < self.rollover_percent:
             return
         briefing, usage = "", None
@@ -871,6 +933,7 @@ class Runner:
         if not briefing.strip():
             return  # no briefing, no rollover: the CLI's own compaction carries on
         await self._close_session(task_id)
+        self._context_seen.pop(task_id, None)  # the fresh session starts from the briefing
         self.store.update_task(task_id, briefing=briefing, session_id=None)
         self._record(task_id, kind="rollover", data={"percent": round(percent, 1), "briefing": briefing})
 

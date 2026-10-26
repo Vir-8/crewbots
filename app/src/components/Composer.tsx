@@ -3,10 +3,13 @@ import { bridge } from "../api";
 import type { Bot } from "../types";
 import { labelOf } from "./Avatar";
 import { Icon } from "./Icon";
+import { StatusPanel } from "./StatusPanel";
 import { UsagePanel } from "./UsagePanel";
 
-// Commands run in the app itself, from the message box: nothing is sent to a bot.
-const COMMANDS: { name: string; icon: "chart"; description: string }[] = [
+// Commands run in the app itself, from the message box: nothing is sent to a bot. `task`: only where there's a chat
+// or thread to report on.
+const COMMANDS: { name: string; icon: "chart" | "settings"; description: string; task?: boolean }[] = [
+  { name: "status", icon: "settings", description: "This chat's model, session and context, and its plan's limits", task: true },
   { name: "usage", icon: "chart", description: "What's left on your Claude and Codex plans" },
 ];
 
@@ -23,6 +26,7 @@ export function Composer(props: {
   onBot?: (name: string) => void;
   workspace?: string;
   onWorkspace?: (path: string) => void;
+  task?: string; // the chat or thread this box talks to, for /status
 }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -39,7 +43,7 @@ export function Composer(props: {
 
   // "/" and a command's start, nothing else: Tab or Enter runs the one picked, instead of sending.
   const slash = /^\/(\S*)$/.exec(text)?.[1];
-  const commands = slash === undefined ? [] : COMMANDS.filter((c) => c.name.startsWith(slash.toLowerCase()));
+  const commands = slash === undefined ? [] : COMMANDS.filter((c) => c.name.startsWith(slash.toLowerCase()) && (!c.task || props.task));
   const [pick, setPick] = useState(0);
   const [panel, setPanel] = useState<string | null>(null);
   const run = (name: string) => {
@@ -110,6 +114,7 @@ export function Composer(props: {
   return (
     <div className={`composer ${props.asking ? "asking" : ""} ${listening ? "listening" : ""}`} onClick={() => area.current?.focus()}>
       {panel === "usage" && <UsagePanel onClose={() => setPanel(null)} />}
+      {panel === "status" && props.task && <StatusPanel taskId={props.task} onClose={() => setPanel(null)} />}
       {commands.length > 0 && (
         <div className="commands" role="listbox">
           {commands.map((c, i) => (

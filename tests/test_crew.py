@@ -93,6 +93,22 @@ def test_every_bot_sees_its_card_the_roster_and_the_team_files(tmp_path):
     assert "# team/protocol.md" in prompt and "HANDOFF" in prompt
 
 
+def test_a_bots_instructions_start_the_same_for_every_task_so_the_prompt_cache_matches(tmp_path):
+    loaded = crew.load(crew.init(tmp_path / "crew"))
+    chief = loaded.bots["chief"]
+
+    from_user = loaded.system_prompt(chief)
+    by_routine = loaded.system_prompt(chief, routine="standup", briefing="where we are")
+    loaded.memory.remember("chief", "Vir prefers short replies", "Keep it brief.", source="t_1")
+    with_a_note = loaded.system_prompt(chief)
+
+    same = next(i for i, (a, b) in enumerate(zip(from_user, by_routine, strict=False)) if a != b)
+    assert "No notes yet.\n\n# This task\n\n" in from_user[:same]  # all that stays put comes first
+    assert "# team/protocol.md" in from_user[:same] and "# Skills" in from_user[:same]
+    noted = next(i for i, (a, b) in enumerate(zip(from_user, with_a_note, strict=False)) if a != b)
+    assert from_user.index("# Memory") < noted  # a new note changes only the end
+
+
 def test_two_cards_with_the_same_name_are_refused(tmp_path):
     home = crew.init(tmp_path / "crew")
     (home / "bots" / "boss.md").write_text("---\nname: chief\ndescription: another chief\n---\nhi\n")
@@ -129,7 +145,28 @@ def test_skills_are_listed_with_their_paths_for_bots_that_have_them(tmp_path):
     chief = loaded.system_prompt(loaded.bots["chief"])
 
     assert "# Skills" in chief and str(loaded.home / "skills" / "arena" / "SKILL.md") in chief
-    assert "# Skills" not in loaded.system_prompt(loaded.bots["engineer"])
+    assert "# Skills" in loaded.system_prompt(loaded.bots["engineer"])  # every bot, unless its card says otherwise
+    quiet = crew.Crew(home=loaded.home, bots={}, team_files={}, skills=loaded.skills)
+    assert quiet.skills_for(parse_card("---\ndescription: d\nskills: none\n---\nbody", "x")) == []
+
+
+def test_global_skills_are_there_for_every_bot_after_the_crews_own(tmp_path, monkeypatch):
+    home = crew.init(tmp_path / "crew")
+    mine = tmp_path / "global"
+    write_skill(mine / "pdf", "pdf", "reads and fills PDFs")
+    write_skill(mine / "synced" / "a1b2" / "xlsx", "xlsx", "works with spreadsheets")
+    write_skill(mine / "arena", "arena", "a global one named like the crew's")
+    write_skill(mine / ".system" / "imagegen", "imagegen", "a CLI's built-in")
+    (mine / "broken").mkdir()
+    (mine / "broken" / "SKILL.md").write_text("no frontmatter here")
+    monkeypatch.setattr(crew, "GLOBAL_SKILL_DIRS", (mine,))
+
+    loaded = crew.load(home)
+
+    assert {"pdf", "xlsx"} <= set(loaded.skills) and not {"broken", "imagegen"} & set(loaded.skills)
+    assert loaded.skills["arena"].source == "crew" and loaded.skills["pdf"].source == str(mine)
+    assert loaded.skills["pdf"] in loaded.skills_for(loaded.bots["engineer"])
+    assert mine in loaded.skill_dirs  # so a Claude bot may read them
 
 
 def write_skill(folder: Path, name: str, description: str = "does a thing") -> None:
@@ -191,8 +228,7 @@ def test_network_on_a_role_card():
     assert card("network: [pypi.org, '*.npmjs.org']\n").network == ("pypi.org", "*.npmjs.org")
     with pytest.raises(CrewError, match="Codex's sandbox can't keep to a list"):
         card("network: [pypi.org]\n", backend="codex")
-    with pytest.raises(CrewError, match="read-only"):
-        card("network: true\n", access="read_only")
+    assert card("network: true\n", access="read_only").network is True  # web search and pages, for any bot
     with pytest.raises(CrewError, match="list of hosts"):
         card("network: everywhere\n")
 

@@ -327,7 +327,7 @@ function ReviewPane({ crew, pull, reviews, onStarted, onSettings }: { crew: Crew
             <Thread crew={crew} task={shown} onOpen={() => undefined} compact />
           </div>
           <div className="review-composer">
-            <Composer key={shown.id} placeholder="Ask about this review" onSend={(text) => crew.send(shown.id, text)} />
+            <Composer key={shown.id} placeholder="Ask about this review" onSend={(text) => crew.send(shown.id, text)} task={shown.id} />
           </div>
         </>
       ) : (

@@ -19,6 +19,12 @@ import type {
   Task,
   UsageSummary,
   Plans,
+  TaskStatus,
+  McpServerInfo,
+  InstalledMcp,
+  RegistryServer,
+  McpCheckResult,
+  Skill,
 } from "./types";
 
 import { bridge } from "./bridge";
@@ -70,6 +76,18 @@ export const api = {
   deleteRoutine: (name: string) => call<{ ok: boolean }>("DELETE", `/routines/${encodeURIComponent(name)}`),
   pause: (on: boolean) => call<CrewState>("POST", on ? "/crew/pause" : "/crew/resume"),
   usageSummary: (days = 365) => call<UsageSummary>("GET", `/usage/summary?days=${days}`),
+  mcpServers: () => call<McpServerInfo[]>("GET", "/mcp/servers"),
+  saveMcpServer: (name: string, body: { transport: "stdio" | "http" | "sse"; command?: string; args?: string[]; env?: Record<string, string> | null; url?: string; headers?: Record<string, string> | null }) =>
+    call<McpServerInfo>("PUT", `/mcp/servers/${encodeURIComponent(name)}`, body),
+  removeMcpServer: (name: string) => call<{ removed: string; bots: string[] }>("DELETE", `/mcp/servers/${encodeURIComponent(name)}`),
+  checkMcpServer: (name: string) => call<McpCheckResult>("POST", `/mcp/servers/${encodeURIComponent(name)}/check`),
+  installedMcp: () => call<InstalledMcp[]>("GET", "/mcp/installed"),
+  importMcp: (id: string, name?: string) => call<McpServerInfo>("POST", "/mcp/import", { id, name }),
+  searchMcp: (q: string) => call<RegistryServer[]>("GET", `/mcp/registry?q=${encodeURIComponent(q)}`),
+  addFromRegistry: (body: { server: string; version: string; option: string; name: string; values: Record<string, string> }) =>
+    call<McpServerInfo>("POST", "/mcp/registry", body),
+  skills: () => call<Skill[]>("GET", "/skills"),
+  taskStatus: (id: string) => call<TaskStatus>("GET", `/tasks/${id}/status`),
   plans: (fresh = false) => call<Plans>("GET", `/plans${fresh ? "?fresh=true" : ""}`),
   // Kept answers come back at once; `fresh` waits for GitHub. Your teams' list is asked for apart, when it's opened.
   reviewInbox: (fresh = false, lists = ["assigned", "direct", "mine"]) =>

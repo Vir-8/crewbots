@@ -38,7 +38,7 @@ from claude_agent_sdk import (
 from crewbots.backends.base import Access, RunSpec, claude_retry
 from crewbots.backends.claude_cli import READ_ONLY_TOOLS, _stringify, rate_limit
 from crewbots.backends.credentials import without_credentials
-from crewbots.backends.policy import Policy
+from crewbots.backends.policy import WEB_TOOLS, Policy
 from crewbots.crew_tools import CrewTools, ToolRefused
 from crewbots.events import Done, Event, Notice, SessionStarted, Text, ToolCall, ToolResult, Usage
 
@@ -74,10 +74,7 @@ class ClaudeAgent:
             await session.close()
 
     def options(self, spec: RunSpec, session: "ClaudeAgentSession") -> ClaudeAgentOptions:
-        servers: dict[str, Any] = {
-            name: {"type": "stdio", "command": s.command, "args": s.args, "env": s.env}
-            for name, s in spec.mcp_servers.items() if name != CREW_SERVER
-        }
+        servers: dict[str, Any] = {name: s.config() for name, s in spec.mcp_servers.items() if name != CREW_SERVER}
         if spec.crew is not None:  # the crew's tools, or a reviewer's
             servers[CREW_SERVER] = crew_server(spec.crew)
         full = spec.access is Access.FULL
@@ -103,7 +100,9 @@ class ClaudeAgent:
             strict_mcp_config=True,
             mcp_servers=servers,
             add_dirs=[str(d) for d in spec.read_dirs],
-            tools=READ_ONLY_TOOLS.split(",") if spec.access is Access.READ_ONLY else None,
+            # A read-only bot gets the web tools too when it has network: the policy checks each call's host.
+            tools=[*READ_ONLY_TOOLS.split(","), *(sorted(WEB_TOOLS) if spec.network else [])]
+            if spec.access is Access.READ_ONLY else None,
             permission_mode="bypassPermissions" if full else "default",
             can_use_tool=None if full else session.policy,
             env=env,

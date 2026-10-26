@@ -19,12 +19,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
+import httpx
 import uvicorn
 from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, WebSocket
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from crewbots import cards
+from crewbots import cards, mcp_catalog
 from crewbots import crew as crew_module
 from crewbots import models as models_module
 from crewbots import plans as plans_module
@@ -129,6 +130,7 @@ class CardBody(BaseModel):
     network: bool | list[str] | None = None
     avatar: Avatar | None = None
     budget: Budget | None = None
+    mcp: list[str] | None = None  # the crew's MCP servers (mcp.json) it may use
     instructions: str | None = None  # the card's body: mission, what it owns, what done means
 
 
@@ -138,6 +140,93 @@ class NewBot(CardBody):
 
 class CardOut(CardBody):
     name: str
+
+
+class McpServerOut(BaseModel):
+    """One of the crew's MCP servers, without the values of its env or headers, which can be keys."""
+
+    name: str
+    transport: Literal["stdio", "http", "sse"]
+    command: str | None
+    args: list[str]
+    url: str | None
+    env_keys: list[str]
+    header_keys: list[str]
+    bots: list[str]  # the bots whose cards name it
+
+
+class McpServerBody(BaseModel):
+    transport: Literal["stdio", "http", "sse"] = "stdio"
+    command: str | None = None
+    args: list[str] = []
+    env: dict[str, str] | None = None  # None: keep what it has
+    url: str | None = None
+    headers: dict[str, str] | None = None  # None: keep what it has
+
+
+class InstalledServer(BaseModel):
+    """A server one of your other apps has, that the crew could copy."""
+
+    id: str
+    source: str  # "Claude Code", "Claude Code · <project>", "Claude desktop" or "Codex"
+    name: str
+    transport: Literal["stdio", "http", "sse"]
+    command: str | None
+    args: list[str]
+    url: str | None
+    env_keys: list[str]
+    header_keys: list[str]
+    in_crew: bool  # the crew has a server by that name already
+
+
+class ImportBody(BaseModel):
+    id: str
+    name: str | None = None  # to add it under another name
+
+
+class RegistryField(BaseModel):
+    kind: Literal["env", "arg", "header"]
+    key: str
+    description: str
+    required: bool
+    secret: bool
+    default: str | None
+
+
+class RegistryOption(BaseModel):
+    id: str  # package:<n> or remote:<n>
+    label: str
+    fields: list[RegistryField]
+
+
+class RegistryEntry(BaseModel):
+    name: str
+    title: str | None
+    description: str
+    version: str
+    website: str | None
+    options: list[RegistryOption]
+
+
+class RegistryAdd(BaseModel):
+    server: str  # its name in the registry
+    version: str
+    option: str
+    name: str  # what the crew calls it
+    values: dict[str, str] = {}
+
+
+class SkillOut(BaseModel):
+    name: str
+    description: str
+    source: str  # "crew", or the global folder it's in, such as ~/.claude/skills
+    path: str
+
+
+class McpCheck(BaseModel):
+    ok: bool
+    tools: list[str]
+    error: str | None
 
 
 class PullSummary(BaseModel):
@@ -236,6 +325,22 @@ class RepoFolder(BaseModel):
     folder: str | None
 
 
+class TaskStatus(BaseModel):
+    """What /status shows for a chat or a thread."""
+
+    task_id: str
+    bot: str
+    backend: str | None
+    plan: str | None  # claude or codex: whose limits it uses
+    model: str | None  # None: the CLI's own default
+    effort: str | None
+    session_id: str | None
+    open: bool  # its session is open now; a closed one resumes from session_id
+    context_percent: float | None  # how full its context is, when last measured
+    rollover_percent: float | None  # past this, it continues in a fresh session from a briefing
+    turns: int
+
+
 class PlanWindow(BaseModel):
     name: str  # in the CLI's own terms: "Session", "Week · Fable", "5 hours", "Week"
     used_percent: float
@@ -281,11 +386,20 @@ class ModelUse(BaseModel):
     plan: str
     model: str
     tokens: int
+    input: int  # all input, cached or not
+    cached: int  # input the model had cached
 
 
 class BotUse(BaseModel):
     bot: str
     tokens: int
+    input: int
+    cached: int
+
+
+class CacheUse(BaseModel):
+    input: int
+    cached: int
 
 
 class EffortUse(BaseModel):
@@ -314,6 +428,7 @@ class UsageSummary(BaseModel):
     bots: list[BotUse]
     efforts: list[EffortUse]
     counts: UsageCounts
+    cache: CacheUse
 
 
 class RoutineBody(BaseModel):
@@ -719,12 +834,102 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
     @v1.put("/bots/{name}/card", response_model=CardOut)
     async def put_card(name: str, body: CardBody):
         fields = edited(body.model_dump(exclude_unset=True, exclude={"instructions"}))
+        if fields.get("mcp") is not None:  # servers defined on the card move to the crew's list, kept by name
+            with contextlib.suppress(KeyError, OSError):
+                inline = cards.read(cards._bot_path(runner.crew.home, name))[0].get("mcp")
+                for server in fields["mcp"]:
+                    if isinstance(inline, dict) and server in inline and server not in mcp_catalog.servers(runner.crew.home):
+                        mcp_catalog.save(runner.crew.home, server, inline[server])
         try:
             cards.save_card(runner.crew.home, name, fields, body.instructions)
         except KeyError:
             raise HTTPException(404, f"no bot named {name}") from None
         reload_crew()
         return cards.card(runner.crew.home, name)
+
+    # The crew's MCP servers.
+
+    def mcp_out(name: str, spec: dict[str, Any]) -> dict[str, Any]:
+        users = sorted(b.name for b in runner.crew.bots.values() if name in b.mcp_names)
+        return mcp_catalog.summary(name, spec, users)
+
+    @v1.get("/mcp/servers", response_model=list[McpServerOut])
+    async def mcp_servers():
+        return [mcp_out(n, s) for n, s in sorted(mcp_catalog.servers(runner.crew.home).items())]
+
+    @v1.put("/mcp/servers/{name}", response_model=McpServerOut)
+    async def put_mcp_server(name: str, body: McpServerBody):
+        """Adds or changes a server. Left out, `env` and `headers` keep what the server had."""
+        old = mcp_catalog.servers(runner.crew.home).get(name) or {}
+        if body.transport == "stdio":
+            spec = {"command": body.command or "", "args": body.args,
+                    "env": body.env if body.env is not None else old.get("env") or {}}
+        else:
+            spec = {"type": body.transport, "url": body.url or "",
+                    "headers": body.headers if body.headers is not None else old.get("headers") or {}}
+        mcp_catalog.save(runner.crew.home, name, {k: v for k, v in spec.items() if v not in ({}, [])})
+        reload_crew()
+        return mcp_out(name, mcp_catalog.servers(runner.crew.home)[name])
+
+    @v1.delete("/mcp/servers/{name}")
+    async def delete_mcp_server(name: str):
+        """Removes a server, and takes it off every role card that names it."""
+        bots = mcp_catalog.remove(runner.crew.home, name)
+        reload_crew()
+        return {"removed": name, "bots": bots}
+
+    @v1.post("/mcp/servers/{name}/check", response_model=McpCheck)
+    async def check_mcp_server(name: str):
+        """Starts or reaches the server and lists its tools."""
+        spec = mcp_catalog.servers(runner.crew.home).get(name)
+        if spec is None:
+            raise HTTPException(404, f"there's no MCP server called {name}")
+        return await mcp_catalog.check(crew_module.mcp_server(name, spec, "mcp.json"))
+
+    @v1.get("/skills", response_model=list[SkillOut])
+    async def skills():
+        """Every skill the bots can use: the crew's own, then your global ones."""
+        return [{"name": s.name, "description": s.description, "source": s.source, "path": str(s.path)}
+                for s in runner.crew.skills.values()]
+
+    @v1.get("/mcp/installed", response_model=list[InstalledServer])
+    async def installed_mcp():
+        """The servers your other apps have: Claude Code, Claude's desktop app and Codex."""
+        crew_servers = mcp_catalog.servers(runner.crew.home)
+        return [mcp_catalog.summary(f["name"], f["spec"], []) | {"id": f["id"], "source": f["source"],
+                                                                  "in_crew": f["name"] in crew_servers}
+                for f in await asyncio.to_thread(mcp_catalog.installed)]
+
+    @v1.post("/mcp/import", response_model=McpServerOut, status_code=201)
+    async def import_mcp(body: ImportBody):
+        """Copies a server from one of your apps into the crew, env and all."""
+        found = next((f for f in await asyncio.to_thread(mcp_catalog.installed) if f["id"] == body.id), None)
+        if found is None:
+            raise HTTPException(404, "that server isn't in your apps' configs any more")
+        name = body.name or found["name"]
+        mcp_catalog.save(runner.crew.home, name, found["spec"])
+        reload_crew()
+        return mcp_out(name, found["spec"])
+
+    @v1.get("/mcp/registry", response_model=list[RegistryEntry])
+    async def search_mcp_registry(q: str = Query(..., min_length=1)):
+        """The official MCP registry's servers with `q` in their name."""
+        try:
+            return await mcp_catalog.search(q)
+        except httpx.HTTPError as e:
+            raise HTTPException(502, f"the MCP registry didn't answer: {e}") from None
+
+    @v1.post("/mcp/registry", response_model=McpServerOut, status_code=201)
+    async def add_from_registry(body: RegistryAdd):
+        """Adds one way a registry server runs (a package to start, or its address), with the values filled in."""
+        try:
+            entry = await mcp_catalog.fetch(body.server, body.version)
+        except httpx.HTTPError as e:
+            raise HTTPException(502, f"the MCP registry didn't answer: {e}") from None
+        spec = mcp_catalog.from_registry(entry, body.option, body.values)
+        mcp_catalog.save(runner.crew.home, body.name, spec)
+        reload_crew()
+        return mcp_out(body.name, spec)
 
     @v1.post("/bots", status_code=201, response_model=CardOut)
     async def new_bot(body: NewBot):
@@ -744,6 +949,11 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
     @v1.get("/tasks/{task_id}", response_model=TaskOut)
     async def task(task_id: str):
         return task_or_404(task_id).to_json()
+
+    @v1.get("/tasks/{task_id}/status", response_model=TaskStatus)
+    async def task_status(task_id: str):
+        task_or_404(task_id)
+        return await runner.status(task_id)
 
     @v1.get("/tasks/{task_id}/events", response_model=list[EventOut])
     async def task_events(task_id: str, after: int = 0, limit: int = Query(1000, le=10_000)):
@@ -1095,6 +1305,14 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
     async def bot_start_thread(request: Request, body: ThreadBody):
         thread = runner.start_thread(request.state.task.id, body.title, body.goal)
         return {"id": thread.id, "bot": thread.bot, "title": thread.title, "status": thread.status}
+
+    @v1.post("/bot/add_bot", status_code=201)
+    async def bot_add_bot(request: Request, body: dict[str, Any]):
+        try:
+            bot = runner.add_bot(request.state.task.id, body)
+        except (KeyError, ValueError) as e:  # a missing field, or an access that isn't one
+            raise HTTPException(422, f"add_bot: {e}") from None
+        return {"name": bot.name, "label": bot.label, "title": bot.title}
 
     @v1.post("/bot/post", status_code=201)
     async def bot_post(request: Request, body: PostBody):

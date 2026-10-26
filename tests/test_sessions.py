@@ -215,3 +215,26 @@ async def test_cancelling_an_interruptible_session_keeps_it_warm(store, tmp_path
     await wait_until(lambda: len(backend.opened[0].turns) == 2 and settled(store, runner, task.id)())
 
     assert len(backend.opened) == 1 and not backend.opened[0].closed  # the same session took the next turn
+
+
+async def test_status_says_how_full_a_chats_context_is(store, tmp_path):
+    class Measured(FakeSession):
+        async def context_percent(self):
+            return 41.26
+
+    class MeasuredBackend(SessionBackend):
+        async def open(self, spec):
+            session = Measured(self, spec)
+            self.opened.append(session)
+            return session
+
+    runner, _ = make(store, tmp_path, MeasuredBackend())
+    task = runner.submit("worker", "hi")
+    await wait_until(settled(store, runner, task.id))
+
+    status = await runner.status(task.id)
+
+    assert status["open"] and status["session_id"] == "s-0" and status["context_percent"] == 41.3
+    assert status["rollover_percent"] == 70.0 and status["plan"] == "fake" and status["turns"] == 1
+    await runner.shutdown()
+    assert (await runner.status(task.id))["context_percent"] == 41.3  # as last measured, once it's closed

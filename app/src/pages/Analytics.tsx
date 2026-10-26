@@ -94,11 +94,11 @@ export function Analytics({ crew }: { crew: Crew }) {
           <div className="usage-columns">
             <section className="page-section">
               <h2>Top models</h2>
-              <Ranked rows={data.models.map((m) => ({ key: `${m.plan}-${m.model}`, label: modelLabel(crew, m.plan, m.model === "default" ? null : m.model, null), tag: m.plan === "codex" ? "Codex" : "Claude", color: PLAN_COLOR[m.plan], tokens: m.tokens }))} />
+              <Ranked rows={data.models.map((m) => ({ key: `${m.plan}-${m.model}`, label: modelLabel(crew, m.plan, m.model === "default" ? null : m.model, null), tag: m.plan === "codex" ? "Codex" : "Claude", color: PLAN_COLOR[m.plan], tokens: m.tokens, cached: share(m) }))} />
             </section>
             <section className="page-section">
               <h2>By bot</h2>
-              <Ranked rows={data.bots.map((b) => (b.bot === "PR reviewer" ? { key: b.bot, label: b.bot, icon: "branch" as const, tokens: b.tokens } : { key: b.bot, label: labelOf(b.bot), face: b.bot, tokens: b.tokens }))} />
+              <Ranked rows={data.bots.map((b) => (b.bot === "PR reviewer" ? { key: b.bot, label: b.bot, icon: "branch" as const, tokens: b.tokens, cached: share(b) } : { key: b.bot, label: labelOf(b.bot), face: b.bot, tokens: b.tokens, cached: share(b) }))} />
             </section>
           </div>
 
@@ -136,6 +136,8 @@ export function Analytics({ crew }: { crew: Crew }) {
             <div className="stat-strip insights">
               <Stat value={data.efforts[0] ? (EFFORT_LABEL[data.efforts[0].effort] ?? data.efforts[0].effort) : "–"} label={data.efforts[0] ? `Most used reasoning, ${Math.round((data.efforts[0].turns / Math.max(1, data.turns)) * 100)}% of turns` : "Most used reasoning"} />
               <Stat value={data.turns ? compact((data.totals.claude + data.totals.codex) / data.turns) : "–"} label={`Tokens in an average turn, of ${data.turns.toLocaleString()}`} />
+              <Stat value={share(data.cache) === null ? "–" : `${share(data.cache)}%`} label="Of input from the prompt cache" title="Cached input costs a fraction of fresh input, and doesn't count toward budgets." />
+              <Stat value={compact(data.cache.cached)} label="Tokens read from the cache" />
               <Stat value={data.counts.threads.toLocaleString()} label="Threads opened" />
               <Stat value={data.counts.reviews.toLocaleString()} label="Pull request reviews" />
               <Stat value={data.counts.routine_runs.toLocaleString()} label="Routine runs" />
@@ -282,7 +284,7 @@ function Split({ totals }: { totals: Record<string, number> }) {
   );
 }
 
-function Ranked({ rows }: { rows: { key: string; label: string; tokens: number; tag?: string; color?: string; face?: string; icon?: "branch" }[] }) {
+function Ranked({ rows }: { rows: { key: string; label: string; tokens: number; tag?: string; color?: string; face?: string; icon?: "branch"; cached?: number | null }[] }) {
   const top = Math.max(1, ...rows.map((r) => r.tokens));
   if (rows.length === 0) return <p className="faint small">Nothing yet.</p>;
   return (
@@ -301,6 +303,7 @@ function Ranked({ rows }: { rows: { key: string; label: string; tokens: number; 
             ) : null}
             <span className="ranked-name">{r.label}</span>
             {r.tag && <span className="faint small">{r.tag}</span>}
+            {r.cached != null && <span className="faint small" title="Of its input, how much came from the prompt cache">· {r.cached}% cached</span>}
           </span>
           <span className="num">{compact(r.tokens)}</span>
           <span className="ranked-bar">
@@ -310,6 +313,11 @@ function Ranked({ rows }: { rows: { key: string; label: string; tokens: number; 
       ))}
     </div>
   );
+}
+
+/** How much of the input came from the prompt cache, as a whole percent; null with no input yet. */
+function share(use: { input: number; cached: number }): number | null {
+  return use.input ? Math.round((use.cached / use.input) * 100) : null;
 }
 
 function dateOf(day: string): Date {

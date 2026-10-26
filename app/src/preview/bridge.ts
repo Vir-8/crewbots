@@ -74,6 +74,24 @@ async function request(method: string, path: string, body?: any) {
     const outputs = threads.flatMap((t) => (demo.events.get(t.id) ?? []).filter((e) => e.kind === "handoff").flatMap((e) => (e.data.output as string[]).map((path) => ({ path, task_id: t.id, title: t.title, at: e.at }))));
     return ok({ bot: parts[1], working: threads.some((t) => t.status === "running"), last_active: threads[0]?.updated_at ?? null, threads, outputs });
   }
+  if (method === "GET" && parts[0] === "tasks" && parts[2] === "status") {
+    const task = demo.tasks.get(parts[1])!;
+    const b = demo.bots.find((x) => x.name === task.bot)!;
+    return ok({ task_id: task.id, bot: task.bot, backend: b.backend, plan: b.backend.split("-")[0], model: b.model, effort: b.effort, session_id: task.session_id ?? "019a2c3e-7f1d-7c4a-9e21-5b8d0c6f4a12", open: true, context_percent: 38.4, rollover_percent: 70, turns: task.turns ?? 12 });
+  }
+  if (method === "GET" && url.pathname === "/mcp/servers") return ok(mcpServers);
+  if (method === "GET" && url.pathname === "/skills") return ok(skills);
+  if (method === "GET" && url.pathname === "/mcp/installed") {
+    return ok([
+      { id: "a", source: "Claude Code", name: "blender", transport: "stdio", command: "uv", args: ["--directory", "~/blender_mcp/mcp", "run", "blender-mcp"], url: null, env_keys: ["BLENDER_MCP_PORT"], header_keys: [], in_crew: true },
+      { id: "b", source: "Claude Code · Sky Islands", name: "UnityMCP", transport: "http", command: null, args: [], url: "http://127.0.0.1:8080/mcp", env_keys: [], header_keys: [], in_crew: false },
+      { id: "c", source: "Codex", name: "gimp", transport: "stdio", command: "run-gimp-mcp.sh", args: [], url: null, env_keys: [], header_keys: [], in_crew: false },
+    ]);
+  }
+  if (method === "GET" && url.pathname === "/mcp/registry") {
+    return ok([{ name: "io.github.someone/figma-mcp", title: "Figma", description: "Read Figma files, frames and components.", version: "1.4.0", website: "https://github.com/someone/figma-mcp", options: [{ id: "package:0", label: "npm · figma-mcp 1.4.0", fields: [{ kind: "env", key: "FIGMA_TOKEN", description: "A personal access token", required: true, secret: true, default: null }] }, { id: "remote:0", label: "Remote · https://mcp.figma.example/mcp", fields: [] }] }]);
+  }
+  if (method === "POST" && parts[0] === "mcp" && parts[3] === "check") return ok({ ok: true, tools: ["get_scene_info", "create_object", "modify_object", "render", "execute_blender_code"], error: null });
   if (method === "GET" && url.pathname === "/routines") return ok(routines());
   if (method === "GET" && url.pathname === "/usage/summary") return ok(usageSummary(Number(url.searchParams.get("days") ?? 365)));
   if (method === "GET" && url.pathname === "/plans") return ok(plans);
@@ -225,18 +243,19 @@ function usageSummary(days: number) {
     longest_turn: { seconds: 2_710, task_id: "t_csv0000002", title: "Add CSV export to the reports page" },
     streak: { longest: 12, current: 4 },
     models: [
-      { plan: "codex", model: "gpt-6.1-sol", tokens: Math.round(totals.codex * 0.8) },
-      { plan: "claude", model: "opus", tokens: Math.round(totals.claude * 0.55) },
-      { plan: "claude", model: "sonnet", tokens: Math.round(totals.claude * 0.45) },
-      { plan: "codex", model: "gpt-6-luna", tokens: Math.round(totals.codex * 0.2) },
+      { plan: "codex", model: "gpt-6.1-sol", tokens: Math.round(totals.codex * 0.8), input: Math.round(totals.codex * 3.1), cached: Math.round(totals.codex * 2.4) },
+      { plan: "claude", model: "opus", tokens: Math.round(totals.claude * 0.55), input: Math.round(totals.claude * 2.6), cached: Math.round(totals.claude * 2.2) },
+      { plan: "claude", model: "sonnet", tokens: Math.round(totals.claude * 0.45), input: Math.round(totals.claude * 1.9), cached: Math.round(totals.claude * 1.5) },
+      { plan: "codex", model: "gpt-6-luna", tokens: Math.round(totals.codex * 0.2), input: Math.round(totals.codex * 0.7), cached: Math.round(totals.codex * 0.4) },
     ],
     bots: [
-      { bot: "engineer", tokens: Math.round(totals.codex * 0.7) }, { bot: "chief", tokens: Math.round(totals.claude * 0.5) },
-      { bot: "reviewer", tokens: Math.round(totals.claude * 0.3) }, { bot: "PR reviewer", tokens: Math.round((totals.claude + totals.codex) * 0.12) },
-      { bot: "critic", tokens: Math.round(totals.codex * 0.18) },
+      { bot: "engineer", tokens: Math.round(totals.codex * 0.7), input: Math.round(totals.codex * 0.7) * 4, cached: Math.round(totals.codex * 0.7) * 3 }, { bot: "chief", tokens: Math.round(totals.claude * 0.5), input: Math.round(totals.claude * 0.5) * 4, cached: Math.round(totals.claude * 0.5) * 3 },
+      { bot: "reviewer", tokens: Math.round(totals.claude * 0.3), input: Math.round(totals.claude * 0.3) * 4, cached: Math.round(totals.claude * 0.3) * 3 }, { bot: "PR reviewer", tokens: Math.round((totals.claude + totals.codex) * 0.12) },
+      { bot: "critic", tokens: Math.round(totals.codex * 0.18), input: Math.round(totals.codex * 0.18) * 4, cached: Math.round(totals.codex * 0.18) * 3 },
     ],
     efforts: [{ effort: "high", turns: 812 }, { effort: "medium", turns: 433 }, { effort: "xhigh", turns: 167 }],
     counts: { threads: 64, reviews: 23, routine_runs: 41, room_messages: 318 },
+    cache: { input: (totals.claude + totals.codex) * 4, cached: (totals.claude + totals.codex) * 3 },
   };
 }
 
@@ -257,6 +276,19 @@ const plans = {
     ],
   },
 };
+
+const mcpServers = [
+  { name: "blender", transport: "stdio", command: "uv", args: ["--directory", "~/blender_mcp/mcp", "run", "blender-mcp"], url: null, env_keys: ["BLENDER_MCP_PORT"], header_keys: [], bots: ["engineer"] },
+  { name: "davinci-resolve", transport: "stdio", command: "/bin/sh", args: ["start-resolve-mcp.sh"], url: null, env_keys: ["RESOLVE_SCRIPT_API"], header_keys: [], bots: [] },
+];
+
+const skills = [
+  { name: "arena", description: "Two or more agents attempt the same task independently; pick the best.", source: "crew", path: "~/.crewbots/crew/skills/arena/SKILL.md" },
+  { name: "interrogate", description: "Question the user until the goal is unambiguous.", source: "crew", path: "~/.crewbots/crew/skills/interrogate/SKILL.md" },
+  { name: "pdf", description: "Read, fill and make PDF files.", source: "~/.claude/skills", path: "~/.claude/skills/synced/x/pdf/SKILL.md" },
+  { name: "unity-mcp-orchestrator", description: "Orchestrate the Unity Editor through MCP for Unity.", source: "~/.claude/skills", path: "~/.claude/skills/unity-mcp-skill/SKILL.md" },
+  { name: "graphify", description: "Turn a codebase into a knowledge graph.", source: "~/.codex/skills", path: "~/.codex/skills/graphify/SKILL.md" },
+];
 
 const crewState = {
   paused: false, running: 1, held: 1, sessions: 2,

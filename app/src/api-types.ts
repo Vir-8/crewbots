@@ -26,6 +26,8 @@ export interface BotOut {
 export interface BotUse {
   bot: string;
   tokens: number;
+  input: number;
+  cached: number;
 }
 
 export interface Budget {
@@ -41,6 +43,11 @@ export interface BudgetOut {
   held: string[];
 }
 
+export interface CacheUse {
+  input: number;
+  cached: number;
+}
+
 /** A role card's editable parts. Fields left out are left as they are. */
 export interface CardBody {
   display_name?: string | null;
@@ -53,6 +60,7 @@ export interface CardBody {
   network?: boolean | string[] | null;
   avatar?: Avatar | null;
   budget?: Budget | null;
+  mcp?: string[] | null;
   instructions?: string | null;
 }
 
@@ -67,6 +75,7 @@ export interface CardOut {
   network?: boolean | string[] | null;
   avatar?: Avatar | null;
   budget?: Budget | null;
+  mcp?: string[] | null;
   instructions?: string | null;
   name: string;
 }
@@ -186,6 +195,11 @@ export interface HandoffOut {
   at: string;
 }
 
+export interface ImportBody {
+  id: string;
+  name?: string | null;
+}
+
 /** Pull requests waiting on you, which never include your own, and your own, apart. Only the lists asked for are
 there. */
 export interface Inbox {
@@ -194,6 +208,20 @@ export interface Inbox {
   team?: PullSummary[] | null;
   mine?: PullSummary[] | null;
   error: string | null;
+}
+
+/** A server one of your other apps has, that the crew could copy. */
+export interface InstalledServer {
+  id: string;
+  source: string;
+  name: string;
+  transport: "stdio" | "http" | "sse";
+  command: string | null;
+  args: string[];
+  url: string | null;
+  env_keys: string[];
+  header_keys: string[];
+  in_crew: boolean;
 }
 
 export interface LastMessage {
@@ -233,6 +261,33 @@ export interface LongestTurn {
   title: string;
 }
 
+export interface McpCheck {
+  ok: boolean;
+  tools: string[];
+  error: string | null;
+}
+
+export interface McpServerBody {
+  transport?: "stdio" | "http" | "sse";
+  command?: string | null;
+  args?: string[];
+  env?: Record<string, string> | null;
+  url?: string | null;
+  headers?: Record<string, string> | null;
+}
+
+/** One of the crew's MCP servers, without the values of its env or headers, which can be keys. */
+export interface McpServerOut {
+  name: string;
+  transport: "stdio" | "http" | "sse";
+  command: string | null;
+  args: string[];
+  url: string | null;
+  env_keys: string[];
+  header_keys: string[];
+  bots: string[];
+}
+
 export interface MergeProposal {
   task_id: string;
   summary: string;
@@ -259,6 +314,8 @@ export interface ModelUse {
   plan: string;
   model: string;
   tokens: number;
+  input: number;
+  cached: number;
 }
 
 export interface ModelsOut {
@@ -277,6 +334,7 @@ export interface NewBot {
   network?: boolean | string[] | null;
   avatar?: Avatar | null;
   budget?: Budget | null;
+  mcp?: string[] | null;
   instructions?: string | null;
   name: string;
 }
@@ -408,6 +466,38 @@ export interface Recall {
   query: string;
 }
 
+export interface RegistryAdd {
+  server: string;
+  version: string;
+  option: string;
+  name: string;
+  values?: Record<string, string>;
+}
+
+export interface RegistryEntry {
+  name: string;
+  title: string | null;
+  description: string;
+  version: string;
+  website: string | null;
+  options: RegistryOption[];
+}
+
+export interface RegistryField {
+  kind: "env" | "arg" | "header";
+  key: string;
+  description: string;
+  required: boolean;
+  secret: boolean;
+  default: string | null;
+}
+
+export interface RegistryOption {
+  id: string;
+  label: string;
+  fields: RegistryField[];
+}
+
 export interface Remember {
   title: string;
   body: string;
@@ -532,6 +622,13 @@ export interface SearchHit {
   title: string;
 }
 
+export interface SkillOut {
+  name: string;
+  description: string;
+  source: string;
+  path: string;
+}
+
 export interface StarterOut {
   name: string;
   description: string;
@@ -578,6 +675,21 @@ export interface TaskOut {
   updated_at: string;
 }
 
+/** What /status shows for a chat or a thread. */
+export interface TaskStatus {
+  task_id: string;
+  bot: string;
+  backend: string | null;
+  plan: string | null;
+  model: string | null;
+  effort: string | null;
+  session_id: string | null;
+  open: boolean;
+  context_percent: number | null;
+  rollover_percent: number | null;
+  turns: number;
+}
+
 export interface ThreadBody {
   title: string;
   goal: string;
@@ -614,6 +726,7 @@ export interface UsageSummary {
   bots: BotUse[];
   efforts: EffortUse[];
   counts: UsageCounts;
+  cache: CacheUse;
 }
 
 export interface ValidationError {

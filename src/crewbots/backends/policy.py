@@ -21,10 +21,13 @@ import os
 import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from crewbots.backends.base import Access
 
 READ_TOOLS = {"Read", "Glob", "Grep", "LS", "NotebookRead", "TodoWrite"}
+# Claude Code runs these itself, outside the shell's sandbox, so they follow the network setting on their own.
+WEB_TOOLS = {"WebFetch", "WebSearch"}
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 # A guardrail, not a boundary: a determined command can always get around a pattern (containers are the real one).
 OUTWARD = re.compile(
@@ -35,6 +38,7 @@ OUTWARD = re.compile(
 READ_ONLY = "this bot is read-only (its role card says access: read_only)"
 USERS_TO_DO = "pushing, merging, publishing and rewriting history are the user's to do (team/rules.md)"
 NO_NETWORK = "this bot has no network access; its role card can give it some with network: true, or a list of hosts"
+SEARCH_NEEDS_ANY_HOST = "a web search can lead anywhere, and this bot's network is limited to some hosts"
 STAY_IN_SANDBOX = "commands run inside this bot's sandbox, and stepping outside it isn't something a bot can grant itself"
 
 
@@ -55,6 +59,8 @@ class Policy:
             return None if server in self.granted else f"the MCP server {server!r} isn't granted by this bot's role card"
         if name in READ_TOOLS:
             return None
+        if name in WEB_TOOLS:
+            return self.check_web(name, args)
         if self.access is Access.READ_ONLY:
             return READ_ONLY
         if name in EDIT_TOOLS:
@@ -83,6 +89,16 @@ class Policy:
         if any(fnmatch.fnmatch(host.lower(), pattern.lower()) for pattern in self.network):
             return None
         return f"{host} isn't one of the hosts this bot's role card allows ({', '.join(self.network)})"
+
+    def check_web(self, name: str, args: dict[str, Any]) -> str | None:
+        """A web search or page fetch: any host with network on, the listed hosts' pages with a list, nothing off."""
+        if self.network is True or self.access is Access.FULL:
+            return None
+        if not self.network:
+            return NO_NETWORK
+        if name == "WebFetch":
+            return self.check_network(urlparse(str(args.get("url", ""))).hostname or "")
+        return SEARCH_NEEDS_ANY_HOST
 
     def check_write(self, path: str) -> str | None:
         if self.access is Access.READ_ONLY:

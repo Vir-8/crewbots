@@ -5,7 +5,7 @@ import { Icon } from "../components/Icon";
 import { ModelPicker } from "../components/ModelPicker";
 import { Field, Page, Segmented, Sheet } from "../components/ui";
 import type { Crew } from "../state";
-import type { Bot, Card } from "../types";
+import type { Bot, Card, McpServerInfo } from "../types";
 
 const ACCESS: Record<string, string> = { read_only: "Reads only", workspace_write: "Writes in its task's folder", full: "Full access" };
 
@@ -52,7 +52,7 @@ function BotTile({ bot, working, onEdit, onChat }: { bot: Bot; working: boolean;
       <div className="bot-tile-facts">
         <span>{bot.backend}{bot.model ? ` · ${bot.model}` : ""}</span>
         <span>{ACCESS[bot.access]}</span>
-        {bot.access !== "read_only" && bot.network !== false && <span>Network</span>}
+        {bot.network !== false && <span>Network</span>}
         {bot.mcp.length > 0 && <span>{bot.mcp.length} MCP</span>}
       </div>
       <div className="bot-tile-actions">
@@ -81,10 +81,14 @@ type Draft = Partial<Card> & { name: string; hosts?: string; budgetOn?: boolean 
 export function BotEditor({ crew, name, onClose }: { crew: Crew; name: string | null; onClose: () => void }) {
   const creating = name === null;
   const [draft, setDraft] = useState<Draft | null>(
-    creating ? { name: "", title: "", description: "", backend: "claude", model: "sonnet", effort: null, access: "read_only", instructions: "## Mission\n\n\n## Owns\n\n- \n\n## Does not own\n\n- \n\n## Done means\n\n- " } : null,
+    creating ? { name: "", title: "", description: "", backend: "claude", model: "sonnet", effort: null, access: "read_only", network: true, instructions: "## Mission\n\n\n## Owns\n\n- \n\n## Does not own\n\n- \n\n## Done means\n\n- " } : null,
   );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [servers, setServers] = useState<McpServerInfo[]>([]);
+  useEffect(() => {
+    api.mcpServers().then(setServers, () => setServers([]));
+  }, []);
 
   useEffect(() => {
     if (creating) return;
@@ -97,7 +101,6 @@ export function BotEditor({ crew, name, onClose }: { crew: Crew; name: string | 
   const set = (fields: Partial<Draft>) => setDraft((d) => (d ? { ...d, ...fields } : d));
   if (!draft) return <Sheet title="Edit bot" onClose={onClose} footer={null}>{error ? <p className="error-text">{error}</p> : <p className="faint">Loading…</p>}</Sheet>;
 
-  const writes = draft.access && draft.access !== "read_only";
   const networkMode = draft.network === true ? "any" : Array.isArray(draft.network) ? "hosts" : "off";
   const preview = face(draft.name || "new", draft.avatar ?? undefined);
 
@@ -112,9 +115,10 @@ export function BotEditor({ crew, name, onClose }: { crew: Crew; name: string | 
       model: draft.model ?? "",
       effort: draft.effort ?? "",
       access: draft.access,
-      network: !writes ? false : networkMode === "hosts" ? (draft.hosts ?? "").split(/[\s,]+/).filter(Boolean) : networkMode === "any",
+      network: networkMode === "hosts" ? (draft.hosts ?? "").split(/[\s,]+/).filter(Boolean) : networkMode === "any",
       avatar: draft.avatar ?? null,
       budget: draft.budgetOn && draft.budget?.tokens ? draft.budget : null,
+      mcp: draft.mcp ?? [],
       instructions: draft.instructions,
     };
     try {
@@ -209,16 +213,27 @@ export function BotEditor({ crew, name, onClose }: { crew: Crew; name: string | 
           ))}
         </select>
       </Field>
-      {writes && (
-        <Field label="Network" hint="For its shell commands, such as installing dependencies. Your logins never reach it.">
-          <Segmented
-            value={networkMode}
-            options={(draft.backend ?? "").startsWith("codex") ? [["off", "Off"], ["any", "Any host"]] : [["off", "Off"], ["any", "Any host"], ["hosts", "Only these hosts"]]}
-            onChange={(mode) => set({ network: mode === "any" ? true : mode === "hosts" ? (draft.hosts ?? "").split(/[\s,]+/).filter(Boolean) : false })}
-          />
-          {networkMode === "hosts" && <input value={draft.hosts ?? ""} onChange={(e) => set({ hosts: e.target.value, network: e.target.value.split(/[\s,]+/).filter(Boolean) })} placeholder="pypi.org, files.pythonhosted.org" />}
-        </Field>
-      )}
+      <Field label="Network" hint="Web search and pages, and a writing bot's commands, such as installing dependencies. Your logins never reach it.">
+        <Segmented
+          value={networkMode}
+          options={(draft.backend ?? "").startsWith("codex") ? [["off", "Off"], ["any", "Any host"]] : [["off", "Off"], ["any", "Any host"], ["hosts", "Only these hosts"]]}
+          onChange={(mode) => set({ network: mode === "any" ? true : mode === "hosts" ? (draft.hosts ?? "").split(/[\s,]+/).filter(Boolean) : false })}
+        />
+        {networkMode === "hosts" && <input value={draft.hosts ?? ""} onChange={(e) => set({ hosts: e.target.value, network: e.target.value.split(/[\s,]+/).filter(Boolean) })} placeholder="pypi.org, files.pythonhosted.org" />}
+      </Field>
+      <Field label="MCP servers" hint={servers.length ? "Only the ones chosen reach it. Add more on the Tools page." : "The crew has none yet: add them on the Tools page."}>
+        <span className="chip-choices">
+          {[...new Set([...servers.map((s) => s.name), ...(draft.mcp ?? [])])].map((name) => {
+            const on = (draft.mcp ?? []).includes(name);
+            return (
+              <button key={name} type="button" className={`choice ${on ? "on" : ""}`} onClick={() => set({ mcp: on ? (draft.mcp ?? []).filter((n) => n !== name) : [...(draft.mcp ?? []), name] })}>
+                {on && <Icon name="check" size={12} />}
+                {name}
+              </button>
+            );
+          })}
+        </span>
+      </Field>
       <Field label="Budget" hint="Its turns wait once it has used this many fresh tokens.">
         <span className="budget-row">
           <Segmented value={draft.budgetOn ? "on" : "off"} options={[["off", "None"], ["on", "Up to"]]} onChange={(v) => set({ budgetOn: v === "on", budget: draft.budget ?? { tokens: 2_000_000, per: "week" } })} />

@@ -1,7 +1,8 @@
-"""The crew's own usage, summed up for the usage page: by day and plan, its peaks and streaks, and what spent it.
+"""The crew's own usage, summed up for the analytics page: by day and plan, its peaks and streaks, and what spent it.
 
-Tokens are fresh ones (input the model hadn't cached, plus output), the same count budgets use. A turn recorded
-before usage carried its model is put down to its bot's model now.
+Tokens are fresh ones (input the model hadn't cached, plus output), the same count budgets use. Input the model
+had cached is counted apart, for how well the prompt cache works. A turn recorded before usage carried its model is
+put down to its bot's model now.
 """
 
 from collections import Counter, defaultdict
@@ -20,6 +21,7 @@ def summary(store: Store, bot_for, days: int = 371) -> dict[str, Any]:
     by_day: dict[str, dict[str, int]] = defaultdict(lambda: {"claude": 0, "codex": 0})
     models: Counter[tuple[str, str]] = Counter()
     bots: Counter[str] = Counter()
+    cache: dict[str, Counter[str]] = defaultdict(Counter)  # "all", "model:<plan>:<model>", "bot:<bot>" → input, cached
     efforts: Counter[str] = Counter()
     turns = 0
     for row in store.usage_by(since):
@@ -29,7 +31,11 @@ def summary(store: Store, bot_for, days: int = 371) -> dict[str, Any]:
         model = row["model"] or (bot.model if bot and bot.model else "default")
         by_day[row["day"]][plan if plan in ("claude", "codex") else "claude"] += fresh
         models[(plan, model)] += fresh
-        bots[REVIEWER if row["kind"] == "review" else row["bot"]] += fresh
+        who = REVIEWER if row["kind"] == "review" else row["bot"]
+        bots[who] += fresh
+        for key in ("all", f"model:{plan}:{model}", f"bot:{who}"):
+            cache[key]["input"] += int(row["input"] or 0)
+            cache[key]["cached"] += int(row["cached"] or 0)
         efforts[row["effort"] or (bot.effort if bot and bot.effort else "default")] += row["turns"]
         turns += row["turns"]
     daily = [{"date": d.isoformat(), **by_day.get(d.isoformat(), {"claude": 0, "codex": 0})}
@@ -47,11 +53,17 @@ def summary(store: Store, bot_for, days: int = 371) -> dict[str, Any]:
         "longest_turn": {"seconds": round(longest[1]), "task_id": longest[0],
                          "title": store.get_task(longest[0]).title} if longest else None,
         "streak": _streaks(active, today),
-        "models": [{"plan": p, "model": m, "tokens": t} for (p, m), t in models.most_common(8)],
-        "bots": [{"bot": b, "tokens": t} for b, t in bots.most_common(8)],
+        "models": [{"plan": p, "model": m, "tokens": t, **_cached(cache[f"model:{p}:{m}"])}
+                   for (p, m), t in models.most_common(8)],
+        "bots": [{"bot": b, "tokens": t, **_cached(cache[f"bot:{b}"])} for b, t in bots.most_common(8)],
+        "cache": _cached(cache["all"]),
         "efforts": [{"effort": e, "turns": n} for e, n in efforts.most_common()],
         "counts": store.count_since(since),
     }
+
+
+def _cached(counts: Counter[str]) -> dict[str, int]:
+    return {"input": counts["input"], "cached": counts["cached"]}
 
 
 def _streaks(active: list[date], today: date) -> dict[str, int]:

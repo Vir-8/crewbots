@@ -71,6 +71,18 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
         thread = call("POST", "/bot/start_thread", {"title": title, "goal": goal})
         return f"Opened thread {thread['id']}: {thread['title']}. Its result comes back here when it's done."
 
+    @server.tool(description=BY_NAME["add_bot"].description)
+    def add_bot(name: str, title: str, description: str, instructions: str, display_name: str | None = None,
+                backend: str | None = None, model: str | None = None, effort: str | None = None,
+                access: str | None = None, network: bool | None = None, can_delegate: bool = False,
+                mcp: list[str] | None = None, skills: list[str] | None = None) -> str:
+        fields = {"name": name, "title": title, "description": description, "instructions": instructions,
+                  "display_name": display_name, "backend": backend, "model": model, "effort": effort, "access": access,
+                  "network": network, "can_delegate": can_delegate, "mcp": mcp, "skills": skills}
+        bot = call("POST", "/bot/add_bot", {k: v for k, v in fields.items() if v is not None})
+        return (f"Added {bot['label']} (@{bot['name']}), {bot['title']}, to the crew. It's in the roster now: "
+                "@mention it in a group chat to bring it in.")
+
     @server.tool(description=BY_NAME["post"].description)
     def post(text: str, room: str | None = None) -> str:
         message = call("POST", "/bot/post", {"text": text, "room": room})

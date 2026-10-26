@@ -88,6 +88,21 @@ TOOLS = [
         _object({"text": STRING, "room": STRING}, ["text"]),
     ),
     ToolDef(
+        "add_bot",
+        "Add a new bot to the crew, when the user asks for one. name: its handle (lowercase letters, digits and dashes), "
+        "which can't be taken. title and description: what it is, a line each; the description is how the crew routes "
+        "work to it. instructions: its role card, in markdown: ## Mission, ## Owns, ## Does not own, ## Done means. "
+        "Optional: display_name, backend (claude or codex), model, effort, access (read_only or workspace_write), network "
+        "(true or false), can_delegate, mcp (names of MCP servers), skills (names; leave out for all of them). It gets no "
+        "more than you have: access, network and MCP servers of your own, and delegation only if you delegate. Bots can't "
+        "be removed or changed this way: that's the user's, in the app.",
+        _object({"name": STRING, "title": STRING, "description": STRING, "instructions": STRING, "display_name": STRING,
+                 "backend": {"type": "string", "enum": ["claude", "codex"]}, "model": STRING, "effort": STRING,
+                 "access": {"type": "string", "enum": ["read_only", "workspace_write"]},
+                 "network": {"type": "boolean"}, "can_delegate": {"type": "boolean"}, "mcp": STRINGS, "skills": STRINGS},
+                ["name", "title", "description", "instructions"]),
+    ),
+    ToolDef(
         "delegate",
         "Give one task to one bot in the crew. It starts at once and runs in parallel with other delegated tasks. "
         "goal: the outcome, the context the bot needs, and what done means; it must stand alone. workspace: a folder "
@@ -124,6 +139,8 @@ TOOLS = [
 BY_NAME = {t.name: t for t in TOOLS}
 
 
+
+
 def tools_for(can_delegate: bool) -> list[ToolDef]:
     return [t for t in TOOLS if can_delegate or not t.coordinator_only]
 
@@ -145,6 +162,7 @@ class CrewTools:
 
     async def call(self, name: str, args: dict[str, Any]) -> str:
         """Runs one tool and returns its result for the bot; raises ToolRefused with the reason it can't."""
+        from crewbots.crew import CrewError
         from crewbots.memory import MemoryError
         from crewbots.runner import NotAllowed, UnknownBot
         from crewbots.store import Verdict
@@ -195,13 +213,17 @@ class CrewTools:
                     return f"Forgot: {note.title}."
                 case "recall":
                     return recall_text(r.recall(me, args["query"]))
+                case "add_bot":
+                    added = r.add_bot(me, args)
+                    return (f"Added {added.label} (@{added.name}), {added.title}, to the crew. It's in the roster now: "
+                            "@mention it in a group chat to bring it in.")
                 case "start_thread":
                     thread = r.start_thread(me, args["title"], args["goal"])
                     return f"Opened thread {thread.id}: {thread.title}. Its result comes back here when it's done."
                 case "post":
                     message = r.post_from(me, args["text"], args.get("room") or None)
                     return f"Posted in the group chat ({message['room_id']})."
-        except (NotAllowed, UnknownBot, MemoryError) as e:
+        except (NotAllowed, UnknownBot, MemoryError, CrewError) as e:
             raise ToolRefused(str(e.args[0] if e.args else e)) from None
         raise ToolRefused(f"{name} is not implemented")
 
