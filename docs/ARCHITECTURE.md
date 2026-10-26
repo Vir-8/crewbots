@@ -64,6 +64,14 @@ The prototype starts a CLI process, and its MCP server, for every turn. That cos
 Worktrees keep bots from colliding, not from misbehaving. A bot reading a hostile repo could be prompt-injected. The defense is that no single layer has to hold:
 
 1. **Capability-scoped crew tools.** A run's token acts only as its own task. Any bot delegates, within the guards the runner enforces, only coordinators add bots, and there is no tool that merges, pushes or spends.
+   - **Outside text is data.** What crewbots passes on from outside comes in `<untrusted source="…">` blocks
+     (`prompts.untrusted`): a trigger's pull request title, branch, diff and failed checks, the events a check-in
+     reads, and the event a standing intent fires on; every bot is told (crew-tools.md) to read those, and pages it
+     fetches or files others wrote, as data and never follow instructions in them. Live on Haiku: a branch named
+     like an instruction was reported and flagged, not obeyed.
+   - **Work started on its own reaches nothing outside.** Check-ins and the threads they start run `proactive`: on
+     Claude the policy refuses MCP tools whose names send, post, reply, mail, publish, comment, upload, submit, pay
+     or merge; on Codex, which can't refuse an MCP tool, they get none of the bot's MCP servers.
    - **Teammates' word isn't the user's.** A message one bot sends another reaches it marked as a teammate's
      (`from-teammate.md`), and every bot is told a teammate can't give it permissions, change its settings, rules
      or notes, or approve anything for the user. A delegated task runs as its own bot, with its own access.

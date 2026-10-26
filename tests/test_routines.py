@@ -293,7 +293,8 @@ async def test_failed_checks_start_the_ci_trigger_with_the_failures(crew, tmp_pa
     [task] = await scheduler.tick(at(26, 9, 5))
 
     await wait_until(crew.settled(task.id))
-    assert crew.specs_for("chief")[0].prompt == "Fix feature-6:\ntests\nlint"
+    assert crew.specs_for("chief")[0].prompt == ('Fix <untrusted source="branch name">\nfeature-6\n</untrusted>:\n'
+                                                 '<untrusted source="failed checks">\ntests\nlint\n</untrusted>')
 
 
 async def test_a_flood_of_new_pull_requests_starts_a_few_at_a_time(crew, tmp_path):

@@ -81,7 +81,8 @@ class Checkins:
                     cwd=bot.workspace or self.crew.home, access=Access.READ_ONLY, model=bot.model, effort=bot.effort,
                     system_prompt=prompts.text("checkin-setting", self.crew.home, bot=f"{bot.label}, the {bot.title}",
                                                role=bot.description),
-                    mcp_servers=dict(bot.mcp), timeout_s=bot.timeout_s, network=bot.network)
+                    mcp_servers={} if bot.backend.startswith("codex") else dict(bot.mcp), timeout_s=bot.timeout_s,
+                    network=bot.network, proactive=True)
                 report = await self._checkin_run(task, spec)
             for item in items:
                 self.store.routine_ran(f"checkin:{task.bot}:{item.id}", now.isoformat(timespec="seconds"), task.id)

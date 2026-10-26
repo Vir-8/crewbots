@@ -55,8 +55,9 @@ class Work:
             if (intent["kind"] == kind and intent["bot"] in self.crew.bots and _mentions(intent["match"], f"{subject} {text}")
                     and self.store.intent_ready(intent)):
                 self.store.fire_intent(intent["id"])
-                self.say(intent["bot"], prompts.text("intent-fired", self.crew.home, then=intent["text"], event=text,
-                                                     kind=kind, id=intent["id"]), sender="crewbots")
+                self.say(intent["bot"], prompts.text("intent-fired", self.crew.home, then=intent["text"],
+                                                     event=prompts.untrusted(kind, text), kind=kind, id=intent["id"]),
+                         sender="crewbots")
         return event
 
     def remind_on(self, task_id: str, kind: str, match: str, then: str) -> dict[str, Any]:

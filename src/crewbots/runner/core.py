@@ -476,6 +476,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds, Dreams, Checki
                            mcp_servers=servers, crew=tools if in_process else None, network=bot.network)
         # A backend that hosts tools in-process gets the crew tools as Python; any other, as an MCP server with a token.
         in_process = getattr(backend, "in_process_tools", False) and self.api_url is not None
+        proactive = task.created_by == "crewbots" and task.parent_id is not None  # started on its own, from a check-in
         return RunSpec(
             prompt=prompt, cwd=cwd, model=bot.model,
             access=Access.READ_ONLY if task.kind == "ask" else bot.access,  # a question is answered, not worked on
@@ -485,7 +486,10 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds, Dreams, Checki
                                                   recent=self._recent(bot.name),
                                                   state=self.crew.memory.state(bot.name, task.id)),
             resume_session_id=task.session_id,
-            mcp_servers={**bot.mcp, **({} if in_process else self._crew_tools(token, bot))},
+            # Work it started on its own reaches nothing outside: Codex can't refuse an MCP tool, so it gets none of them.
+            mcp_servers={**({} if proactive and bot.backend.startswith("codex") else bot.mcp),
+                         **({} if in_process else self._crew_tools(token, bot))},
+            proactive=proactive,
             crew=CrewTools(self, task.id, bot.can_delegate) if in_process else None,
             read_dirs=[*self.crew.skill_dirs, *[d for d in (self.crew.memory.root, self.crew.home / attachments_module.FOLDER)
                                                  if d.is_dir()]], timeout_s=bot.timeout_s,

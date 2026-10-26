@@ -28,6 +28,9 @@ ACTIVITY_CHARS = 30_000
 CHECKIN_CHARS = 4_000  # of what changed, for a check-in: its context stays small
 SOURCES_EVERY_S = 60.0  # how often the user's workspaces and watched folders are looked at for events
 AWAY = timedelta(days=7)  # with nothing from the user for this long, routines and check-ins wait
+# A trigger's fields that someone outside the crew wrote, and what each is.
+UNTRUSTED = {"pr.title": "pull request title", "pr.branch": "branch name", "pr.diff": "pull request diff",
+             "pr.failures": "failed checks"}
 EVENT_CHARS = 400
 
 log = logging.getLogger("crewbots.scheduler")
@@ -176,8 +179,8 @@ class Scheduler:
         last = (self.runner.store.routine_state(f"checkin:{bot}") or {}).get("last_run_at")
         since = datetime.fromisoformat(last) if last else now - timedelta(days=1)
         happened = "\n".join(f"- {e['at'][11:16]} {e['kind']}: {e['text']}" for e in self.store.crew_events(_utc(since)))
-        changes = ("# Events\n\n" + happened + "\n\n" if happened else "") + activity(self.runner.store, since,
-                                                                                  chars=CHECKIN_CHARS)
+        changes = ("# Events\n\n" + prompts.untrusted("events", happened) + "\n\n" if happened else "") + activity(
+            self.runner.store, since, chars=CHECKIN_CHARS)
         return self.runner.check_in(bot, items if items is not None else checklist.items, changes, now)
 
     def views(self, now: datetime | None = None) -> list[RoutineView]:
@@ -228,7 +231,8 @@ class Scheduler:
             values = {"since": _human(since), "now": _human(now)}
             if routine.wants("activity"):
                 values["activity"] = activity(self.store, since, exclude_routine=routine.name)
-        goal = routine.render(values)
+        # What a pull request's author wrote reaches the bot as data from outside, never as instructions.
+        goal = routine.render({k: prompts.untrusted(UNTRUSTED[k], str(v)) if k in UNTRUSTED else v for k, v in values.items()})
         if routine.schedule:  # a scheduled routine is a message in its bot's chat, from the routine
             task = self.runner.say(routine.bot, f"[routine: {routine.name}]\n\n{goal}", sender=f"routine:{routine.name}")
         else:  # a trigger is work: a thread under its bot's chat, which hears how it went

@@ -8,6 +8,8 @@
 - Shell commands are confined by the OS (each CLI's sandbox) to the task's folder and a temp folder: a private one on
   Codex. Claude's sandbox also allows /tmp, which it needs for its own temp folder. On Codex every request to leave the
   sandbox is refused.
+- Work a bot starts on its own (a check-in, a thread from one) sends nothing outside crewbots: on Claude its MCP tools
+  that send, post, publish or pay are refused by name; on Codex, which can't refuse an MCP tool, it gets none.
 - The network is off for shell commands, unless the role card says `network: true` (any host) or lists the hosts.
   Claude's sandbox asks for each new host, and the list answers. Codex's sandbox only switches the network on or off,
   so a Codex bot takes `network: true` or nothing.
@@ -40,14 +42,21 @@ USERS_TO_DO = "pushing, merging, publishing and rewriting history are the user's
 NO_NETWORK = "this bot has no network access; its role card can give it some with network: true, or a list of hosts"
 SEARCH_NEEDS_ANY_HOST = "a web search can lead anywhere, and this bot's network is limited to some hosts"
 STAY_IN_SANDBOX = "commands run inside this bot's sandbox, and stepping outside it isn't something a bot can grant itself"
+# An MCP tool that reaches people or the world, by its name: not for work a bot started on its own.
+SENDS = re.compile(r"send|post|repl(y|ies)|e?mail|message|publish|comment|tweet|invite|share|upload|submit"
+                   r"|notify|transfer|pay|order|purchase|buy|create_issue|create_pull|merge|delete", re.IGNORECASE)
+ON_ITS_OWN = ("work a bot started on its own doesn't send, post, publish or pay for anything outside crewbots; "
+              "suggest it to the user instead")
 
 
 class Policy:
-    def __init__(self, access: Access, cwd: Path, granted_servers: set[str], network: bool | tuple[str, ...] = False):
+    def __init__(self, access: Access, cwd: Path, granted_servers: set[str], network: bool | tuple[str, ...] = False,
+                 proactive: bool = False):
         self.access = access
         self.cwd = Path(cwd).resolve()
         self.granted = granted_servers
         self.network = network
+        self.proactive = proactive
         self._refusals: list[str] = []
 
     # Claude: one decision per tool call.
@@ -56,7 +65,10 @@ class Policy:
         """None to allow a Claude tool call, or why not."""
         if name.startswith("mcp__"):
             server = name.split("__")[1] if name.count("__") >= 2 else ""
-            return None if server in self.granted else f"the MCP server {server!r} isn't granted by this bot's role card"
+            if server not in self.granted:
+                return f"the MCP server {server!r} isn't granted by this bot's role card"
+            tool = name.split("__", 2)[-1]
+            return ON_ITS_OWN if self.proactive and server != "crewbots" and SENDS.search(tool) else None
         if name in READ_TOOLS:
             return None
         if name in WEB_TOOLS:

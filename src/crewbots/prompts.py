@@ -52,3 +52,9 @@ def _load(name: str, home: Path | None) -> str:
     body = source.read_text().removesuffix("\n")  # a file ends with a newline; the prompt doesn't
     _read[source] = (stamp, body)
     return body
+
+
+def untrusted(source: str, text: str) -> str:
+    """Text from outside the crew (a pull request, a commit, a page), marked so a bot reads it as data, never as
+    instructions (crew-tools.md says so)."""
+    return f'<untrusted source="{source}">\n{text.strip()}\n</untrusted>'
