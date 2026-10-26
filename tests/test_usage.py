@@ -24,14 +24,14 @@ What's contributing to your limits usage?
 
 
 def test_claudes_usage_command_becomes_windows_with_their_resets():
-    now = datetime(2026, 10, 26, 12, 0, tzinfo=ZoneInfo("Asia/Calcutta"))
+    now = datetime(2026, 10, 26, 12, 0, tzinfo=ZoneInfo("Asia/Kolkata"))
 
     windows = parse_claude_usage(USAGE, now)
 
     assert [(w["name"], w["used_percent"]) for w in windows] == [
         ("Session", 5.0), ("Week · Fable", 0.0), ("Week · all models", 12.0)]
-    assert datetime.fromtimestamp(windows[0]["resets_at"], ZoneInfo("Asia/Calcutta")) == datetime(
-        2026, 10, 26, 17, 40, tzinfo=ZoneInfo("Asia/Calcutta"))
+    assert datetime.fromtimestamp(windows[0]["resets_at"], ZoneInfo("Asia/Kolkata")) == datetime(
+        2026, 10, 26, 17, 40, tzinfo=ZoneInfo("Asia/Kolkata"))
     assert parse_claude_usage("nothing here") == []
 
 
