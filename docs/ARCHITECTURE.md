@@ -395,6 +395,28 @@ Speed is a feature, so it's measured, with budgets that fail a check when someth
 - **The app** (`CREWBOTS_SELFTEST=1`): the self-test reports how long the window took to draw its first chat, to open
   another, and for a word from the daemon to reach it.
 
+## Learned checking the CLIs' sessions and compaction
+
+Checked on Claude Code 2.1.310 and codex-cli 0.164.0 (26 October 2026), before building memory on them:
+
+- **A session's system prompt is fixed at its start.** Claude records it on the first request and reuses it on every
+  resume (`--system-prompt-snapshot`, on by default), so a note written later never reaches a resumed session.
+  Compacting refreshes it. Turning the snapshot off applies new text, but each change rewrites the cache for the
+  prompt and the whole history after it. Codex's `thread/resume` keeps the first `developerInstructions` too. So
+  what changes goes in the turn, not the system prompt.
+- **Claude compacts on request.** `/compact <instructions>` sent as an ordinary message gives a `compact_boundary`
+  event with the token counts (36.5K to 8.3K in about 3s). Automatic compaction (`--autocompact`, or
+  `CLAUDE_CODE_AUTO_COMPACT_WINDOW`) runs at the start of a turn, keeps the last few messages word for word, and
+  triggered later than its window suggests (not at 100.5K for a 100K window, but at 158K).
+- **Claude's hooks work from `--settings`.** PreCompact runs before, PostCompact gets the summary's text, and a
+  SessionStart hook with the matcher `compact` can add context the model reads after compacting.
+- **Forks differ.** A Claude fork (`--fork-session`) keeps the first system prompt and reads the warm cache. A Codex
+  fork (`thread/fork`) keeps everything but starts with a cold cache.
+- **Codex compacts remotely.** With a ChatGPT sign-in, `thread/compact/start` and `model_auto_compact_token_limit`
+  replace the history with an encrypted item from the server, with no summary to read, and keep the user's own
+  messages word for word, so a limit below their size compacts on every turn. `thread/inject_items` adds a
+  developer message without breaking the cache.
+
 ## Learned building sessions
 
 - **Codex bots inherited the user's own MCP servers and plugins.** `-c` overrides are deep-merged into config.toml, so they can add a server but never remove one. Every Codex run (the one-shot `exec` and the app-server) now switches each one off by name:
