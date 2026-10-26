@@ -3,16 +3,27 @@
 One app-server process per session, holding one thread. The role card goes in as the thread's developer
 instructions (a real slot, unlike one-shot `exec`, where it has to be prepended to the first prompt), and each turn
 is a `turn/start` whose items stream back as notifications until `turn/completed`.
+
+The sandbox is the boundary. Commands run inside Codex's sandbox (writes only in the task's folder and a private
+temp folder, no network) without asking. Codex asks only when it wants out of the sandbox, because accepting an
+approval runs that command *unsandboxed*. So every escalation is declined, with the reason from crewbots' policy
+(backends/policy.py), and file changes Codex asks about are checked against it. A refusal is steered into the turn
+with its reason, since a bare "decline" doesn't tell the model why. With full access there's no sandbox to leave.
 """
 
 import asyncio
+import contextlib
 import json
 import os
+import re
+import shutil
 from collections import deque
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from crewbots.backends.base import Access, RunSpec
+from crewbots.backends.base import Access, RunSpec, session_temp_dir
+from crewbots.backends.policy import NO_NETWORK, STAY_IN_SANDBOX, Policy
 from crewbots.backends.process import JsonlProcess
 from crewbots.events import Done, Event, Notice, SessionStarted, Text, ToolCall, ToolResult, Usage
 
@@ -22,6 +33,7 @@ if TYPE_CHECKING:
 SANDBOX = {Access.READ_ONLY: "read-only", Access.WORKSPACE_WRITE: "workspace-write", Access.FULL: "danger-full-access"}
 OPEN_TIMEOUT_S = 120.0  # starting the thread waits for its MCP servers
 CLIENT = {"name": "crewbots", "title": "crewbots", "version": "0.1"}
+CREW_SERVER = "crewbots"
 
 
 class AppServerError(RuntimeError):
@@ -37,17 +49,35 @@ class CodexSession:
         self._pending: deque[dict[str, Any]] = deque()  # notifications read while waiting for a response
         self._announced = False
         self._broken = False
+        full = spec.access is Access.FULL
+        self.approval_policy = "never" if full else "on-request"
+        self.policy = None if full else Policy(spec.access, spec.cwd, set(spec.mcp_servers) | {CREW_SERVER})
+        self._files: dict[str, list[str]] = {}  # file change item id → the paths it touches, for its approval
+        self._turn_id: str | None = None
+        self._steers: list[str] = []  # reasons to tell the model, after a refusal
+        self.temp: Path | None = None
 
     @classmethod
     async def open(cls, cli: "CodexCLI", spec: RunSpec) -> "CodexSession":
         overrides = await asyncio.to_thread(cli.config_overrides, spec)  # may list Codex's MCP servers, which takes seconds
-        argv = [*cli.command, "app-server", "-c", 'approval_policy="never"', *overrides, *spec.extra_args]
-        session = cls(await JsonlProcess.start(argv, cwd=spec.cwd, env=dict(os.environ)), spec)
+        policy = "never" if spec.access is Access.FULL else "on-request"
+        env = dict(os.environ)
+        temp = None
+        if spec.access is Access.WORKSPACE_WRITE:
+            # The sandbox otherwise lets commands write to /tmp and $TMPDIR too: a way out of the task's folder.
+            temp = session_temp_dir()
+            env["TMPDIR"] = str(temp)
+            overrides += ["-c", "sandbox_workspace_write.exclude_slash_tmp=true",
+                          "-c", "sandbox_workspace_write.exclude_tmpdir_env_var=true",
+                          "-c", f"sandbox_workspace_write.writable_roots={json.dumps([str(temp)])}"]
+        argv = [*cli.command, "app-server", "-c", f'approval_policy="{policy}"', *overrides, *spec.extra_args]
+        session = cls(await JsonlProcess.start(argv, cwd=spec.cwd, env=env), spec)
+        session.temp = temp
         try:
             await session._request("initialize", {"clientInfo": CLIENT, "capabilities": None})
             await session.process.send({"jsonrpc": "2.0", "method": "initialized"})
             params: dict[str, Any] = {
-                "cwd": str(spec.cwd), "approvalPolicy": "never", "sandbox": SANDBOX[spec.access],
+                "cwd": str(spec.cwd), "approvalPolicy": session.approval_policy, "sandbox": SANDBOX[spec.access],
                 "developerInstructions": spec.system_prompt, "model": spec.model,
             }
             if spec.resume_session_id:
@@ -76,9 +106,13 @@ class CodexSession:
                 "threadId": self.session_id, "input": [{"type": "text", "text": prompt, "text_elements": []}],
             })
             turn_id = (started.get("turn") or {}).get("id")
+            self._turn_id = turn_id
             loop = asyncio.get_running_loop()
             deadline = loop.time() + self.timeout_s if self.timeout_s else None
             while True:
+                for notice in self.policy.take_refusals() if self.policy else []:
+                    yield Notice(message=notice)
+                await self._steer()
                 try:
                     message = await self._next(None if deadline is None else max(0.0, deadline - loop.time()))
                 except TimeoutError:
@@ -91,6 +125,9 @@ class CodexSession:
                 if params.get("turnId", turn_id) != turn_id and message.get("method") != "turn/completed":
                     continue
                 for event in parser.feed(message.get("method", ""), params, turn_id):
+                    if isinstance(event, Done):
+                        for notice in self.policy.take_refusals() if self.policy else []:
+                            yield Notice(message=notice)
                     yield event
                     if isinstance(event, Done):
                         finished = True
@@ -105,6 +142,8 @@ class CodexSession:
     async def close(self) -> None:
         self._broken = True
         await self.process.stop()
+        if self.temp:
+            shutil.rmtree(self.temp, ignore_errors=True)
 
     async def _request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         self._next_id += 1
@@ -126,19 +165,66 @@ class CodexSession:
         return await self._read(timeout_s)
 
     async def _read(self, timeout_s: float | None) -> dict[str, Any] | None:
-        """The next response or notification; None once the server has exited."""
+        """The next response or notification; None once the server has exited. Approval requests are answered here."""
         while True:
             obj = await self.process.read(timeout_s)
             if obj is None:
                 return None
             if isinstance(obj, str):
                 continue  # stray output that isn't JSON-RPC
+            if obj.get("method") in ("item/started", "item/completed"):
+                item = (obj.get("params") or {}).get("item") or {}
+                if item.get("type") == "fileChange":
+                    self._files[item["id"]] = [c.get("path", "") for c in item.get("changes") or []]
             if "method" in obj and "id" in obj:
-                # The server asking us something (an approval, user input). Headless, there is nobody to ask.
-                await self.process.send({"jsonrpc": "2.0", "id": obj["id"],
-                                         "error": {"code": -32601, "message": "crewbots runs headless and can't answer"}})
+                answer = self._answer(obj["method"], obj.get("params") or {})
+                await self.process.send({"jsonrpc": "2.0", "id": obj["id"], **answer})
                 continue
             return obj
+
+    def _answer(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        """The reply to a request from Codex: an approval decided by crewbots' policy, or a refusal to anything else."""
+        reason: str | None
+        match method:
+            case "item/commandExecution/requestApproval":
+                command = _unwrap(params.get("command") or "")
+                if params.get("networkApprovalContext"):
+                    host = params["networkApprovalContext"].get("host", "the network")
+                    reason, what = NO_NETWORK, f"network access to {host}"
+                else:
+                    # Accepting would run it outside the sandbox. Say why, in the policy's words where they apply.
+                    rule = self.policy.check_command(command, sandboxed=True) if self.policy else None
+                    reason, what = rule or STAY_IN_SANDBOX, command
+                return {"result": {"decision": self._decide(what, reason)}}
+            case "item/fileChange/requestApproval":
+                paths = self._files.get(params.get("itemId", ""), [])
+                reason = next((r for p in paths if self.policy and (r := self.policy.check_write(p))), None)
+                if self.policy and not paths:
+                    reason = "crewbots couldn't see which files this change touches"
+                return {"result": {"decision": self._decide(", ".join(paths) or "a file change", reason)}}
+            case "execCommandApproval" | "applyPatchApproval":  # the older protocol, should it ever be used
+                what = " ".join(params.get("command") or []) or ", ".join(params.get("fileChanges") or {}) or method
+                reason = "crewbots answers the current approval protocol only"
+                self._decide(what, reason)
+                return {"result": {"decision": {"denied": {"rejection": reason}}}}
+        return {"error": {"code": -32601, "message": f"crewbots runs headless and can't answer {method}"}}
+
+    def _decide(self, what: str, reason: str | None) -> str:
+        if reason is None:
+            return "accept"
+        if self.policy:
+            self.policy.refused(what, reason)
+        self._steers.append(f"crewbots declined {what}: {reason}. Don't retry it another way; work within this, or "
+                            "use the escalate tool if the task can't be done without it.")
+        return "decline"
+
+    async def _steer(self) -> None:
+        """Tells the model why something was declined, as input to the turn in progress."""
+        while self._steers and self._turn_id:
+            text = self._steers.pop(0)
+            with contextlib.suppress(AppServerError):
+                await self._request("turn/steer", {"threadId": self.session_id, "expectedTurnId": self._turn_id,
+                                                   "input": [{"type": "text", "text": text, "text_elements": []}]})
 
 
 class AppServerParser:
@@ -239,3 +325,9 @@ def _mcp_text(result: Any) -> str:
         if texts:
             return "\n".join(texts)
     return "" if result is None else json.dumps(result)
+
+
+def _unwrap(command: str) -> str:
+    """Codex runs commands as /bin/zsh -lc '…'; the command itself is what matters, and what people read."""
+    match = re.fullmatch(r"/bin/(?:ba|z)?sh -lc (['\"])([\s\S]*)\1", command.strip())
+    return match.group(2) if match else command

@@ -1,4 +1,10 @@
-"""Codex, run headless: `codex exec --json`. It uses the CLI's own sign-in, so a ChatGPT plan works."""
+"""Codex, on its own sign-in, so a ChatGPT plan works.
+
+`CodexCLI` (the `codex` backend) runs every turn through `codex app-server`, in a session that stays open between
+turns or one opened for a single turn. Either way crewbots' policy answers Codex's approval requests. `CodexExec` (the
+`codex-exec` backend) is the older one-shot `codex exec --json`: it can't be asked for approvals, so it has Codex's
+sandbox and crewbots' isolation, but not crewbots' policy.
+"""
 
 import asyncio
 import json
@@ -20,8 +26,8 @@ MCP_NAME = re.compile(r"[A-Za-z0-9_-]+")
 SANDBOX = {Access.READ_ONLY: "read-only", Access.WORKSPACE_WRITE: "workspace-write"}
 
 
-class CodexCLI:
-    name = "codex"
+class CodexExec:
+    name = "codex-exec"
 
     def __init__(self, command: Sequence[str] = ("codex",), isolate: bool = True):
         """`isolate=False` lets the bot use the user's own Codex MCP servers and plugins; only for trying things out."""
@@ -69,6 +75,20 @@ class CodexCLI:
         if spec.system_prompt and not spec.resume_session_id:
             return f"<instructions>\n{spec.system_prompt}\n</instructions>\n\n{spec.prompt}"
         return spec.prompt
+
+
+class CodexCLI(CodexExec):
+    name = "codex"
+
+    async def run(self, spec: RunSpec) -> AsyncIterator[Event]:
+        """One turn on its own: a session opened for it and closed after, so the policy still answers approvals."""
+        session = await self.open(spec)
+        try:
+            async with aclosing(session.turn(spec.prompt)) as turn:
+                async for event in turn:
+                    yield event
+        finally:
+            await session.close()
 
 
 class CodexParser:

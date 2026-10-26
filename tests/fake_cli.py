@@ -13,6 +13,9 @@ import time
 
 fixture, *argv = sys.argv[1:]
 if argv[:3] == ["mcp", "list", "--json"]:  # Codex listing its MCP servers
+    if record := os.environ.get("FAKE_RECORD"):
+        with open(record, "w") as f:
+            json.dump({"argv": argv}, f)
     print(os.environ.get("FAKE_MCP_LIST", "[]"))
     sys.exit(0)
 stdin = sys.stdin.read()

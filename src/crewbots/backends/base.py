@@ -1,5 +1,6 @@
 """What every backend takes and returns."""
 
+import tempfile
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -71,6 +72,16 @@ class Backend(Protocol):
     async def open(self, spec: RunSpec) -> Session:
         """Starts a long-lived session for `spec` (its prompt is not used; each turn brings its own)."""
         ...
+
+
+TEMP_ROOT = Path.home() / ".crewbots" / "tmp"
+
+
+def session_temp_dir() -> Path:
+    """A private temp folder for one session. With the shell confined to the task's folder, tools still need
+    somewhere to write scratch files, and the machine's /tmp would be a way out of the folder."""
+    TEMP_ROOT.mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix="session-", dir=TEMP_ROOT))
 
 
 def mcp_servers_json(servers: dict[str, McpServer]) -> dict[str, Any]:

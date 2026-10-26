@@ -5,13 +5,13 @@ protocol a plain `claude -p` doesn't have, which gives crewbots three things:
 
 - **Interrupt.** A turn can be stopped (cancel, timeout) without killing the process, so the session stays warm.
 - **In-process crew tools.** crewbots' tools run in the daemon as an SDK MCP server: no subprocess, no token.
-- **A say on every tool call.** `can_use_tool` applies crewbots' policy (`Policy`) instead of a fixed allowlist.
+- **A say on every tool call.** `can_use_tool` applies crewbots' policy (`backends/policy.py`), the same rules Codex
+  bots get through their approval requests.
 """
 
 import asyncio
 import contextlib
 import os
-import re
 import shutil
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -36,20 +36,12 @@ from claude_agent_sdk import (
 
 from crewbots.backends.base import Access, RunSpec
 from crewbots.backends.claude_cli import READ_ONLY_TOOLS, _stringify
+from crewbots.backends.policy import Policy
 from crewbots.crew_tools import CrewTools, ToolRefused
 from crewbots.events import Done, Event, Notice, SessionStarted, Text, ToolCall, ToolResult, Usage
 
 CREW_SERVER = "crewbots"
 INTERRUPT_GRACE_S = 20.0  # after an interrupt, how long the turn may take to wind down before the session is dropped
-READ_TOOLS = {"Read", "Glob", "Grep", "LS", "NotebookRead", "TodoWrite"}
-EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
-# The user's to do, never a bot's (team/rules.md): sending work out of the crew, or rewriting what's there.
-# It's a guardrail, not a boundary: a determined command can always get around a pattern (containers are the real one).
-OUTWARD = re.compile(
-    r"\bgit\b(?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*\s+(push|merge|rebase|reset\s+--hard|branch\s+-D|tag)\b"
-    r"|\bgh\s+(pr\s+(create|merge)|release|repo\s+delete)\b"
-    r"|\b(npm|pnpm|yarn|cargo|poetry|uv)\s+publish\b|\btwine\s+upload\b"
-)
 _END = object()
 
 
@@ -88,6 +80,14 @@ class ClaudeAgent:
             servers[CREW_SERVER] = crew_server(spec.crew)
         full = spec.access is Access.FULL
         env = {} if self.use_api_key or "ANTHROPIC_API_KEY" not in os.environ else {"ANTHROPIC_API_KEY": ""}
+        sandbox = None
+        if spec.access is Access.WORKSPACE_WRITE:
+            # Claude Code's OS sandbox for shell commands: writes confined to the working folder, and no opting out.
+            # Every command still goes through can_use_tool (the policy), since auto-allowing is off.
+            # The sandbox points TMPDIR at /tmp/claude, which it doesn't create; without it, tools needing a temp
+            # folder fail.
+            Path("/tmp/claude").mkdir(exist_ok=True)
+            sandbox = {"enabled": True, "autoAllowBashIfSandboxed": False, "allowUnsandboxedCommands": False}
         return ClaudeAgentOptions(
             cli_path=self.cli_path,
             cwd=str(spec.cwd),
@@ -104,6 +104,7 @@ class ClaudeAgent:
             permission_mode="bypassPermissions" if full else "default",
             can_use_tool=None if full else session.policy,
             env=env,
+            sandbox=sandbox,
             stderr=session.stderr_lines.append,
         )
 
@@ -115,8 +116,9 @@ class ClaudeAgentSession:
         self.client: ClaudeSDKClient | None = None
         self.session_id = spec.resume_session_id
         self.timeout_s = spec.timeout_s
-        self.policy = Policy(spec.access, Path(spec.cwd), set(spec.mcp_servers) | {CREW_SERVER})
+        self.policy = ClaudePolicy(spec.access, Path(spec.cwd), set(spec.mcp_servers) | {CREW_SERVER})
         self.stderr_lines: list[str] = []
+        self.temp: Path | None = None
         self._broken = False
 
     @property
@@ -202,52 +204,18 @@ class ClaudeAgentSession:
         if client:
             with contextlib.suppress(Exception):
                 await client.disconnect()
+        if self.temp:
+            shutil.rmtree(self.temp, ignore_errors=True)
 
 
-class Policy:
-    """crewbots' say on Claude's tool calls: what each access level may do, wherever the tool call comes from."""
-
-    def __init__(self, access: Access, cwd: Path, granted_servers: set[str]):
-        self.access = access
-        self.cwd = cwd.resolve()
-        self.granted = granted_servers
-        self._refusals: list[str] = []
+class ClaudePolicy(Policy):
+    """The shared policy, asked the way Claude asks: one tool call at a time, through `can_use_tool`."""
 
     async def __call__(self, name: str, args: dict[str, Any], context: ToolPermissionContext):
-        reason = self.refuse(name, args)
+        reason = self.check_tool(name, args)
         if reason is None:
             return PermissionResultAllow()
-        self._refusals.append(f"Refused {name}: {reason}")
-        return PermissionResultDeny(message=reason)
-
-    def refuse(self, name: str, args: dict[str, Any]) -> str | None:
-        """None to allow the call, or why not."""
-        if name.startswith("mcp__"):
-            server = name.split("__")[1] if name.count("__") >= 2 else ""
-            return None if server in self.granted else f"the MCP server {server!r} isn't granted by this bot's role card"
-        if name in READ_TOOLS:
-            return None
-        if self.access is Access.READ_ONLY:
-            return "this bot is read-only (its role card says access: read_only)"
-        if name in EDIT_TOOLS:
-            target = args.get("file_path") or args.get("notebook_path") or ""
-            if not target or not self._inside(target):
-                return f"writes are limited to this task's own folder, {self.cwd}"
-            return None
-        if name == "Bash" and OUTWARD.search(str(args.get("command", ""))):
-            return "pushing, merging, publishing and rewriting history are the user's to do (team/rules.md)"
-        return None
-
-    def take_refusals(self) -> list[str]:
-        out, self._refusals = self._refusals, []
-        return out
-
-    def _inside(self, path: str) -> bool:
-        target = Path(path) if os.path.isabs(path) else self.cwd / path
-        try:
-            return target.resolve().is_relative_to(self.cwd)
-        except OSError:
-            return False
+        return PermissionResultDeny(message=self.refused(name, reason))
 
 
 class SdkMapper:

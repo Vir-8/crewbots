@@ -36,10 +36,12 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
   - Every request needs the daemon's token, which is written to `daemon.json` and readable only by you.
   - The daemon also checks the Host header, so no web page you have open can drive your bots.
 - **Backends** translate each CLI's output into one shared event stream.
-  - **Claude:** crewbots' tools run inside the daemon. Every tool call goes through crewbots' policy:
+  - **One policy for both backends** (`backends/policy.py`):
     - read-only bots only read
     - writing bots only write in their task's folder
     - nobody pushes, merges or publishes
+  - **How it's enforced:** Claude asks on every tool call. Codex's sandbox is the boundary, and every request to leave it is declined. Writing bots' shell commands are OS-sandboxed on both.
+  - **Claude's tools run inside the daemon.**
   - **Interrupts:** a cancelled or timed-out Claude turn is interrupted, not killed, so its session stays warm.
   - Bots get crewbots' MCP servers and their own, never your personal ones. On Claude that's `--strict-mcp-config`. On Codex, which has no such switch, every server, plugin and app from your config is turned off by name.
   - Each active task keeps its CLI running between turns, so follow-ups skip start-up. Idle sessions close after 10 minutes, and `serve --no-sessions` turns this off.

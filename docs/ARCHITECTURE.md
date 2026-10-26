@@ -64,10 +64,20 @@ The prototype starts a CLI process, and its MCP server, for every turn. That cos
 Worktrees keep bots from colliding, not from misbehaving. A bot reading a hostile repo could be prompt-injected. The defense is that no single layer has to hold:
 
 1. **Capability-scoped crew tools.** A run's token acts only as its own task. Only coordinators delegate, and there is no tool that merges, pushes or spends.
-2. **The CLIs' own sandboxes.**
-   - Read-only bots get read tools only.
-   - Writing bots get Codex's `workspace-write` sandbox (writes confined to the worktree, no network by default) or Claude's accept-edits mode.
-   - Next: turn on Claude Code's sandboxed shell for writing bots, through `--settings`, so Claude's shell commands get the same confinement as Codex's.
+2. **One policy, enforced the same way on both backends** (`backends/policy.py`):
+   - Read-only bots read.
+   - Writing bots write only in their task's folder.
+   - No bot pushes, merges, publishes or rewrites history.
+   - Bots reach only the MCP servers their role card grants.
+
+   How each backend enforces it:
+   - **Claude:** every tool call goes through `can_use_tool`. Writing bots' shell commands run in Claude Code's OS sandbox, with no opting out, so they can't write outside the folder.
+   - **Codex:** the sandbox is the boundary. Its exceptions for `/tmp` and `$TMPDIR` are switched off, and each session gets its own temp folder. Codex asks only to *leave* the sandbox, since accepting an approval runs the command unsandboxed, so every such request is declined, with the policy's reason steered into the turn.
+   - **Checked live on both:**
+     - a shell write inside the folder works
+     - a write to the home folder is blocked by the OS
+     - `git push` is refused or blocked
+   - **Remaining difference:** Claude's sandbox allows `/tmp`, which it needs for its own temp folder.
 3. **Separate checkouts.** Every writing task works in its own worktree, and the user's checkout is only ever touched by the user's merge.
 4. **The user for anything irreversible.** Merges, pushes, publishing and anything outside the crew need you, as team/rules.md says, and the harness enforces it.
 5. **Secrets stay out.** Bots get no API keys, since crewbots hides `ANTHROPIC_API_KEY`. Writing bots should not run where credentials live in the working tree.
@@ -163,7 +173,7 @@ Each step leaves the system working.
 5. **Login service and menu bar.** launchd install and uninstall from the app, the app attaching rather than owning, the power assertion, notifications.
 6. **Memory.** Bot memory files with `remember`/`forget`, FTS `recall`, and the rollover for long conversations.
 7. **Routines, triggers, budgets.** The scheduler, GitHub triggers, per-bot budgets, and the standup and retro routines.
-8. **Claude's sandboxed shell** for writing bots. Containers once there's a reason.
+8. **Sandboxed shells** for writing bots on both backends (done, with the policy). Containers once there's a reason.
 
 ## Learned building sessions
 
@@ -181,6 +191,13 @@ Each step leaves the system working.
   - `set_permission_mode`, `set_model`, and MCP control while running
 
   The Python SDK, `claude-agent-sdk` (0.2.x), has all of these, and `cli_path` keeps it on the user's own signed-in `claude`.
+
+## Learned enforcing one policy
+
+- Accepting a Codex approval request runs that command **outside the sandbox**. Under the `untrusted` approval policy, accepting a harmless command let it write into the home folder. So crewbots never accepts one: commands stay sandboxed, and an approval request is answered as what it really is, a request to step outside.
+- Codex's config no longer accepts `approval_policy = "untrusted"`, though its protocol schema and its threads still do.
+- `codex mcp list` checks HTTP servers' auth over the network. It takes anywhere from 5s to well past 30s, and occasionally hangs. The list is now saved with the config and plugin timestamps it was taken at, and reused while they're unchanged, so Codex is only asked again after a change.
+- Claude Code's sandbox points `TMPDIR` at `/tmp/claude` without creating it, so tools that need a temp folder fail until crewbots creates it.
 
 ## Still open
 

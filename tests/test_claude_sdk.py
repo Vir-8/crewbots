@@ -17,7 +17,7 @@ from claude_agent_sdk import (
 from fakes import ScriptedCrew, bot, wait_until
 
 from crewbots.backends import Access, ClaudeAgent, McpServer, RunSpec
-from crewbots.backends.claude_sdk import ClaudeAgentSession, Policy, SdkMapper, crew_server
+from crewbots.backends.claude_sdk import ClaudeAgentSession, ClaudePolicy, SdkMapper, crew_server
 from crewbots.crew_tools import CrewTools, ToolRefused
 from crewbots.events import Done, Notice, SessionStarted, Text, ToolCall, ToolResult, Usage
 from crewbots.store import Store
@@ -42,22 +42,22 @@ def worktree(tmp_path):
 
 
 def test_read_only_bots_read_and_nothing_else(worktree):
-    policy = Policy(Access.READ_ONLY, worktree, {"crewbots"})
+    policy = ClaudePolicy(Access.READ_ONLY, worktree, {"crewbots"})
 
-    assert policy.refuse("Read", {"file_path": "/etc/hosts"}) is None
-    assert policy.refuse("Grep", {"pattern": "x"}) is None
-    assert "read-only" in policy.refuse("Edit", {"file_path": str(worktree / "a.py")})
-    assert "read-only" in policy.refuse("Bash", {"command": "ls"})
+    assert policy.check_tool("Read", {"file_path": "/etc/hosts"}) is None
+    assert policy.check_tool("Grep", {"pattern": "x"}) is None
+    assert "read-only" in policy.check_tool("Edit", {"file_path": str(worktree / "a.py")})
+    assert "read-only" in policy.check_tool("Bash", {"command": "ls"})
 
 
 def test_writing_bots_write_only_inside_their_task_folder(worktree):
-    policy = Policy(Access.WORKSPACE_WRITE, worktree, {"crewbots"})
+    policy = ClaudePolicy(Access.WORKSPACE_WRITE, worktree, {"crewbots"})
 
-    assert policy.refuse("Edit", {"file_path": str(worktree / "src" / "a.py")}) is None
-    assert policy.refuse("Write", {"file_path": "notes.md"}) is None  # relative to the worktree
-    assert "own folder" in policy.refuse("Write", {"file_path": str(worktree.parent / "elsewhere.py")})
-    assert "own folder" in policy.refuse("Edit", {"file_path": str(worktree / ".." / "escape.py")})
-    assert "own folder" in policy.refuse("Edit", {})
+    assert policy.check_tool("Edit", {"file_path": str(worktree / "src" / "a.py")}) is None
+    assert policy.check_tool("Write", {"file_path": "notes.md"}) is None  # relative to the worktree
+    assert "own folder" in policy.check_tool("Write", {"file_path": str(worktree.parent / "elsewhere.py")})
+    assert "own folder" in policy.check_tool("Edit", {"file_path": str(worktree / ".." / "escape.py")})
+    assert "own folder" in policy.check_tool("Edit", {})
 
 
 @pytest.mark.parametrize("command", [
@@ -65,26 +65,26 @@ def test_writing_bots_write_only_inside_their_task_folder(worktree):
     "npm publish", "git reset --hard HEAD~3", "cd x; git rebase main",
 ])
 def test_nobody_pushes_merges_or_publishes(worktree, command):
-    assert "user's to do" in Policy(Access.WORKSPACE_WRITE, worktree, set()).refuse("Bash", {"command": command})
+    assert "user's to do" in ClaudePolicy(Access.WORKSPACE_WRITE, worktree, set()).check_tool("Bash", {"command": command})
 
 
 def test_ordinary_commands_and_git_reads_are_fine(worktree):
-    policy = Policy(Access.WORKSPACE_WRITE, worktree, set())
+    policy = ClaudePolicy(Access.WORKSPACE_WRITE, worktree, set())
 
     for command in ("pytest -q", "git status", "git diff --stat", "git log -3", "npm test"):
-        assert policy.refuse("Bash", {"command": command}) is None
+        assert policy.check_tool("Bash", {"command": command}) is None
 
 
 def test_only_granted_mcp_servers(worktree):
-    policy = Policy(Access.READ_ONLY, worktree, {"crewbots", "resolve"})
+    policy = ClaudePolicy(Access.READ_ONLY, worktree, {"crewbots", "resolve"})
 
-    assert policy.refuse("mcp__crewbots__handoff", {}) is None
-    assert policy.refuse("mcp__resolve__cut", {}) is None
-    assert "isn't granted" in policy.refuse("mcp__kite__place_order", {})
+    assert policy.check_tool("mcp__crewbots__handoff", {}) is None
+    assert policy.check_tool("mcp__resolve__cut", {}) is None
+    assert "isn't granted" in policy.check_tool("mcp__kite__place_order", {})
 
 
 async def test_a_refusal_is_reported_and_tells_claude_why(worktree):
-    policy = Policy(Access.READ_ONLY, worktree, set())
+    policy = ClaudePolicy(Access.READ_ONLY, worktree, set())
 
     decision = await policy("Bash", {"command": "rm -rf build"}, None)
 
