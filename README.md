@@ -175,6 +175,14 @@ npx tauri build --bundles app
 cp -R src-tauri/target/release/bundle/macos/crewbots.app /Applications/
 ```
 
+Or do all of it, and more, with one command: it runs the checks, builds and installs the app, restarts the daemon once
+no turn is running, and relaunches the app (what you'd typed is kept). `--daemon` skips the app, for changes that
+don't touch it.
+
+```bash
+scripts/release
+```
+
 The installed app runs the daemon from this checkout, the path it was built in, so keep the checkout where it is (or
 set `CREWBOTS_PROJECT`). To work on the UI in a plain browser, run `npm run vite` and open http://localhost:5173.
 Outside Tauri, the UI runs on a built-in demo crew (`src/preview/`).
@@ -289,4 +297,5 @@ src/crewbots/
 tests/               one file per module, plus the fakes and fixtures
 app/                 the desktop app: src-tauri/ is the Rust shell, src/ the React UI, src/preview/ the demo crew
 docs/                the design, and example role cards
+scripts/release      checks, builds, installs and restarts everything, safely
 ```

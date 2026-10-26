@@ -1,0 +1,65 @@
+#!/bin/bash
+# Releases this checkout to this Mac: runs the checks, builds the app and installs it, restarts the crew's daemon once
+# no turn is running, relaunches the app (it keeps what you'd typed), and says what it did.
+#
+#   scripts/release              everything
+#   scripts/release --daemon     checks, then the daemon only: for changes that don't touch the app
+set -euo pipefail
+cd "$(dirname "$0")/.."
+export PATH="/opt/homebrew/bin:$HOME/.cargo/bin:$PATH" # an Apple silicon node and cargo before any Intel ones
+
+APP=/Applications/crewbots.app
+BUILT=app/src-tauri/target/release/bundle/macos/crewbots.app
+daemon_only=false
+[[ "${1:-}" == "--daemon" ]] && daemon_only=true
+
+done_lines=()
+started=$SECONDS
+step() {
+  printf '\n\033[1m== %s\033[0m\n' "$1"
+  step_started=$SECONDS
+}
+did() { done_lines+=("$1 ($((SECONDS - step_started))s)"); }
+
+commit=$(git rev-parse --short HEAD)
+[[ -n "$(git status --porcelain)" ]] && echo "Note: the checkout has uncommitted changes; they go out too."
+
+step "Checks"
+uv run ruff check src tests
+uv run pytest -q
+(cd app && npx tsc --noEmit -p . && npm test --silent)
+did "Checks passed: ruff, pytest, tsc, the app's tests"
+
+if ! $daemon_only; then
+  step "Building the app"
+  (cd app && npx tauri build --bundles app)
+  did "Built the app at $commit"
+
+  step "Installing it"
+  ditto "$BUILT" "$APP"
+  did "Installed it in $APP"
+fi
+
+step "Restarting the daemon once the crew is idle"
+before=$(python3 -c "import json,os; print(json.load(open(os.path.expanduser('~/.crewbots/crew/daemon.json')))['pid'])" 2>/dev/null || echo none)
+uv run crewbots restart --when-idle
+did "Restarted the daemon (pid $before before), from $commit"
+
+if ! $daemon_only; then
+  step "Relaunching the app"
+  front=$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' 2>/dev/null || true)
+  if pgrep -f "$APP/Contents/MacOS/crewbots" >/dev/null; then
+    osascript -e 'quit app "crewbots"'
+    for _ in $(seq 1 40); do pgrep -f "$APP/Contents/MacOS/crewbots" >/dev/null || break; sleep 0.25; done
+  fi
+  if pgrep -f "$APP/Contents/MacOS/crewbots" >/dev/null; then
+    did "Left the app running: it didn't quit (a dialog open?), so relaunch it yourself"
+  else
+    # In front only if it was: a release shouldn't take you away from what you're doing.
+    if [[ "$front" == "crewbots" ]]; then open -a "$APP"; else open -g -a "$APP"; fi
+    did "Relaunched the app$([[ "$front" == "crewbots" ]] || echo " in the background"); what you'd typed is kept"
+  fi
+fi
+
+printf '\n\033[1mReleased %s in %ss:\033[0m\n' "$commit" "$((SECONDS - started))"
+printf '  - %s\n' "${done_lines[@]}"
