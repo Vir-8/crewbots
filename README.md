@@ -32,6 +32,12 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
   - crewbots counts the rounds. A round is one reviewed version of the work, so a pass on an older version never approves newer changes. After three failed rounds it refuses both a fourth round and another revision, and the chief reports to you instead.
   - Work that passes every review of its current version can be proposed with `propose_merge`, which marks it `[ready to merge]`. Only you merge, with `crewbots merge <task>`. It commits the worktree, merges its branch into your checkout's current branch with a merge commit naming the reviewers, then removes the worktree.
   - It refuses to merge into a checkout with uncommitted changes, and aborts on a conflict, so nothing changes unless the merge is clean.
+- **Prompts are files.** Everything crewbots itself tells the models is markdown in `src/crewbots/prompts/`: how to
+  work in the crew (`crew-tools.md`) and delegate (`delegation.md`), a chat's and a group chat's setting, the memory
+  guide, the briefing, retry and resume turns, the code review prompts (`review/`), and each crew tool's description
+  (`tools/<name>.md`). Put a file at the same path under the crew's `prompts/` folder to replace one for your crew
+  (`~/.crewbots/crew/prompts/review/lead.md`); delete it to go back. `{name}` placeholders are filled in, and an edit
+  counts from the next turn.
 - **Skills** are [Agent Skills](https://agentskills.io) folders (a `SKILL.md` each). A role card lists the ones its bot gets, and the bot sees each skill's name, description and path, then reads the `SKILL.md` when a task matches.
   - The starter crew ships `interrogate`, `arena` and `swarm`: crew versions of [pstack](https://github.com/cursor/plugins/tree/main/pstack)'s multi-agent skills. They use real model diversity, a Claude reviewer and a Codex critic.
   - Whole skill packs can be dropped in with `crewbots skills add`, and are namespaced (`pstack:tdd`).
@@ -296,6 +302,8 @@ src/crewbots/
   mcp_server.py      the crewbots tools each bot gets (handoff, escalate, review; delegate, tasks, message, propose_merge)
   worktree.py        one git worktree per task
   paths.py           where crewbots keeps things, worked out when asked
+  prompts.py         the prompts, read from prompts/*.md, or the crew's own copies
+  prompts/           what crewbots tells the models, as markdown
   cli.py             the `crewbots` command
   templates/crew/    the starter crew: bots, team files, skills
 tests/               one file per module, plus the fakes and fixtures

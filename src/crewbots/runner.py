@@ -39,15 +39,15 @@ from pathlib import Path
 from typing import Any
 
 from crewbots import attachments as attachments_module
-from crewbots import cards, worktree
+from crewbots import cards, prompts, worktree
 from crewbots import crew as crew_module
 from crewbots.backends import BACKENDS, Access, Backend, McpServer, RunSpec
 from crewbots.backends.base import Session
-from crewbots.crew import CHAT_SETTING, NO_REPLY, SEAT_SETTING, Bot, Crew
+from crewbots.crew import NO_REPLY, Bot, Crew
 from crewbots.crew_tools import CrewTools
 from crewbots.events import Done, Event, Notice, RateLimit, SessionStarted, Usage
 from crewbots.memory import CREW_SCOPE, Note
-from crewbots.reviews import LEAD_REVIEWER, reviewer_bot
+from crewbots.reviews import review_prompt, reviewer_bot
 from crewbots.store import Handoff, Review, Status, Store, Task, Verdict
 
 SUBSCRIBER_QUEUE = 10_000
@@ -57,12 +57,6 @@ REPORT_RESULT_CHARS = 3000
 IDLE_TIMEOUT_S = 600.0  # an idle session is closed after this; its next message resumes it from the stored id
 MAX_SESSIONS = 8  # open sessions at once; past this the least recently used idle one is closed
 ROLLOVER_PERCENT = 70.0  # past this much of its context window, a conversation continues in a fresh session
-BRIEFING_PROMPT = (
-    "This conversation is getting long, so it will continue in a fresh session that has none of it. Write the briefing "
-    "that session will start from: the goal, what's been decided and why, what's done, the current state (files, "
-    "branches, task ids), what's open, and what comes next. Be complete but brief. Reply with only the briefing, and "
-    "don't use any tools."
-)
 BUDGET_REPORT_WINDOW = timedelta(days=7)  # what `budgets` reports for a bot without a budget
 LIMIT_WINDOWS = {"five_hour": "five-hour", "seven_day": "weekly", "seven_day_opus": "weekly Opus",
                  "seven_day_sonnet": "weekly Sonnet", "5h": "five-hour", "7d": "weekly"}
@@ -74,16 +68,6 @@ HOLD_RECHECK_S = 60.0  # a held task looks again this often: budgets free up as 
 # left failed. The CLIs have already retried the API call itself a few times by then, so these are longer.
 RETRY_WAITS_S = (30.0, 120.0, 300.0)
 STALL_S = 1200.0  # no event at all from a turn for this long: it's stuck, so it's stopped and tried again
-RETRY_PROMPT = (
-    "Your last turn stopped before it finished, because of an error on the way to the model: {error}. Carry on "
-    "from where you were. Check what you'd already done first, so nothing is done twice; if you had finished, give "
-    "your answer again."
-)
-RESUME_PROMPT = (
-    "The crewbots daemon restarted while you were working on this, so your turn was cut off:\n\n{request}\n\n"
-    "Carry on from where you were. Check what you'd already done first, so nothing is done twice; if you had "
-    "finished, give your answer again."
-)
 MCP_SERVER_NAME = "crewbots"
 MCP_COMMAND = (sys.executable, "-m", "crewbots.mcp_server")
 
@@ -417,7 +401,7 @@ class Runner:
             if turn["resumed"]:
                 self._record(task.id, kind="restarted", data={"again": True})
                 continue
-            prompt = RESUME_PROMPT.format(request=turn["prompt"]) if turn["started"] else turn["prompt"]
+            prompt = prompts.text("resume", self.crew.home, request=turn["prompt"]) if turn["started"] else turn["prompt"]
             prompt = "\n\n".join([prompt, *turn["waiting"]])
             self.store.set_pending(task.id, turn["prompt"], resumed=True)
             if turn["started"]:
@@ -432,7 +416,7 @@ class Runner:
 
     def bot_for(self, name: str) -> Bot | None:
         """A crew bot, or the reviewer agent a code review runs as (it isn't one of the crew)."""
-        return self.crew.bots.get(name) or reviewer_bot(name)
+        return self.crew.bots.get(name) or reviewer_bot(name, self.crew.home)
 
     def start_review(self, lead: str, *, title: str, pr: str, request: str) -> Task:
         """A private review of a pull request: the lead's task, which waits while its reviewers review the pull
@@ -898,7 +882,7 @@ class Runner:
             self._set(task_id, status=Status.QUEUED)
             await asyncio.sleep(wait)
             if task.session_id:
-                prompt = RETRY_PROMPT.format(error=done.error)
+                prompt = prompts.text("retry", self.crew.home, error=done.error)
 
     async def _run(self, task_id: str, prompt: str) -> Done | None:
         """One turn. Returns its Done if it failed, for `_tries` to settle; None once the task is settled."""
@@ -988,7 +972,8 @@ class Runner:
             flags = ",".join(f for f, on in (("github", getattr(tools, "reads_github", False)),
                                              ("drafts", getattr(tools, "drafting", False))) if on)
             servers = {} if tools is None or in_process else self._crew_tools(token, bot, tools="review", flags=flags)
-            system = LEAD_REVIEWER if task.parent_id is None else bot.instructions  # the lead puts the others together
+            # The lead puts the others' findings together.
+            system = review_prompt("lead", self.crew.home) if task.parent_id is None else bot.instructions
             return RunSpec(prompt=prompt, cwd=cwd, access=bot.access, model=bot.model, system_prompt=system,
                            resume_session_id=task.session_id, timeout_s=bot.timeout_s, effort=bot.effort,
                            mcp_servers=servers, crew=tools if in_process else None, network=bot.network)
@@ -1045,7 +1030,7 @@ class Runner:
             return
         briefing, usage = "", None
         try:
-            async with aclosing(opened.session.turn(BRIEFING_PROMPT)) as stream:
+            async with aclosing(opened.session.turn(prompts.text("briefing", self.crew.home))) as stream:
                 async for event in stream:
                     if isinstance(event, Usage):
                         usage = event
@@ -1104,13 +1089,14 @@ class Runner:
 
     def _setting(self, task: Task) -> str | None:
         if task.kind == "chat":
-            return CHAT_SETTING
+            return prompts.text("chat-setting", self.crew.home)
         if task.kind == "seat" and task.room_id:
             room = self.store.room(task.room_id)
             others = [m for m in room["members"] if m != task.bot]
             lead = ("You lead it: a message that mentions no one is yours to answer." if room["lead"] == task.bot
                     else f"{room['lead']} leads it; you're woken when someone mentions you.")
-            return SEAT_SETTING.format(title=room["title"], others=", ".join(others) or "no other bots", lead=lead)
+            return prompts.text("seat-setting", self.crew.home, title=repr(room["title"]), lead=lead, no_reply=NO_REPLY,
+                                others=", ".join(others) or "no other bots")
         return None
 
     def _review_brief(self, task: Task) -> str | None:
@@ -1130,7 +1116,8 @@ class Runner:
             return {}
         command, *args = self.mcp_command
         env = {"CREWBOTS_URL": self.api_url, "CREWBOTS_TOKEN": token, "CREWBOTS_DELEGATE": "1" if bot.can_delegate else "0",
-               "CREWBOTS_TOOLS": tools, "CREWBOTS_REVIEW": flags}
+               "CREWBOTS_TOOLS": tools, "CREWBOTS_REVIEW": flags,
+               "CREWBOTS_HOME": str(self.crew.home)}  # for the crew's own tool descriptions (prompts/tools/)
         return {MCP_SERVER_NAME: McpServer(command=command, args=list(args), env=env)}
 
     def _cwd(self, task: Task, bot: Bot) -> Path:

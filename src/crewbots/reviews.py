@@ -1,9 +1,9 @@
 """Code review, apart from the always-on crew: the pull requests waiting on you, and private reviews of them.
 
 A review isn't one of your bots' work. Each of the models you choose (`reviewers:` in `reviews.yaml`) reviews the pull
-request on its own (`REVIEWER`); then the first of them, as the lead (`LEAD_REVIEWER`), checks their findings against
-the code, merges them, drafts the line comments and writes the one review you read and talk to. The reviewers'
-own threads are there if you want them.
+request on its own (prompts/review/reviewer.md); then the first of them, as the lead (prompts/review/lead.md), checks
+their findings against the code, merges them, drafts the line comments and writes the one review you read and talk
+to. The reviewers' own threads are there if you want them.
 
 A reviewer is told only which pull request, and what you'd like looked at. Everything else it asks for: the pull
 request's description, files, checks, linked issues and discussion (`pr_overview`), its diff (`pr_diff`), and the
@@ -34,7 +34,7 @@ from typing import Any
 
 import yaml
 
-from crewbots import paths
+from crewbots import paths, prompts
 from crewbots.github import GitHubError, _gh
 
 REPOS_FILE = "reviews.yaml"  # in the crew's folder: {repos: {owner/name: local checkout}, reviewers: [...]}
@@ -52,65 +52,7 @@ MAX_REVIEWERS = 4
 ISSUE_CHARS = 2_500
 DISCUSSION_CHARS = 5_000
 REVIEWER_PREFIX = "reviewer:"  # a reviewer's name: reviewer:<backend>:<model>:<effort>
-HOW_TO_REVIEW = """Your working directory is the repository, checked out at the pull request's head. Start with
-`pr_overview` (what the pull request is for, its files, checks, linked issues and discussion) and `pr_diff` (its
-changes; a file at a time, or in parts, if it's long). Then read around the change in the checkout: the callers, the
-types, the tests, how the touched code is used elsewhere. Check claims against the code rather than speculating. For
-anything outside the repository, such as a library's behaviour or its documentation, search the web.
-
-Review statically, by reading. Never run tests, builds, linters, type checks, package managers, servers or the app,
-and never install anything: a review reads code, it doesn't execute it. If you can run commands, run only ones that
-read and search (rg, grep, ls, cat, git log, git show). Never change files, and never post, comment, approve or submit
-anything anywhere.
-
-Find what's actually wrong: bugs, regressions, broken edge cases, security problems, missing or misleading tests, and
-changes that don't do what the pull request says. No style nits a linter would catch, and no restating the diff."""
-
 COMMENT_WORDS = 70  # past this, a reviewer's draft is sent back to be shortened (code blocks don't count)
-LINE_COMMENT = """A line comment is for the pull request's author, and short: one to three plain sentences, under
-50 words, saying what's wrong and what to change, so they know at once what's expected. Write it as a request or a
-question ("This skips the last row when `rows` is empty; start the range at 0?"), not an essay: no background, no
-walkthrough of your reasoning, no severity labels, headings or lists. A one-line fix can be a ```suggestion block
-holding the line's replacement. The why and the evidence belong in your reply, not on the line."""
-
-REVIEWER = f"""You are one of the reviewers of a pull request. You review it on your own; a lead reviewer then puts
-your findings together with the others' into the review the person reads.
-
-{HOW_TO_REVIEW}
-
-Reply with your findings, most serious first, each with:
-- P0 (must fix), P1 (should fix) or P2 (worth fixing)
-- where: path:line, the line's number in the pull request's version of the file, or path:line (removed) for a removed
-  line by its old number
-- the problem, and the input or state that goes wrong
-- the comment you'd leave on that line
-
-{LINE_COMMENT}
-
-Then a line on the change's overall risk, and what you couldn't check. Nothing else."""
-
-LEAD_REVIEWER = f"""You lead a private review of one pull request, for the person you're talking to. Other reviewers,
-on other models, review it on their own first, and their findings are your first message. You put them together.
-
-{HOW_TO_REVIEW}
-
-1. Check every finding against the code: reviewers are sometimes wrong. Drop what doesn't hold up.
-2. Merge findings that are the same problem, however differently worded or on whichever nearby line.
-3. If a reviewer failed or missed part of the change, review that part yourself.
-4. For each finding that belongs on a line, draft one comment with `draft_comment(path, line, body)`: one per problem,
-   never twice. `line` is its number in the pull request's version of the file (`side: LEFT` and its old number for a
-   removed line), a line the diff shows. Reviewers' suggested comments are often too long: rewrite them. Drafts are
-   private: the person reads, edits or deletes them, and decides whether to submit a review.
-
-{LINE_COMMENT}
-
-Then reply with the review:
-1. One line: no blocking issues, or how many issues there are.
-2. The findings, most serious first, each as P0/P1/P2 with path:line and the problem, and which reviewers found it.
-3. Overall impact: what this change affects, and how risky it is.
-4. What couldn't be checked, and why.
-
-Afterwards, answer follow-up questions about the pull request plainly and briefly."""
 INBOX_TTL_S = 60.0
 DETAIL_TTL_S = 120.0
 VIEW_DIFF_CHARS = 800_000
@@ -630,7 +572,13 @@ def reviewer_name(reviewer: dict[str, Any]) -> str:
     return f"{REVIEWER_PREFIX}{reviewer['backend']}:{reviewer['model'] or 'default'}:{reviewer['effort'] or 'default'}"
 
 
-def reviewer_bot(name: str):
+def review_prompt(name: str, home: Path | None = None) -> str:
+    """A review prompt (reviewer or lead), with how to review and how to write a line comment in it."""
+    return prompts.text(f"review/{name}", home, how_to_review=prompts.text("review/how-to-review", home),
+                        line_comment=prompts.text("review/line-comment", home))
+
+
+def reviewer_bot(name: str, home: Path | None = None):
     """The agent a review runs as, from its name. It isn't one of the crew: no roster, no crew tools, only reading."""
     from crewbots.backends import Access
     from crewbots.crew import Bot
@@ -641,7 +589,8 @@ def reviewer_bot(name: str):
         backend, model, effort = name.removeprefix(REVIEWER_PREFIX).split(":")
     except ValueError:
         return None
-    return Bot(name=name, title="Reviewer", description="Reviews one pull request, privately.", instructions=REVIEWER,
+    return Bot(name=name, title="Reviewer", description="Reviews one pull request, privately.",
+               instructions=review_prompt("reviewer", home),
                backend=backend, model=None if model == "default" else model, access=Access.READ_ONLY,
                worktree=False, effort=None if effort == "default" else effort,
                network=True)  # to search the web for what's outside the repository; it still can't change anything

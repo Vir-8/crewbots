@@ -1,0 +1,1 @@
+Give your verdict, when your task is a review. The verdict is what counts, not your prose. verdict: pass or fail. summary: one or two sentences. findings: one per problem, each with location (file:line), problem, and scenario (the input or state, and the wrong result). A pass with remaining risks is still a pass; list the risks as findings.

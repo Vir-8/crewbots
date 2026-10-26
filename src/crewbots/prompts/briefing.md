@@ -1,0 +1,1 @@
+This conversation is getting long, so it will continue in a fresh session that has none of it. Write the briefing that session will start from: the goal, what's been decided and why, what's done, the current state (files, branches, task ids), what's open, and what comes next. Be complete but brief. Reply with only the briefing, and don't use any tools.

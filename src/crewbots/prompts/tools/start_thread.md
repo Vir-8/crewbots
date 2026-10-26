@@ -1,0 +1,1 @@
+Open a thread for a piece of real work (several steps, files, anything that takes a while), so the conversation you're in stays a conversation. You work the thread yourself, in parallel. title: a few words. goal: the outcome, the context, and what done means; it must stand alone. Its result comes back here.

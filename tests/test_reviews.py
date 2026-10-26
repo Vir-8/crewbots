@@ -175,7 +175,7 @@ def test_a_pull_request_comes_to_a_reviewer_through_its_tools_a_part_at_a_time(t
 
 
 def test_one_review_the_reviewers_findings_put_together_by_the_lead(tmp_path):
-    from crewbots.reviews import LEAD_REVIEWER
+    from crewbots.reviews import review_prompt
 
     origin, head = origin_with_pr(tmp_path)
     gh = FakeGh()
@@ -219,7 +219,7 @@ def test_one_review_the_reviewers_findings_put_together_by_the_lead(tmp_path):
         client.portal.call(gate.set)  # on the app's own loop
         until(lambda: len(claude.specs) == 3)
         findings, follow_up = claude.specs[1], claude.specs[2]
-        assert findings.system_prompt == LEAD_REVIEWER and findings.cwd == mine.cwd
+        assert findings.system_prompt == review_prompt("lead") and findings.cwd == mine.cwd
         assert findings.prompt.startswith("The reviewers have finished: Review vir/app#7: Add CSV export.")
         assert "## claude sonnet, high effort\n\ndid: Review" in findings.prompt
         assert "## codex (its default model), high effort" in findings.prompt

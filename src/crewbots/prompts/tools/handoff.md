@@ -1,0 +1,1 @@
+Hand your finished work back, as the HANDOFF in team/protocol.md. Call it once, when you are done. done: what you completed. output: file paths, branches or links to the output. open: anything unfinished or uncertain. needs: what the next step needs, from whoever picks this up.

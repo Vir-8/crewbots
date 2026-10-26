@@ -1,0 +1,1 @@
+Keep a note for next time: something that will still be true and useful in later tasks (what the user prefers, a decision and why, a pitfall here, how something is done). One fact per note. title: short, names the fact. body: the fact, and why it matters. shared: true to keep it for the whole crew, not just you. The same title again updates the note.

@@ -7,12 +7,13 @@ import pytest
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
 from fakes import FakeBackend, make_crew, wait_until
 
+from crewbots import prompts
 from crewbots import runner as runner_module
 from crewbots.backends.base import claude_retry, codex_retry
 from crewbots.backends.claude_sdk import SdkMapper
 from crewbots.backends.codex_app_server import AppServerParser
 from crewbots.events import Done, Notice, RateLimit, SessionStarted, Text
-from crewbots.runner import RETRY_PROMPT, Runner
+from crewbots.runner import Runner
 from crewbots.store import Status, Store
 
 
@@ -54,7 +55,7 @@ async def test_a_turn_that_failed_for_a_passing_reason_carries_on_where_it_stopp
 
     assert store.get_task(task.id).status is Status.IDLE and store.get_task(task.id).result == "done"
     assert [s.prompt for s in backend.specs] == [
-        "build the export", RETRY_PROMPT.format(error="API Error: 529 overloaded")]
+        "build the export", prompts.text("retry", error="API Error: 529 overloaded")]
     assert backend.specs[1].resume_session_id == "s-1"
     notices = [e.data["message"] for e in store.events(task.id) if e.kind == "notice"]
     assert notices == ["Trying again in 0s (try 2 of 4)."]

@@ -14,7 +14,7 @@ import httpx
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
-from crewbots.crew_tools import BY_NAME, recall_text
+from crewbots.crew_tools import describe, recall_text
 
 INSTRUCTIONS = "Tools for working in a crewbots crew: hand work back, escalate decisions, and (for coordinators) delegate."
 
@@ -37,41 +37,41 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
             raise CrewError(f"crewbots refused this ({response.status_code}): {detail}")
         return response.json()
 
-    @server.tool(description=BY_NAME["handoff"].description)
+    @server.tool(description=describe("handoff"))
     def handoff(done: str, output: list[str] | None = None, open: str = "", needs: str = "") -> str:
         call("POST", "/bot/handoff", {"done": done, "output": output or [], "open": open, "needs": needs})
         return "Handoff recorded. End your reply with a short summary."
 
-    @server.tool(description=BY_NAME["escalate"].description)
+    @server.tool(description=describe("escalate"))
     def escalate(question: str) -> str:
         call("POST", "/bot/escalate", {"question": question})
         return "Escalated. End your turn now; the answer will arrive as your next message."
 
-    @server.tool(description=BY_NAME["review"].description)
+    @server.tool(description=describe("review"))
     def review(verdict: str, summary: str, findings: list[dict[str, str]] | None = None) -> str:
         call("POST", "/bot/review", {"verdict": verdict.lower(), "summary": summary, "findings": findings or []})
         return "Verdict recorded. End your reply with a short summary."
 
-    @server.tool(description=BY_NAME["remember"].description)
+    @server.tool(description=describe("remember"))
     def remember(title: str, body: str, shared: bool = False) -> str:
         note = call("POST", "/bot/remember", {"title": title, "body": body, "shared": shared})
         return f"Remembered: {note['title']} ({note['path']})."
 
-    @server.tool(description=BY_NAME["forget"].description)
+    @server.tool(description=describe("forget"))
     def forget(name: str, shared: bool = False) -> str:
         note = call("POST", "/bot/forget", {"name": name, "shared": shared})
         return f"Forgot: {note['title']}."
 
-    @server.tool(description=BY_NAME["recall"].description)
+    @server.tool(description=describe("recall"))
     def recall(query: str) -> str:
         return recall_text(call("POST", "/bot/recall", {"query": query}))
 
-    @server.tool(description=BY_NAME["start_thread"].description)
+    @server.tool(description=describe("start_thread"))
     def start_thread(title: str, goal: str) -> str:
         thread = call("POST", "/bot/start_thread", {"title": title, "goal": goal})
         return f"Opened thread {thread['id']}: {thread['title']}. Its result comes back here when it's done."
 
-    @server.tool(description=BY_NAME["post"].description)
+    @server.tool(description=describe("post"))
     def post(text: str, room: str | None = None) -> str:
         message = call("POST", "/bot/post", {"text": text, "room": room})
         return f"Posted in the group chat ({message['room_id']})."
@@ -79,7 +79,7 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
     if not can_delegate:
         return server
 
-    @server.tool(description=BY_NAME["add_bot"].description)
+    @server.tool(description=describe("add_bot"))
     def add_bot(name: str, title: str, description: str, instructions: str, display_name: str | None = None,
                 backend: str | None = None, model: str | None = None, effort: str | None = None,
                 access: str | None = None, network: bool | None = None, can_delegate: bool = False,
@@ -91,21 +91,21 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
         return (f"Added {bot['label']} (@{bot['name']}), {bot['title']}, to the crew. It's in the roster now: "
                 "@mention it in a group chat to bring it in.")
 
-    @server.tool(description=BY_NAME["propose_merge"].description)
+    @server.tool(description=describe("propose_merge"))
     def propose_merge(task_id: str, summary: str) -> str:
         call("POST", "/bot/propose_merge", {"task_id": task_id, "summary": summary})
         return f"Proposed {task_id} to the user for merging."
 
-    @server.tool(description=BY_NAME["delegate"].description)
+    @server.tool(description=describe("delegate"))
     def delegate(bot: str, goal: str, workspace: str | None = None, review_of: str | None = None) -> str:
         task = call("POST", "/bot/delegate", {"bot": bot, "goal": goal, "workspace": workspace, "review_of": review_of})
         return f"Delegated {task['id']} to {task['bot']}: {task['title']}"
 
-    @server.tool(description=BY_NAME["tasks"].description)
+    @server.tool(description=describe("tasks"))
     def tasks() -> str:
         return json.dumps(call("GET", "/bot/tasks"), indent=1)
 
-    @server.tool(description=BY_NAME["message"].description)
+    @server.tool(description=describe("message"))
     def message(task_id: str, text: str) -> str:
         result = call("POST", "/bot/message", {"task_id": task_id, "text": text})
         return f"Sent to {result['id']} ({result['status']})."

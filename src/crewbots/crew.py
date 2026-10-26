@@ -16,9 +16,9 @@ from typing import Any
 
 import yaml
 
-from crewbots import paths
+from crewbots import paths, prompts
 from crewbots.backends import BACKENDS, Access, McpServer
-from crewbots.memory import MEMORY_GUIDE, Memory
+from crewbots.memory import Memory
 
 CARD_FIELDS = {
     "name", "title", "description", "backend", "model", "access", "workspace", "worktree", "timeout", "mcp",
@@ -35,52 +35,6 @@ AVATAR_SHAPES = ("circle", "drop", "square", "flower", "hex")
 BUDGET_WINDOWS = {"day": timedelta(days=1), "week": timedelta(days=7)}
 
 NO_REPLY = "NO_REPLY"  # a bot's whole reply in a group chat when it has nothing to add
-CHAT_SETTING = (
-    "This is your ongoing chat with the user. It doesn't end: it's the same conversation tomorrow. Answer here, and "
-    "keep it conversational. For real work, open a thread with start_thread; its result comes back here. Messages "
-    "that start with [routine: name] come from the crew's routines, not from the user typing."
-)
-SEAT_SETTING = (
-    "This is the group chat {title!r}, with the user and {others}. {lead} New messages reach you as [name]: text. "
-    "Your final message is posted to the room as yours, so write it to the room. If you have nothing to add, reply "
-    "with exactly " + NO_REPLY + ". @mention a teammate by name to bring them in."
-)
-
-CREW_TOOLS = """# Working in the crew
-
-You have crewbots tools, from the MCP server named crewbots:
-
-- `handoff(done, output, open, needs)`: call it once when you finish, as the HANDOFF in team/protocol.md. `output` lists
-  file paths, branches or links. Then end your reply with a short summary.
-- `escalate(question)`: when you need a decision that is not yours to make (team/rules.md). Ask one clear question,
-  then end your turn. The answer arrives as your next message.
-- `review(verdict, summary, findings)`: only when your task is a review. Your verdict is what counts, not your prose.
-- `start_thread(title, goal)`: open a thread for a piece of real work (several steps, files, anything that takes a
-  while), so the conversation you're in stays a conversation. You work the thread in parallel; when it's done, its
-  result comes back here. Write the goal so it stands alone.
-- `post(text, room?)`: say something in a group chat, by default the crew's own. @mention a teammate by name to bring
-  them in; that's how you ask another bot for something."""
-
-DELEGATION_TOOLS = """You can delegate. Only you assign work, and every task has exactly one owner:
-
-- `delegate(bot, goal, workspace?, review_of?)`: give one task to one bot. Write the goal so it stands alone: the
-  outcome, the context the bot needs, and what done means. To have work reviewed, pass `review_of` with the task id of
-  the work, so the reviewer reads that task's worktree.
-- `tasks()`: the tasks you delegated, with their status, handoffs and results. For looking something up, never for
-  waiting: results come to you.
-- `message(task_id, text)`: answer a task's escalation, or send it review objections to fix.
-- `add_bot(name, title, description, instructions, ...)`: when the user asks for a new bot, add it, with a role card
-  you write. It gets all the crew's MCP servers unless you name some, and network only if you have it. You can't
-  remove or change bots.
-- `propose_merge(task_id, summary)`: put approved work in front of the user to merge. You never merge; the user does.
-  Uncommitted changes in the worktree are expected: crewbots commits them when the user merges.
-
-Reviews are counted in code. A round is one reviewed version of the work. After three rounds that still fail, crewbots
-stops further review rounds and revisions, and you report to the user instead. Work can be proposed for merging only
-when every review of its current version passed.
-
-Delegated tasks run in parallel, so delegate independent work together. Do not wait or poll after delegating: end your
-turn. When all of your running tasks have finished, or one escalates, their results arrive as your next message."""
 
 
 @dataclass(frozen=True)
@@ -182,7 +136,8 @@ class Crew:
             f"You are {bot.label}, the {bot.title} of a crew of AI agents run by crewbots. Your handle is @{bot.name}.",
             f"# Your role card\n\n{bot.instructions.strip()}",
             f"# The crew\n\n{roster}",
-            CREW_TOOLS + ("\n\n" + DELEGATION_TOOLS if bot.can_delegate else ""),
+            prompts.text("crew-tools", self.home)
+            + ("\n\n" + prompts.text("delegation", self.home) if bot.can_delegate else ""),
         ]
         if skills := self.skills_for(bot):
             listing = "\n".join(f"- {s.name}: {s.description} ({s.path})" for s in skills)
@@ -192,7 +147,7 @@ class Crew:
             )
         parts += [f"# team/{name}\n\n{text.strip()}" for name, text in self.team_files.items()]
         notes = self.memory.prompt(bot.name)
-        parts.append(MEMORY_GUIDE + (f"\n\n{notes}" if notes else "\n\nNo notes yet."))
+        parts.append(prompts.text("memory-guide", self.home) + (f"\n\n{notes}" if notes else "\n\nNo notes yet."))
         parts.append("# This task\n\n" + (
             setting if setting else
             f"This task was delegated to you by {delegated_by}; your handoff goes back to them."

@@ -5,12 +5,15 @@ import pytest
 from fakes import ScriptedCrew, bot, make_crew, wait_until
 from test_sessions import SessionBackend
 
+from crewbots import prompts
 from crewbots.crew import Crew
 from crewbots.crew_tools import CrewTools, ToolRefused
 from crewbots.events import Done, Text, Usage
 from crewbots.memory import INDEX_LIMIT, Memory, MemoryError
-from crewbots.runner import BRIEFING_PROMPT, Runner
+from crewbots.runner import Runner
 from crewbots.store import Store
+
+BRIEFING = prompts.text("briefing")
 
 
 @pytest.fixture
@@ -181,7 +184,7 @@ class FullSession:
 
     async def turn(self, prompt):
         self.turns.append(prompt)
-        if prompt == BRIEFING_PROMPT:
+        if prompt == BRIEFING:
             yield Usage(input_tokens=100, output_tokens=50)
             yield Done(final_text=self.briefing)
         else:
@@ -221,7 +224,7 @@ async def test_a_long_conversation_continues_in_a_fresh_session_from_a_briefing(
     await wait_until(idle(store, runner, task.id))
 
     first = backend.opened[0]
-    assert first.turns == ["first", BRIEFING_PROMPT] and first.closed
+    assert first.turns == ["first", BRIEFING] and first.closed
     task = store.get_task(task.id)
     assert task.briefing == "Goal: X. Decided: Y. Next: Z." and task.session_id is None
     assert task.result == "did: first"  # the briefing turn never replaces the reply

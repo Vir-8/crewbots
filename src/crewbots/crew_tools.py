@@ -6,7 +6,10 @@ API with a session token. Either way the runner decides what the task may do.
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+from crewbots import prompts
 
 if TYPE_CHECKING:
     from crewbots.runner import Runner
@@ -20,6 +23,12 @@ class ToolDef:
     coordinator_only: bool = False
 
 
+@dataclass(frozen=True)
+class Spec:
+    schema: dict[str, Any]  # JSON schema of the arguments
+    coordinator_only: bool = False
+
+
 def _object(properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
     return {"type": "object", "properties": properties, "required": required}
 
@@ -27,123 +36,44 @@ def _object(properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
 STRING = {"type": "string"}
 STRINGS = {"type": "array", "items": {"type": "string"}}
 
-TOOLS = [
-    ToolDef(
-        "handoff",
-        "Hand your finished work back, as the HANDOFF in team/protocol.md. Call it once, when you are done. "
-        "done: what you completed. output: file paths, branches or links to the output. open: anything unfinished or "
-        "uncertain. needs: what the next step needs, from whoever picks this up.",
-        _object({"done": STRING, "output": STRINGS, "open": STRING, "needs": STRING}, ["done"]),
-    ),
-    ToolDef(
-        "escalate",
-        "Ask for a decision that is not yours to make (team/rules.md). Ask one clear question, then end your turn: "
-        "the answer arrives as your next message.",
-        _object({"question": STRING}, ["question"]),
-    ),
-    ToolDef(
-        "review",
-        "Give your verdict, when your task is a review. The verdict is what counts, not your prose. verdict: pass or "
-        "fail. summary: one or two sentences. findings: one per problem, each with location (file:line), problem, and "
-        "scenario (the input or state, and the wrong result). A pass with remaining risks is still a pass; list the "
-        "risks as findings.",
-        _object({
-            "verdict": {"type": "string", "enum": ["pass", "fail"]},
-            "summary": STRING,
-            "findings": {"type": "array", "items": _object(
-                {"location": STRING, "problem": STRING, "scenario": STRING}, ["location", "problem"])},
-        }, ["verdict", "summary"]),
-    ),
-    ToolDef(
-        "remember",
-        "Keep a note for next time: something that will still be true and useful in later tasks (what the user "
-        "prefers, a decision and why, a pitfall here, how something is done). One fact per note. title: short, names "
-        "the fact. body: the fact, and why it matters. shared: true to keep it for the whole crew, not just you. The "
-        "same title again updates the note.",
-        _object({"title": STRING, "body": STRING, "shared": {"type": "boolean"}}, ["title", "body"]),
-    ),
-    ToolDef(
-        "forget",
-        "Remove a note that's wrong or out of date. name: the note's title or file name. shared: true for a crew note.",
-        _object({"name": STRING, "shared": {"type": "boolean"}}, ["name"]),
-    ),
-    ToolDef(
-        "recall",
-        "Search everything the crew has said and decided (messages, replies, handoffs, reviews, questions) in earlier "
-        "tasks. query: a few words. Results are the best matches, with task ids, bots and dates.",
-        _object({"query": STRING}, ["query"]),
-    ),
-    ToolDef(
-        "start_thread",
-        "Open a thread for a piece of real work (several steps, files, anything that takes a while), so the "
-        "conversation you're in stays a conversation. You work the thread yourself, in parallel. title: a few words. "
-        "goal: the outcome, the context, and what done means; it must stand alone. Its result comes back here.",
-        _object({"title": STRING, "goal": STRING}, ["title", "goal"]),
-    ),
-    ToolDef(
-        "post",
-        "Say something in a group chat: by default the crew's own, with every bot in it, or the one you're in. "
-        "@mention a teammate by name to bring them in; that's how you ask another bot for something, and their reply "
-        "comes in the same chat. room: a group chat's id, if not the default.",
-        _object({"text": STRING, "room": STRING}, ["text"]),
-    ),
-    ToolDef(
-        "add_bot",
-        "Add a new bot to the crew, when the user asks for one. name: its handle (lowercase letters, digits and dashes), "
-        "which can't be taken. title and description: what it is, a line each; the description is how the crew routes "
-        "work to it. instructions: its role card, in markdown: ## Mission, ## Owns, ## Does not own, ## Done means. "
-        "Optional: display_name, backend (claude or codex), model, effort, access (read_only or workspace_write), network "
-        "(true or false), can_delegate, mcp (names of the crew's MCP servers; leave out for all of them), skills (names; "
-        "leave out for all of them). Network only if you have it yourself. Bots can't be removed or changed this way: "
-        "that's the user's, in the app.",
-        _object({"name": STRING, "title": STRING, "description": STRING, "instructions": STRING, "display_name": STRING,
-                 "backend": {"type": "string", "enum": ["claude", "codex"]}, "model": STRING, "effort": STRING,
-                 "access": {"type": "string", "enum": ["read_only", "workspace_write"]},
-                 "network": {"type": "boolean"}, "can_delegate": {"type": "boolean"}, "mcp": STRINGS, "skills": STRINGS},
-                ["name", "title", "description", "instructions"]),
-        coordinator_only=True,
-    ),
-    ToolDef(
-        "delegate",
-        "Give one task to one bot in the crew. It starts at once and runs in parallel with other delegated tasks. "
-        "goal: the outcome, the context the bot needs, and what done means; it must stand alone. workspace: a folder "
-        "or repo to work in, if not this task's. review_of: the id of a task whose work this one reviews; the reviewer "
-        "then works in that task's worktree. After delegating, end your turn: results arrive as your next message once "
-        "none of your tasks are running.",
-        _object({"bot": STRING, "goal": STRING, "workspace": STRING, "review_of": STRING}, ["bot", "goal"]),
-        coordinator_only=True,
-    ),
-    ToolDef(
-        "tasks",
-        "The tasks you delegated: status, worktree, handoff and final message for each. For looking something up, "
-        "never for waiting: results come to you.",
-        _object({}, []),
-        coordinator_only=True,
-    ),
-    ToolDef(
-        "message",
-        "Send a message to a task you delegated: answer its escalation, or send it review objections to fix. Its next "
-        "result comes back to you like the first one.",
-        _object({"task_id": STRING, "text": STRING}, ["task_id", "text"]),
-        coordinator_only=True,
-    ),
-    ToolDef(
-        "propose_merge",
-        "Put approved work in front of the user to merge. Every review of its current version must have passed. You "
-        "never merge; the user does. Uncommitted changes in the worktree are expected: crewbots commits them when the "
-        "user merges. summary: what the change does and how it was verified, for the user deciding whether to merge.",
-        _object({"task_id": STRING, "summary": STRING}, ["task_id", "summary"]),
-        coordinator_only=True,
-    ),
-]
-
-BY_NAME = {t.name: t for t in TOOLS}
+# What each tool takes, and whether only coordinators get it. What it's for, which the bot reads, is a prompt:
+# prompts/tools/<name>.md, which a crew can replace (crewbots.prompts).
+SPECS: dict[str, Spec] = {
+    "handoff": Spec(_object({"done": STRING, "output": STRINGS, "open": STRING, "needs": STRING}, ["done"])),
+    "escalate": Spec(_object({"question": STRING}, ["question"])),
+    "review": Spec(_object({
+        "verdict": {"type": "string", "enum": ["pass", "fail"]},
+        "summary": STRING,
+        "findings": {"type": "array", "items": _object(
+            {"location": STRING, "problem": STRING, "scenario": STRING}, ["location", "problem"])},
+    }, ["verdict", "summary"])),
+    "remember": Spec(_object({"title": STRING, "body": STRING, "shared": {"type": "boolean"}}, ["title", "body"])),
+    "forget": Spec(_object({"name": STRING, "shared": {"type": "boolean"}}, ["name"])),
+    "recall": Spec(_object({"query": STRING}, ["query"])),
+    "start_thread": Spec(_object({"title": STRING, "goal": STRING}, ["title", "goal"])),
+    "post": Spec(_object({"text": STRING, "room": STRING}, ["text"])),
+    "add_bot": Spec(_object(
+        {"name": STRING, "title": STRING, "description": STRING, "instructions": STRING, "display_name": STRING,
+         "backend": {"type": "string", "enum": ["claude", "codex"]}, "model": STRING, "effort": STRING,
+         "access": {"type": "string", "enum": ["read_only", "workspace_write"]},
+         "network": {"type": "boolean"}, "can_delegate": {"type": "boolean"}, "mcp": STRINGS, "skills": STRINGS},
+        ["name", "title", "description", "instructions"]), coordinator_only=True),
+    "delegate": Spec(_object({"bot": STRING, "goal": STRING, "workspace": STRING, "review_of": STRING}, ["bot", "goal"]),
+                     coordinator_only=True),
+    "tasks": Spec(_object({}, []), coordinator_only=True),
+    "message": Spec(_object({"task_id": STRING, "text": STRING}, ["task_id", "text"]), coordinator_only=True),
+    "propose_merge": Spec(_object({"task_id": STRING, "summary": STRING}, ["task_id", "summary"]), coordinator_only=True),
+}
 
 
+def describe(name: str, home: Path | None = None) -> str:
+    """What the crew tool `name` is for, as the bot reads it."""
+    return prompts.text(f"tools/{name}", home)
 
 
-def tools_for(can_delegate: bool) -> list[ToolDef]:
-    return [t for t in TOOLS if can_delegate or not t.coordinator_only]
+def tools_for(can_delegate: bool, home: Path | None = None) -> list[ToolDef]:
+    return [ToolDef(name, describe(name, home), spec.schema, spec.coordinator_only) for name, spec in SPECS.items()
+            if can_delegate or not spec.coordinator_only]
 
 
 class ToolRefused(Exception):
@@ -159,7 +89,7 @@ class CrewTools:
         self.can_delegate = can_delegate
 
     def definitions(self) -> list[ToolDef]:
-        return tools_for(self.can_delegate)
+        return tools_for(self.can_delegate, self.runner.crew.home)
 
     async def call(self, name: str, args: dict[str, Any]) -> str:
         """Runs one tool and returns its result for the bot; raises ToolRefused with the reason it can't."""
@@ -168,7 +98,7 @@ class CrewTools:
         from crewbots.runner import NotAllowed, UnknownBot
         from crewbots.store import Verdict
 
-        tool = BY_NAME.get(name)
+        tool = SPECS.get(name)
         if tool is None or (tool.coordinator_only and not self.can_delegate):
             raise ToolRefused(f"{name} is not one of this bot's crew tools")
         missing = [k for k in tool.schema["required"] if args.get(k) in (None, "")]

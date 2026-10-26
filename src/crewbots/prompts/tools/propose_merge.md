@@ -1,0 +1,1 @@
+Put approved work in front of the user to merge. Every review of its current version must have passed. You never merge; the user does. Uncommitted changes in the worktree are expected: crewbots commits them when the user merges. summary: what the change does and how it was verified, for the user deciding whether to merge.

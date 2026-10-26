@@ -1,0 +1,1 @@
+Your last turn stopped before it finished, because of an error on the way to the model: {error}. Carry on from where you were. Check what you'd already done first, so nothing is done twice; if you had finished, give your answer again.
