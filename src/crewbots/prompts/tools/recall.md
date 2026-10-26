@@ -1,1 +1,1 @@
-Search everything the crew has said and decided (messages, replies, handoffs, reviews, questions) in earlier tasks. query: a few words. Results are the best matches, with task ids, bots and dates.
+Search everything the crew has said and decided (messages, replies, handoffs, reviews, questions) in earlier tasks, and your and the crew's daily logs and notes. query: a few words. Results are the best matches, with task ids, bots and dates, or the log or note they're in.

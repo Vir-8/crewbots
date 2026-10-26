@@ -66,6 +66,10 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
     def recall(query: str) -> str:
         return recall_text(call("POST", "/bot/recall", {"query": query}))
 
+    @server.tool(description=describe("update_state"))
+    def update_state(state: str) -> str:
+        return f"Kept this task's state ({call('POST', '/bot/update_state', {'state': state})['path']})."
+
     @server.tool(description=describe("start_thread"))
     def start_thread(title: str, goal: str) -> str:
         thread = call("POST", "/bot/start_thread", {"title": title, "goal": goal})

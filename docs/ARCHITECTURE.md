@@ -121,6 +121,11 @@ Nothing is hidden: every layer is a file or a SQLite row you can open, edit or d
    - `crew/memory/<bot>/`: a short `MEMORY.md` index plus one note per fact (who you are, preferences, decisions, pitfalls), each with a date and its source task.
    - A `remember(title, body, shared?)` tool writes notes (`shared` puts them in `crew/memory/crew/`, for every bot); a `forget` tool and you can remove them.
    - The index goes into the bot's instructions every run, and notes are read when needed, the same progressive disclosure skills use.
+   - Tiers around the notes (`memory.py`): a short `CORE.md` (yours and the crew's, cut at 6,000 characters) pinned
+     in every session's instructions; a daily log, `daily/YYYY-MM-DD.md`, which gets a line for every handoff and
+     whose last two days a new session starts with; and each task's `state/<task id>.md`, written whole by the bot
+     with `update_state` at milestones and given to any fresh session of that task. `recall` searches the logs and
+     notes as well as the record. Live on Haiku: a new session asked what it finished today answered from the log.
 3. **The crew's record (everything that happened).**
    - SQLite already holds every transcript, handoff, review and decision.
    - An **FTS5** index over it gives bots `recall(query)`, for questions like "what did we decide about auth?", answered with task ids so they can look closer.

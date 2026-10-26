@@ -50,6 +50,7 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
   - Whole skill packs can be dropped in with `crewbots skills add`, and are namespaced (`pstack:tdd`).
 - **Memory.** Every bot can `remember` a fact for later tasks (its own, or `shared` with the crew), `forget` one, and `recall` what the crew said or decided before.
   - Notes are files in `crew/memory/<bot>/notes/`, listed in each bot's instructions, so you can read, edit or delete them.
+  - Around them: a short `CORE.md` pinned in every session, a daily log (a line for each finished task; a new session starts with the last two days), and each task's state, which the bot keeps with `update_state` and a fresh session of the task starts from. `recall` searches the logs and notes too.
   - `recall` searches the whole record with SQLite FTS5, and so does `GET /v1/search?q=`.
   - A conversation that fills 70% of its context window continues in a fresh session, from a briefing the bot
     writes. The window is the role card's `context_window` (200K tokens unless it says otherwise, up to `1m`, or

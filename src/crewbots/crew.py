@@ -18,7 +18,7 @@ import yaml
 
 from crewbots import paths, prompts
 from crewbots.backends import BACKENDS, Access, McpServer
-from crewbots.memory import Memory
+from crewbots.memory import CREW_SCOPE, Memory
 
 CARD_FIELDS = {
     "name", "title", "description", "backend", "model", "access", "workspace", "worktree", "timeout", "mcp",
@@ -135,11 +135,16 @@ class Crew:
         if skills := self.skills_for(bot):
             parts["skills"] = ("Skills", "\n".join(f"- {s.name}: {s.description} ({s.path})" for s in skills))
         parts |= {f"team/{name}": (f"team/{name}", text.strip()) for name, text in self.team_files.items()}
-        parts["notes"] = ("Notes", self.memory.prompt(bot.name) or "No notes yet.")
+        memory = self.memory
+        if core := [f"## {whose}\n\n{text}" for whose, text in (("Yours", memory.core(bot.name)),
+                                                                 ("The crew's", memory.core(CREW_SCOPE))) if text]:
+            parts["core"] = ("Core memory", "\n\n".join(core))
+        parts["notes"] = ("Notes", memory.prompt(bot.name) or "No notes yet.")
         return parts
 
     def system_prompt(self, bot: Bot, delegated_by: str | None = None, reviewing: str | None = None,
-                      briefing: str | None = None, routine: str | None = None, setting: str | None = None) -> str:
+                      briefing: str | None = None, routine: str | None = None, setting: str | None = None,
+                      recent: str | None = None, state: str | None = None) -> str:
         living = self.living_parts(bot)
         # What stays the same for every task of this bot comes first and what changes comes last: the model's prompt
         # cache matches from the start, so a bot's sessions share the cached start, and a new note or a task's own
@@ -158,7 +163,11 @@ class Crew:
                 f"{living['skills'][1]}"
             )
         parts += [f"# {heading}\n\n{text}" for key, (heading, text) in living.items() if key.startswith("team/")]
+        if "core" in living:
+            parts.append(f"# Core memory\n\nWhat matters most, kept short and always here.\n\n{living['core'][1]}")
         parts.append(prompts.text("memory-guide", self.home) + f"\n\n{living['notes'][1]}")
+        if recent:
+            parts.append(f"# Lately\n\nThe last two days' logs, yours and the crew's, as this session began:\n\n{recent}")
         parts.append("# This task\n\n" + (
             setting if setting else
             f"This task was delegated to you by {delegated_by}; your handoff goes back to them. Their goal is a "
@@ -169,6 +178,8 @@ class Crew:
             if routine else "This task comes from the user; your final message is what they read."))
         if reviewing:
             parts.append(f"# This review\n\n{reviewing}")
+        if state:
+            parts.append(f"# Where this task stands\n\nThe state you keep for it with `update_state`:\n\n{state}")
         if briefing:
             parts.append("# Where things stand\n\nThis task's conversation grew long, so it continues in a fresh session. "
                          f"This is the briefing you wrote for it:\n\n{briefing}")

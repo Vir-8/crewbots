@@ -76,7 +76,8 @@ async def test_a_taken_name_is_refused_and_no_tool_removes_or_changes_a_bot(crew
     with pytest.raises(ToolRefused, match="already a bot called engineer"):
         await chief.call("add_bot", {**MARKETING, "name": "engineer"})
     assert runner.crew.bots["engineer"].title == "Engineer"
-    assert not [name for name in SPECS if any(w in name for w in ("remove", "delete", "edit", "update", "change"))]
+    changing = [name for name in SPECS if any(w in name for w in ("remove", "delete", "edit", "update", "change"))]
+    assert changing == ["update_state"]  # which keeps the calling task's own state, and touches no bot
 
 
 async def test_a_card_the_crew_couldnt_load_is_never_left_behind(crewed):

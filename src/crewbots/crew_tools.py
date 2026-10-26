@@ -50,6 +50,7 @@ SPECS: dict[str, Spec] = {
     "remember": Spec(_object({"title": STRING, "body": STRING, "shared": {"type": "boolean"}}, ["title", "body"])),
     "forget": Spec(_object({"name": STRING, "shared": {"type": "boolean"}}, ["name"])),
     "recall": Spec(_object({"query": STRING}, ["query"])),
+    "update_state": Spec(_object({"state": STRING}, ["state"])),
     "start_thread": Spec(_object({"title": STRING, "goal": STRING}, ["title", "goal"])),
     "post": Spec(_object({"text": STRING, "room": STRING}, ["text"])),
     "ask": Spec(_object({"bot": STRING, "question": STRING}, ["bot", "question"])),
@@ -146,6 +147,8 @@ class CrewTools:
                     return f"Forgot: {note.title}."
                 case "recall":
                     return recall_text(r.recall(me, args["query"]))
+                case "update_state":
+                    return f"Kept this task's state ({r.update_state(me, args['state'])})."
                 case "add_bot":
                     added = r.add_bot(me, args)
                     return (f"Added {added.label} (@{added.name}), {added.title}, to the crew. It's in the roster now: "
@@ -178,5 +181,6 @@ class CrewTools:
 def recall_text(hits: list[dict[str, Any]]) -> str:
     if not hits:
         return "Nothing in the crew's record matches that."
-    lines = [f"- {h['task_id']} ({h['bot']}, {h['at'][:10]}, {h['kind']}) {h['title']}: {h['snippet']}" for h in hits]
+    lines = [f"- {h['task_id']} ({h['bot']}, {h['at'][:10]}, {h['kind']}) {h['title']}: {h['snippet']}" if h["task_id"]
+             else f"- {h['kind']} ({h['bot']}{', ' + h['at'] if h['at'] else ''}) {h['title']}: {h['snippet']}" for h in hits]
     return "\n".join(lines)

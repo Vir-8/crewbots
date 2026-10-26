@@ -71,6 +71,10 @@ class PostBody(BaseModel):
 class Recall(BaseModel):
     query: str
 
+class StateBody(BaseModel):
+    state: str
+
+
 class SearchHit(BaseModel):
     task_id: str
     kind: str

@@ -1,5 +1,6 @@
 """Memory: notes a bot keeps across tasks, recall over the crew's record, and rolling long conversations over."""
 
+from datetime import datetime, timedelta
 
 import pytest
 from fakes import ScriptedCrew, bot, make_crew, wait_until
@@ -9,7 +10,7 @@ from crewbots import prompts
 from crewbots.crew import Crew
 from crewbots.crew_tools import CrewTools, ToolRefused
 from crewbots.events import Done, Text, Usage
-from crewbots.memory import INDEX_LIMIT, Memory, MemoryError
+from crewbots.memory import CORE_CHARS, INDEX_LIMIT, STATE_CHARS, Memory, MemoryError
 from crewbots.runner import Runner
 from crewbots.store import Store
 
@@ -121,6 +122,77 @@ async def test_bots_remember_forget_and_recall_through_their_tools(store, tmp_pa
     with pytest.raises(ToolRefused, match="no note named"):
         await tools.call("forget", {"name": "Login tests", "shared": True})
     assert [e.data["action"] for e in store.events(now.id) if e.kind == "memory"] == ["remember", "forget"]
+
+
+# Core memory, daily logs and a task's state
+
+
+def test_core_memory_is_pinned_and_kept_short(memory, tmp_path):
+    assert memory.core("engineer") is None
+    (tmp_path / "memory" / "engineer").mkdir(parents=True)
+    (tmp_path / "memory" / "engineer" / "CORE.md").write_text("The user ships on Tuesdays.\n" + "x" * CORE_CHARS)
+
+    core = memory.core("engineer")
+    assert core.startswith("The user ships on Tuesdays.") and len(core) == CORE_CHARS + 2 and core.endswith("\n…")
+
+
+def test_the_daily_log_gets_a_line_at_a_time_and_a_session_sees_two_days(memory, tmp_path):
+    memory.log("engineer", "t_1 Add CSV export: done,\n with tests")
+    memory.log("engineer", "t_2 Fix login: done")
+    today = datetime.now().astimezone().date()
+    yesterday = (today - timedelta(days=1)).isoformat()
+    folder = tmp_path / "memory" / "engineer" / "daily"
+    (folder / f"{yesterday}.md").write_text(f"# {yesterday}\n\n- 17:00 t_0 Plan the export: done\n")
+    (folder / f"{(today - timedelta(days=2)).isoformat()}.md").write_text("# older\n\n- 09:00 too old\n")
+
+    log = (folder / f"{today.isoformat()}.md").read_text().splitlines()
+    assert log[0] == f"# {today.isoformat()}" and log[2].endswith("t_1 Add CSV export: done, with tests")
+    recent = memory.recent("engineer")
+    assert recent.index("Plan the export") < recent.index("Add CSV export") and "too old" not in recent
+
+
+def test_a_tasks_state_is_written_whole_and_kept_short(memory):
+    memory.set_state("engineer", "t_0123456789", "Goal: CSV export.\nPR: acme/web#412")
+    memory.set_state("engineer", "t_0123456789", "Goal: CSV export.\nPR: acme/web#413")
+    assert memory.state("engineer", "t_0123456789") == "Goal: CSV export.\nPR: acme/web#413"
+    with pytest.raises(MemoryError, match="under"):
+        memory.set_state("engineer", "t_0123456789", "x" * (STATE_CHARS + 1))
+    with pytest.raises(MemoryError, match="bad task id"):
+        memory.set_state("engineer", "../escape", "x")
+
+
+def test_logs_and_notes_are_searched_all_words_first(memory):
+    memory.log("engineer", "t_1 Add CSV export: done")
+    memory.log("engineer", "t_2 Export to PDF: done")
+    memory.remember("crew", "Exports", "CSV exports go through the reports API.", "t_1")
+
+    both = memory.search(["engineer", "crew"], "csv export")  # the PDF line has only one of the words
+    assert [(h["kind"], h["text"]) for h in both] == [
+        ("log", both[0]["text"]), ("note", "CSV exports go through the reports API.")]
+    assert both[0]["text"].endswith("t_1 Add CSV export: done")
+    assert [h["text"] for h in memory.search(["engineer"], "pdf invoices")][0].endswith("Export to PDF: done")
+    assert memory.search(["engineer"], "a") == []
+
+
+async def test_sessions_start_from_core_logs_and_state_and_bots_keep_state(store, tmp_path):
+    crew = ScriptedCrew(store, tmp_path, bot("engineer"))
+    (tmp_path / "memory" / "crew").mkdir(parents=True)
+    (tmp_path / "memory" / "crew" / "CORE.md").write_text("Ship on Tuesdays.")
+    task = crew.runner.submit("engineer", "start")
+    await wait_until(lambda: not crew.runner.running())
+    tools = CrewTools(crew.runner, task.id, can_delegate=False)
+    assert "Kept this task's state" in await tools.call("update_state", {"state": "Goal: CSV export. PR acme/web#412"})
+    crew.runner.handoff(task.id, "Added the export", [], "the PDF one", "")
+    store.update_task(task.id, session_id=None)  # as after a rollover: a fresh session
+    crew.runner.send(task.id, "carry on")
+    await wait_until(lambda: len(crew.specs_for("engineer")) == 2 and not crew.runner.running())
+
+    first, fresh = (s.system_prompt for s in crew.specs_for("engineer"))
+    assert "# Core memory" in first and "## The crew's\n\nShip on Tuesdays." in first
+    assert "# Where this task stands" not in first and "# Lately" not in first
+    assert "Goal: CSV export. PR acme/web#412" in fresh and f"{task.id} start: Added the export Open: the PDF one" in fresh
+    hits = await tools.call("recall", {"query": "export pdf"})
+    assert "log (engineer" in hits and "Added the export" in hits
 
 
 # Recall

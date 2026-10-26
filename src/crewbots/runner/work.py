@@ -30,7 +30,8 @@ class Work:
         return note
 
     def recall(self, task_id: str, query: str, limit: int = 8) -> list[dict[str, Any]]:
-        """The best matches in the crew's record, one per task, leaving out the asking task's own conversation."""
+        """The best matches in the crew's record, one per task, leaving out the asking task's own conversation; then
+        lines from the bot's and the crew's daily logs and notes."""
         hits, seen = [], set()
         for hit in self.store.search(query, limit=limit * 4, exclude_task=task_id):
             if hit["task_id"] not in seen:
@@ -38,7 +39,21 @@ class Work:
                 hits.append(hit)
             if len(hits) == limit:
                 break
-        return hits
+        bot = self.store.get_task(task_id).bot
+        return hits + [{"task_id": "", "kind": m["kind"], "at": m["day"], "snippet": m["text"], "bot": m["scope"],
+                        "title": m["path"]} for m in self.crew.memory.search([bot, CREW_SCOPE], query)]
+
+    def update_state(self, task_id: str, state: str) -> Path:
+        """The `update_state` tool: where this task stands, whole, for a fresh session of it to start from."""
+        task = self.store.get_task(task_id)
+        path = self.crew.memory.set_state(task.bot, task_id, state)
+        self._record(task_id, kind="memory", data={"action": "state", "scope": task.bot, "title": "this task's state"})
+        return path
+
+    def _recent(self, bot: str) -> str | None:
+        """The bot's and the crew's daily logs for the last two days, for a session to start with."""
+        logs = [(whose, self.crew.memory.recent(scope)) for whose, scope in (("Yours", bot), ("The crew's", CREW_SCOPE))]
+        return "\n\n".join(f"## {whose}\n\n{text}" for whose, text in logs if text) or None
 
     def propose_merge(self, parent_id: str, task_id: str, summary: str) -> Task:
         """A coordinator puts approved work in front of the user. Only the user merges."""
@@ -89,6 +104,8 @@ class Work:
         task = self.store.get_task(task_id)
         handoff = self.store.add_handoff(task_id, task.bot, done, output, open, needs)
         self._record(task_id, kind="handoff", data=handoff.to_json())
+        self.crew.memory.log(task.bot, f"{task_id} {task.title}: {_short(done, 300)}"
+                             + (f" Open: {_short(open, 200)}" if open.strip() else ""))
         return handoff
 
     def escalate(self, task_id: str, question: str) -> None:
@@ -102,3 +119,8 @@ class Work:
                 f"{task.bot} escalated on task {task_id} ({task.title}):\n\n{question}\n\n"
                 f"Answer with message(task_id={task_id!r}, text=...), or escalate it to the user if the decision "
                 "is theirs."))
+
+
+def _short(text: str, chars: int) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= chars else text[:chars - 1] + "…"

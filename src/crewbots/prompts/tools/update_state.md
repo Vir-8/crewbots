@@ -1,0 +1,1 @@
+Keep where this task stands, for you to start from if this conversation is compacted or starts afresh: its goal, the decisions made and by whom, what's done, the open threads, and the exact ids (pull requests, commits, task ids, file paths). Write it whole each time: it replaces the last. Update it at milestones, not every step.

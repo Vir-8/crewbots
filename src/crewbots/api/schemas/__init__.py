@@ -16,6 +16,7 @@ from crewbots.api.schemas.bot import (
     Remember,
     ReviewBody,
     SearchHit,
+    StateBody,
     ThreadBody,
 )
 from crewbots.api.schemas.bots import (
@@ -209,6 +210,7 @@ __all__ = [
     "RoutineOut",
     "RoutinesOut",
     "SearchHit",
+    "StateBody",
     "SkillOut",
     "StarterOut",
     "Streak",

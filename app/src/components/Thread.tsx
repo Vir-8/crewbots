@@ -145,7 +145,7 @@ function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>
         out.push({
           kind: "line",
           id: e.id,
-          text: `${d.action === "remember" ? "Remembered" : "Forgot"}${d.scope === "crew" ? " for the crew" : ""}: ${d.title}`,
+          text: d.action === "state" ? "Kept this task's state" : `${d.action === "remember" ? "Remembered" : "Forgot"}${d.scope === "crew" ? " for the crew" : ""}: ${d.title}`,
           icon: "check",
         });
         break;

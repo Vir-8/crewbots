@@ -21,6 +21,7 @@ from crewbots.api.schemas import (
     ReviewBody,
     RoomOut,
     SearchHit,
+    StateBody,
     ThreadBody,
 )
 from crewbots.crew_tools import ToolRefused
@@ -81,6 +82,10 @@ def routes(c: Context) -> APIRouter:
     async def bot_forget(request: Request, body: Forget):
         note = runner.forget(request.state.task.id, body.name, shared=body.shared)
         return {"title": note.title}
+
+    @v1.post("/bot/update_state")
+    async def bot_update_state(request: Request, body: StateBody):
+        return {"path": str(runner.update_state(request.state.task.id, body.state))}
 
     @v1.post("/bot/recall", response_model=list[SearchHit])
     async def bot_recall(request: Request, body: Recall):

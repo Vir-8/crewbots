@@ -8,5 +8,10 @@ the crew, and read a note's file when it bears on the task.
   title. Not task progress (that's the handoff) and not anything a file in the repo already says. `shared: true` puts
   it in the crew's notes, for every bot. Remembering the same title again updates that note.
 - `forget(name, shared?)`: remove a note that's wrong or out of date.
-- `recall(query)`: search everything the crew has done (messages, replies, handoffs, reviews, questions) for what was
-  said or decided before. Results carry task ids.
+- `recall(query)`: search everything the crew has done (messages, replies, handoffs, reviews, questions), and your
+  and the crew's daily logs and notes, for what was said or decided before. Results carry task ids or file paths.
+- `update_state(state)`: keep where this task stands (goal, decisions, open threads, exact ids), whole, at
+  milestones. A fresh session of this task starts from it.
+
+Your core memory, if you have one, is what matters most, kept short. Your daily log gets a line for each task you
+finish; a new session starts with the last two days of it.

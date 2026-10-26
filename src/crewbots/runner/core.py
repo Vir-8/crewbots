@@ -440,7 +440,9 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds):
             access=Access.READ_ONLY if task.kind == "ask" else bot.access,  # a question is answered, not worked on
             system_prompt=self.crew.system_prompt(bot, delegated_by=task.created_by if task.parent_id else None,
                                                   reviewing=self._review_brief(task), briefing=task.briefing,
-                                                  routine=task.routine, setting=self._setting(task)),
+                                                  routine=task.routine, setting=self._setting(task),
+                                                  recent=self._recent(bot.name),
+                                                  state=self.crew.memory.state(bot.name, task.id)),
             resume_session_id=task.session_id,
             mcp_servers={**bot.mcp, **({} if in_process else self._crew_tools(token, bot))},
             crew=CrewTools(self, task.id, bot.can_delegate) if in_process else None,
