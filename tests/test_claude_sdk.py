@@ -9,6 +9,7 @@ from claude_agent_sdk import (
     AssistantMessage,
     ResultMessage,
     SystemMessage,
+    TaskNotificationMessage,
     TextBlock,
     ToolResultBlock,
     ToolUseBlock,
@@ -153,6 +154,33 @@ def test_sdk_messages_become_the_common_events():
     ]
 
 
+def notified():
+    return TaskNotificationMessage(subtype="task_notification", data={}, task_id="b1", status="completed",
+                                   output_file="", summary="", uuid="u", session_id="s-1")
+
+
+def test_a_turn_claude_code_started_itself_is_not_the_bots_reply():
+    # A background command finished between turns: Claude Code tells the model in a turn of its own first.
+    injected = {"kind": "task-notification", "producer": "session-task"}
+    mapper = SdkMapper()
+    events = [e for m in [notified(), AssistantMessage(content=[TextBlock(text="The command finished.")], model="m"),
+                          result("The command finished.", origin=injected),
+                          AssistantMessage(content=[TextBlock(text="second")], model="m"), result("second")]
+              for e in mapper.feed(m)]
+
+    assert [e for e in events if isinstance(e, Text)] == [Text(text="second")]
+    assert sum(isinstance(e, Usage) for e in events) == 2  # its tokens still count
+    assert [e for e in events if isinstance(e, Done)] == [Done(final_text="second")]
+
+
+def test_a_notification_folded_into_the_turn_still_shows_the_reply():
+    mapper = SdkMapper()
+    events = [e for m in [notified(), AssistantMessage(content=[TextBlock(text="all done")], model="m"),
+                          result("all done")] for e in mapper.feed(m)]
+
+    assert Text(text="all done") in events and events[-1] == Done(final_text="all done")
+
+
 def test_a_failed_result_is_an_error():
     events = SdkMapper().feed(result("", subtype="error_max_turns", is_error=True, errors=["hit the turn limit"]))
 
@@ -208,7 +236,7 @@ class FakeClient:
     async def query(self, prompt):
         self.queries.append(prompt)
 
-    async def receive_response(self):
+    async def receive_messages(self):
         for message in self.script:
             if self.slow and isinstance(message, ResultMessage):
                 await self._release.wait()  # held until interrupted
@@ -240,6 +268,15 @@ async def test_a_turn_ends_with_done_and_the_session_stays_open():
 
     assert client.queries == ["hello"] and events[-1] == Done(final_text="hi")
     assert session.alive and session.session_id == "s-1"
+
+
+async def test_a_turn_waits_for_its_own_result_past_one_claude_code_started():
+    client = FakeClient([result("background done", origin={"kind": "task-notification"}), result("hi")])
+    session = session_with(client)
+
+    events = await collect(session.turn("hello"))
+
+    assert events[-1] == Done(final_text="hi")
 
 
 async def test_a_timeout_interrupts_the_turn_instead_of_killing_the_session():
@@ -277,7 +314,7 @@ async def test_refusals_during_a_turn_become_notices(worktree):
     session = ClaudeAgentSession(RunSpec(prompt="", cwd=worktree, access=Access.READ_ONLY))
 
     class Refusing(FakeClient):
-        async def receive_response(self):
+        async def receive_messages(self):
             await session.policy("Bash", {"command": "rm -rf ."}, None)
             yield result("couldn't")
 

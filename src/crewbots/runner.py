@@ -79,6 +79,11 @@ RETRY_PROMPT = (
     "from where you were. Check what you'd already done first, so nothing is done twice; if you had finished, give "
     "your answer again."
 )
+RESUME_PROMPT = (
+    "The crewbots daemon restarted while you were working on this, so your turn was cut off:\n\n{request}\n\n"
+    "Carry on from where you were. Check what you'd already done first, so nothing is done twice; if you had "
+    "finished, give your answer again."
+)
 MCP_SERVER_NAME = "crewbots"
 MCP_COMMAND = (sys.executable, "-m", "crewbots.mcp_server")
 
@@ -357,6 +362,7 @@ class Runner:
             self.store.update_task(task_id, reported=False)  # its next outcome goes back to the parent too
         if task_id in self._runs:
             self._waiting.setdefault(task_id, []).append(text)
+            self.store.pending_waiting(task_id, text)
             return task
         task = self._set(task_id, status=Status.QUEUED, error=None)
         self._start(task_id, text)
@@ -365,6 +371,7 @@ class Runner:
     async def cancel(self, task_id: str) -> Task:
         self.store.get_task(task_id)
         self._waiting.pop(task_id, None)
+        self.store.clear_pending(task_id)  # what the user stopped isn't carried on after a restart
         if run := self._runs.get(task_id):
             run.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -394,6 +401,29 @@ class Runner:
             await self._close_session(task_id)
         for task_id in runs:
             self._set(task_id, status=Status.INTERRUPTED, error="the daemon stopped during this task")
+
+    def resume_interrupted(self) -> list[str]:
+        """On start: each turn the last stop cut off, or that was waiting its turn, carries on once. A bot that had
+        the turn is told it was interrupted and to pick up where it left off; one that hadn't gets it as it was. A
+        held one is held again until there's room. Returns the tasks carried on."""
+        resumed = []
+        for turn in self.store.interrupted_turns():
+            task = self.store.get_task(turn["task_id"])
+            self.store.clear_pending(task.id)
+            if task.kind == "review" or task.bot not in self.crew.bots:
+                continue  # a code review is restarted by the user, as it always was
+            if turn["resumed"]:
+                self._record(task.id, kind="restarted", data={"again": True})
+                continue
+            prompt = RESUME_PROMPT.format(request=turn["prompt"]) if turn["started"] else turn["prompt"]
+            prompt = "\n\n".join([prompt, *turn["waiting"]])
+            self.store.set_pending(task.id, turn["prompt"], resumed=True)
+            if turn["started"]:
+                self._record(task.id, kind="restarted", data={"again": False})
+            self._set(task.id, status=Status.QUEUED, error=None)
+            self._start(task.id, prompt, resumed=True)
+            resumed.append(task.id)
+        return resumed
 
     def running(self) -> list[str]:
         return list(self._runs)
@@ -770,19 +800,26 @@ class Runner:
 
     # Running.
 
-    def _start(self, task_id: str, prompt: str) -> None:
-        self._runs[task_id] = asyncio.create_task(self._turns(task_id, prompt), name=f"task {task_id}")
+    def _start(self, task_id: str, prompt: str, resumed: bool = False) -> None:
+        self._runs[task_id] = asyncio.create_task(self._turns(task_id, prompt, resumed), name=f"task {task_id}")
         self._stay_awake()
         if self.use_sessions and (self._reaper is None or self._reaper.done()):
             self._reaper = asyncio.create_task(self._reap_idle(), name="session reaper")
 
-    async def _turns(self, task_id: str, prompt: str | None) -> None:
+    async def _turns(self, task_id: str, prompt: str | None, resumed: bool = False) -> None:
+        settled = False
         try:
             while prompt is not None:
+                if not resumed:  # a turn carried on after a restart keeps the request it carries on
+                    self.store.set_pending(task_id, prompt)
+                resumed = False
                 await self._tries(task_id, prompt)
                 waiting = self._waiting.pop(task_id, None)
                 prompt = "\n\n".join(waiting) if waiting else None
+            settled = True
         finally:
+            if settled:  # stopped by the daemon stopping, it's kept for the next start to carry on
+                self.store.clear_pending(task_id)
             self._runs.pop(task_id, None)
             self._stay_awake()
         self._report_up(task_id)
@@ -815,6 +852,7 @@ class Runner:
         await self._within_budget(task_id)
         async with self._slots:
             task = self._set(task_id, status=Status.RUNNING, error=None)
+            self.store.pending_started(task_id)
             try:
                 bot = self.bot_for(task.bot)
                 if bot is None:

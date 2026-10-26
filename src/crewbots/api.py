@@ -1601,9 +1601,7 @@ def serve(home: Path, port: int = DEFAULT_PORT, max_parallel: int = 4, sessions:
     home = home.expanduser()
     crew = crew_module.load(home)
     store = Store(home / "crewbots.db")
-    interrupted = store.mark_interrupted()
-    if interrupted:
-        print(f"marked {len(interrupted)} unfinished task(s) as interrupted; send them a message to resume")
+    store.mark_interrupted()
     token = secrets.token_urlsafe(32)
     info_path = home / DAEMON_FILE
 
@@ -1616,6 +1614,8 @@ def serve(home: Path, port: int = DEFAULT_PORT, max_parallel: int = 4, sessions:
         os.fchmod(fd, 0o600)  # in case an older file was readable by others
         with os.fdopen(fd, "w") as f:
             json.dump({"url": f"http://127.0.0.1:{port}", "token": token, "pid": os.getpid()}, f)
+        if resumed := runner.resume_interrupted():
+            print(f"carrying on {len(resumed)} turn(s) the last stop cut off", flush=True)
         ticking = asyncio.create_task(scheduler.run(), name="scheduler")
         warming = asyncio.gather(  # the CLIs and GitHub take seconds: ask before the app does
             plans_module.plans(), asyncio.to_thread(_warm_inbox, app.state.reviews))

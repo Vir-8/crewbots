@@ -139,6 +139,13 @@ create table if not exists review_drafts (  -- line comments for a pull request 
     updated_at  text not null
 );
 create index if not exists review_drafts_by_pr on review_drafts(repo, number, id);
+create table if not exists pending_turns (  -- a turn under way or waiting, so a restart can carry it on
+    task_id text primary key references tasks(id),
+    prompt  text not null,               -- what the turn was asked
+    started integer not null default 0,  -- whether the bot had it: then it carries on rather than starting over
+    waiting text not null default '[]',  -- JSON list of messages sent while it ran, for the turn after
+    resumed integer not null default 0   -- already carried on after a restart once: not again
+);
 """
 # Full-text search over what the crew said and decided: the `recall` tool. Kept in step with events as they're added.
 SEARCH = """
@@ -403,6 +410,30 @@ class Store:
         for row in rows:
             self.update_task(row["id"], status=Status.INTERRUPTED, error="the daemon stopped during this task")
         return [r["id"] for r in rows]
+
+    # Turns under way, kept so the daemon can carry them on after a restart (`Runner.resume_interrupted`).
+
+    def set_pending(self, task_id: str, prompt: str, resumed: bool = False) -> None:
+        self.db.execute("insert or replace into pending_turns (task_id, prompt, resumed) values (?, ?, ?)",
+                        (task_id, prompt, int(resumed)))
+
+    def pending_started(self, task_id: str) -> None:
+        self.db.execute("update pending_turns set started = 1 where task_id = ?", (task_id,))
+
+    def pending_waiting(self, task_id: str, text: str) -> None:
+        self.db.execute("update pending_turns set waiting = json_insert(waiting, '$[#]', ?) where task_id = ?",
+                        (text, task_id))
+
+    def clear_pending(self, task_id: str) -> None:
+        self.db.execute("delete from pending_turns where task_id = ?", (task_id,))
+
+    def interrupted_turns(self) -> list[dict[str, Any]]:
+        """The turns of interrupted tasks, oldest first."""
+        rows = self.db.execute(
+            "select p.* from pending_turns p join tasks t on t.id = p.task_id where t.status = ? order by t.updated_at",
+            (Status.INTERRUPTED,)).fetchall()
+        return [{**dict(r), "started": bool(r["started"]), "resumed": bool(r["resumed"]),
+                 "waiting": json.loads(r["waiting"])} for r in rows]
 
     def append_event(self, task_id: str, event: Event | None = None, *, kind: str | None = None,
                      data: dict[str, Any] | None = None) -> StoredEvent:

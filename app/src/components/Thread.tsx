@@ -152,6 +152,14 @@ function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>
           out.push({ kind: "line", id: e.id, text: limitText(d as Parameters<typeof limitText>[0]), icon: "alert", tone: d.status === "limited" ? "bad" : "warn" });
         }
         break;
+      case "restarted":
+        flush();
+        out.push(
+          d.again
+            ? { kind: "line", id: e.id, text: "Cut off by a restart again while carrying on. Send a message to carry on.", icon: "alert", tone: "warn" }
+            : { kind: "line", id: e.id, text: "The crew restarted mid-turn, so it carried on where it left off", icon: "play" },
+        );
+        break;
       case "rollover":
         flush();
         out.push({ kind: "line", id: e.id, text: `Continued in a fresh session from a briefing (the conversation had used ${d.percent}% of its context)` });

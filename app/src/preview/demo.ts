@@ -161,6 +161,7 @@ export const resetsAt = Math.floor(Date.now() / 1000) + 2 * 3600;
   tool(g.id, "mcp__crewbots__message", { task_id: e.id, text: "Wait for the redirect response itself, not a fixed time." }, "Sent");
   message(e.id, "chief", "Wait for the redirect response itself, not a fixed time.");
   tool(e.id, "apply_patch", { changes: [{ path: "tests/test_auth.py", kind: "update" }] }, "completed");
+  emit(e.id, "restarted", { again: false });
   tool(e.id, "shell", { command: "pytest -q tests/test_auth.py --count 500" }, "500 passed in 41.2s");
   emit(e.id, "handoff", { done: "test_login waits for the redirect response; 500 of 500 runs pass.", output: ["tests/test_auth.py"], open: "", needs: "Review round 2" });
   say(e.id, e.result!);

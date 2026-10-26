@@ -26,6 +26,7 @@ from claude_agent_sdk import (
     RateLimitEvent,
     ResultMessage,
     SystemMessage,
+    TaskNotificationMessage,
     TextBlock,
     ToolPermissionContext,
     ToolResultBlock,
@@ -144,8 +145,11 @@ class ClaudeAgentSession:
 
         async def pump() -> None:
             try:
-                async for message in self.client.receive_response():  # until this turn's ResultMessage
+                # Until the result of this turn's prompt, past any turn Claude Code started itself in between.
+                async for message in self.client.receive_messages():
                     await queue.put(message)
+                    if isinstance(message, ResultMessage) and ours(message):
+                        break
             except Exception as e:  # the CLI died, or the protocol broke
                 await queue.put(e)
             finally:
@@ -241,6 +245,13 @@ class ClaudePolicy(Policy):
         return PermissionResultDeny(message=self.refused(name, reason))
 
 
+def ours(result: ResultMessage) -> bool:
+    """Whether a result is of a prompt crewbots sent, rather than of a turn Claude Code started itself: when a
+    background command finishes between turns, Claude Code tells the model in a turn of its own, whose result would
+    otherwise end crewbots' next turn early, with its text."""
+    return (result.origin or {}).get("kind", "human") == "human"
+
+
 class SdkMapper:
     """Agent SDK messages to crewbots events, the same ones every backend gives."""
 
@@ -248,11 +259,21 @@ class SdkMapper:
         self.final_text = ""
         self.done = False
         self.api_error: str | None = None  # the kind of the last API error Claude Code gave up on, if any
+        self.started = False  # this turn's prompt has had a reply
+        self.injected = False  # in a turn Claude Code started before this one's: its words aren't the bot's reply
 
     def feed(self, message: Any, timed_out: bool = False, timeout_s: float | None = None) -> list[Event]:
         if getattr(message, "parent_tool_use_id", None):
             return []  # inside a subagent; its call and result already appear at the top level
         match message:
+            case TaskNotificationMessage() if not self.started:
+                self.injected = True  # a background command finished; Claude Code answers that first
+                return []
+            case ResultMessage() if not ours(message):
+                # Whatever came before it was that turn's, since this turn's prompt waits behind it.
+                self.injected = self.started = False
+                self.final_text = ""
+                return [_usage(message)]  # it spent tokens all the same
             case SystemMessage(subtype="init", data=data):
                 return [SessionStarted(session_id=data.get("session_id", ""))]
             case RateLimitEvent(rate_limit_info=info):
@@ -260,9 +281,10 @@ class SdkMapper:
                                                 "rateLimitType": info.rate_limit_type, "utilization": info.utilization})]
             case AssistantMessage(content=blocks):
                 self.api_error = message.error or self.api_error
+                self.started = self.started or not self.injected
                 events: list[Event] = []
                 for block in blocks:
-                    if isinstance(block, TextBlock) and block.text:
+                    if isinstance(block, TextBlock) and block.text and not self.injected:
                         self.final_text = block.text
                         events.append(Text(text=block.text))
                     elif isinstance(block, ToolUseBlock):
@@ -273,14 +295,11 @@ class SdkMapper:
                         for b in blocks if isinstance(b, ToolResultBlock)]
             case ResultMessage():
                 self.done = True
-                u = message.usage or {}
-                cache_read = u.get("cache_read_input_tokens", 0)
-                usage = Usage(
-                    input_tokens=u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0) + cache_read,
-                    output_tokens=u.get("output_tokens", 0), cached_input_tokens=cache_read,
-                    cost_usd=message.total_cost_usd,
-                )
+                usage = _usage(message)
                 text = message.result or self.final_text
+                if self.injected and text:  # the notification was folded into this turn after all: show its reply
+                    self.injected = False
+                    return [Text(text=text), *self.feed(message, timed_out, timeout_s)]
                 if timed_out:
                     return [usage, Done(final_text=text, is_error=True, error=f"timed out after {timeout_s:g}s")]
                 failed = message.is_error or message.subtype != "success"
@@ -290,6 +309,13 @@ class SdkMapper:
                     retry = claude_retry(message.api_error_status, self.api_error)
                 return [usage, Done(final_text=text, is_error=failed, error=error, retry=retry)]
         return []
+
+
+def _usage(message: ResultMessage) -> Usage:
+    u = message.usage or {}
+    cache_read = u.get("cache_read_input_tokens", 0)
+    return Usage(input_tokens=u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0) + cache_read,
+                 output_tokens=u.get("output_tokens", 0), cached_input_tokens=cache_read, cost_usd=message.total_cost_usd)
 
 
 def crew_server(crew: "CrewTools | Any") -> Any:
