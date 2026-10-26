@@ -131,6 +131,7 @@ export function routines() {
     routines: [
       { ...base, name: "standup", description: "A short summary each weekday morning of what the crew did, and what needs you.", bot: "chief", when: "0 9 * * 1-5", schedule: "0 9 * * 1-5", path: "routines/standup.md", next_run_at: at(1, 9), last_run_at: at(0, 9), last_task_id: "t_stand00001", budget: 200_000 },
       { ...base, name: "retro", description: "A Friday look back at the week.", bot: "chief", when: "0 16 * * 5", schedule: "0 16 * * 5", path: "routines/retro.md", next_run_at: at(4, 16) },
+      { ...base, name: "dependency-check", description: "Looks for outdated or vulnerable dependencies every Monday.", bot: "engineer", when: "0 10 * * 1", schedule: "0 10 * * 1", path: "routines/dependency-check.md", next_run_at: null, enabled: false, proposed_by: "engineer" },
       { ...base, name: "review-requests", description: "Drafts a review when someone asks you to review a pull request.", bot: "reviewer", when: "on github.review_requested in acme/web", schedule: null, on: "github.review_requested", repo: "acme/web", path: "routines/review-requests.md", next_run_at: null },
     ],
     errors: {},

@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "81b52b00b1a6";
+export const API_SCHEMA = "1aca57e3e63e";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -581,6 +581,15 @@ export interface ProfileOut {
   outputs: OutputOut[];
 }
 
+export interface ProposedRoutine {
+  name: string;
+  description: string;
+  goal: string;
+  schedule?: string | null;
+  on?: string | null;
+  repo?: string | null;
+}
+
 export interface PullFile {
   path: string;
   additions: number;
@@ -812,6 +821,7 @@ export interface RoutineOut {
   last_task_id: string | null;
   next_run_at: string | null;
   skipped_at: string | null;
+  proposed_by?: string | null;
 }
 
 export interface RoutinesOut {

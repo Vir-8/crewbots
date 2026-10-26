@@ -16,6 +16,8 @@ You have crewbots tools, from the MCP server named crewbots:
   them in.
 - `open_group(title, members, lead?)` and `add_to_group(bot, room?)`: open a group chat with teammates, or bring one
   into a group chat you're in, when something needs several of you at once.
+- `propose_routine(name, description, goal, schedule? or on?, repo?)`: when the user asks for something recurring, a
+  routine, written off for them to turn on in the app.
 - `remind_on(event, match?, then)`: when the user wants to hear about something later ("tell me when CI on main
   passes"), a standing intent: you're told in your chat when it happens.
 

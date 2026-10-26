@@ -56,7 +56,7 @@ def test_routines_are_edited_created_and_deleted(home):
     assert cards.routine(home, "standup") | {"goal": ""} == {
         "name": "standup", "description": cards.routine(home, "standup")["description"], "bot": "chief",
         "schedule": "30 8 * * 1-5", "on": None, "repo": None, "workspace": None, "budget": None, "enabled": False,
-        "goal": ""}
+        "proposed_by": None, "goal": ""}
 
     cards.save_routine(home, "ci", {"bot": "chief", "on": "github.ci_failed", "repo": "vir/app"}, "Fix {{pr.url}}",
                        create=True)

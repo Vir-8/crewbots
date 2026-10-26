@@ -16,6 +16,7 @@ from crewbots.api.schemas import (
     MergeProposal,
     OpenGroup,
     PostBody,
+    ProposedRoutine,
     Recall,
     Remember,
     RemindOn,
@@ -83,6 +84,12 @@ def routes(c: Context) -> APIRouter:
     async def bot_forget(request: Request, body: Forget):
         note = runner.forget(request.state.task.id, body.name, shared=body.shared)
         return {"title": note.title}
+
+    @v1.post("/bot/propose_routine", status_code=201)
+    async def bot_propose_routine(request: Request, body: ProposedRoutine):
+        path = runner.propose_routine(request.state.task.id, body.name, body.description, body.goal, body.schedule,
+                                      body.on, body.repo)
+        return {"path": str(path)}
 
     @v1.post("/bot/remind_on", status_code=201)
     async def bot_remind_on(request: Request, body: RemindOn):

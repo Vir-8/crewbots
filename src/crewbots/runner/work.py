@@ -4,8 +4,9 @@ keeps notes."""
 from pathlib import Path
 from typing import Any
 
-from crewbots import prompts, worktree
+from crewbots import cards, prompts, worktree
 from crewbots.memory import CREW_SCOPE, Note
+from crewbots.routines import RoutineError
 from crewbots.runner.common import MergeError, NotAllowed
 from crewbots.runner.reviews import MAX_REVIEW_ROUNDS
 from crewbots.sources import KINDS
@@ -66,6 +67,20 @@ class Work:
         if not then.strip():
             raise NotAllowed("say what to do or tell the user when it happens")
         return self.store.add_intent(self.store.get_task(task_id).bot, task_id, kind, match.strip(), then.strip())
+
+    def propose_routine(self, task_id: str, name: str, description: str, goal: str, schedule: str | None = None,
+                        on: str | None = None, repo: str | None = None) -> Path:
+        """The `propose_routine` tool: a routine for the proposing bot, written off and marked as its proposal. Only
+        the user turns it on (on the Routines page), and its first run is a test they see."""
+        task = self.store.get_task(task_id)
+        fields = {"bot": task.bot, "description": description, "schedule": schedule, "on": on, "repo": repo,
+                  "proposed_by": task.bot}
+        try:
+            path = cards.save_routine(self.crew.home, name, fields, goal, create=True)
+        except RoutineError as e:  # a schedule or trigger it couldn't run: the bot hears why
+            raise NotAllowed(str(e)) from None
+        self._record(task_id, kind="routine_proposed", data={"name": name, "when": schedule or f"on {on} in {repo}"})
+        return path
 
     def update_state(self, task_id: str, state: str) -> Path:
         """The `update_state` tool: where this task stands, whole, for a fresh session of it to start from."""

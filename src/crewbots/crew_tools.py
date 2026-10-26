@@ -52,6 +52,8 @@ SPECS: dict[str, Spec] = {
     "recall": Spec(_object({"query": STRING}, ["query"])),
     "update_state": Spec(_object({"state": STRING}, ["state"])),
     "remind_on": Spec(_object({"event": STRING, "match": STRING, "then": STRING}, ["event", "then"])),
+    "propose_routine": Spec(_object({"name": STRING, "description": STRING, "goal": STRING, "schedule": STRING,
+                                     "on": STRING, "repo": STRING}, ["name", "description", "goal"])),
     "start_thread": Spec(_object({"title": STRING, "goal": STRING}, ["title", "goal"])),
     "post": Spec(_object({"text": STRING, "room": STRING}, ["text"])),
     "ask": Spec(_object({"bot": STRING, "question": STRING}, ["bot", "question"])),
@@ -150,6 +152,11 @@ class CrewTools:
                     return recall_text(r.recall(me, args["query"]))
                 case "update_state":
                     return f"Kept this task's state ({r.update_state(me, args['state'])})."
+                case "propose_routine":
+                    r.propose_routine(me, args["name"], args["description"], args["goal"], args.get("schedule") or None,
+                                      args.get("on") or None, args.get("repo") or None)
+                    return (f"Proposed the routine {args['name']!r}. It's off until the user turns it on in the app "
+                            "(Routines), and its first run is a test they watch: tell them it's waiting there.")
                 case "remind_on":
                     intent = r.remind_on(me, args["event"], args.get("match") or "", args["then"])
                     return f"Standing intent {intent['id']} set: on {intent['kind']} {intent['match']}".rstrip() + "."

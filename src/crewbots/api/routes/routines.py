@@ -77,6 +77,17 @@ def routes(c: Context) -> APIRouter:
         scheduler.load()
         return _routine_out(next(v for v in scheduler.views() if v.routine.name == name))
 
+    @v1.post("/routines/{name}/confirm", response_model=TaskOut | None)
+    async def confirm_routine(name: str):
+        """Turns on a routine a bot proposed, and runs it once now, as a test you watch (a trigger's waits for one)."""
+        try:
+            cards.save_routine(runner.crew.home, name, {"proposed_by": None, "enabled": True}, None)
+        except KeyError:
+            raise HTTPException(404, f"no routine named {name}") from None
+        scheduler.load()
+        routine = next(r for r in scheduler.routines if r.name == name)
+        return scheduler.run_now(name).to_json() if routine.schedule else None
+
     @v1.post("/routines/{name}/run", status_code=201, response_model=TaskOut)
     async def run_routine(name: str):
         """Runs a scheduled routine now, as if its time had come."""
@@ -91,4 +102,4 @@ def _routine_out(view: Any) -> dict[str, Any]:
             "schedule": r.schedule.text if r.schedule else None, "on": r.on, "repo": r.repo,
             "workspace": str(r.workspace) if r.workspace else None, "budget": r.budget, "enabled": r.enabled,
             "path": str(r.path), "last_run_at": view.last_run_at, "last_task_id": view.last_task_id,
-            "next_run_at": view.next_run_at, "skipped_at": view.skipped_at}
+            "next_run_at": view.next_run_at, "skipped_at": view.skipped_at, "proposed_by": r.proposed_by}

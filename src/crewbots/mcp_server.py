@@ -66,6 +66,14 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
     def recall(query: str) -> str:
         return recall_text(call("POST", "/bot/recall", {"query": query}))
 
+    @server.tool(description=describe("propose_routine"))
+    def propose_routine(name: str, description: str, goal: str, schedule: str | None = None, on: str | None = None,
+                        repo: str | None = None) -> str:
+        call("POST", "/bot/propose_routine", {"name": name, "description": description, "goal": goal,
+                                              "schedule": schedule, "on": on, "repo": repo})
+        return (f"Proposed the routine {name!r}. It's off until the user turns it on in the app (Routines), and its "
+                "first run is a test they watch: tell them it's waiting there.")
+
     @server.tool(description=describe("remind_on"))
     def remind_on(event: str, then: str, match: str = "") -> str:
         intent = call("POST", "/bot/remind_on", {"event": event, "match": match, "then": then})

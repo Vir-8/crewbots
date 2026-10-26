@@ -19,7 +19,7 @@ from crewbots.crew import CrewError, _context_window, parse_card
 HANDLE = re.compile(r"[a-z][a-z0-9-]{0,30}")
 BOT_FIELDS = ("display_name", "title", "description", "backend", "model", "effort", "context_window", "access", "network",
               "avatar", "budget", "mcp", "skills", "can_delegate", "proactive")
-ROUTINE_FIELDS = ("description", "bot", "schedule", "on", "repo", "workspace", "budget", "enabled")
+ROUTINE_FIELDS = ("description", "bot", "schedule", "on", "repo", "workspace", "budget", "enabled", "proposed_by")
 
 
 def read(path: Path) -> tuple[dict[str, Any], str]:

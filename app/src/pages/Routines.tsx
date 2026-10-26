@@ -112,7 +112,25 @@ function RoutineRow({ routine: r, crew, onEdit, onOpen }: { routine: Routine; cr
           Run now
         </button>
       )}
-      <Switch on={r.enabled} onChange={toggle} label={r.enabled ? "Turn off" : "Turn on"} />
+      {r.proposed_by ? (
+        <span className="routine-proposal" onClick={(e) => e.stopPropagation()}>
+          <span className="faint small">Proposed by {labelOf(r.proposed_by)}</span>
+          <button className="button small" onClick={() => crew.deleteRoutine(r.name)}>
+            Decline
+          </button>
+          <button
+            className="button small primary"
+            onClick={async () => {
+              const test = await crew.confirmRoutine(r.name);
+              if (test) onOpen(test.id); // its first run, a test to watch
+            }}
+          >
+            Turn on and test
+          </button>
+        </span>
+      ) : (
+        <Switch on={r.enabled} onChange={toggle} label={r.enabled ? "Turn off" : "Turn on"} />
+      )}
     </div>
   );
 }

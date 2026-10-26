@@ -24,7 +24,7 @@ from typing import Any
 
 import yaml
 
-ROUTINE_FIELDS = {"name", "bot", "schedule", "on", "repo", "workspace", "budget", "enabled", "description"}
+ROUTINE_FIELDS = {"name", "bot", "schedule", "on", "repo", "workspace", "budget", "enabled", "description", "proposed_by"}
 TRIGGERS = {"github.review_requested", "github.ci_failed"}
 PR_FIELDS = {"pr.title", "pr.url", "pr.number", "pr.repo", "pr.author", "pr.branch", "pr.diff", "pr.failures"}
 FIELDS = {
@@ -53,6 +53,7 @@ class Routine:
     budget: int | None = None
     enabled: bool = True
     description: str = ""
+    proposed_by: str | None = None  # the bot that proposed it: off until the user turns it on
 
     @property
     def when(self) -> str:
@@ -125,7 +126,8 @@ def parse(text: str, default_name: str, source: Path) -> Routine:
         schedule=Cron.parse(str(meta["schedule"])) if "schedule" in meta else None, on=on,
         repo=str(meta["repo"]) if meta.get("repo") else None,
         workspace=Path(workspace).expanduser() if workspace else None, budget=budget,
-        enabled=bool(meta.get("enabled", True)), description=str(meta.get("description", "")),
+        enabled=bool(meta.get("enabled", True)) and not meta.get("proposed_by"), description=str(meta.get("description", "")),
+        proposed_by=str(meta["proposed_by"]) if meta.get("proposed_by") else None,
     )
 
 

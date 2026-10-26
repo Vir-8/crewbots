@@ -71,6 +71,15 @@ class PostBody(BaseModel):
 class Recall(BaseModel):
     query: str
 
+class ProposedRoutine(BaseModel):
+    name: str
+    description: str
+    goal: str
+    schedule: str | None = None
+    on: str | None = None
+    repo: str | None = None
+
+
 class RemindOn(BaseModel):
     event: str
     match: str = ""

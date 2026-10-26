@@ -142,6 +142,13 @@ class Events:
     def latest_event_id(self) -> int:
         return self.db.execute("select coalesce(max(id), 0) from events").fetchone()[0]
 
+    def last_user_message(self) -> str | None:
+        """When the user last wrote anything, in a chat, a thread or a group chat."""
+        said = self.db.execute("select max(at) from events where kind = 'message' and json_extract(data, '$.from') = 'user'"
+                               ).fetchone()[0]
+        posted = self.db.execute("select max(at) from room_messages where author = 'user'").fetchone()[0]
+        return max(filter(None, (said, posted)), default=None)
+
     def last_events(self, task_id: str, kinds: tuple[str, ...], limit: int) -> list[StoredEvent]:
         """A task's last `limit` events of these kinds, oldest first."""
         rows = self.db.execute(f"select * from events where task_id = ? and kind in ({','.join('?' * len(kinds))}) "

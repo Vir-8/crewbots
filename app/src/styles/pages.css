@@ -250,3 +250,10 @@
 .danger-text {
   color: var(--red);
 }
+
+/* A routine a bot proposed: off until it's turned on */
+.routine-proposal {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

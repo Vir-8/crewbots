@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from crewbots import checkins, sources
+from crewbots import checkins, prompts, sources
 from crewbots import crew as crew_module
 from crewbots import github as github_module
 from crewbots import routines as routines_module
@@ -27,6 +27,7 @@ FIRST_SINCE = timedelta(days=1)  # what a routine's first run looks back over
 ACTIVITY_CHARS = 30_000
 CHECKIN_CHARS = 4_000  # of what changed, for a check-in: its context stays small
 SOURCES_EVERY_S = 60.0  # how often the user's workspaces and watched folders are looked at for events
+AWAY = timedelta(days=7)  # with nothing from the user for this long, routines and check-ins wait
 EVENT_CHARS = 400
 
 log = logging.getLogger("crewbots.scheduler")
@@ -95,7 +96,8 @@ class Scheduler:
         now = now or datetime.now().astimezone()
         await self.runner.capacity.refresh()
         started = []
-        for routine in self.routines:
+        away = self._away(now)
+        for routine in self.routines if not away else ():
             if routine.enabled and routine.schedule and (task := self._check_schedule(routine, now)):
                 started.append(task)
         for bot in self.runner.crew.bots:  # overnight, while the crew is idle: one bot's memory at a time
@@ -107,13 +109,32 @@ class Scheduler:
             self._watched = loop.time()
             for event in await asyncio.to_thread(self._look_around):
                 self.runner.happened(event.kind, event.subject, event.text)
-        self._check_in_due(now)
+        if not away:
+            self._check_in_due(now)
         self.runner.attention.tick(now)
-        triggers = [r for r in self.routines if r.enabled and r.on]
+        triggers = [r for r in self.routines if r.enabled and r.on and not away]
         if (triggers or self._wants_github()) and (self._polled is None or loop.time() - self._polled >= self.github_every_s):
             self._polled = loop.time()
             started += await self._poll_github(triggers, now)
         return started
+
+    def _away(self, now: datetime) -> bool:
+        """Whether the user has been away AWAY or longer: then routines and check-ins wait, and the chief's chat says so
+        once, until they write again."""
+        last = self.store.last_user_message()
+        away = bool(last) and now - datetime.fromisoformat(last) >= AWAY
+        said = (self.store.routine_state("away") or {}).get("last_run_at")
+        if away and not said and any(r.enabled for r in self.routines):
+            crew = self.runner.crew
+            chief = next((b for b in crew.bots.values() if b.can_delegate), next(iter(crew.bots.values()), None))
+            if chief:
+                chat = self.runner.chat(chief.name)
+                self.runner._record(chat.id, kind="text", data={"away": True, "text": prompts.text(
+                    "away", crew.home, since=datetime.fromisoformat(last).astimezone().strftime("%a %d %b"))})
+                self.store.routine_ran("away", now.isoformat(timespec="seconds"), chat.id)
+        elif not away and said:
+            self.store.routine_ran("away", "", "")  # back: routines carry on, and next time it's said again
+        return away
 
     def _look_around(self) -> list[sources.CrewEvent]:
         """New commits and branches in the user's workspaces, and changes in watched folders (run off the loop: it

@@ -128,4 +128,5 @@ export const api = {
   profile: (bot: string) => call<Profile>("GET", `/bots/${encodeURIComponent(bot)}/profile`),
   addStarter: (name: string) => call<Routine>("POST", `/routines/starters/${encodeURIComponent(name)}`),
   runRoutine: (name: string) => call<Task>("POST", `/routines/${encodeURIComponent(name)}/run`),
+  confirmRoutine: (name: string) => call<Task | null>("POST", `/routines/${encodeURIComponent(name)}/confirm`),
 };

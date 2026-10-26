@@ -37,6 +37,7 @@ class RoutineOut(BaseModel):
     last_task_id: str | None
     next_run_at: str | None
     skipped_at: str | None
+    proposed_by: str | None = None  # a bot's proposal, off until the user turns it on
 
 class StarterOut(BaseModel):
     name: str

@@ -216,6 +216,15 @@ export function useCrew() {
       loadRoutines();
       return task;
     },
+    confirmRoutine: async (name: string) => {
+      const task = await act(api.confirmRoutine(name));
+      loadRoutines();
+      return task;
+    },
+    deleteRoutine: async (name: string) => {
+      await act(api.deleteRoutine(name));
+      loadRoutines();
+    },
   };
 }
 
