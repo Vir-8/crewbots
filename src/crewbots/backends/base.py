@@ -40,11 +40,35 @@ class RunSpec:
     extra_args: list[str] = field(default_factory=list)  # passed through to the CLI unchanged
 
 
+class Session(Protocol):
+    """A CLI kept running between turns, so a follow-up doesn't pay for start-up and keeps the CLI's state.
+
+    One turn at a time. A turn that is abandoned part-way (its iterator closed) or that times out kills the process,
+    since nothing would be left to read its output; the session is then dead, and the next turn opens a new one that
+    resumes the conversation from its id.
+    """
+
+    session_id: str | None
+
+    @property
+    def alive(self) -> bool: ...
+
+    def turn(self, prompt: str) -> AsyncIterator[Event]:
+        """One turn's events, ending with exactly one `Done`."""
+        ...
+
+    async def close(self) -> None: ...
+
+
 class Backend(Protocol):
     name: str
 
     def run(self, spec: RunSpec) -> AsyncIterator[Event]:
         """Streams the run's events, ending with exactly one `Done`. Closing the iterator stops the CLI."""
+        ...
+
+    async def open(self, spec: RunSpec) -> Session:
+        """Starts a long-lived session for `spec` (its prompt is not used; each turn brings its own)."""
         ...
 
 

@@ -4,11 +4,15 @@ import json
 import os
 import re
 from collections.abc import AsyncIterator, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from crewbots.backends.base import Access, McpServer, RunSpec
+from crewbots.backends.codex_isolation import isolation_overrides
 from crewbots.backends.process import stream_jsonl
 from crewbots.events import Done, Event, Notice, SessionStarted, Text, ToolCall, ToolResult, Usage
+
+if TYPE_CHECKING:
+    from crewbots.backends.codex_app_server import CodexSession
 
 MCP_NAME = re.compile(r"[A-Za-z0-9_-]+")
 SANDBOX = {Access.READ_ONLY: "read-only", Access.WORKSPACE_WRITE: "workspace-write"}
@@ -17,14 +21,21 @@ SANDBOX = {Access.READ_ONLY: "read-only", Access.WORKSPACE_WRITE: "workspace-wri
 class CodexCLI:
     name = "codex"
 
-    def __init__(self, command: Sequence[str] = ("codex",)):
+    def __init__(self, command: Sequence[str] = ("codex",), isolate: bool = True):
+        """`isolate=False` lets the bot use the user's own Codex MCP servers and plugins; only for trying things out."""
         self.command = list(command)
+        self.isolate = isolate
 
     def run(self, spec: RunSpec) -> AsyncIterator[Event]:
         return stream_jsonl(
             self.argv(spec), cwd=spec.cwd, env=dict(os.environ), parser=CodexParser(), stdin_text=self.prompt(spec),
             timeout_s=spec.timeout_s,
         )
+
+    async def open(self, spec: RunSpec) -> "CodexSession":
+        from crewbots.backends.codex_app_server import CodexSession
+
+        return await CodexSession.open(self, spec)
 
     def argv(self, spec: RunSpec) -> list[str]:
         # Codex's sandboxes limit writes, not reads, so `read_dirs` needs nothing here.
@@ -37,11 +48,17 @@ class CodexCLI:
             args.append("--dangerously-bypass-approvals-and-sandbox")
         else:
             args += ["-c", f'sandbox_mode="{SANDBOX[spec.access]}"']
-        for name, server in spec.mcp_servers.items():
-            args += _mcp_overrides(name, server)
+        args += self.config_overrides(spec)
         if spec.model:
             args += ["--model", spec.model]
         return [*args, *spec.extra_args, "-"]  # "-": the prompt comes on stdin
+
+    def config_overrides(self, spec: RunSpec) -> list[str]:
+        """The user's servers, plugins and apps switched off, then the bot's own servers added."""
+        args = isolation_overrides(self.command, keep=spec.mcp_servers) if self.isolate else []
+        for name, server in spec.mcp_servers.items():
+            args += _mcp_overrides(name, server)
+        return args
 
     def prompt(self, spec: RunSpec) -> str:
         # Codex has no flag for adding to its system prompt. On a resumed session the instructions are already in

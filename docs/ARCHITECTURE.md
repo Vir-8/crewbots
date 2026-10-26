@@ -142,11 +142,35 @@ Each step leaves the system working.
    - A side panel shows any task's own thread.
    - The sidebar holds what needs you.
    - Outside Tauri the UI runs on a demo crew, so it can be designed and checked in a browser.
-4. **Long-lived sessions.** Codex app-server and Claude streaming input, with idle timeouts and the per-turn fallback, measured against the 2.9s baseline.
+4. **Long-lived sessions** (done).
+   - Claude keeps `claude -p --input-format stream-json` running per task, and Codex keeps a `codex app-server` with one thread, whose role card goes in as developer instructions.
+   - Sessions close after 10 idle minutes, on cancel, or past 8 open. A dead or unopenable session falls back to one process per turn, resumed from the stored id. `serve --no-sessions` turns sessions off.
+   - Follow-up turns, measured through the daemon:
+     - Claude: from about 1.9s to 1.1s.
+     - Codex: from about 5.3s to 1.75s.
+   - Codex's first turn is slower with a session (15s against 10s). Opening the app-server needs a closer look.
+   - Next: Claude moves onto the Agent SDK (see "Learned building sessions").
 5. **Login service and menu bar.** launchd install and uninstall from the app, the app attaching rather than owning, the power assertion, notifications.
 6. **Memory.** Bot memory files with `remember`/`forget`, FTS `recall`, and the rollover for long conversations.
 7. **Routines, triggers, budgets.** The scheduler, GitHub triggers, per-bot budgets, and the standup and retro routines.
 8. **Claude's sandboxed shell** for writing bots. Containers once there's a reason.
+
+## Learned building sessions
+
+- **Codex bots inherited the user's own MCP servers and plugins.** `-c` overrides are deep-merged into config.toml, so they can add a server but never remove one. Every Codex run (the one-shot `exec` and the app-server) now switches each one off by name:
+  - Servers in config.toml get `enabled=false`.
+  - Servers from elsewhere, such as bundled plugins or the ChatGPT app's computer use, get a disabled stub entry.
+  - Config plugins are switched off, and so is the `apps` feature.
+  - The role card's servers are added back.
+  - A run whose isolation can't be worked out doesn't start.
+  - Before this, a Codex bot could reach the user's trading account, Slack and screen control.
+- **t3code ([pingdotgg/t3code](https://github.com/pingdotgg/t3code)) uses the official integration points**: `codex app-server` for Codex, the Claude Agent SDK for Claude, and ACP for other agents. The Agent SDK still runs the `claude` binary, but over a control protocol that offers what a raw `claude -p` session lacks:
+  - interrupting a turn without killing the process
+  - a `can_use_tool` callback and hooks, so the harness decides on each tool call
+  - in-process MCP tools, so crewbots' tools could be Python functions in the daemon instead of a subprocess per session
+  - `set_permission_mode`, `set_model`, and MCP control while running
+
+  The Python SDK, `claude-agent-sdk` (0.2.x), has all of these, and `cli_path` keeps it on the user's own signed-in `claude`.
 
 ## Still open
 

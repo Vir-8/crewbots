@@ -36,7 +36,8 @@ The agents run on the official **Claude Code** and **Codex** CLIs in non-interac
   - Every request needs the daemon's token, which is written to `daemon.json` and readable only by you.
   - The daemon also checks the Host header, so no web page you have open can drive your bots.
 - **Backends** translate each CLI's JSON output into one shared event stream.
-  - Bots get crewbots' MCP servers and their own, never your personal ones.
+  - Bots get crewbots' MCP servers and their own, never your personal ones. On Claude that's `--strict-mcp-config`. On Codex, which has no such switch, every server, plugin and app from your config is turned off by name.
+  - Each active task keeps its CLI running between turns, so follow-ups skip start-up. Idle sessions close after 10 minutes, and `serve --no-sessions` turns this off.
   - `ANTHROPIC_API_KEY` is hidden from Claude by default, so a run stays on your subscription.
 
 ## Try it

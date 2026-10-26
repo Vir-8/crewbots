@@ -418,7 +418,7 @@ def read_daemon_info(home: Path) -> DaemonInfo:
     return DaemonInfo(**json.loads(path.read_text()))
 
 
-def serve(home: Path, port: int = DEFAULT_PORT, max_parallel: int = 4) -> None:
+def serve(home: Path, port: int = DEFAULT_PORT, max_parallel: int = 4, sessions: bool = True) -> None:
     home = home.expanduser()
     crew = crew_module.load(home)
     store = Store(home / "crewbots.db")
@@ -441,7 +441,7 @@ def serve(home: Path, port: int = DEFAULT_PORT, max_parallel: int = 4) -> None:
             info_path.unlink(missing_ok=True)
             store.close()
 
-    runner = Runner(store, crew, max_parallel=max_parallel, api_url=f"http://127.0.0.1:{port}/v1")
+    runner = Runner(store, crew, max_parallel=max_parallel, api_url=f"http://127.0.0.1:{port}/v1", sessions=sessions)
     app = create_app(runner, token, port)
     app.router.lifespan_context = lifespan
     print(f"crewbots: {len(crew.bots)} bots ({', '.join(crew.bots)}) from {home}, on http://127.0.0.1:{port}")

@@ -3,9 +3,19 @@ import json
 import pytest
 from helpers import collect, fake_command, kinds, lines
 
-from crewbots.backends import Access, CodexCLI, McpServer, RunSpec
+from crewbots.backends import Access, CodexCLI, McpServer, RunSpec, codex_isolation
 from crewbots.backends.codex_cli import CodexParser
 from crewbots.events import Done, Notice, SessionStarted, Text, ToolCall, ToolResult, Usage
+
+
+@pytest.fixture(autouse=True)
+def codex_home(tmp_path, monkeypatch):
+    """Never the user's real ~/.codex in tests."""
+    home = tmp_path / "codex-home"
+    home.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    codex_isolation._cache.clear()
+    return home
 
 
 def parse(objs: list[dict]):
@@ -64,7 +74,7 @@ def test_a_failed_turn_ends_in_an_error_and_retries_are_only_notices():
 
 
 def test_sandbox_goes_through_config_so_resume_works_too():
-    argv = CodexCLI().argv(RunSpec(prompt="x", cwd=".", access=Access.WORKSPACE_WRITE, resume_session_id="t-1"))
+    argv = CodexCLI(isolate=False).argv(RunSpec(prompt="x", cwd=".", access=Access.WORKSPACE_WRITE, resume_session_id="t-1"))
 
     assert argv[:4] == ["codex", "exec", "resume", "t-1"]
     assert 'sandbox_mode="workspace-write"' in argv
@@ -74,7 +84,7 @@ def test_sandbox_goes_through_config_so_resume_works_too():
 
 
 def test_full_access_bypasses_the_sandbox():
-    argv = CodexCLI().argv(RunSpec(prompt="x", cwd=".", access=Access.FULL))
+    argv = CodexCLI(isolate=False).argv(RunSpec(prompt="x", cwd=".", access=Access.FULL))
 
     assert "--dangerously-bypass-approvals-and-sandbox" in argv
     assert not any(a.startswith("sandbox_mode") for a in argv)
@@ -82,7 +92,7 @@ def test_full_access_bypasses_the_sandbox():
 
 def test_mcp_servers_become_config_overrides():
     server = McpServer(command="crewbots-mcp", args=["--bot", "lead"], env={"CREW_TOKEN": "t"})
-    argv = CodexCLI().argv(RunSpec(prompt="x", cwd=".", mcp_servers={"crew": server}))
+    argv = CodexCLI(isolate=False).argv(RunSpec(prompt="x", cwd=".", mcp_servers={"crew": server}))
 
     overrides = [argv[i + 1] for i, a in enumerate(argv) if a == "-c"]
     assert 'mcp_servers.crew.command="crewbots-mcp"' in overrides
@@ -93,12 +103,12 @@ def test_mcp_servers_become_config_overrides():
 
 def test_an_mcp_name_that_cannot_be_a_config_key_is_refused():
     with pytest.raises(ValueError):
-        CodexCLI().argv(RunSpec(prompt="x", cwd=".", mcp_servers={"my.crew": McpServer(command="x")}))
+        CodexCLI(isolate=False).argv(RunSpec(prompt="x", cwd=".", mcp_servers={"my.crew": McpServer(command="x")}))
 
 
 def test_instructions_go_into_the_first_prompt_only():
-    first = CodexCLI().prompt(RunSpec(prompt="do it", cwd=".", system_prompt="you are the reviewer"))
-    resumed = CodexCLI().prompt(RunSpec(prompt="again", cwd=".", system_prompt="you are the reviewer",
+    first = CodexCLI(isolate=False).prompt(RunSpec(prompt="do it", cwd=".", system_prompt="you are the reviewer"))
+    resumed = CodexCLI(isolate=False).prompt(RunSpec(prompt="again", cwd=".", system_prompt="you are the reviewer",
                                         resume_session_id="t-1"))
 
     assert first.startswith("<instructions>\nyou are the reviewer\n</instructions>") and first.endswith("do it")
@@ -114,3 +124,31 @@ async def test_running_sends_the_prompt_on_stdin(tmp_path, monkeypatch):
     assert json.loads(record.read_text())["stdin"] == "hello"
     assert events[-1] == Done(final_text="hi")
     assert Text(text="hi") in events
+
+
+def test_the_users_servers_plugins_and_apps_are_switched_off(codex_home, monkeypatch):
+    (codex_home / "config.toml").write_text(
+        '[mcp_servers.kite]\nurl = "https://example.invalid"\n'
+        '[mcp_servers."my server"]\ncommand = "x"\n'
+        '[plugins."slack@openai-curated"]\nenabled = true\n'
+    )
+    # cua_repl isn't in config.toml (it comes from another app), so it needs a whole disabled entry.
+    monkeypatch.setenv("FAKE_MCP_LIST", json.dumps([{"name": "kite"}, {"name": "cua_repl"}, {"name": "my server"}]))
+    cli = CodexCLI(command=fake_command("-"))
+
+    overrides = [a for a in cli.argv(RunSpec(prompt="x", cwd=".", mcp_servers={"crew": McpServer(command="c")})) if "=" in a]
+
+    assert "mcp_servers.kite.enabled=false" in overrides
+    assert 'mcp_servers."my server".enabled=false' in overrides
+    assert 'mcp_servers.cua_repl={command="false", enabled=false}' in overrides
+    assert 'plugins."slack@openai-curated".enabled=false' in overrides
+    assert "features.apps=false" in overrides
+    assert not any(o.startswith("mcp_servers.crew.enabled") for o in overrides)  # the bot's own server stays on
+    assert 'mcp_servers.crew.command="c"' in overrides
+
+
+def test_a_bot_is_not_run_if_its_isolation_cannot_be_worked_out(monkeypatch):
+    monkeypatch.setenv("FAKE_MCP_LIST", "not json")
+
+    with pytest.raises(RuntimeError, match="isolate"):
+        CodexCLI(command=fake_command("-")).argv(RunSpec(prompt="x", cwd="."))

@@ -4,6 +4,11 @@ published as it happens.
 A follow-up message to a task resumes the same backend session. Messages that arrive while the bot is mid-run wait
 and go in together as the next turn, so a task never has two runs at once.
 
+Each active task keeps its CLI running between turns (a long-lived session), so a follow-up, a review round or the
+chief waking up doesn't pay for start-up. A session is closed after it has been idle a while, when its task is
+cancelled, or when the daemon stops, and a backend without sessions, or a session that won't open, falls back to
+one process per turn, resuming from the stored session id.
+
 Delegation: a coordinator bot creates child tasks through the crewbots MCP tools, then ends its turn. When none of its
 children are still running, their handoffs and results go back to it as one message, which starts its next turn. It
 never waits or polls. Each run gets a token that lets its MCP server act for that task only, and only while it runs.
@@ -21,6 +26,7 @@ from typing import Any
 
 from crewbots import worktree
 from crewbots.backends import BACKENDS, Access, Backend, McpServer, RunSpec
+from crewbots.backends.base import Session
 from crewbots.crew import Bot, Crew
 from crewbots.events import Done, Event, SessionStarted, Usage
 from crewbots.store import Handoff, Review, Status, Store, Task, Verdict
@@ -29,6 +35,8 @@ SUBSCRIBER_QUEUE = 10_000
 MAX_CHILDREN = 12  # a stop condition: a coordinator that keeps delegating is looping, not managing
 MAX_REVIEW_ROUNDS = 3  # a stop condition: after this many reviewed versions, the user decides
 REPORT_RESULT_CHARS = 3000
+IDLE_TIMEOUT_S = 600.0  # an idle session is closed after this; its next message resumes it from the stored id
+MAX_SESSIONS = 8  # open sessions at once; past this the least recently used idle one is closed
 MCP_SERVER_NAME = "crewbots"
 MCP_COMMAND = (sys.executable, "-m", "crewbots.mcp_server")
 
@@ -85,6 +93,14 @@ class ReviewState:
                              "findings": r.findings if r else []} for t, r in self.latest]}
 
 
+@dataclass
+class OpenSession:
+    session: Session
+    token: str  # the session's crew tools act with this for as long as the session is open
+    cwd: Path
+    last_used: float
+
+
 class Bus:
     """Fan-out of live updates to whoever is watching (the app, `crewbots watch`).
 
@@ -123,6 +139,9 @@ class Runner:
         worktree_root: Path = worktree.DEFAULT_ROOT,
         api_url: str | None = None,  # where bots' MCP servers reach the daemon; None runs bots without crew tools
         mcp_command: tuple[str, ...] = MCP_COMMAND,
+        sessions: bool = True,
+        idle_timeout_s: float = IDLE_TIMEOUT_S,
+        max_sessions: int = MAX_SESSIONS,
     ):
         self.store = store
         self.crew = crew
@@ -135,8 +154,13 @@ class Runner:
         self._slots = asyncio.Semaphore(max_parallel)
         self._runs: dict[str, asyncio.Task[None]] = {}
         self._waiting: dict[str, list[str]] = {}
-        self._tokens: dict[str, str] = {}  # run token → task id, for as long as that run lasts
+        self._tokens: dict[str, str] = {}  # run or session token → task id, while that run or session lasts
         self._escalated: set[str] = set()
+        self.use_sessions = sessions
+        self.idle_timeout_s = idle_timeout_s
+        self.max_sessions = max_sessions
+        self._sessions: dict[str, OpenSession] = {}
+        self._reaper: asyncio.Task[None] | None = None
 
     # Commands from the user (and, through `delegate` and `message_child`, from coordinators).
 
@@ -170,6 +194,7 @@ class Runner:
             run.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await run
+        await self._close_session(task_id)
         task = self._set(task_id, status=Status.CANCELLED)
         self._report_up(task_id)
         return task
@@ -181,11 +206,18 @@ class Runner:
         for run in runs.values():
             run.cancel()
         await asyncio.gather(*runs.values(), return_exceptions=True)
+        if self._reaper:
+            self._reaper.cancel()
+        for task_id in list(self._sessions):
+            await self._close_session(task_id)
         for task_id in runs:
             self._set(task_id, status=Status.INTERRUPTED, error="the daemon stopped during this task")
 
     def running(self) -> list[str]:
         return list(self._runs)
+
+    def open_sessions(self) -> list[str]:
+        return list(self._sessions)
 
     def changes(self, task_id: str) -> str | None:
         """The task's diff against where its worktree started, or None if it has no worktree."""
@@ -328,6 +360,8 @@ class Runner:
 
     def _start(self, task_id: str, prompt: str) -> None:
         self._runs[task_id] = asyncio.create_task(self._turns(task_id, prompt), name=f"task {task_id}")
+        if self.use_sessions and (self._reaper is None or self._reaper.done()):
+            self._reaper = asyncio.create_task(self._reap_idle(), name="session reaper")
 
     async def _turns(self, task_id: str, prompt: str | None) -> None:
         try:
@@ -349,18 +383,17 @@ class Runner:
                 self._record(task_id, Done(final_text="", is_error=True, error=f"crewbots: {e}"))
                 self._set(task_id, status=Status.FAILED, error=str(e))
                 return
-            token = secrets.token_urlsafe(32)
+            backend = self.backends[bot.backend]
+            open_session = await self._session_for(task, bot, cwd, backend)
+            token = open_session.token if open_session else secrets.token_urlsafe(32)
             self._tokens[token] = task_id
-            spec = RunSpec(
-                prompt=prompt, cwd=cwd, access=bot.access, model=bot.model,
-                system_prompt=self.crew.system_prompt(bot, delegated_by=task.created_by if task.parent_id else None,
-                                                      reviewing=self._review_brief(task)),
-                resume_session_id=task.session_id, mcp_servers={**bot.mcp, **self._crew_tools(token, bot)},
-                read_dirs=[self.crew.skills_dir] if self.crew.skills_for(bot) else [], timeout_s=bot.timeout_s,
-            )
             done: Done | None = None
             try:
-                async with aclosing(self.backends[bot.backend].run(spec)) as stream:
+                if open_session:
+                    stream = open_session.session.turn(prompt)
+                else:
+                    stream = backend.run(self._spec(task, bot, cwd, token, prompt))
+                async with aclosing(stream) as stream:
                     async for event in stream:
                         self._record(task_id, event)
                         match event:
@@ -377,7 +410,12 @@ class Runner:
                 done = Done(final_text="", is_error=True, error=f"crewbots: {e}")
                 self._record(task_id, done)
             finally:
-                self._tokens.pop(token, None)
+                if open_session is None:
+                    self._tokens.pop(token, None)
+                elif open_session.session.alive:
+                    open_session.last_used = asyncio.get_running_loop().time()
+                else:
+                    await self._close_session(task_id)  # it died, or was stopped mid-turn: the next turn resumes
             if done is None or done.is_error:
                 self._escalated.discard(task_id)
                 self._set(task_id, status=Status.FAILED, result=done.final_text if done else None,
@@ -389,6 +427,61 @@ class Runner:
                 # Not idle yet if messages are waiting: the next turn starts right away, and watchers should not stop.
                 next_status = Status.QUEUED if self._waiting.get(task_id) else Status.IDLE
                 self._set(task_id, status=next_status, result=done.final_text, turns=task.turns + 1)
+
+    def _spec(self, task: Task, bot: Bot, cwd: Path, token: str, prompt: str) -> RunSpec:
+        return RunSpec(
+            prompt=prompt, cwd=cwd, access=bot.access, model=bot.model,
+            system_prompt=self.crew.system_prompt(bot, delegated_by=task.created_by if task.parent_id else None,
+                                                  reviewing=self._review_brief(task)),
+            resume_session_id=task.session_id, mcp_servers={**bot.mcp, **self._crew_tools(token, bot)},
+            read_dirs=[self.crew.skills_dir] if self.crew.skills_for(bot) else [], timeout_s=bot.timeout_s,
+        )
+
+    # Sessions.
+
+    async def _session_for(self, task: Task, bot: Bot, cwd: Path, backend: Backend) -> OpenSession | None:
+        """The task's open session, or a new one; None to run this turn as its own process."""
+        current = self._sessions.get(task.id)
+        if current and current.session.alive and current.cwd == cwd:
+            return current
+        if current:
+            await self._close_session(task.id)
+        if not self.use_sessions or not hasattr(backend, "open"):
+            return None
+        await self._make_room()
+        token = secrets.token_urlsafe(32)
+        self._tokens[token] = task.id  # its MCP server may call in while the session starts
+        try:
+            session = await backend.open(self._spec(task, bot, cwd, token, prompt=""))
+        except Exception as e:
+            self._tokens.pop(token, None)
+            self._record(task.id, kind="notice", data={"message": f"couldn't keep a session open ({e}); "
+                                                                  "running this turn on its own"})
+            return None
+        opened = OpenSession(session=session, token=token, cwd=cwd, last_used=asyncio.get_running_loop().time())
+        self._sessions[task.id] = opened
+        return opened
+
+    async def _close_session(self, task_id: str) -> None:
+        opened = self._sessions.pop(task_id, None)
+        if opened:
+            self._tokens.pop(opened.token, None)
+            with contextlib.suppress(Exception):
+                await opened.session.close()
+
+    async def _make_room(self) -> None:
+        idle = sorted((s.last_used, t) for t, s in self._sessions.items() if t not in self._runs)
+        while len(self._sessions) >= self.max_sessions and idle:
+            await self._close_session(idle.pop(0)[1])
+
+    async def _reap_idle(self) -> None:
+        loop = asyncio.get_running_loop()
+        while True:
+            await asyncio.sleep(max(1.0, min(60.0, self.idle_timeout_s / 4)))
+            now = loop.time()
+            for task_id, opened in list(self._sessions.items()):
+                if task_id not in self._runs and now - opened.last_used >= self.idle_timeout_s:
+                    await self._close_session(task_id)
 
     def _review_brief(self, task: Task) -> str | None:
         if not task.review_of:

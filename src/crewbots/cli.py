@@ -35,6 +35,7 @@ def main(argv: list[str] | None = None) -> int:
     serve = sub.add_parser("serve", help="run the daemon")
     serve.add_argument("--port", type=int, default=api.DEFAULT_PORT)
     serve.add_argument("--parallel", type=int, default=4, help="runs at the same time, across all bots")
+    serve.add_argument("--no-sessions", action="store_true", help="start a fresh CLI for every turn instead of keeping one")
 
     sub.add_parser("bots", help="list the crew")
     task = sub.add_parser("task", help="give a bot a task, and follow it")
@@ -104,7 +105,7 @@ def _init(args: argparse.Namespace) -> int:
 
 
 def _serve(args: argparse.Namespace) -> int:
-    api.serve(args.home, port=args.port, max_parallel=args.parallel)
+    api.serve(args.home, port=args.port, max_parallel=args.parallel, sessions=not args.no_sessions)
     return 0
 
 

@@ -1,13 +1,14 @@
 """Claude Code, run headless: `claude -p --output-format stream-json`. It uses the CLI's own sign-in, so a Pro/Max plan works."""
 
+import asyncio
 import json
 import os
 from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
 from crewbots.backends.base import Access, RunSpec, mcp_servers_json
-from crewbots.backends.process import stream_jsonl
-from crewbots.events import Done, Event, SessionStarted, Text, ToolCall, ToolResult, Usage
+from crewbots.backends.process import JsonlProcess, stream_jsonl
+from crewbots.events import Done, Event, Notice, SessionStarted, Text, ToolCall, ToolResult, Usage
 
 READ_ONLY_TOOLS = "Read,Glob,Grep"
 
@@ -22,13 +23,21 @@ class ClaudeCLI:
         self.use_api_key = use_api_key
 
     def run(self, spec: RunSpec) -> AsyncIterator[Event]:
+        return stream_jsonl(
+            self.argv(spec), cwd=spec.cwd, env=self.env(), parser=ClaudeParser(), stdin_text=spec.prompt,
+            timeout_s=spec.timeout_s,
+        )
+
+    async def open(self, spec: RunSpec) -> "ClaudeSession":
+        """`claude -p --input-format stream-json` stays running and takes each turn as a message on stdin."""
+        argv = [*self.argv(spec), "--input-format", "stream-json"]
+        return ClaudeSession(await JsonlProcess.start(argv, cwd=spec.cwd, env=self.env()), spec)
+
+    def env(self) -> dict[str, str]:
         env = dict(os.environ)
         if not self.use_api_key:
             env.pop("ANTHROPIC_API_KEY", None)
-        return stream_jsonl(
-            self.argv(spec), cwd=spec.cwd, env=env, parser=ClaudeParser(), stdin_text=spec.prompt,
-            timeout_s=spec.timeout_s,
-        )
+        return env
 
     def argv(self, spec: RunSpec) -> list[str]:
         args = [
@@ -62,6 +71,55 @@ class ClaudeCLI:
         if spec.resume_session_id:
             args += ["--resume", spec.resume_session_id]
         return args + spec.extra_args
+
+
+class ClaudeSession:
+    def __init__(self, process: JsonlProcess, spec: RunSpec):
+        self.process = process
+        self.timeout_s = spec.timeout_s
+        self.session_id = spec.resume_session_id
+        self._broken = False
+
+    @property
+    def alive(self) -> bool:
+        return self.process.alive and not self._broken
+
+    async def turn(self, prompt: str) -> AsyncIterator[Event]:
+        parser = ClaudeParser()
+        finished = False
+        try:
+            await self.process.send({"type": "user", "message": {"role": "user", "content": prompt}})
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + self.timeout_s if self.timeout_s else None
+            while True:
+                try:
+                    obj = await self.process.read(None if deadline is None else max(0.0, deadline - loop.time()))
+                except TimeoutError:
+                    yield Done(final_text=parser.final_text(), is_error=True, error=f"timed out after {self.timeout_s:g}s")
+                    return
+                if obj is None:
+                    yield Done(final_text=parser.final_text(), is_error=True, error=self.process.exit_detail())
+                    return
+                if isinstance(obj, str):
+                    yield Notice(message=obj)
+                    continue
+                for event in parser.feed(obj):
+                    if isinstance(event, SessionStarted):
+                        self.session_id = event.session_id
+                    yield event
+                    if isinstance(event, Done):
+                        finished = True
+                        return
+        except (BrokenPipeError, ConnectionResetError):
+            yield Done(final_text=parser.final_text(), is_error=True, error=self.process.exit_detail())
+        finally:
+            if not finished:
+                self._broken = True  # mid-turn, there's no way back to a clean state: stop it
+                await self.process.stop()
+
+    async def close(self) -> None:
+        self._broken = True
+        await self.process.stop()
 
 
 class ClaudeParser:
