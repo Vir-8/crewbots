@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "db371dbe072a";
+export const API_SCHEMA = "ff3045ee0534";
 
 export interface AskBody {
   bot: string;
@@ -639,6 +639,11 @@ export interface Reviewer {
   effort?: string | null;
 }
 
+/** What to change about a group chat; anything left out stays as it is. */
+export interface RoomChange {
+  max_depth?: number | null;
+}
+
 export interface RoomMessageOut {
   id: number;
   room_id: string;
@@ -656,6 +661,14 @@ export interface RoomOut {
   members: string[];
   created_at: string;
   updated_at: string;
+  max_depth?: number | null;
+  stopped?: RoomStop | null;
+}
+
+export interface RoomStop {
+  after: number;
+  waiting: string[];
+  owed?: string[];
 }
 
 export interface RoutineBody {

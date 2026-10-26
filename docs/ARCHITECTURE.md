@@ -239,8 +239,13 @@ Each step leaves the system working.
   thread above a task, never to a whole chat.
 - **A room** is a group chat with a lead. Each bot in it has a **seat**, its own session for that room, fed the
   messages it hasn't seen as `[name]: text`; its final message is posted back as its reply, or nothing if it answers
-  `NO_REPLY`. The user's message wakes whoever it mentions, or the lead; a bot's reply wakes whoever it mentions, up
-  to `MAX_ROOM_DEPTH` (4) replies from the user's message, so bots can't talk forever. Checked live: asked to
+  `NO_REPLY`. The user's message wakes whoever it mentions (`@everyone` is every member), or the lead, who triages:
+  answers, hands it on with an @mention (one owner per piece of work), or stays out of it. A bot's reply wakes whoever
+  it mentions, up to `MAX_ROOM_DEPTH` (4) replies from the user's message, or the room's own `max_depth`, so bots
+  can't talk forever. A reply cut off there records `stopped` on the room (who was waiting); the app shows "The bots
+  stopped after N replies" with Continue (`POST /rooms/{id}/continue`, waking them with a fresh count), and the
+  user's next message clears it. A bot @mentioned by name owes a reply: a `NO_REPLY` from it gets one nudge
+  (`mentioned.md`), and a second is accepted. Checked live: asked to
   introduce themselves, the reviewer brought in the critic with a question, the critic answered, the reviewer
   replied, and it stopped. The user makes a room in the app; a bot makes one with `open_group`, holding at most
   `MAX_ROOM_BOTS` (6) bots, and any member can bring in another with `add_to_group`. Either way the app hears a

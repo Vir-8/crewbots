@@ -76,7 +76,9 @@ create table if not exists rooms (
     lead       text not null,  -- the bot that answers a message that mentions no one
     members    text not null,  -- JSON list of bot names
     created_at text not null,
-    updated_at text not null
+    updated_at text not null,
+    max_depth  integer,        -- bot replies in a row before the bots stop; null for MAX_ROOM_DEPTH
+    stopped    text            -- JSON {after, waiting, owed} once the bots stopped there, until someone carries on
 );
 create table if not exists room_messages (
     id      integer primary key autoincrement,
@@ -230,9 +232,21 @@ def _catch_up(db: Connection, index_history: Callable[[], None]) -> None:
         index_history()
 
 
+def _add_columns(table: str, columns: dict[str, str]) -> Callable[[Connection, Callable[[], None]], None]:
+    """A step that adds columns to a table, each unless it's there already (a table step 1 made has today's)."""
+    def step(db: Connection, _: Callable[[], None]) -> None:
+        have = {r["name"] for r in db.execute(f"pragma table_info({table})")}
+        for column, sql in columns.items():
+            if column not in have:
+                db.execute(f"alter table {table} add column {column} {sql}")
+    return step
+
+
 # Each step runs once, in order, on a database that hasn't had it: (what it does, the step).
 MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] = [
     ("everything up to 26 October 2026", _catch_up),
+    ("a group chat's own reply limit, and where its bots stopped", _add_columns("rooms", {
+        "max_depth": "integer", "stopped": "text"})),
 ]
 
 

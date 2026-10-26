@@ -2,7 +2,13 @@
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+class RoomStop(BaseModel):
+    after: int  # bot replies in a row, the room's limit
+    waiting: list[str]  # who the last reply mentioned: "Continue" wakes them
+    owed: list[str] = []  # of those, the ones mentioned by name, who owe a reply
 
 
 class RoomOut(BaseModel):
@@ -12,6 +18,8 @@ class RoomOut(BaseModel):
     members: list[str]
     created_at: str
     updated_at: str
+    max_depth: int | None = None  # bot replies in a row before they stop; None for the crew's default (4)
+    stopped: RoomStop | None = None  # set once the bots stopped, until the user carries on or says something
 
 class AttachmentOut(BaseModel):
     id: str
@@ -63,3 +71,9 @@ class NewRoom(BaseModel):
     title: str = ""
     members: list[str]
     lead: str | None = None
+
+
+class RoomChange(BaseModel):
+    """What to change about a group chat; anything left out stays as it is."""
+
+    max_depth: int | None = Field(None, ge=1, le=20)  # null for the crew's default

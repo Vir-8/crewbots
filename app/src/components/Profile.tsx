@@ -171,7 +171,7 @@ export function RoomProfile(props: { crew: Crew; room: Room; onOpen: (id: string
             {room.members.length} bots · {labelOf(room.lead)} leads
           </div>
           <p className="profile-desc">
-            {labelOf(room.lead)} answers what you say here, and anyone you @mention joins in. Bots bring each other in the same way.
+            {labelOf(room.lead)} answers what you say here or hands it on, and anyone you @mention joins in. Bots bring each other in the same way.
           </p>
         </div>
 

@@ -4,7 +4,10 @@ import json
 import uuid
 from typing import Any
 
-from crewbots.store.records import _now, _room_message
+from crewbots.store.records import _now, _room, _room_message
+
+ROOM_SETTINGS = {"title", "lead", "members", "max_depth", "stopped"}
+JSON_COLUMNS = {"members", "stopped"}
 
 
 class Rooms:
@@ -21,15 +24,19 @@ class Rooms:
         row = self.db.execute("select * from rooms where id = ?", (room_id,)).fetchone()
         if row is None:
             raise KeyError(room_id)
-        return {**dict(row), "members": json.loads(row["members"])}
+        return _room(row)
 
-    def set_room_members(self, room_id: str, members: list[str]) -> dict[str, Any]:
-        self.db.execute("update rooms set members = ? where id = ?", (json.dumps(members), room_id))
+    def update_room(self, room_id: str, **changes: Any) -> dict[str, Any]:
+        """Changes a room's settings (title, lead, members, max_depth, stopped), not when it was last talked in."""
+        if unknown := changes.keys() - ROOM_SETTINGS:
+            raise ValueError(f"not a room setting: {sorted(unknown)}")
+        values = [json.dumps(v) if k in JSON_COLUMNS and v is not None else v for k, v in changes.items()]
+        self.db.execute(f"update rooms set {', '.join(f'{k} = ?' for k in changes)} where id = ?", (*values, room_id))
         return self.room(room_id)
 
     def rooms(self) -> list[dict[str, Any]]:
         rows = self.db.execute("select * from rooms order by created_at").fetchall()
-        return [{**dict(r), "members": json.loads(r["members"])} for r in rows]
+        return [_room(r) for r in rows]
 
     def add_room_message(self, room_id: str, author: str, text: str, depth: int = 0,
                          attachments: list[dict[str, Any]] | None = None) -> dict[str, Any]:

@@ -624,6 +624,16 @@ button.chat-head-who:hover {
   font-weight: 550;
 }
 
+/* Where the bots stopped replying to each other, and the user's "Continue" */
+.room-stopped {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--soft);
+}
+
 /* A bot's chat before its first message */
 
 .welcome {

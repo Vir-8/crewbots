@@ -88,7 +88,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
   useMarkRead(crew, chat, messages?.length);
   useEffect(() => {
     if (box.current) box.current.scrollTop = box.current.scrollHeight;
-  }, [messages?.length]);
+  }, [messages?.length, Boolean(room.stopped)]);
 
   const typing = room.members.filter((m) => {
     const seat = [...crew.tasks.values()].find((t) => t.kind === "seat" && t.room_id === room.id && t.bot === m);
@@ -162,11 +162,19 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
                 </span>
               </div>
             )}
+            {room.stopped && typing.length === 0 && (
+              <div className="room-stopped">
+                The bots stopped after {room.stopped.after} replies.
+                <button className="button small" onClick={() => crew.carryOn(room.id)} title={`Let ${room.stopped.waiting.map(labelOf).join(", ")} answer, with a fresh count`}>
+                  Continue
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
       <div className="dock">
-        <Composer key={chat.key} placeholder={`Message ${room.title}`} mentions={room.members} onSend={(text, files) => crew.post(room.id, text, files)} draft={chat.key} autoFocus />
+        <Composer key={chat.key} placeholder={`Message ${room.title}`} mentions={[...room.members, "everyone"]} onSend={(text, files) => crew.post(room.id, text, files)} draft={chat.key} autoFocus />
       </div>
     </>
   );
@@ -175,7 +183,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
 /** A group chat before its first message: who's in it, how it works, and a few ways to start. */
 function GroupWelcome({ crew, room, onSay }: { crew: Crew; room: Room; onSay: (text: string) => void }) {
   const members = [room.lead, ...room.members.filter((m) => m !== room.lead)];
-  const starts = ["What's everyone working on?", "Plan this week's work together", `@${members.find((m) => m !== room.lead) ?? room.lead} what do you need from me?`];
+  const starts = ["@everyone what are you working on?", "Plan this week's work together", `@${members.find((m) => m !== room.lead) ?? room.lead} what do you need from me?`];
   return (
     <div className="welcome">
       <GroupAvatar members={room.members} size={72} />
@@ -193,8 +201,8 @@ function GroupWelcome({ crew, room, onSay }: { crew: Crew; room: Room; onSay: (t
         })}
       </div>
       <p>
-        {labelOf(room.lead)} answers what you say here, and anyone you @mention joins in. Bots bring each other in the same way, and hand out work as
-        threads.
+        {labelOf(room.lead)} answers what you say here or hands it to the right teammate, and anyone you @mention joins in (@everyone for all of them).
+        Bots bring each other in the same way, and hand out work as threads.
       </p>
       <div className="welcome-starts">
         {starts.map((text) => (

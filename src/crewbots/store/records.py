@@ -125,6 +125,13 @@ def _task(row: sqlite3.Row) -> Task:
     return Task(**values)
 
 
+def _room(row: sqlite3.Row) -> dict[str, Any]:
+    room = dict(row)
+    room["members"] = json.loads(room["members"])
+    room["stopped"] = room["stopped"] and json.loads(room["stopped"])
+    return room
+
+
 def _room_message(row: sqlite3.Row) -> dict[str, Any]:
     message = dict(row)
     message["attachments"] = json.loads(message.get("attachments") or "[]")

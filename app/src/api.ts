@@ -73,6 +73,7 @@ export const api = {
   uploadAttachment: (name: string, data: string) => call<Attachment>("POST", "/attachments", { name, data }),
   attachment: (id: string) => call<{ name: string; mime: string; data: string }>("GET", `/attachments/${id}`),
   newRoom: (title: string, members: string[], lead?: string) => call<Room>("POST", "/rooms", { title, members, lead: lead ?? null }),
+  carryOn: (roomId: string) => call<Room>("POST", `/rooms/${roomId}/continue`),
   card: (bot: string) => call<Card>("GET", `/bots/${encodeURIComponent(bot)}/card`),
   saveCard: (bot: string, fields: Partial<Card>) => call<Card>("PUT", `/bots/${encodeURIComponent(bot)}/card`, fields),
   newBot: (fields: Partial<Card> & { name: string }) => call<Card>("POST", "/bots", fields),

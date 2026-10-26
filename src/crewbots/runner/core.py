@@ -117,6 +117,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds):
         self._recheck = asyncio.Event()  # set when a hold may be over: a release, or a reloaded crew
         self.limits: dict[str, dict[str, RateLimit]] = {}  # plan → window → the latest the CLI reported
         self._seat_depth: dict[str, int] = {}  # seat task → the depth of the room message that woke it
+        self._owed: set[str] = set()  # seats @mentioned by name since their last reply, which owe the room one
         # A code review's tools (reading the repo on GitHub), given its task; None where it has your local copy.
         self.review_tools: Callable[[Task], Any] | None = None
 
@@ -450,7 +451,9 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds):
         if task.kind == "seat" and task.room_id:
             room = self.store.room(task.room_id)
             others = [m for m in room["members"] if m != task.bot]
-            lead = ("You lead it: a message that mentions no one is yours to answer." if room["lead"] == task.bot
+            lead = (f"You lead it: a message from the user that mentions no one comes to you. Answer it, hand it to the "
+                    f"one member best placed for it with a short handover that @mentions them, or reply {NO_REPLY} if "
+                    f"someone already has it." if room["lead"] == task.bot
                     else f"{room['lead']} leads it; you're woken when someone mentions you.")
             return prompts.text("seat-setting", self.crew.home, title=repr(room["title"]), lead=lead, no_reply=NO_REPLY,
                                 others=", ".join(others) or "no other bots")

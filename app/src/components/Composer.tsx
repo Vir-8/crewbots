@@ -176,7 +176,7 @@ export function Composer(props: {
         <div className="mentions">
           {suggestions.map((name) => (
             <button key={name} className="mention-option" onMouseDown={(e) => e.preventDefault()} onClick={() => mention(name)}>
-              {labelOf(name)} <span className="faint">@{name}</span>
+              {name === "everyone" ? "Everyone" : labelOf(name)} <span className="faint">@{name}</span>
             </button>
           ))}
         </div>

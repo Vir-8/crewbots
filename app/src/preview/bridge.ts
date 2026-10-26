@@ -41,6 +41,8 @@ const tick = () => {
   }, 3500);
 };
 
+// Group chat messages are numbered across every room, as the daemon numbers them.
+const nextMessageId = () => Math.max(0, ...[...demo.roomMessages.values()].flat().map((m) => m.id)) + 1;
 const ok = (data: unknown) => ({ ok: true, status: 200, data });
 const missing = (what: string) => ({ ok: false, status: 404, data: { detail: `no ${what}` } });
 
@@ -68,14 +70,34 @@ async function request(method: string, path: string, body?: any) {
     return request("POST", `/tasks/${chat}/messages`, body);
   }
   if (method === "POST" && parts[0] === "chats" && parts[2] === "read") return ok({ ok: true });
+  if (method === "POST" && parts[0] === "rooms" && parts[2] === "continue") {
+    const room = demo.rooms.find((r) => r.id === parts[1])!;
+    const waiting = room.stopped?.waiting ?? [];
+    room.stopped = null;
+    publish({ type: "room", room });
+    const messages = demo.roomMessages.get(room.id)!;
+    for (const [i, author] of waiting.entries()) {
+      setTimeout(() => {
+        const reply = { id: nextMessageId(), room_id: room.id, author, text: "Carrying on. (This is the design preview; in the app the bots pick up where they stopped.)", depth: 1, at: new Date().toISOString() };
+        messages.push(reply);
+        publish({ type: "room_message", message: reply });
+      }, 1200 * (i + 1));
+    }
+    return ok(room);
+  }
   if (parts[0] === "rooms" && parts[2] === "messages") {
     const messages = demo.roomMessages.get(parts[1]) ?? [];
-    if (method === "GET") return ok(messages);
-    const message = { id: messages.length + 1, room_id: parts[1], author: "user", text: body.text, depth: 0, at: new Date().toISOString() };
+    if (method === "GET") return ok([...messages]); // a copy, as over the wire: what comes later arrives live
+    const stopped = demo.rooms.find((r) => r.id === parts[1]);
+    if (stopped?.stopped) {
+      stopped.stopped = null;
+      publish({ type: "room", room: stopped });
+    }
+    const message = { id: nextMessageId(), room_id: parts[1], author: "user", text: body.text, depth: 0, at: new Date().toISOString() };
     messages.push(message);
     publish({ type: "room_message", message });
     setTimeout(() => {
-      const reply = { id: messages.length + 1, room_id: parts[1], author: "chief", text: "Got it. (This is the design preview; in the app the lead would answer, and anyone you @mention.)", depth: 1, at: new Date().toISOString() };
+      const reply = { id: nextMessageId(), room_id: parts[1], author: "chief", text: "Got it. (This is the design preview; in the app the lead would answer, and anyone you @mention.)", depth: 1, at: new Date().toISOString() };
       messages.push(reply);
       publish({ type: "room_message", message: reply });
     }, 1200);

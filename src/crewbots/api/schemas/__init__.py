@@ -38,8 +38,10 @@ from crewbots.api.schemas.chats import (
     ChatOut,
     LastMessage,
     NewRoom,
+    RoomChange,
     RoomMessageOut,
     RoomOut,
+    RoomStop,
 )
 from crewbots.api.schemas.crew import ClientError, CrewState, PlanLimitOut, RestartBody, VersionOut
 from crewbots.api.schemas.live import LiveCrew, LiveEvent, LiveMessage, LiveRoom, LiveRoomMessage, LiveTask
@@ -188,8 +190,10 @@ __all__ = [
     "ReviewRequest",
     "ReviewStateOut",
     "Reviewer",
+    "RoomChange",
     "RoomMessageOut",
     "RoomOut",
+    "RoomStop",
     "RoutineBody",
     "RoutineFileOut",
     "RoutineOut",

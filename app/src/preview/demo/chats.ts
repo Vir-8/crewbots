@@ -48,10 +48,12 @@ for (const b of bots) {
 }
 
 // A group chat: the crew's own, where bots talk to each other in the open.
-// And a new one nobody has written in yet.
-export const rooms = [
+// A new one nobody has written in yet. And one where the bots went back and forth until they stopped.
+type DemoRoom = { id: string; title: string; lead: string; members: string[]; created_at: string; updated_at: string; max_depth?: number | null; stopped?: { after: number; waiting: string[]; owed?: string[] } | null };
+export const rooms: DemoRoom[] = [
   { id: "r_crew000001", title: "Crew", lead: "chief", members: bots.map((b) => b.name), created_at: tick(), updated_at: tick() },
   { id: "r_review0002", title: "Review desk", lead: "reviewer", members: ["reviewer", "critic"], created_at: tick(), updated_at: tick() },
+  { id: "r_naming0003", title: "Naming the export", lead: "engineer", members: ["engineer", "critic"], created_at: tick(), updated_at: tick(), stopped: { after: 4, waiting: ["engineer"], owed: ["engineer"] } },
 ];
 export const roomMessages = new Map<string, { id: number; room_id: string; author: string; text: string; depth: number; at: string }[]>();
 {
@@ -63,6 +65,15 @@ export const roomMessages = new Map<string, { id: number; room_id: string; autho
     said("engineer", "Endpoint's in and its tests pass. Wiring the button now. @reviewer it'll be yours in a few minutes.", 1),
     said("reviewer", "Ready when you are. I'll check the filters reach the export.", 2),
     said("chief", "Thanks both. I'll propose it for merging once both reviews pass.", 1),
+  ]);
+  const naming = rooms[2].id;
+  const argued = (author: string, text: string, depth: number) => ({ ...said(author, text, depth), room_id: naming });
+  roomMessages.set(naming, [
+    argued("user", "What should the export button say?", 0),
+    argued("engineer", "\"Export CSV\". It says what you get. @critic agree?", 1),
+    argued("critic", "\"Download\" is what people look for. @engineer", 2),
+    argued("engineer", "Download what, though? The format matters when there's more than one. @critic", 3),
+    argued("critic", "Then \"Download CSV\", and the menu can grow later. @engineer final?", 4),
   ]);
 }
 

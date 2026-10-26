@@ -159,6 +159,7 @@ export function useCrew() {
     say: (bot: string, text: string, attachments: string[] = []) => act(api.say(bot, text, attachments)),
     post: (roomId: string, text: string, attachments: string[] = []) => act(api.post(roomId, text, attachments)),
     read: (key: string) => api.read(key).then(reloadChats, () => undefined),
+    carryOn: (roomId: string) => act(api.carryOn(roomId)),
     newRoom: async (title: string, members: string[], lead?: string) => {
       const room = await act(api.newRoom(title, members, lead));
       loadChats();

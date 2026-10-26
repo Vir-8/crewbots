@@ -77,7 +77,7 @@ async def test_the_lead_answers_a_message_that_mentions_no_one(crew, store):
 
     assert [(m["author"], m["text"]) for m in store.room_messages(room["id"])] == [
         ("user", "Can we ship CSV export this week?"), ("chief", "On it.")]
-    assert "lead it" in crew.specs_for("chief")[0].system_prompt
+    assert "lead it" in crew.specs_for("chief")[0].system_prompt and "hand it to" in crew.specs_for("chief")[0].system_prompt
 
 
 async def test_mentions_wake_those_bots_and_bots_bring_each_other_in(crew, store):
@@ -92,7 +92,7 @@ async def test_mentions_wake_those_bots_and_bots_bring_each_other_in(crew, store
     assert "[user]: @engineer add the endpoint" in reviewer_saw and "[engineer]: Done." in reviewer_saw
 
 
-async def test_bots_stop_waking_each_other_a_few_replies_deep(crew, store):
+async def test_bots_stop_waking_each_other_a_few_replies_deep_until_the_user_carries_on(crew, store):
     room = crew.runner.create_room("Loop", ["engineer", "reviewer"], lead="engineer")
     replies(crew, {"engineer": "@reviewer your turn", "reviewer": "@engineer no, yours"})
 
@@ -101,6 +101,40 @@ async def test_bots_stop_waking_each_other_a_few_replies_deep(crew, store):
 
     bot_messages = [m for m in store.room_messages(room["id"]) if m["author"] != "user"]
     assert len(bot_messages) == MAX_ROOM_DEPTH and bot_messages[-1]["depth"] == MAX_ROOM_DEPTH
+    assert store.room(room["id"])["stopped"] == {"after": MAX_ROOM_DEPTH, "waiting": ["engineer"], "owed": ["engineer"]}
+
+    crew.runner.set_room_limit(room["id"], 2)
+    crew.runner.carry_on(room["id"])  # the user's "Continue": the one waiting is woken, with a fresh count
+    await wait_until(idle(crew), timeout=10)
+    bot_messages = [m for m in store.room_messages(room["id"]) if m["author"] != "user"]
+    assert [m["depth"] for m in bot_messages[MAX_ROOM_DEPTH:]] == [1, 2] and store.room(room["id"])["stopped"]
+
+    crew.runner.post(room["id"], "user", "@engineer stop there")  # saying something new carries on too
+    await wait_until(idle(crew), timeout=10)
+    assert store.room(room["id"])["stopped"]["after"] == 2 and store.room(room["id"])["max_depth"] == 2
+
+
+async def test_everyone_wakes_the_whole_room_and_a_mention_gets_a_reply(crew, store):
+    room = crew.runner.create_room("All", ["chief", "engineer", "reviewer"], lead="chief")
+    replies(crew, {"chief": "Here.", "engineer": "Here too."})  # the reviewer has nothing to say
+
+    crew.runner.post(room["id"], "user", "@everyone roll call")
+    await wait_until(idle(crew))
+    assert sorted(m["author"] for m in store.room_messages(room["id"])) == ["chief", "engineer", "user"]
+
+    nudged = []
+    crew.script["reviewer"] = lambda spec, me: [Done(final_text="Nothing from me." if nudged.append(1) or
+                                                     len(nudged) > 1 else NO_REPLY)]
+    crew.runner.post(room["id"], "user", "@reviewer anything?")  # asked by name, it's asked again rather than silent
+    await wait_until(idle(crew))
+    assert store.room_messages(room["id"])[-1]["text"] == "Nothing from me." and len(nudged) == 2
+    assert "@mentioned by name" in [e.data["text"] for e in store.events(store.seat_of(room["id"], "reviewer").id)
+                                    if e.kind == "message"][-1]
+
+    crew.script["reviewer"] = lambda spec, me: [Done(final_text=NO_REPLY)]
+    crew.runner.post(room["id"], "user", "@reviewer anything else?")
+    await wait_until(idle(crew))
+    assert store.room_messages(room["id"])[-1]["author"] == "user"  # asked once more, a bot can still pass
 
 
 async def test_a_bot_posts_to_the_crews_room_from_its_own_chat(crew, store):
@@ -177,3 +211,11 @@ def test_the_app_sees_every_conversation_with_what_is_unread(crew, store):
         profile = client.get("/bots/engineer/profile", headers=auth).json()
         assert profile["bot"] == "engineer" and profile["threads"] == []
         assert client.post("/rooms", json={"members": ["nobody"]}, headers=auth).status_code == 422
+
+        changed = client.patch(f"/rooms/{room['id']}", json={"max_depth": 2}, headers=auth).json()
+        assert changed["max_depth"] == 2 and changed["stopped"] is None
+        assert client.patch(f"/rooms/{room['id']}", json={}, headers=auth).json()["max_depth"] == 2
+        assert client.patch(f"/rooms/{room['id']}", json={"max_depth": None}, headers=auth).json()["max_depth"] is None
+        assert client.patch(f"/rooms/{room['id']}", json={"max_depth": 0}, headers=auth).status_code == 422
+        assert client.post(f"/rooms/{room['id']}/continue", headers=auth).json()["id"] == room["id"]
+        assert client.post("/rooms/r_nope/continue", headers=auth).status_code == 404

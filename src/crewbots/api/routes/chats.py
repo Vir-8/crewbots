@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 
 from crewbots.api.context import Context
-from crewbots.api.schemas import ChatOut, Message, NewRoom, RoomMessageOut, RoomOut, TaskOut
+from crewbots.api.schemas import ChatOut, Message, NewRoom, RoomChange, RoomMessageOut, RoomOut, TaskOut
 from crewbots.store import Status
 
 
@@ -85,5 +85,17 @@ def routes(c: Context) -> APIRouter:
     async def post_message(room_id: str, body: Message):
         room_or_404(room_id)
         return runner.post(room_id, "user", body.text, attachments=attached(body))
+
+    @v1.patch("/rooms/{room_id}", response_model=RoomOut)
+    async def change_room(room_id: str, body: RoomChange):
+        room = room_or_404(room_id)
+        if "max_depth" in body.model_fields_set:
+            room = runner.set_room_limit(room_id, body.max_depth)
+        return room
+
+    @v1.post("/rooms/{room_id}/continue", response_model=RoomOut)
+    async def carry_on(room_id: str):
+        room_or_404(room_id)
+        return runner.carry_on(room_id)
 
     return v1
