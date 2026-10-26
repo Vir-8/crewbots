@@ -71,6 +71,12 @@ class PostBody(BaseModel):
 class Recall(BaseModel):
     query: str
 
+class RemindOn(BaseModel):
+    event: str
+    match: str = ""
+    then: str
+
+
 class StateBody(BaseModel):
     state: str
 

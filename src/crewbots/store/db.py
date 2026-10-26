@@ -181,6 +181,32 @@ create table if not exists recall_log (
 """
 SCHEMA += RECALL_LOG
 
+# What happened around the crew (`sources.py`), and the standing intents waiting for it (migration 7).
+HAPPENINGS = """
+create table if not exists crew_events (
+    id      integer primary key autoincrement,
+    at      text not null,
+    kind    text not null,   -- commit, branch, file, review_requested, ci_failed, ci_passed, thread_done
+    subject text not null,   -- a repository, a folder, a pull request or a task
+    text    text not null
+);
+create index if not exists crew_events_by_at on crew_events(at);
+create table if not exists intents (
+    id            integer primary key autoincrement,
+    bot           text not null,
+    task_id       text,                       -- where it was set
+    kind          text not null,              -- the kind of event it waits for
+    match         text not null default '',   -- words the event must mention, if any
+    text          text not null,              -- what to do or say then
+    created_at    text not null,
+    expires_at    text not null,
+    fires         integer not null default 0,
+    last_fired_at text,
+    cancelled     integer not null default 0
+);
+"""
+SCHEMA += HAPPENINGS
+
 # Full-text search over what the crew said and decided: the `recall` tool. Kept in step with events as they're added.
 # `search` matches words (stemmed); `trigrams`, the same rows, matches any three or more characters, for ids, paths
 # and parts of code names (migration 6).
@@ -314,6 +340,7 @@ MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] =
     ("a log of what bots do to each other", lambda db, _: db.executescript(AGENT_LOG)),
     ("what each task's session started with", lambda db, _: db.executescript(PRIMED)),
     ("trigram search, and a log of recall's queries", lambda db, _: _better_recall(db)),
+    ("crew events, and standing intents", lambda db, _: db.executescript(HAPPENINGS)),
 ]
 
 

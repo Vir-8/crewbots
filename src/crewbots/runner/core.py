@@ -339,6 +339,9 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds, Dreams, Checki
             self._runs.pop(task_id, None)
             self._stay_awake()
         self._report_up(task_id)
+        task = self.store.get_task(task_id)
+        if settled and task.kind == "thread" and not task.active and not self._background(task_id):
+            self.happened("thread_done", task_id, f"{task.bot}'s thread {task.title!r} is {task.status.value}")
 
     async def _tries(self, task_id: str, prompt: str) -> None:
         """Runs a turn, and again when it failed for a passing reason: after a wait, or for a plan's limit, once the

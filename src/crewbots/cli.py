@@ -89,6 +89,9 @@ def main(argv: list[str] | None = None) -> int:
     release = sub.add_parser("release", help="let a task held on a budget or plan limit go ahead")
     release.add_argument("task_id")
     sub.add_parser("reload", help="take up edited role cards and budgets without restarting the daemon")
+    sub.add_parser("events", help="what happened around the crew lately: commits, files, reviews, checks, threads")
+    intents = sub.add_parser("intents", help="standing intents bots wait on, or cancel one")
+    intents.add_argument("--cancel", type=int, metavar="ID", help="cancel this standing intent")
     checkin = sub.add_parser("checkin", help="check a bot in on its checklist (bots/<bot>/checkin.md) now")
     checkin.add_argument("bot")
     memory = sub.add_parser("memory", help="consolidate bots' memory now, rather than overnight")
@@ -283,6 +286,24 @@ def _release(args: argparse.Namespace) -> int:
     return 0
 
 
+def _events(args: argparse.Namespace) -> int:
+    for e in _client(args).get("/crew-events", params={"limit": 30}).raise_for_status().json():
+        print(f"{e['at'][:16].replace('T', ' ')}  {e['kind']:<16} {e['text']}")
+    return 0
+
+
+def _intents(args: argparse.Namespace) -> int:
+    client = _client(args)
+    if args.cancel:
+        client.delete(f"/intents/{args.cancel}").raise_for_status()
+        print(f"cancelled standing intent {args.cancel}")
+        return 0
+    for i in client.get("/intents").raise_for_status().json():
+        on = f"{i['kind']} {i['match']}".strip()
+        print(f"{i['id']:>4}  {i['bot']:<10} on {on}: {i['text']}  (fired {i['fires']} of 3, until {i['expires_at'][:10]})")
+    return 0
+
+
 def _checkin(args: argparse.Namespace) -> int:
     task = _client(args).post(f"/checkins/{args.bot}").raise_for_status().json()
     print(f"{args.bot}: checking in, in {task['id']}; what it finds worth telling you comes to its chat")
@@ -425,7 +446,8 @@ COMMANDS = {
     "init": _init, "serve": _serve, "bots": _bots, "task": _task, "tasks": _tasks, "watch": _watch, "say": _say,
     "cancel": _cancel, "diff": _diff, "review": _review, "merge": _merge, "skills": _skills, "service": _service,
     "openapi": _openapi, "run": _run, "routines": _routines, "budgets": _budgets, "log": _log, "memory": _memory,
-    "checkin": _checkin, "release": _release, "reload": _reload, "restart": _restart, "doctor": _doctor,
+    "checkin": _checkin, "events": _events, "intents": _intents, "release": _release, "reload": _reload,
+    "restart": _restart, "doctor": _doctor,
 }
 
 

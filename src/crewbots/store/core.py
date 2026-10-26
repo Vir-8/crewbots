@@ -19,13 +19,14 @@ from pathlib import Path
 from crewbots.store.db import Connection, migrate
 from crewbots.store.drafts import Drafts
 from crewbots.store.events import Events
+from crewbots.store.happenings import Happenings
 from crewbots.store.rooms import Rooms
 from crewbots.store.routines import Routines
 from crewbots.store.search import Search
 from crewbots.store.tasks import Tasks
 
 
-class Store(Tasks, Events, Rooms, Search, Drafts, Routines):
+class Store(Tasks, Events, Rooms, Search, Drafts, Routines, Happenings):
     def __init__(self, path: Path | str):
         self.db = Connection(path)
         self.db.execute("pragma journal_mode=wal")

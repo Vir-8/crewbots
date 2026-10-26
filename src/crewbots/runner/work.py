@@ -4,10 +4,11 @@ keeps notes."""
 from pathlib import Path
 from typing import Any
 
-from crewbots import worktree
+from crewbots import prompts, worktree
 from crewbots.memory import CREW_SCOPE, Note
 from crewbots.runner.common import MergeError, NotAllowed
 from crewbots.runner.reviews import MAX_REVIEW_ROUNDS
+from crewbots.sources import KINDS
 from crewbots.store import Handoff, Task
 
 
@@ -44,6 +45,27 @@ class Work:
                   "title": m["path"]} for m in self.crew.memory.search([bot, CREW_SCOPE], query)]
         self.store.log_recall(task_id, bot, query, [h["task_id"] or h["title"] for h in hits])
         return hits
+
+    def happened(self, kind: str, subject: str, text: str) -> dict[str, Any]:
+        """Something happened around the crew (`sources.py`): it's kept, for check-ins to read, and each standing
+        intent waiting for it fires, telling its bot in its chat."""
+        event = self.store.add_crew_event(kind, subject, text)
+        for intent in self.store.intents():
+            if (intent["kind"] == kind and intent["bot"] in self.crew.bots and _mentions(intent["match"], f"{subject} {text}")
+                    and self.store.intent_ready(intent)):
+                self.store.fire_intent(intent["id"])
+                self.say(intent["bot"], prompts.text("intent-fired", self.crew.home, then=intent["text"], event=text,
+                                                     kind=kind, id=intent["id"]), sender="crewbots")
+        return event
+
+    def remind_on(self, task_id: str, kind: str, match: str, then: str) -> dict[str, Any]:
+        """The `remind_on` tool: a standing intent, which tells the bot `then` when an event of `kind` mentioning
+        `match` happens: at most three times, a day apart, for 90 days."""
+        if kind not in KINDS:
+            raise NotAllowed(f"no event {kind!r}; the events are {', '.join(KINDS)}")
+        if not then.strip():
+            raise NotAllowed("say what to do or tell the user when it happens")
+        return self.store.add_intent(self.store.get_task(task_id).bot, task_id, kind, match.strip(), then.strip())
 
     def update_state(self, task_id: str, state: str) -> Path:
         """The `update_state` tool: where this task stands, whole, for a fresh session of it to start from."""
@@ -126,3 +148,8 @@ class Work:
 def _short(text: str, chars: int) -> str:
     text = " ".join(text.split())
     return text if len(text) <= chars else text[:chars - 1] + "…"
+
+
+def _mentions(match: str, text: str) -> bool:
+    """Whether `text` has every word of `match` (any text does, for no match)."""
+    return all(word in text.lower() for word in match.lower().split())

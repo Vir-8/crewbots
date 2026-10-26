@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "66bd3fb9eb7e";
+export const API_SCHEMA = "6a7095478d20";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -190,6 +190,16 @@ export interface Consolidate {
   weekly?: boolean | null;
 }
 
+/** Something that happened around the crew: a commit, a branch, a changed file, a review request, checks that
+failed or passed, a thread that finished. */
+export interface CrewEventOut {
+  id: number;
+  at: string;
+  kind: string;
+  subject: string;
+  text: string;
+}
+
 export interface CrewState {
   paused: boolean;
   restarting: boolean;
@@ -330,6 +340,21 @@ export interface InstalledServer {
   env_keys: string[];
   header_keys: string[];
   in_crew: boolean;
+}
+
+/** A standing intent: when an event of `kind` mentioning `match` happens, its bot is told `text`. */
+export interface IntentOut {
+  id: number;
+  bot: string;
+  task_id: string | null;
+  kind: string;
+  match: string;
+  text: string;
+  created_at: string;
+  expires_at: string;
+  fires: number;
+  last_fired_at: string | null;
+  cancelled: boolean;
 }
 
 export interface LastMessage {
@@ -626,6 +651,12 @@ export interface Remember {
   title: string;
   body: string;
   shared?: boolean;
+}
+
+export interface RemindOn {
+  event: string;
+  match?: string;
+  then: string;
 }
 
 export interface RepoFolder {

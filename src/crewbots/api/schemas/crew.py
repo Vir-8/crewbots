@@ -68,3 +68,28 @@ class AgentLogOut(BaseModel):
 class Consolidate(BaseModel):
     bot: str
     weekly: bool | None = None  # also merge duplicate notes; None: only on Sundays, as overnight
+
+class CrewEventOut(BaseModel):
+    """Something that happened around the crew: a commit, a branch, a changed file, a review request, checks that
+    failed or passed, a thread that finished."""
+
+    id: int
+    at: str
+    kind: str
+    subject: str
+    text: str
+
+class IntentOut(BaseModel):
+    """A standing intent: when an event of `kind` mentioning `match` happens, its bot is told `text`."""
+
+    id: int
+    bot: str
+    task_id: str | None
+    kind: str
+    match: str
+    text: str
+    created_at: str
+    expires_at: str
+    fires: int
+    last_fired_at: str | None
+    cancelled: bool

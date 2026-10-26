@@ -9,9 +9,10 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
-from crewbots import checkins
+from crewbots import checkins, sources
 from crewbots import crew as crew_module
 from crewbots import github as github_module
 from crewbots import routines as routines_module
@@ -25,6 +26,7 @@ MAX_STARTS_PER_POLL = 3  # per trigger; the rest wait for the next poll
 FIRST_SINCE = timedelta(days=1)  # what a routine's first run looks back over
 ACTIVITY_CHARS = 30_000
 CHECKIN_CHARS = 4_000  # of what changed, for a check-in: its context stays small
+SOURCES_EVERY_S = 60.0  # how often the user's workspaces and watched folders are looked at for events
 EVENT_CHARS = 400
 
 log = logging.getLogger("crewbots.scheduler")
@@ -41,7 +43,7 @@ class RoutineView:
 
 class Scheduler:
     def __init__(self, runner: Runner, *, tick_s: float = TICK_S, github_every_s: float = GITHUB_EVERY_S,
-                 github: Any = github_module):
+                 github: Any = github_module, sources_every_s: float = SOURCES_EVERY_S):
         self.runner = runner
         self.store: Store = runner.store
         self.tick_s = tick_s
@@ -53,6 +55,10 @@ class Scheduler:
         self._polled: float | None = None
         self._skipped: dict[str, str] = {}
         self.crew_error: str | None = None  # a role card or team file that couldn't be read; the crew carries on as it was
+        self.sources = sources.Sources()
+        self.sources_every_s = sources_every_s
+        self._watched: float | None = None
+        self._first_seen: dict[str, str] = {}  # bot → when its checklist was first looked at, since this start
         self._stamp = crew_module.stamp(runner.crew.home)
 
     def load(self) -> None:
@@ -96,13 +102,33 @@ class Scheduler:
             if self.runner.dream_due(bot, now):
                 self.runner.dream(bot)
                 break
+        loop = asyncio.get_running_loop()
+        if self._watched is None or loop.time() - self._watched >= self.sources_every_s:
+            self._watched = loop.time()
+            for event in await asyncio.to_thread(self._look_around):
+                self.runner.happened(event.kind, event.subject, event.text)
         self._check_in_due(now)
         triggers = [r for r in self.routines if r.enabled and r.on]
-        loop = asyncio.get_running_loop()
-        if triggers and (self._polled is None or loop.time() - self._polled >= self.github_every_s):
+        if (triggers or self._wants_github()) and (self._polled is None or loop.time() - self._polled >= self.github_every_s):
             self._polled = loop.time()
             started += await self._poll_github(triggers, now)
         return started
+
+    def _look_around(self) -> list[sources.CrewEvent]:
+        """New commits and branches in the user's workspaces, and changes in watched folders (run off the loop: it
+        runs git)."""
+        crew = self.runner.crew
+        recent = self.store.list_tasks(limit=200)
+        repos = sources.repos([b.workspace for b in crew.bots.values()] + [Path(t.repo) for t in recent if t.repo])
+        folders = {f for bot in crew.bots if (c := checkins.load(crew.home, bot)) for f in c.watch if f.is_dir()}
+        return self.sources.git(repos) + self.sources.folders(sorted(folders))
+
+    def _wants_github(self) -> bool:
+        """Whether anything waits on GitHub's events: a standing intent, or a checklist item on one."""
+        github = {"review_requested", "ci_failed", "ci_passed"}
+        crew = self.runner.crew
+        return (any(i["kind"] in github for i in self.store.intents())
+                or any(item.on in github for bot in crew.bots if (c := checkins.load(crew.home, bot)) for item in c.items))
 
     def _check_in_due(self, now: datetime) -> Task | None:
         """One bot's check-in, when something on its checklist is due, within its active hours, while it's idle and
@@ -113,7 +139,8 @@ class Scheduler:
                 continue
             last = {i.id: (self.runner.store.routine_state(f"checkin:{bot}:{i.id}") or {}).get("last_run_at")
                     for i in checklist.items}
-            due = checklist.due(last, now)
+            first = self._first_seen.setdefault(bot, now.isoformat())  # what happened before isn't news to an item
+            due = checklist.due(last, now, self.store.crew_events(_utc(now - timedelta(days=1))), first)
             if due and self.runner.capacity.verdict(card.backend.split("-")[0]).go:
                 return self.check_in(bot, due, now)
         return None
@@ -126,7 +153,9 @@ class Scheduler:
             raise ValueError(f"{bot} has no checklist: write one in {checkins.path(self.runner.crew.home, bot)}")
         last = (self.runner.store.routine_state(f"checkin:{bot}") or {}).get("last_run_at")
         since = datetime.fromisoformat(last) if last else now - timedelta(days=1)
-        changes = activity(self.runner.store, since, chars=CHECKIN_CHARS)
+        happened = "\n".join(f"- {e['at'][11:16]} {e['kind']}: {e['text']}" for e in self.store.crew_events(_utc(since)))
+        changes = ("# Events\n\n" + happened + "\n\n" if happened else "") + activity(self.runner.store, since,
+                                                                                  chars=CHECKIN_CHARS)
         return self.runner.check_in(bot, items if items is not None else checklist.items, changes)
 
     def views(self, now: datetime | None = None) -> list[RoutineView]:
@@ -203,6 +232,8 @@ class Scheduler:
             self.github_error = str(e)
             return []
         self.github_error = None
+        for event in self.sources.github(snapshot):
+            self.runner.happened(event.kind, event.subject, event.text)
         started = []
         for routine in triggers:
             prs = snapshot.review_requested if routine.on == "github.review_requested" else [

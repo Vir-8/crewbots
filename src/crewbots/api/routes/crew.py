@@ -5,12 +5,22 @@ import sys
 import time
 from collections import deque
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from crewbots import crew as crew_module
 from crewbots import typescript
 from crewbots.api.context import API_VERSION, Context, checkout_commit
-from crewbots.api.schemas import AgentLogOut, ClientError, Consolidate, CrewState, RestartBody, TaskOut, VersionOut
+from crewbots.api.schemas import (
+    AgentLogOut,
+    ClientError,
+    Consolidate,
+    CrewEventOut,
+    CrewState,
+    IntentOut,
+    RestartBody,
+    TaskOut,
+    VersionOut,
+)
 
 RESTART_EXIT = 75  # EX_TEMPFAIL: stopped to be started again
 CLIENT_ERRORS_PER_MINUTE = 30
@@ -54,6 +64,23 @@ def routes(c: Context) -> APIRouter:
     async def consolidate(body: Consolidate):
         """Consolidates a bot's memory now, rather than overnight."""
         return runner.dream(body.bot, body.weekly).to_json()
+
+    @v1.get("/crew-events", response_model=list[CrewEventOut])
+    async def crew_events(since: str = "", limit: int = Query(100, ge=1, le=1000)):
+        """What happened around the crew (`sources.py`), oldest first."""
+        return c.store.crew_events(since, limit)
+
+    @v1.get("/intents", response_model=list[IntentOut])
+    async def intents():
+        """Standing intents still waiting for their event."""
+        return c.store.intents()
+
+    @v1.delete("/intents/{intent_id}", response_model=IntentOut)
+    async def cancel_intent(intent_id: int):
+        try:
+            return c.store.cancel_intent(intent_id)
+        except KeyError:
+            raise HTTPException(404, f"no standing intent {intent_id}") from None
 
     @v1.get("/agent-log", response_model=list[AgentLogOut])
     async def agent_log(limit: int = Query(200, ge=1, le=5000), before: int | None = None):

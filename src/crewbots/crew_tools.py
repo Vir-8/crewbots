@@ -51,6 +51,7 @@ SPECS: dict[str, Spec] = {
     "forget": Spec(_object({"name": STRING, "shared": {"type": "boolean"}}, ["name"])),
     "recall": Spec(_object({"query": STRING}, ["query"])),
     "update_state": Spec(_object({"state": STRING}, ["state"])),
+    "remind_on": Spec(_object({"event": STRING, "match": STRING, "then": STRING}, ["event", "then"])),
     "start_thread": Spec(_object({"title": STRING, "goal": STRING}, ["title", "goal"])),
     "post": Spec(_object({"text": STRING, "room": STRING}, ["text"])),
     "ask": Spec(_object({"bot": STRING, "question": STRING}, ["bot", "question"])),
@@ -149,6 +150,9 @@ class CrewTools:
                     return recall_text(r.recall(me, args["query"]))
                 case "update_state":
                     return f"Kept this task's state ({r.update_state(me, args['state'])})."
+                case "remind_on":
+                    intent = r.remind_on(me, args["event"], args.get("match") or "", args["then"])
+                    return f"Standing intent {intent['id']} set: on {intent['kind']} {intent['match']}".rstrip() + "."
                 case "add_bot":
                     added = r.add_bot(me, args)
                     return (f"Added {added.label} (@{added.name}), {added.title}, to the crew. It's in the roster now: "

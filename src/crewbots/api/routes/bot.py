@@ -18,6 +18,7 @@ from crewbots.api.schemas import (
     PostBody,
     Recall,
     Remember,
+    RemindOn,
     ReviewBody,
     RoomOut,
     SearchHit,
@@ -82,6 +83,10 @@ def routes(c: Context) -> APIRouter:
     async def bot_forget(request: Request, body: Forget):
         note = runner.forget(request.state.task.id, body.name, shared=body.shared)
         return {"title": note.title}
+
+    @v1.post("/bot/remind_on", status_code=201)
+    async def bot_remind_on(request: Request, body: RemindOn):
+        return runner.remind_on(request.state.task.id, body.event, body.match, body.then)
 
     @v1.post("/bot/update_state")
     async def bot_update_state(request: Request, body: StateBody):
