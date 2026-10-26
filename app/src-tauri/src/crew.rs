@@ -299,6 +299,7 @@ impl Crew {
                 Some("task") => alerts.extend(view.update(&message["task"])),
                 Some("room_message") => alerts.extend(view.said(&message["message"])),
                 Some("room") => view.set_rooms(std::slice::from_ref(&message["room"])),
+                Some("event") => alerts.extend(view.raised(&message["event"])),
                 Some("crew") => view.set_paused(message["crew"]["paused"].as_bool().unwrap_or(false)),
                 _ => {}
             }

@@ -16,7 +16,10 @@ from crewbots.api.schemas import (
     Consolidate,
     CrewEventOut,
     CrewState,
+    DigestOut,
     IntentOut,
+    ProactiveOut,
+    Reaction,
     RestartBody,
     TaskOut,
     VersionOut,
@@ -64,6 +67,19 @@ def routes(c: Context) -> APIRouter:
     async def consolidate(body: Consolidate):
         """Consolidates a bot's memory now, rather than overnight."""
         return runner.dream(body.bot, body.weekly).to_json()
+
+    @v1.post("/proactive/{item_id}/react", response_model=ProactiveOut)
+    async def react(item_id: int, body: Reaction):
+        """The user's 👍 or 👎 on something the crew raised on its own: a note of its bot's, about what's worth it."""
+        try:
+            return runner.attention.react(item_id, body.reaction)
+        except KeyError:
+            raise HTTPException(404, f"nothing raised with id {item_id}") from None
+
+    @v1.post("/digest", response_model=DigestOut | None)
+    async def digest():
+        """The morning digest, now: the last day's FYIs not yet in one, in the chief's chat."""
+        return runner.attention.digest(runner.attention.now())
 
     @v1.get("/crew-events", response_model=list[CrewEventOut])
     async def crew_events(since: str = "", limit: int = Query(100, ge=1, le=1000)):

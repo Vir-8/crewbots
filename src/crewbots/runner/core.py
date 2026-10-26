@@ -36,6 +36,7 @@ from typing import Any
 
 from crewbots import attachments as attachments_module
 from crewbots import prompts, worktree
+from crewbots.attention import Attention
 from crewbots.backends import BACKENDS, Access, Backend, McpServer, RunSpec
 from crewbots.capacity import Capacity
 from crewbots.crew import NO_REPLY, Bot, Crew
@@ -131,6 +132,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds, Dreams, Checki
         self._flushed: set[str] = set()  # tasks whose bot set down where things stand since their last turn
         self._dreaming: set[str] = set()  # bots whose memory is being consolidated now
         self.capacity = Capacity(self)  # whether background work may run now
+        self.attention = Attention(self)  # when what the crew raises on its own reaches the user
         self._started = time.time()
         self.retry_waits_s = RETRY_WAITS_S if retry_waits_s is None else retry_waits_s
         self.stall_s = STALL_S if stall_s is None else stall_s
@@ -182,6 +184,8 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds, Dreams, Checki
         One from a teammate reaches the bot marked as a teammate's, so it isn't taken for the user's word."""
         task = self.store.get_task(task_id)
         self._message(task_id, sender, text, attachments)
+        if sender == "user":
+            self.attention.user_wrote = time.time()  # mid-conversation: questions wait for a break
         if sender in self.crew.bots and sender != task.bot:
             text = prompts.text("from-teammate", self.crew.home, teammate=sender, text=text)
         text += attachments_module.listing(attachments or [])

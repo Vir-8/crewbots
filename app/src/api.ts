@@ -75,6 +75,7 @@ export const api = {
   attachment: (id: string) => call<{ name: string; mime: string; data: string }>("GET", `/attachments/${id}`),
   newRoom: (title: string, members: string[], lead?: string) => call<Room>("POST", "/rooms", { title, members, lead: lead ?? null }),
   carryOn: (roomId: string) => call<Room>("POST", `/rooms/${roomId}/continue`),
+  react: (id: number, reaction: "up" | "down") => call<unknown>("POST", `/proactive/${id}/react`, { reaction }),
   changeRoom: (roomId: string, change: RoomChange) => call<Room>("PATCH", `/rooms/${roomId}`, change),
   deleteRoom: (roomId: string) => call<null>("DELETE", `/rooms/${roomId}`),
   card: (bot: string) => call<Card>("GET", `/bots/${encodeURIComponent(bot)}/card`),

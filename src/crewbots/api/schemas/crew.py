@@ -93,3 +93,24 @@ class IntentOut(BaseModel):
     fires: int
     last_fired_at: str | None
     cancelled: bool
+
+class ProactiveOut(BaseModel):
+    """Something the crew raised on its own, and how it reached the user."""
+
+    id: int
+    at: str
+    bot: str
+    level: Literal["fyi", "question", "needs_you"]
+    text: str
+    source: str
+    expires_at: str
+    delivered_at: str | None
+    digest_at: str | None
+    reaction: Literal["up", "down"] | None
+
+class Reaction(BaseModel):
+    reaction: Literal["up", "down"]
+
+class DigestOut(BaseModel):
+    bot: str  # whose chat it's in: the chief's
+    items: int

@@ -71,6 +71,7 @@ async function request(method: string, path: string, body?: any) {
   }
   if (method === "POST" && parts[0] === "chats" && parts[2] === "read") return ok({ ok: true });
   if (method === "GET" && url.pathname === "/rooms") return ok(demo.rooms);
+  if (method === "POST" && parts[0] === "proactive" && parts[2] === "react") return ok({ id: Number(parts[1]), reaction: body.reaction });
   if (parts[0] === "rooms" && parts.length === 2 && (method === "PATCH" || method === "DELETE")) {
     const at = demo.rooms.findIndex((r) => r.id === parts[1]);
     if (at < 0) return missing("group chat");

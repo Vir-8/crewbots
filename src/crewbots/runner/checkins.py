@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from crewbots import prompts
+from crewbots.attention import BY_URGENCY
 from crewbots.backends import Access, RunSpec
 from crewbots.checkins import Item
 from crewbots.events import Done, Usage
@@ -25,14 +26,15 @@ class Checkins:
         """Whether any of the bot's work is running or waiting to."""
         return any(self.store.get_task(task_id).bot == bot for task_id in self._runs)
 
-    def check_in(self, bot: str, items: list[Item], changes: str) -> Task:
+    def check_in(self, bot: str, items: list[Item], changes: str, now: datetime | None = None) -> Task:
         """Starts a check-in of `items` for `bot`. Its runs share one task of the bot's, so what they cost is counted
         without a thread for each."""
         if bot not in self.crew.bots:
             raise UnknownBot(f"no bot named {bot!r}; the crew is {sorted(self.crew.bots)}")
         task = self._checkin_task(bot)
         self._set(task.id, status=Status.QUEUED)
-        self._runs[task.id] = asyncio.create_task(self._check_in(task, items, changes), name=f"check-in {bot}")
+        self._runs[task.id] = asyncio.create_task(self._check_in(task, items, changes, now or datetime.now().astimezone()),
+                                                  name=f"check-in {bot}")
         return task
 
     def start_on_own(self, bot: str, start: dict[str, Any], why: str) -> Task | None:
@@ -66,9 +68,8 @@ class Checkins:
         self.store.routine_ran(f"checkin:{bot}", "", task.id)
         return task
 
-    async def _check_in(self, task: Task, items: list[Item], changes: str) -> None:
+    async def _check_in(self, task: Task, items: list[Item], changes: str, now: datetime) -> None:
         bot = self.crew.bots[task.bot]
-        now = datetime.now().astimezone()
         try:
             async with self._turn_slot(task.id):
                 self._set(task.id, status=Status.RUNNING)
@@ -86,10 +87,8 @@ class Checkins:
                 self.store.routine_ran(f"checkin:{task.bot}:{item.id}", now.isoformat(timespec="seconds"), task.id)
             self.store.routine_ran(f"checkin:{task.bot}", now.isoformat(timespec="seconds"), task.id)
             self._record(task.id, kind="checkin", data=report | {"items": [i.what for i in items]})
-            if report["notify"] and report["text"]:
-                chat = self.chat(task.bot)
-                self._record(chat.id, kind="text", data={"text": report["text"], "checkin": True,
-                                                          "urgency": report["urgency"]})
+            if report["notify"] and report["text"]:  # at its level: now, at a break, or in the morning's digest
+                self.attention.raise_(task.bot, BY_URGENCY[report["urgency"]], report["text"], "checkin")
             if report["start_thread"]:
                 started = self.start_on_own(task.bot, report["start_thread"], report["text"])
                 self._record(task.id, kind="notice", data={"message": f"Started {started.id} on its own" if started

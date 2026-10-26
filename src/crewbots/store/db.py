@@ -207,6 +207,27 @@ create table if not exists intents (
 """
 SCHEMA += HAPPENINGS
 
+# What the crew raised to the user on its own, at which level, and the mornings' digests (migration 8).
+PROACTIVE = """
+create table if not exists proactive (
+    id           integer primary key autoincrement,
+    at           text not null,
+    bot          text not null,
+    level        text not null,   -- fyi, question or needs_you
+    text         text not null,
+    source       text not null,   -- what raised it: checkin
+    expires_at   text not null,
+    delivered_at text,            -- when it reached the chat
+    digest_at    text,            -- the digest it went in: that day's midnight, UTC
+    reaction     text             -- the user's: up or down
+);
+create table if not exists digests (
+    day text primary key,         -- midnight, UTC, of the day it was for
+    at  text not null
+);
+"""
+SCHEMA += PROACTIVE
+
 # Full-text search over what the crew said and decided: the `recall` tool. Kept in step with events as they're added.
 # `search` matches words (stemmed); `trigrams`, the same rows, matches any three or more characters, for ids, paths
 # and parts of code names (migration 6).
@@ -341,6 +362,7 @@ MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] =
     ("what each task's session started with", lambda db, _: db.executescript(PRIMED)),
     ("trigram search, and a log of recall's queries", lambda db, _: _better_recall(db)),
     ("crew events, and standing intents", lambda db, _: db.executescript(HAPPENINGS)),
+    ("what the crew raised on its own, and digests", lambda db, _: db.executescript(PROACTIVE)),
 ]
 
 

@@ -169,6 +169,7 @@ export function useCrew() {
     post: (roomId: string, text: string, attachments: string[] = []) => act(api.post(roomId, text, attachments)),
     read: (key: string) => api.read(key).then(reloadChats, () => undefined),
     carryOn: (roomId: string) => act(api.carryOn(roomId)),
+    react: (id: number, reaction: "up" | "down") => act(api.react(id, reaction)),
     changeRoom: (roomId: string, change: RoomChange) => act(api.changeRoom(roomId, change)),
     deleteRoom: (roomId: string) => act(api.deleteRoom(roomId)),
     newRoom: async (title: string, members: string[], lead?: string) => {

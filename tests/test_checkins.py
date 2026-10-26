@@ -74,12 +74,14 @@ async def test_a_check_with_news_says_it_in_the_bots_chat(store, tmp_path):
     runner, scheduler, backend = crew_with(store, tmp_path, says(
         {"notify": True, "urgency": "high", "text": "PR acme/web#412 has waited two days on you.", "start_thread": None}))
     runner.crew.memory.remember("engineer", "Reviews", "The user reviews in the morning.", "t_1")
+    runner.attention.now = lambda: at(10)  # outside quiet hours: needs-you comes at once
 
     task = scheduler._check_in_due(at(10))
     await wait_until(lambda: task.id not in runner.running())
 
     said = [e.data for e in store.events(runner.chat("engineer").id) if e.kind == "text"]
-    assert said == [{"text": "PR acme/web#412 has waited two days on you.", "checkin": True, "urgency": "high"}]
+    assert said == [{"text": "PR acme/web#412 has waited two days on you.", "checkin": True, "level": "needs_you",
+                     "proactive_id": 1}]
     done = store.get_task(task.id)
     assert done.status is Status.IDLE and done.created_by == "crewbots" and done.title == "engineer's check-ins"
     spec = backend.specs[0]  # small, read-only, the bot's own model, no crew tools

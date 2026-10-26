@@ -108,6 +108,7 @@ class Scheduler:
             for event in await asyncio.to_thread(self._look_around):
                 self.runner.happened(event.kind, event.subject, event.text)
         self._check_in_due(now)
+        self.runner.attention.tick(now)
         triggers = [r for r in self.routines if r.enabled and r.on]
         if (triggers or self._wants_github()) and (self._polled is None or loop.time() - self._polled >= self.github_every_s):
             self._polled = loop.time()
@@ -156,7 +157,7 @@ class Scheduler:
         happened = "\n".join(f"- {e['at'][11:16]} {e['kind']}: {e['text']}" for e in self.store.crew_events(_utc(since)))
         changes = ("# Events\n\n" + happened + "\n\n" if happened else "") + activity(self.runner.store, since,
                                                                                   chars=CHECKIN_CHARS)
-        return self.runner.check_in(bot, items if items is not None else checklist.items, changes)
+        return self.runner.check_in(bot, items if items is not None else checklist.items, changes, now)
 
     def views(self, now: datetime | None = None) -> list[RoutineView]:
         now = now or datetime.now().astimezone()

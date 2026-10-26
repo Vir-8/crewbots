@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "120624e74d75";
+export const API_SCHEMA = "81b52b00b1a6";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -223,6 +223,11 @@ export interface Delegation {
   goal: string;
   workspace?: string | null;
   review_of?: string | null;
+}
+
+export interface DigestOut {
+  bot: string;
+  items: number;
 }
 
 export interface DraftBody {
@@ -554,6 +559,20 @@ export interface PostBody {
   room?: string | null;
 }
 
+/** Something the crew raised on its own, and how it reached the user. */
+export interface ProactiveOut {
+  id: number;
+  at: string;
+  bot: string;
+  level: "fyi" | "question" | "needs_you";
+  text: string;
+  source: string;
+  expires_at: string;
+  delivered_at: string | null;
+  digest_at: string | null;
+  reaction: "up" | "down" | null;
+}
+
 export interface ProfileOut {
   bot: string;
   working: boolean;
@@ -613,6 +632,10 @@ export interface PullSummary {
   review_decision: string | null;
   checks: string | null;
   reviewed_at?: string | null;
+}
+
+export interface Reaction {
+  reaction: "up" | "down";
 }
 
 export interface Recall {

@@ -1,5 +1,5 @@
-"""What happened around the crew (commits, review requests, checks, files, finished threads: `sources.py`), and the
-standing intents waiting for it."""
+"""What happened around the crew (commits, review requests, checks, files, finished threads: `sources.py`), the
+standing intents waiting for it, and what the crew raised to the user on its own (`attention.py`)."""
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -55,3 +55,38 @@ class Happenings:
     def cancel_intent(self, intent_id: int) -> dict[str, Any]:
         self.db.execute("update intents set cancelled = 1 where id = ?", (intent_id,))
         return self.intent(intent_id)
+
+    def add_proactive(self, bot: str, level: str, text: str, source: str, expires_at: str) -> dict[str, Any]:
+        cur = self.db.execute("insert into proactive (at, bot, level, text, source, expires_at) values (?, ?, ?, ?, ?, ?)",
+                              (_now(), bot, level, text, source, expires_at))
+        return self.proactive_item(cur.lastrowid)
+
+    def proactive_item(self, item_id: int) -> dict[str, Any]:
+        row = self.db.execute("select * from proactive where id = ?", (item_id,)).fetchone()
+        if row is None:
+            raise KeyError(item_id)
+        return dict(row)
+
+    def proactive_waiting(self, level: str) -> list[dict[str, Any]]:
+        """What was raised at `level` and hasn't reached the user yet (in the chat, or a digest), oldest first."""
+        rows = self.db.execute("select * from proactive where level = ? and delivered_at is null and digest_at is null"
+                               " order by id", (level,))
+        return [dict(r) for r in rows]
+
+    def mark_delivered(self, item_id: int) -> None:
+        self.db.execute("update proactive set delivered_at = ? where id = ?", (_now(), item_id))
+
+    def delivered_since(self, level: str, since: str) -> int:
+        return self.db.execute("select count(*) from proactive where level = ? and delivered_at >= ?",
+                               (level, since)).fetchone()[0]
+
+    def digested_today(self, day: str) -> bool:
+        return self.db.execute("select 1 from digests where day = ?", (day,)).fetchone() is not None
+
+    def mark_digested(self, day: str, item_ids: list[int]) -> None:
+        self.db.execute("insert or ignore into digests (day, at) values (?, ?)", (day, _now()))
+        self.db.executemany("update proactive set digest_at = ? where id = ?", [(day, i) for i in item_ids])
+
+    def react_proactive(self, item_id: int, reaction: str) -> dict[str, Any]:
+        self.db.execute("update proactive set reaction = ? where id = ?", (reaction, item_id))
+        return self.proactive_item(item_id)

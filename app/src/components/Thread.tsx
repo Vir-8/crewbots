@@ -14,7 +14,7 @@ import "../styles/chat.css";
 type Block =
   | { kind: "you"; id: number; text: string; files: Attachment[] }
   | { kind: "brief"; id: number; from: string; text: string }
-  | { kind: "say"; id: number; text: string; checkin?: boolean }
+  | { kind: "say"; id: number; text: string; tag?: string; raised?: number }
   | { kind: "steps"; id: number; calls: { call: StoredEvent; result?: StoredEvent }[] }
   | { kind: "work"; id: number; task: Task }
   | { kind: "asked"; id: number; bot: string; question: string; task?: Task }
@@ -119,7 +119,7 @@ function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>
         break;
       case "text":
         flush();
-        out.push({ kind: "say", id: e.id, text: d.text, checkin: Boolean(d.checkin) });
+        out.push({ kind: "say", id: e.id, text: d.text, tag: d.digest ? "Morning digest" : d.level === "needs_you" ? "Needs you" : d.checkin ? "Checked in on its own" : undefined, raised: d.proactive_id });
         break;
       case "escalation":
         flush();
@@ -231,8 +231,9 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
     case "say":
       return (
         <div className="say">
-          {block.checkin && <div className="say-tag">Checked in on its own</div>}
+          {block.tag && <div className={`say-tag ${block.tag === "Needs you" ? "urgent" : ""}`}>{block.tag}</div>}
           <Markdown text={block.text} onSelect={props.onOpen} />
+          {block.raised && <Reactions crew={props.crew} id={block.raised} />}
         </div>
       );
     case "steps":
@@ -398,6 +399,23 @@ function AskCard({ bot, question, task, onOpen }: { bot: string; question: strin
       <span className="ask-line answer">
         {answering ? <span className="shimmer">Answering…</span> : <><span className="ask-who">Answer:</span> {oneLine(answer ?? "", 320)}</>}
       </span>
+    </div>
+  );
+}
+
+/** 👍 or 👎 on something a bot raised on its own: it becomes a note of the bot's, about what's worth raising. */
+function Reactions({ crew, id }: { crew: Crew; id: number }) {
+  const [given, setGiven] = useState<"up" | "down" | null>(null);
+  const react = (reaction: "up" | "down") => crew.react(id, reaction).then(() => setGiven(reaction), () => undefined);
+  if (given) return <div className="say-reactions faint small">{given === "up" ? "Noted: worth raising" : "Noted: not worth raising"}</div>;
+  return (
+    <div className="say-reactions">
+      <button className="reaction" onClick={() => react("up")} title="Worth raising: it notes that">
+        👍
+      </button>
+      <button className="reaction" onClick={() => react("down")} title="Not worth raising: it notes that">
+        👎
+      </button>
     </div>
   );
 }

@@ -636,6 +636,29 @@ button.chat-head-who:hover {
   margin-bottom: 4px;
 }
 
+.say-tag.urgent {
+  color: var(--amber);
+  font-weight: 600;
+}
+
+.say-reactions {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.reaction {
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 13px;
+  background: var(--raised);
+  opacity: 0.75;
+}
+
+.reaction:hover {
+  opacity: 1;
+}
+
 /* Above the composer of an archived group chat */
 .room-archived {
   display: flex;

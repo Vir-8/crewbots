@@ -58,6 +58,7 @@ pub enum Alert {
     Done { title: String },
     Replied { bot: String, text: String },
     Said { author: String, text: String },
+    NeedsYou { bot: String, text: String },
 }
 
 impl Alert {
@@ -70,6 +71,7 @@ impl Alert {
             Alert::Done { title } => ("Done".into(), title.clone()),
             Alert::Replied { bot, text } => (bot.clone(), preview(text)),
             Alert::Said { author, text } => (format!("{author} in a group chat"), preview(text)),
+            Alert::NeedsYou { bot, text } => (format!("{bot} needs you"), preview(text)),
         }
     }
 }
@@ -170,6 +172,15 @@ impl CrewView {
         }
     }
 
+    /// Something a bot raised on its own, as "needs you": the crew already kept it to a few a day, outside quiet hours.
+    pub fn raised(&self, event: &Value) -> Option<Alert> {
+        if event["kind"].as_str()? != "text" || event["data"]["level"].as_str()? != "needs_you" {
+            return None;
+        }
+        let bot = self.tasks.get(event["task_id"].as_str()?).map(|t| t.bot.clone()).unwrap_or_default();
+        Some(Alert::NeedsYou { bot, text: event["data"]["text"].as_str().unwrap_or_default().to_string() })
+    }
+
     /// A message in a group chat: one from a bot is worth a notification, unless you muted the chat.
     pub fn said(&self, message: &Value) -> Option<Alert> {
         let author = message["author"].as_str()?;
@@ -252,6 +263,17 @@ mod tests {
         let view = CrewView::default();
         assert!(matches!(view.said(&json!({"author": "engineer", "text": "done"})), Some(Alert::Said { .. })));
         assert_eq!(view.said(&json!({"author": "user", "text": "hi"})), None);
+    }
+
+    #[test]
+    fn what_a_bot_raises_as_needs_you_is_announced_and_nothing_less() {
+        let mut view = CrewView::default();
+        view.load(&[json!({"id": "c", "title": "Chat", "bot": "engineer", "status": "idle", "parent_id": null,
+                           "merge_state": null, "kind": "chat"})], false);
+        let raised = |level: &str| json!({"task_id": "c", "kind": "text", "data": {"text": "CI is red", "level": level}});
+        assert_eq!(view.raised(&raised("needs_you")), Some(Alert::NeedsYou { bot: "engineer".into(), text: "CI is red".into() }));
+        assert_eq!(view.raised(&raised("question")), None);
+        assert_eq!(view.raised(&json!({"task_id": "c", "kind": "text", "data": {"text": "hi"}})), None);
     }
 
     #[test]
