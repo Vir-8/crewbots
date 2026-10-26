@@ -21,8 +21,8 @@ let keptTeam: PullSummary[] | null = null;
 const keptPulls = new Map<string, Pull>();
 const keptDiffs = new Map<string, string>();
 
-/** Pull requests waiting on you, read through your gh login, and private reviews of them. The reviewer isn't one of
- * your bots: it's its own agent, run on each model you choose, side by side. Nothing here posts to GitHub. */
+/** Pull requests waiting on you, read through your gh login, and private reviews of them. The reviewers aren't your
+ * bots: each is its own agent on a model you choose, and the first leads. Only you submit anything to GitHub. */
 export function CodeReview({ crew, onSettings }: { crew: Crew; onSettings: () => void }) {
   const [selected, setSelected] = useState<Selected | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -397,35 +397,39 @@ function reviewerOf(task: Task): Reviewer {
   return { backend: backend as Reviewer["backend"], model: model === "default" ? null : model, effort: effort === "default" ? null : effort };
 }
 
-/** Reviews run together are one round; the newest round shows, a tab per model. */
-function rounds(reviews: Task[]): Task[][] {
-  const sorted = [...reviews].sort((a, b) => a.created_at.localeCompare(b.created_at));
-  const out: Task[][] = [];
-  for (const r of sorted) {
-    const last = out.at(-1);
-    if (last && Date.parse(r.created_at) - Date.parse(last[0].created_at) < 30_000) last.push(r);
-    else out.push([r]);
-  }
-  return out;
+/** "A", "A and B", "A, B and C". */
+function listed(names: string[]): string {
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : (names[0] ?? "");
 }
 
+/** One review: each reviewer model reviews the pull request on its own, then the lead (the first) checks and puts
+ * their findings together, drafts the line comments, and writes the review you read and talk to. The reviewers' own
+ * threads are behind "Reviewers", for when you want to see how they got there. */
 function ReviewPane({ crew, pull, reviews, onStarted, onSettings }: { crew: Crew; pull: Pull; reviews: Task[]; onStarted: () => void; onSettings: () => void }) {
   const [paneWidth, setPaneWidth] = useWidth("review-pane");
   const [reviewers, setReviewers] = useState<Reviewer[]>([]);
   const [note, setNote] = useState("");
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const all = useMemo(() => rounds(reviews), [reviews]);
+  const leads = useMemo(() => reviews.filter((r) => !r.parent_id).sort((a, b) => a.created_at.localeCompare(b.created_at)), [reviews]);
   const [round, setRound] = useState<number | null>(null);
-  const current = all[round ?? all.length - 1] ?? [];
-  const [tab, setTab] = useState(0);
-  const shown = current[Math.min(tab, current.length - 1)];
-  const running = current.some((t) => ACTIVE.includes(t.status));
+  const lead = leads[round ?? leads.length - 1];
+  const team = lead ? (crew.children.get(lead.id) ?? reviews.filter((r) => r.parent_id === lead.id)) : [];
+  const [showTeam, setShowTeam] = useState(false);
+  const [peek, setPeek] = useState<string | null>(null);
+  const shown = team.find((t) => t.id === peek) ?? lead;
+  const label = (t: Task) => {
+    const r = reviewerOf(t);
+    return modelLabel(crew, r.backend, r.model ?? null, r.effort ?? null);
+  };
+  const reviewing = team.filter((t) => ACTIVE.includes(t.status));
+  const running = Boolean(lead && (ACTIVE.includes(lead.status) || reviewing.length));
+  const working = !lead ? "" : reviewing.length ? `${listed(reviewing.map(label))} ${reviewing.length > 1 ? "are" : "is"} reviewing it` : team.length ? "Putting the reviews together" : "Getting the code";
   useEffect(() => {
     api.reviewers().then(setReviewers, () => setReviewers([]));
     crew.loadModels();
   }, []);
-  useEffect(() => setTab(0), [all.length]);
+  useEffect(() => setPeek(null), [lead?.id]);
 
   const start = async () => {
     setStarting(true);
@@ -453,49 +457,66 @@ function ReviewPane({ crew, pull, reviews, onStarted, onSettings }: { crew: Crew
           <Icon name="settings" size={14} />
         </button>
         <button className="button small primary" onClick={start} disabled={starting || running}>
-          {starting ? "Starting…" : running ? "Reviewing…" : current.length ? "Review again" : "Review"}
+          {starting ? "Starting…" : running ? "Reviewing…" : lead ? "Review again" : "Review"}
         </button>
       </header>
-      {!pull.checkout && (
-        <p className="review-hint faint">
-          Reviewers get the changed files from GitHub and look up the rest there as they need it. <a className="task-link" onClick={onSettings}>Point {pull.repo} at your copy</a> to give them the whole repository.
-        </p>
-      )}
       {error && <p className="error-text pad">{error}</p>}
-      {shown ? (
+      {lead && shown ? (
         <>
-          <div className="reviewer-tabs">
-            {current.map((t, i) => {
-              const r = reviewerOf(t);
-              return (
-                <button key={t.id} className={`reviewer-tab ${t.id === shown.id ? "on" : ""}`} onClick={() => setTab(i)}>
-                  <span className={`status-dot ${t.status}`} />
-                  {modelLabel(crew, r.backend, r.model ?? null, r.effort ?? null)}
-                </button>
-              );
-            })}
-            {all.length > 1 && (
-              <select className="round-select" value={round ?? all.length - 1} onChange={(e) => setRound(Number(e.target.value))} title="Earlier reviews">
-                {all.map((r, i) => (
-                  <option key={r[0].id} value={i}>
-                    {i === all.length - 1 ? "Latest" : ago(r[0].created_at)}
+          <div className="review-team">
+            <button className={`review-team-toggle ${showTeam ? "on" : ""}`} onClick={() => (setShowTeam(!showTeam), setPeek(null))} disabled={!team.length} title={team.length ? "The reviewers' own threads" : "The reviewers start once the code is ready"} aria-expanded={showTeam}>
+              {team.map((t) => (
+                <span key={t.id} className={`status-dot ${t.status}`} />
+              ))}
+              <span>{team.length ? `Reviewers · ${listed(team.map(label))}` : "Reviewers"}</span>
+              {team.length > 0 && <Icon name="chevronDown" size={12} className={showTeam ? "flip" : ""} />}
+            </button>
+            {leads.length > 1 && (
+              <select className="round-select" value={round ?? leads.length - 1} onChange={(e) => setRound(Number(e.target.value))} title="Earlier reviews">
+                {leads.map((r, i) => (
+                  <option key={r.id} value={i}>
+                    {i === leads.length - 1 ? "Latest" : ago(r.created_at)}
                   </option>
                 ))}
               </select>
             )}
           </div>
+          {showTeam && team.length > 0 && (
+            <div className="reviewer-tabs">
+              <button className={`reviewer-tab ${shown.id === lead.id ? "on" : ""}`} onClick={() => setPeek(null)}>
+                The review
+              </button>
+              {team.map((t) => (
+                <button key={t.id} className={`reviewer-tab ${t.id === shown.id ? "on" : ""}`} onClick={() => setPeek(t.id)}>
+                  <span className={`status-dot ${t.status}`} />
+                  {label(t)}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="review-thread">
-            <Thread crew={crew} task={shown} onOpen={() => undefined} compact />
+            <Thread crew={crew} task={shown} onOpen={() => undefined} compact working={shown.id === lead.id ? working : undefined} />
           </div>
-          <div className="review-composer">
-            <Composer key={shown.id} placeholder="Ask about this review" onSend={(text, files) => crew.send(shown.id, text, files)} task={shown.id} />
-          </div>
+          {shown.id === lead.id ? (
+            <div className="review-composer">
+              <Composer key={lead.id} placeholder="Ask about this review" onSend={(text, files) => crew.send(lead.id, text, files)} task={lead.id} />
+            </div>
+          ) : (
+            <p className="review-hint review-peek faint">
+              {label(shown)}'s own review, before the lead checked it against the code and put it together with the others'. Ask about it in <a className="task-link" onClick={() => setPeek(null)}>the review</a>.
+            </p>
+          )}
         </>
       ) : (
         <div className="review-start">
           <Icon name="branch" size={22} />
           <p>
-            {names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)} review it side by side` : names.length ? `${names[0]} reviews it` : "Reviewers read it"}, looking for actionable bugs and the overall impact. Nothing is posted to GitHub.
+            {names.length > 1
+              ? `${listed(names)} each review it on their own; then ${names[0]} checks their findings, puts them into one review and drafts its line comments for you.`
+              : names.length
+                ? `${names[0]} reviews it and drafts its line comments for you.`
+                : "Reviewers read it and draft line comments for you."}{" "}
+            They read the code; nothing is run, and nothing is posted to GitHub.
           </p>
           <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything to look at in particular? (optional)" />
         </div>

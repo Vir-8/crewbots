@@ -218,6 +218,31 @@ export const resetsAt = Math.floor(Date.now() / 1000) + 2 * 3600;
 
 export const live = { taskId: "t_csv0000002" };
 
+// A private review of acme/web#412: two reviewers on their own, then the lead's one review and its drafted comment.
+export const pullReviews: Task[] = [];
+{
+  const base = { kind: "review" as const, pr: "acme/web#412", workspace: "~/.crewbots/reviews/checkouts/acme-web-412-abc", title: "Review acme/web#412: Move the export button into the reports toolbar" };
+  const lead = task("t_pr412lead", "reviewer:claude:sonnet:high", base.title, base);
+  const kids = [task("t_pr412son", "reviewer:claude:sonnet:high", base.title, { ...base, parent_id: lead.id }), task("t_pr412gpt", "reviewer:codex:default:high", base.title, { ...base, parent_id: lead.id })];
+  message(lead.id, "user", "Review https://github.com/acme/web/pull/412");
+  emit(lead.id, "notice", { message: "Getting acme/web's code. The first review of a repository takes about a minute; later ones, a few seconds." });
+  for (const k of kids) {
+    message(k.id, "user", "Review https://github.com/acme/web/pull/412.\n\nYour working directory is the repository, checked out at the pull request's head (abc123def456).");
+    tool(k.id, "mcp__crewbots__pr_overview", {}, "# Move the export button into the reports toolbar");
+    tool(k.id, "mcp__crewbots__pr_diff", {}, "Part 1 of 1.");
+    tool(k.id, k.id === "t_pr412son" ? "Grep" : "shell", k.id === "t_pr412son" ? { pattern: "export_csv" } : { command: "rg -n 'filename=' server/" }, "server/reports.py:64");
+    say(k.id, "**P1** `server/reports.py:64`: `filename` is fixed, so two exports in a row overwrite each other in the browser's downloads.\n\nOverall risk: low. I didn't run anything.");
+    done(k.id);
+  }
+  message(lead.id, "crewbots", "The reviewers have finished.");
+  tool(lead.id, "mcp__crewbots__pr_diff", { path: "server/reports.py" }, "diff --git a/server/reports.py b/server/reports.py");
+  tool(lead.id, "Read", { file_path: "server/reports.py" });
+  tool(lead.id, "mcp__crewbots__draft_comment", { path: "server/reports.py", line: 64, body: "…" }, "Drafted comment 1 on server/reports.py:64.");
+  say(lead.id, "**One issue, not blocking.**\n\n- **P1** `server/reports.py:64`: the export's filename is fixed, so a second export overwrites the first in the browser's downloads. Both reviewers found it; I drafted a comment.\n\n**Overall impact:** small. The button moves; the endpoint's behaviour is unchanged.\n\n**Couldn't check:** how Safari names repeated downloads. Nothing was run.");
+  done(lead.id);
+  pullReviews.push(tasks.get(lead.id)!, ...kids.map((k) => tasks.get(k.id)!));
+}
+
 // Chats: one ongoing chat with each bot. The chief's opened the work above as threads, so they hang from it.
 export const chatIds: Record<string, string> = {};
 for (const b of bots) {

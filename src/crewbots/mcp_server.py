@@ -113,13 +113,13 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
     return server
 
 
-def build_review_server(client: httpx.Client, reads_github: bool = True) -> MCPServer:
-    """A code reviewer's tools instead of the crew's: drafting line comments for the user, and reading the repository
-    on GitHub at the pull request's head when there's no local copy. None of them posts anything."""
+def build_review_server(client: httpx.Client, reads_github: bool = False, drafting: bool = True) -> MCPServer:
+    """A review's tools instead of the crew's, as `_review_tools` defines them: the pull request itself, drafting line
+    comments (the lead), and reading the repository on GitHub when it couldn't be checked out. None posts anything."""
     from crewbots.reviews import _review_tools
 
     server = MCPServer("crewbots")
-    defs = {t.name: t for t in _review_tools()}
+    defs = {t.name: t for t in _review_tools(reads_github=True, drafting=True)}
 
     def call(path: str, body: dict[str, Any]) -> str:
         response = client.post(path, json=body)
@@ -127,24 +127,27 @@ def build_review_server(client: httpx.Client, reads_github: bool = True) -> MCPS
             raise ToolError(response.json().get("detail", response.text))
         return response.json()["text"]
 
-    @server.tool(description=defs["draft_comment"].description)
-    def draft_comment(path: str, line: int, body: str, side: str = "RIGHT") -> str:
-        return call("/bot/review/draft_comment", {"path": path, "line": line, "body": body, "side": side})
+    @server.tool(description=defs["pr_overview"].description)
+    def pr_overview() -> str:
+        return call("/bot/review/pr_overview", {})
 
-    if not reads_github:
-        return server
+    @server.tool(description=defs["pr_diff"].description)
+    def pr_diff(path: str | None = None, part: int = 1) -> str:
+        return call("/bot/review/pr_diff", {"path": path, "part": part})
 
-    @server.tool(description=defs["read_file"].description)
-    def read_file(path: str, start: int | None = None, end: int | None = None) -> str:
-        return call("/bot/review/read_file", {"path": path, "start": start, "end": end})
+    if drafting:
+        @server.tool(description=defs["draft_comment"].description)
+        def draft_comment(path: str, line: int, body: str, side: str = "RIGHT") -> str:
+            return call("/bot/review/draft_comment", {"path": path, "line": line, "body": body, "side": side})
 
-    @server.tool(description=defs["list_files"].description)
-    def list_files(path: str = "") -> str:
-        return call("/bot/review/list_files", {"path": path})
+    if reads_github:
+        @server.tool(description=defs["read_file"].description)
+        def read_file(path: str, start: int | None = None, end: int | None = None) -> str:
+            return call("/bot/review/read_file", {"path": path, "start": start, "end": end})
 
-    @server.tool(description=defs["search_code"].description)
-    def search_code(query: str) -> str:
-        return call("/bot/review/search_code", {"query": query})
+        @server.tool(description=defs["list_files"].description)
+        def list_files(path: str = "") -> str:
+            return call("/bot/review/list_files", {"path": path})
 
     return server
 
@@ -152,8 +155,9 @@ def build_review_server(client: httpx.Client, reads_github: bool = True) -> MCPS
 def main() -> None:
     url, token = os.environ["CREWBOTS_URL"], os.environ["CREWBOTS_TOKEN"]
     client = httpx.Client(base_url=url, headers={"Authorization": f"Bearer {token}"}, timeout=60)
-    if os.environ.get("CREWBOTS_TOOLS") in ("review", "review-drafts"):
-        build_review_server(client, reads_github=os.environ["CREWBOTS_TOOLS"] == "review").run("stdio")
+    if os.environ.get("CREWBOTS_TOOLS") == "review":
+        flags = set(os.environ.get("CREWBOTS_REVIEW", "").split(","))
+        build_review_server(client, reads_github="github" in flags, drafting="drafts" in flags).run("stdio")
     else:
         build_server(client, can_delegate=os.environ.get("CREWBOTS_DELEGATE") == "1").run("stdio")
 

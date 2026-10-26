@@ -60,8 +60,6 @@ class FakeGh:
         self.calls.append(args)
         if args[:2] == ["api", "graphql"] and "object(expression" in args[-1]:
             return json.dumps({"data": {"repository": self.objects(args[-1])}})
-        if args[:3] == ["api", "-X", "GET"]:
-            return json.dumps({"items": [{"path": "export.py", "text_matches": [{"fragment": "def export(): ..."}]}]})
         if args[:2] == ["api", "graphql"]:
             searches = [line for line in args[-1].splitlines() if "search(" in line]
             assert all("-author:@me" in s for s in searches if "mine:" not in s)  # your own only in their group
@@ -93,59 +91,142 @@ def test_the_inbox_and_a_pull_request_come_from_gh_and_are_cached(tmp_path):
         reviews.pull("not a repo", 1)
 
 
-def test_a_review_reads_the_prs_own_code_when_the_repo_has_a_local_copy(tmp_path):
+def origin_with_pr(tmp_path: Path) -> tuple[Path, str]:
+    """A repository standing in for GitHub's, with pull request 7's head published where GitHub publishes it."""
     origin = git_repo(tmp_path / "origin")
-    run = lambda *a, cwd=origin: subprocess.run(["git", *a], cwd=cwd, check=True, capture_output=True, text=True)  # noqa: E731
+    run = lambda *a: subprocess.run(["git", *a], cwd=origin, check=True, capture_output=True, text=True)  # noqa: E731
     run("checkout", "-q", "-b", "csv")
     (origin / "export.py").write_text("def export(): ...\n")
     run("add", ".")
     run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "csv")
     head = run("rev-parse", "HEAD").stdout.strip()
-    run("update-ref", "refs/pull/7/head", head)  # how GitHub publishes a PR's head
+    run("update-ref", "refs/pull/7/head", head)
     run("checkout", "-q", "main")
+    run("config", "uploadpack.allowFilter", "true")  # serves a blobless clone, as GitHub does
+    return origin, head
+
+
+def test_a_review_reads_the_prs_own_code_when_the_repo_has_a_local_copy(tmp_path):
+    origin, head = origin_with_pr(tmp_path)
     local = tmp_path / "local"
     subprocess.run(["git", "clone", "-q", str(origin), str(local)], check=True)
     gh = FakeGh()
     gh.detail["headRefOid"] = head
-    reviews = Reviews(tmp_path, gh=gh, worktrees=tmp_path / "worktrees")
+    reviews = Reviews(tmp_path, gh=gh, worktrees=tmp_path / "worktrees", snapshots=tmp_path / "reviews",
+                      remote="file:///nowhere")
     reviews.set_repo("vir/app", str(local))
 
-    title, goal = reviews.brief("vir/app", 7, note="Mind the filters.")
-    folder = reviews.folder("vir/app", 7)
+    folder, whole = reviews.checkout("vir/app", 7)
 
-    assert title == "Review vir/app#7: Add CSV export"
-    assert "look at in particular: Mind the filters." in goal and "checked out at its head" in goal
-    assert "+def export(): ..." in goal and "### #5: Reports need an export\n\nUsers want CSV." in goal
-    assert "## Failing checks\n\n- tests" in goal and "**lee** (review (commented)): Does this handle commas?" in goal
-    assert folder and (Path(folder) / "export.py").exists()
-    assert reviews.worktree("vir/app", 7, head) == Path(folder)  # reused, not checked out again
+    assert whole and folder.parent == tmp_path / "worktrees" and (folder / "export.py").exists()
+    assert reviews.worktree("vir/app", 7, head) == folder  # reused, not checked out again
+    assert not (tmp_path / "reviews" / "repos").exists()  # no clone of its own
     with pytest.raises(ReviewError, match="isn't a git checkout"):
         reviews.set_repo("vir/other", str(tmp_path))
 
 
-def test_each_reviewer_model_reviews_side_by_side_apart_from_the_crew(tmp_path):
+def test_without_a_local_copy_crewbots_clones_the_repo_once_and_checks_out_each_pull_request(tmp_path, monkeypatch):
+    from crewbots import reviews as reviews_module
+
+    origin, head = origin_with_pr(tmp_path)
+    gh = FakeGh()
+    gh.detail["headRefOid"] = head
+    reviews = Reviews(tmp_path, gh=gh, snapshots=tmp_path / "reviews", remote=f"file://{origin}")
+
+    folder, whole = reviews.checkout("vir/app", 7)
+
+    assert whole and folder.parent == tmp_path / "reviews" / "checkouts" and not reviews.is_snapshot(str(folder))
+    assert (folder / "export.py").read_text() == "def export(): ...\n" and (folder / "README.md").exists()
+    clone = tmp_path / "reviews" / "repos" / "vir__app"
+    assert subprocess.run(["git", "-C", str(clone), "config", "remote.origin.partialclonefilter"],
+                          capture_output=True, text=True).stdout.strip() == "blob:none"
+    assert reviews.cached_checkout("vir/app", 7, head) == folder  # kept
+    monkeypatch.setattr(reviews_module, "KEEP_CHECKOUTS", 1)
+    main = subprocess.run(["git", "-C", str(origin), "rev-parse", "main"], capture_output=True, text=True).stdout.strip()
+    time.sleep(0.01)
+    other = reviews.cached_checkout("vir/app", 8, main)  # another pull request: the same clone, no fetch needed
+    assert other.exists() and not folder.exists()  # the oldest checkout makes way
+    assert not gh.calls or all(c[:2] != ["api", "graphql"] for c in gh.calls)  # GitHub's API isn't read for code
+
+
+def test_a_pull_request_comes_to_a_reviewer_through_its_tools_a_part_at_a_time(tmp_path, monkeypatch):
+    from crewbots import reviews as reviews_module
+
+    gh = FakeGh()
+    reviews = Reviews(tmp_path, gh=gh)
+    overview = reviews.overview("vir/app", 7)
+    assert overview.startswith("# Add CSV export\nhttps://github.com/vir/app/pull/7")
+    assert "checks: 1 of 3 passed, 1 failed (tests)" in overview and "- export.py (+12 −3)" in overview
+    assert "### #5: Reports need an export\n\nUsers want CSV." in overview
+    assert "**lee** (review (commented)): Does this handle commas?" in overview and "+def export" not in overview
+
+    big = "".join(f"diff --git a/f{n}.py b/f{n}.py\n" + "+x\n" * 30 for n in range(5))
+    reviews._cache.pop("diff:vir/app#7", None)
+    reviews.gh = lambda args, stdin=None: big if args[:2] == ["pr", "diff"] else gh(args)
+    monkeypatch.setattr(reviews_module, "DIFF_PART_CHARS", 250)
+    first = reviews.diff_part("vir/app", 7)
+    assert first.startswith("Part 1 of 3; ask for part 2 next.") and "f0.py" in first and "f2.py" not in first
+    assert reviews.diff_part("vir/app", 7, part=3).startswith("Part 3 of 3.")
+    assert reviews.diff_part("vir/app", 7, path="f3.py").startswith("diff --git a/f3.py b/f3.py")
+    with pytest.raises(ReviewError, match="isn't one of this pull request's changed files"):
+        reviews.diff_part("vir/app", 7, path="nope.py")
+    with pytest.raises(ReviewError, match="3 part"):
+        reviews.diff_part("vir/app", 7, part=9)
+
+
+def test_one_review_the_reviewers_findings_put_together_by_the_lead(tmp_path):
+    from crewbots.reviews import LEAD_REVIEWER
+
+    origin, head = origin_with_pr(tmp_path)
+    gh = FakeGh()
+    gh.detail["headRefOid"] = head
     store = Store(tmp_path / "crew.db")
-    claude, codex = FakeBackend(), FakeBackend()
+    gate = __import__("asyncio").Event()
+    claude, codex = FakeBackend(), FakeBackend(gate=gate)
     runner = Runner(store, make_crew(tmp_path, bot("reviewer")), {"fake": FakeBackend(), "claude": claude, "codex": codex})
     auth = {"Authorization": "Bearer t"}
-    app = create_app(runner, "t", 8765, reviews=Reviews(tmp_path, gh=FakeGh()))
+    reviews = Reviews(tmp_path, gh=gh, snapshots=tmp_path / "reviews", remote=f"file://{origin}")
+    app = create_app(runner, "t", 8765, reviews=reviews)
+
+    def until(condition):
+        for _ in range(500):
+            if condition():
+                return
+            time.sleep(0.01)
+        raise TimeoutError
+
     with TestClient(app, base_url="http://127.0.0.1:8765/v1") as client:
         assert client.get("/reviews/reviewers", headers=auth).json() == [
             {"backend": "claude", "model": "sonnet", "effort": "high"}, {"backend": "codex", "model": None, "effort": "high"}]
         assert client.get("/reviews/inbox", headers=auth).json()["direct"][0]["reviewed_at"] is None
-        tasks = client.post("/reviews/vir/app/7/review", json={}, headers=auth).json()
-        assert [t["bot"] for t in tasks] == ["reviewer:claude:sonnet:high", "reviewer:codex:default:high"]
-        assert all(t["pr"] == "vir/app#7" and t["kind"] == "review" for t in tasks)
-        for _ in range(200):
-            if len(claude.specs) == 1 and len(codex.specs) == 1:
-                break
-            time.sleep(0.01)
-        spec = claude.specs[0]
-        assert spec.model == "sonnet" and spec.effort == "high" and spec.access.value == "read_only"
-        assert spec.system_prompt.startswith("You are a code reviewer.") and not spec.mcp_servers  # none of the crew's
-        assert codex.specs[0].model is None and codex.specs[0].effort == "high"
+        [lead] = client.post("/reviews/vir/app/7/review", json={"note": "Mind the filters."}, headers=auth).json()
+        assert lead["bot"] == "reviewer:claude:sonnet:high" and lead["parent_id"] is None and lead["kind"] == "review"
+        assert lead["title"] == "Review vir/app#7: Add CSV export" and lead["status"] == "queued"
+        until(lambda: len(claude.specs) == 1 and len(codex.specs) == 1)  # each reviewer, on its own
+        children = store.children(lead["id"])
+        assert sorted(c.bot for c in children) == ["reviewer:claude:sonnet:high", "reviewer:codex:default:high"]
+
+        mine = claude.specs[0]
+        assert mine.prompt.startswith("Review https://github.com/vir/app/pull/7.") and len(mine.prompt) < 600
+        assert "Mind the filters." in mine.prompt and "+def export" not in mine.prompt  # the diff is a tool away
+        assert (Path(mine.cwd) / "export.py").exists() and mine.access.value == "read_only" and mine.network
+        assert mine.system_prompt.startswith("You are one of the reviewers") and not mine.mcp_servers
+        assert "Never run tests, builds" in mine.system_prompt
+        client.post(f"/tasks/{lead['id']}/messages", json={"text": "And the encoding?"}, headers=auth)
+        time.sleep(0.1)
+        assert len(claude.specs) == 1  # the lead waits for the reviewers
+
+        client.portal.call(gate.set)  # on the app's own loop
+        until(lambda: len(claude.specs) == 3)
+        findings, follow_up = claude.specs[1], claude.specs[2]
+        assert findings.system_prompt == LEAD_REVIEWER and findings.cwd == mine.cwd
+        assert findings.prompt.startswith("The reviewers have finished: Review vir/app#7: Add CSV export.")
+        assert "## claude sonnet, high effort\n\ndid: Review" in findings.prompt
+        assert "## codex (its default model), high effort" in findings.prompt
+        assert follow_up.prompt == "And the encoding?"
+
         pull = client.get("/reviews/vir/app/7", headers=auth).json()
-        assert sorted(r["id"] for r in pull["reviews"]) == sorted(t["id"] for t in tasks)
+        assert sorted(r["id"] for r in pull["reviews"]) == sorted([lead["id"], *(c.id for c in children)])
         assert client.get("/reviews/inbox", headers=auth).json()["direct"][0]["reviewed_at"] is not None
         assert client.get("/reviews/vir/app/7/diff", headers=auth).json()["diff"] == DIFF
         saved = client.put("/reviews/reviewers", json=[{"backend": "codex", "model": "gpt-6.1-sol", "effort": "xhigh"}],
@@ -156,28 +237,48 @@ def test_each_reviewer_model_reviews_side_by_side_apart_from_the_crew(tmp_path):
     store.close()
 
 
-def test_without_a_local_copy_the_reviewer_reads_github_scoped_to_what_it_needs(tmp_path):
+def test_when_the_code_cant_be_had_the_review_fails_and_says_why(tmp_path):
+    gh = FakeGh()
+    gh.detail["headRefOid"] = "abc123"
+    store = Store(tmp_path / "crew.db")
+    runner = Runner(store, make_crew(tmp_path, bot("reviewer")), {"fake": FakeBackend(), "claude": FakeBackend(),
+                                                                  "codex": FakeBackend()})
+    reviews = Reviews(tmp_path, gh=gh, snapshots=tmp_path / "reviews", remote="file:///nowhere")
+    reviews.snapshot = lambda *a: (_ for _ in ()).throw(GitHubError("gh: HTTP 404"))
+    with TestClient(create_app(runner, "t", 8765, reviews=reviews), base_url="http://127.0.0.1:8765/v1") as client:
+        [lead] = client.post("/reviews/vir/app/7/review", json={}, headers={"Authorization": "Bearer t"}).json()
+        for _ in range(300):
+            if store.get_task(lead["id"]).status.value == "failed":
+                break
+            time.sleep(0.01)
+        task = store.get_task(lead["id"])
+        assert task.status.value == "failed" and "couldn't get the pull request's code: gh: HTTP 404" in task.error
+        assert store.children(lead["id"]) == []
+    store.close()
+
+
+def test_without_the_repository_the_reviewer_reads_github_scoped_to_what_it_needs(tmp_path):
     gh = FakeGh()
     gh.detail = dict(DETAIL, headRefOid="abc123", files=[{"path": "export.py", "additions": 1, "deletions": 0},
                                                        {"path": "logo.png", "additions": 0, "deletions": 0}])
-    reviews = Reviews(tmp_path, gh=gh, snapshots=tmp_path / "snapshots")
+    reviews = Reviews(tmp_path, gh=gh, snapshots=tmp_path / "snapshots", remote="file:///nowhere")
 
-    folder = Path(reviews.folder("vir/app", 7))
+    folder, whole = reviews.checkout("vir/app", 7)  # a repository git can't fetch: only the changed files
 
+    assert not whole and reviews.is_snapshot(str(folder)) and not (tmp_path / "snapshots" / "checkouts").exists()
     assert sorted(p.name for p in folder.rglob("*") if p.is_file()) == [".complete", "export.py"]  # no binary
-    assert reviews.folder("vir/app", 7) == str(folder) and len([c for c in gh.calls if "Blob" in c[-1]]) == 1  # kept
-    _, goal = reviews.brief("vir/app", 7)
-    assert "use your tools: read_file and list_files" in goal
+    assert reviews.checkout("vir/app", 7)[0] == folder and len([c for c in gh.calls if "Blob" in c[-1]]) == 1  # kept
+    assert "read_file and list_files read the rest of it on GitHub" in reviews.goal("vir/app", 7, "", whole)
     page = reviews.read_file("vir/app", 7, "export.py", 590)
     assert page.startswith("export.py at abc123, lines 590-599 of 599") and "  599  line 599" in page
     assert "lines 1-400 of 599" in reviews.read_file("vir/app", 7, "export.py") and "ask for start=401" in \
         reviews.read_file("vir/app", 7, "export.py")
     assert "isn't a text file" in reviews.read_file("vir/app", 7, "missing.py")
     assert reviews.list_files("vir/app", 7) == "export.py\nweb/"
-    assert reviews.search_code("vir/app", "export") == "- export.py\n    def export(): ..."
 
 
-async def test_a_reviewer_gets_its_tools_on_either_backend_but_not_with_a_local_copy(tmp_path):
+async def test_reviewers_get_the_pull_request_on_either_backend_and_only_the_lead_drafts(tmp_path):
+    from crewbots.mcp_server import build_review_server
     from crewbots.reviews import ReviewTools
 
     store = Store(tmp_path / "crew.db")
@@ -185,29 +286,37 @@ async def test_a_reviewer_gets_its_tools_on_either_backend_but_not_with_a_local_
     claude.in_process_tools = True
     runner = Runner(store, make_crew(tmp_path, bot("x")), {"claude": claude, "codex": codex},
                     api_url="http://127.0.0.1:8765/v1")
-    reviews = Reviews(tmp_path, gh=FakeGh())
-    runner.review_tools = lambda task: ReviewTools(reviews, task.pr)
-    for name in ("reviewer:claude:sonnet:high", "reviewer:codex:default:high"):
-        runner.start_review(name, "Review it", title="Review vir/app#7", pr="vir/app#7", folder=str(tmp_path))
-    for _ in range(200):
-        if claude.specs and codex.specs:
+    reviews = Reviews(tmp_path, gh=FakeGh(), snapshots=tmp_path / "snapshots")
+    runner.review_tools = lambda task: ReviewTools(reviews, task.pr, drafts=store, task_id=task.id,
+                                                   reads_github=reviews.is_snapshot(task.workspace),
+                                                   drafting=task.parent_id is None)
+    lead = runner.start_review("reviewer:codex:default:high", title="Review vir/app#7", pr="vir/app#7",
+                               request="Review https://github.com/vir/app/pull/7")
+    runner.start_reviewers(lead.id, ["reviewer:claude:sonnet:high", "reviewer:codex:default:high"], "Review it",
+                           str(tmp_path))
+    for _ in range(300):
+        if claude.specs and len(codex.specs) == 2:
             break
         await __import__("asyncio").sleep(0.01)
 
-    assert isinstance(claude.specs[0].crew, ReviewTools) and not claude.specs[0].mcp_servers
-    server = codex.specs[0].mcp_servers["crewbots"]
-    assert server.env["CREWBOTS_TOOLS"] == "review" and codex.specs[0].crew is None
-    assert "def export" in await claude.specs[0].crew.call("search_code", {"query": "export"})
-    runner.review_tools = lambda task: None  # a mapped local copy: the worktree has everything
-    runner.start_review("reviewer:codex:default:high", "Again", title="t", pr="vir/app#7", folder=str(tmp_path))
-    for _ in range(200):
-        if len(codex.specs) == 2:
-            break
-        await __import__("asyncio").sleep(0.01)
-    assert codex.specs[1].mcp_servers == {}
+    tools = claude.specs[0].crew
+    assert isinstance(tools, ReviewTools) and not claude.specs[0].mcp_servers
+    assert [t.name for t in tools.definitions()] == ["pr_overview", "pr_diff"]  # no drafting, no GitHub browsing
+    assert "# Add CSV export" in await tools.call("pr_overview", {})
+    child, leading = (s.mcp_servers["crewbots"].env for s in codex.specs)
+    assert child["CREWBOTS_TOOLS"] == "review" and child["CREWBOTS_REVIEW"] == ""
+    assert leading["CREWBOTS_REVIEW"] == "drafts" and codex.specs[1].prompt.startswith("The reviewers have finished")
+
+    stopped = runner.start_review("reviewer:claude:sonnet:high", title="t", pr="vir/app#7", request="Review it")
+    await runner.cancel(stopped.id)
+    assert runner.start_reviewers(stopped.id, ["reviewer:codex:default:high"], "Review it", str(tmp_path)) == []
+
+    reviewer = {t.name for t in await build_review_server(None, reads_github=False, drafting=False).list_tools()}
+    snapshot_lead = {t.name for t in await build_review_server(None, reads_github=True, drafting=True).list_tools()}
+    assert reviewer == {"pr_overview", "pr_diff"}
+    assert snapshot_lead == {"pr_overview", "pr_diff", "draft_comment", "read_file", "list_files"}
     await runner.shutdown()
     store.close()
-
 
 
 # When GitHub fails

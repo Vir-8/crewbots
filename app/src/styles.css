@@ -533,7 +533,11 @@ select {
   width: 220px;
 }
 
-.side-toggle:hover {
+/* No hover background, only a brighter icon: macOS keeps hover on whatever was under the pointer until it moves
+ * again, so a background would look pressed after the sidebar it toggles has gone. */
+.side-toggle:hover,
+.side-toggle.settled:hover {
+  background: none;
   color: var(--text);
 }
 
@@ -4338,6 +4342,51 @@ body.resizing iframe {
 
 .status-dot.held {
   background: var(--amber);
+}
+
+.review-team {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  min-width: 0;
+}
+
+.review-team-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 8px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  color: var(--soft);
+}
+
+.review-team-toggle > span:not(.status-dot) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-team-toggle:not(:disabled):hover,
+.review-team-toggle.on {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.review-team-toggle:disabled {
+  cursor: default;
+}
+
+.review-team-toggle .icon {
+  flex: none;
+}
+
+.review-peek {
+  border-bottom: 0;
+  border-top: 1px solid var(--line-soft);
 }
 
 .round-select {

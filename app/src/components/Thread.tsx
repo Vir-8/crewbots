@@ -26,7 +26,7 @@ const SHOWN_ELSEWHERE = new Set(
 );
 
 /** A task's conversation, as people would tell it: what was said and decided, with the mechanics folded away. */
-export function Thread(props: { crew: Crew; task: Task; onOpen: (id: string) => void; compact?: boolean; chat?: boolean }) {
+export function Thread(props: { crew: Crew; task: Task; onOpen: (id: string) => void; compact?: boolean; chat?: boolean; working?: string }) {
   const { crew, task } = props;
   const events = crew.events.get(task.id);
   const box = useRef<HTMLDivElement>(null);
@@ -58,7 +58,7 @@ export function Thread(props: { crew: Crew; task: Task; onOpen: (id: string) => 
         {active && (
           <div className="working">
             <span className="working-dot" />
-            <span className="shimmer">{doing(crew.latest.get(task.id)) || `${task.bot} is working`}</span>
+            <span className="shimmer">{(props.working && task.status !== "running" ? "" : doing(crew.latest.get(task.id))) || props.working || `${task.bot} is working`}</span>
           </div>
         )}
       </div>
@@ -68,7 +68,7 @@ export function Thread(props: { crew: Crew; task: Task; onOpen: (id: string) => 
 
 function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>): Block[] {
   const out: Block[] = [];
-  const delegated = children.filter((c) => !c.review_of); // in the order they were delegated, like the calls
+  const delegated = children.filter((c) => !c.review_of && c.kind !== "review"); // in the order they were delegated, like the calls; a review's reviewers show in its pane
   const results = new Map(events.filter((e) => e.kind === "tool_result").map((e) => [e.data.id, e]));
   let steps: { call: StoredEvent; result?: StoredEvent }[] = [];
   const flush = () => {
@@ -293,22 +293,19 @@ const KIND: [RegExp, string, string][] = [
   [/^(Edit|Write|MultiEdit|NotebookEdit|apply_patch)$/, "Edited", "file"],
   [/^(Bash|shell)$/, "Ran", "command"],
   [/^(WebSearch|WebFetch|web_search)$/, "Searched the web", ""],
+  [/^mcp__crewbots__pr_(overview|diff)$/, "Read the pull request", ""],
+  [/^mcp__crewbots__draft_comment$/, "Drafted", "comment"],
 ];
 
 function summary(calls: { call: StoredEvent }[]): string {
-  const counts = new Map<string, number>();
+  const counts = new Map<string, [string, string, number]>(); // verb, noun, how many
   for (const { call } of calls) {
-    const kind = KIND.find(([pattern]) => pattern.test(call.data.name));
-    const label = kind ? kind[1] + (kind[2] ? ` ${kind[2]}` : "") : "Used a tool";
+    const [, verb, noun] = KIND.find(([pattern]) => pattern.test(call.data.name)) ?? [null, "Used", "tool"];
     const n = call.data.name === "apply_patch" ? call.data.input?.changes?.length ?? 1 : 1;
-    counts.set(label, (counts.get(label) ?? 0) + n);
+    const key = `${verb}|${noun}`;
+    counts.set(key, [verb, noun, (counts.get(key)?.[2] ?? 0) + n]);
   }
-  return [...counts]
-    .map(([label, n]) => {
-      const [verb, noun] = label.split(" ");
-      return noun && n > 1 ? `${verb} ${n} ${noun}s` : noun ? `${verb} ${n === 1 ? "a" : n} ${noun}` : label;
-    })
-    .join(", ");
+  return [...counts.values()].map(([verb, noun, n]) => (noun ? `${verb} ${n === 1 ? "a" : n} ${noun}${n > 1 ? "s" : ""}` : verb)).join(", ");
 }
 
 function Steps({ calls }: { calls: { call: StoredEvent; result?: StoredEvent }[] }) {

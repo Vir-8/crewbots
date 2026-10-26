@@ -47,7 +47,7 @@ from crewbots.crew import CHAT_SETTING, NO_REPLY, SEAT_SETTING, Bot, Crew
 from crewbots.crew_tools import CrewTools
 from crewbots.events import Done, Event, Notice, RateLimit, SessionStarted, Usage
 from crewbots.memory import CREW_SCOPE, Note
-from crewbots.reviews import reviewer_bot
+from crewbots.reviews import LEAD_REVIEWER, reviewer_bot
 from crewbots.store import Handoff, Review, Status, Store, Task, Verdict
 
 SUBSCRIBER_QUEUE = 10_000
@@ -348,6 +348,11 @@ class Runner:
         task = self.store.get_task(task_id)
         self._message(task_id, sender, text, attachments)
         text += attachments_module.listing(attachments or [])
+        getting_code = task.parent_id is None and task.status == Status.QUEUED and not task.workspace
+        if task.kind == "review" and task_id not in self._runs and sender != "crewbots" and (getting_code or any(
+                c.active or c.id in self._runs for c in self.store.children(task_id))):
+            self._waiting.setdefault(task_id, []).append(text)  # the lead answers once it has the reviewers' findings
+            return task
         if task.reported:
             self.store.update_task(task_id, reported=False)  # its next outcome goes back to the parent too
         if task_id in self._runs:
@@ -368,6 +373,10 @@ class Runner:
         if not (opened and opened.session.alive and getattr(opened.session, "interruptible", False)):
             await self._close_session(task_id)  # an interruptible session stopped its turn and stays warm
         task = self._set(task_id, status=Status.CANCELLED)
+        if task.kind == "review" and task.parent_id is None:  # stopping a review stops its reviewers
+            for reviewer in self.store.children(task_id):
+                if reviewer.active or reviewer.id in self._runs:
+                    await self.cancel(reviewer.id)
         self._report_up(task_id)
         return task
 
@@ -393,14 +402,40 @@ class Runner:
         """A crew bot, or the reviewer agent a code review runs as (it isn't one of the crew)."""
         return self.crew.bots.get(name) or reviewer_bot(name)
 
-    def start_review(self, reviewer: str, goal: str, *, title: str, pr: str, folder: str) -> Task:
-        """A private code review by one reviewer model: its own task, apart from the crew's work."""
-        task = self.store.create_task(reviewer, goal, created_by="user", workspace=folder, title=title, pr=pr,
-                                      kind="review")
+    def start_review(self, lead: str, *, title: str, pr: str, request: str) -> Task:
+        """A private review of a pull request: the lead's task, which waits while its reviewers review the pull
+        request on their own (`start_reviewers`, once their code is ready), then puts their findings together."""
+        task = self.store.create_task(lead, request, created_by="user", title=title, pr=pr, kind="review",
+                                      status=Status.QUEUED)
         self.bus.publish({"type": "task", "task": task.to_json()})
-        self._message(task.id, "user", goal)
-        self._start(task.id, goal)
+        self._message(task.id, "user", request)
         return task
+
+    def start_reviewers(self, lead_id: str, reviewers: list[str], goal: str, folder: str) -> list[Task]:
+        """The reviewers of a review, each on its own, in the same checkout. When they've all finished, their findings
+        go to the lead (`_report_up`)."""
+        if self.store.get_task(lead_id).status is not Status.QUEUED:
+            return []  # stopped while its code was being fetched
+        lead = self.store.update_task(lead_id, workspace=folder)
+        started = []
+        for reviewer in reviewers:
+            task = self.store.create_task(reviewer, goal, created_by=lead.bot, parent_id=lead_id, workspace=folder,
+                                          title=lead.title, pr=lead.pr, kind="review")
+            self.bus.publish({"type": "task", "task": task.to_json()})
+            self._message(task.id, "user", goal)
+            self._start(task.id, goal)
+            started.append(task)
+        return started
+
+    def note(self, task_id: str, message: str) -> None:
+        """A line in a task's conversation from crewbots itself, such as what a review is waiting on."""
+        self._record(task_id, Notice(message=message))
+
+    def fail(self, task_id: str, error: str) -> Task:
+        """A task that can't go ahead, for a reason found outside a run (a review whose code couldn't be fetched)."""
+        self._waiting.pop(task_id, None)
+        self._record(task_id, Done(final_text="", is_error=True, error=error))
+        return self._set(task_id, status=Status.FAILED, error=error)
 
     def held(self) -> list[str]:
         return list(self._held)
@@ -859,11 +894,13 @@ class Runner:
         if task.kind == "review":  # its own instructions and tools, and nothing of the crew's: no roster, no memory
             tools = self.review_tools(task) if self.review_tools and self.api_url else None
             in_process = tools is not None and getattr(backend, "in_process_tools", False)
-            kind = "review" if tools is not None and getattr(tools, "reads_github", True) else "review-drafts"
-            servers = {} if tools is None or in_process else self._crew_tools(token, bot, tools=kind)
-            return RunSpec(prompt=prompt, cwd=cwd, access=bot.access, model=bot.model, system_prompt=bot.instructions,
+            flags = ",".join(f for f, on in (("github", getattr(tools, "reads_github", False)),
+                                             ("drafts", getattr(tools, "drafting", False))) if on)
+            servers = {} if tools is None or in_process else self._crew_tools(token, bot, tools="review", flags=flags)
+            system = LEAD_REVIEWER if task.parent_id is None else bot.instructions  # the lead puts the others together
+            return RunSpec(prompt=prompt, cwd=cwd, access=bot.access, model=bot.model, system_prompt=system,
                            resume_session_id=task.session_id, timeout_s=bot.timeout_s, effort=bot.effort,
-                           mcp_servers=servers, crew=tools if in_process else None)
+                           mcp_servers=servers, crew=tools if in_process else None, network=bot.network)
         # A backend that hosts tools in-process gets the crew tools as Python; any other, as an MCP server with a token.
         in_process = getattr(backend, "in_process_tools", False) and self.api_url is not None
         return RunSpec(
@@ -997,12 +1034,12 @@ class Runner:
                 "finding per problem, each with its location, the problem, and a failure scenario. A pass with "
                 "remaining risks is still a pass; list them as findings.")
 
-    def _crew_tools(self, token: str, bot: Bot, tools: str = "crew") -> dict[str, McpServer]:
+    def _crew_tools(self, token: str, bot: Bot, tools: str = "crew", flags: str = "") -> dict[str, McpServer]:
         if not self.api_url:
             return {}
         command, *args = self.mcp_command
         env = {"CREWBOTS_URL": self.api_url, "CREWBOTS_TOKEN": token, "CREWBOTS_DELEGATE": "1" if bot.can_delegate else "0",
-               "CREWBOTS_TOOLS": tools}
+               "CREWBOTS_TOOLS": tools, "CREWBOTS_REVIEW": flags}
         return {MCP_SERVER_NAME: McpServer(command=command, args=list(args), env=env)}
 
     def _cwd(self, task: Task, bot: Bot) -> Path:
@@ -1036,6 +1073,9 @@ class Runner:
             return
         for s in finished:
             self.store.update_task(s.id, reported=True)
+        if parent.kind == "review":  # a review's reviewers: their findings, whole, for the lead to put together
+            self.send(parent.id, sender="crewbots", text=_review_findings(parent, finished))
+            return
         sections = "\n\n".join(
             _report_section(s, self.store.latest_handoff(s.id), self.store.latest_review(s.id)) for s in finished)
         reviewed = dict.fromkeys(s.review_of for s in finished if s.review_of)
@@ -1127,6 +1167,28 @@ def _usage_data(usage: Usage, bot: Bot) -> dict[str, Any]:
 def _plan(backend: str) -> str:
     """The subscription a backend runs on: both Claude backends share Claude's limits, both Codex ones Codex's."""
     return backend.split("-")[0]
+
+
+REVIEW_FINDINGS_CHARS = 20_000  # of each reviewer's findings, for the lead
+
+
+def _review_findings(lead: Task, reviewers: list[Task]) -> str:
+    """The lead's first message: what each reviewer found, whole, or that it failed."""
+    def who(task: Task) -> str:
+        _, backend, model, effort = (task.bot.split(":") + ["", "", ""])[:4]
+        return f"{backend} {'(its default model)' if model == 'default' else model}, {effort} effort"
+
+    parts = []
+    for r in reviewers:
+        if r.status is Status.FAILED:
+            parts.append(f"## {who(r)}\n\nThis reviewer failed ({r.error}): review what it would have covered yourself.")
+        else:
+            found = r.result or "(it found nothing to report)"
+            if len(found) > REVIEW_FINDINGS_CHARS:
+                found = found[:REVIEW_FINDINGS_CHARS] + "\n…"
+            parts.append(f"## {who(r)}\n\n{found}")
+    return (f"The reviewers have finished: {lead.title}. Their findings follow.\n\n" + "\n\n".join(parts)
+            + "\n\nCheck them against the code, put them together, draft the line comments, and reply with the review.")
 
 
 def _duration(seconds: float) -> str:

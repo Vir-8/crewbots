@@ -93,13 +93,18 @@ async def test_a_reviewer_drafts_a_comment_on_a_line_the_diff_shows(world):
     assert await tools.call("draft_comment", {"path": "old.py", "line": 2, "side": "LEFT", "body": "why remove this?"})
 
 
-async def test_with_a_local_copy_a_reviewer_still_drafts_but_reads_nothing_on_github(world):
+async def test_only_the_lead_drafts_and_only_without_the_repository_does_a_reviewer_read_github(world):
     store, _, reviews = world
-    tools = ReviewTools(reviews, "vir/app#7", drafts=store, reads_github=False)
+    lead = ReviewTools(reviews, "vir/app#7", drafts=store)
+    reviewer = ReviewTools(reviews, "vir/app#7", drafts=store, drafting=False)
 
-    assert [t.name for t in tools.definitions()] == ["draft_comment"]
+    assert [t.name for t in lead.definitions()] == ["pr_overview", "pr_diff", "draft_comment"]
+    assert [t.name for t in reviewer.definitions()] == ["pr_overview", "pr_diff"]
     with pytest.raises(ToolRefused, match="not one of the reviewer's tools"):
-        await tools.call("read_file", {"path": "export.py"})
+        await lead.call("read_file", {"path": "export.py"})
+    with pytest.raises(ToolRefused, match="not one of the reviewer's tools"):
+        await reviewer.call("draft_comment", {"path": "export.py", "line": 12, "body": "x"})
+    assert store.drafts("vir/app", 7) == []
     assert not any("submit" in t.name or "post" in t.name for t in ReviewTools(reviews, "vir/app#7").definitions())
 
 

@@ -200,16 +200,18 @@ The app works like a messaging app:
   are assigned to you, are yours, or ask your teams (asked for only when you open that list), read with your `gh`
   login. What GitHub said last shows at
   once while the app asks again. Each has its summary, checks and diff. Review runs the PR reviewer, an agent
-  of its own (not one of your bots), on each model you choose in Settings, side by side: by default Claude Sonnet and
-  Codex's default model, both at high effort. Each review is a tab you can keep talking to. Nothing is posted to
-  GitHub by a reviewer: it drafts line comments (`draft_comment`, on lines the diff shows), which appear in the diff
-  beside yours. You add, edit and delete drafts, and Submit review sends your review, approving, requesting changes or
+  of its own (not one of your bots), on each model you choose in Settings (by default Claude Sonnet and Codex's
+  default model, both at high effort). Each reviews the PR on its own; then the first, as the lead, checks their
+  findings against the code, merges them into one review and drafts its line comments (`draft_comment`, on lines
+  the diff shows), which appear in the diff beside yours. The review is a conversation you can carry on, and the
+  reviewers' own threads are a click away. Nothing is posted to GitHub by a reviewer. You add, edit and delete drafts, and Submit review sends your review, approving, requesting changes or
   commenting, with the drafts, under your name: the one write to GitHub, and only from the app with your token. No
   reviewer can submit, and none can post a comment anywhere. The diff has line numbers, and changed images show
-  before and after. A reviewer gets the PR's description, the issues it refers to, its files and diff, the failing checks and
-  the discussion so far, plus the code: the changed files at the PR's head, fetched from GitHub, and tools to read
-  any other file there, list folders and search the repo, fetched only as it asks. Point a repo at your local copy
-  in Settings, and it gets the whole repository at the PR's head instead.
+  before and after. A reviewer is told only which PR and what you'd like looked at, and works in the whole
+  repository checked out at the PR's head, from crewbots' own blobless clone (or beside your copy, if you point the
+  repo at one in Settings). It asks for the PR's description, files, checks, linked issues and discussion
+  (`pr_overview`) and its diff (`pr_diff`), reads the code itself and searches the web for anything outside the
+  repo. Reviews are static: nothing is run.
 - **The crew menu**, at the bottom left:
   - **Crew:** your bots, and an editor for each: its name and face, title and description, backend, model and
     reasoning effort (from the lists the CLIs themselves report), access, network, MCP servers (a new bot starts with

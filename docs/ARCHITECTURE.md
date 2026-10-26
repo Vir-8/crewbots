@@ -258,17 +258,28 @@ Each step leaves the system working.
   through the Agent SDK (`effort`: low to max), Codex per turn (`turn/start`'s `effort`, or `model_reasoning_effort`
   for `exec`). Blank means the CLI's own default. The app's dropdowns come from the CLIs (`models.py`): Codex's
   `model/list`, and the model list Claude Code reports when a session starts, cached for half an hour.
-- **Code review** (`reviews.py`) is apart from the crew's always-on work. The PR reviewer is its own agent: its own
-  instructions (`REVIEWER`), read-only, with no roster, crew tools or memory, run once per configured model
-  (`reviewers:` in `reviews.yaml`) as tasks of kind `review`, named `reviewer:<backend>:<model>:<effort>` so they can
-  be resumed from the name alone. Its brief carries the description, the issues it refers to (closing references and
-  `#N` mentions), the files and diff (capped), the failing checks and the discussion so far. For the code around
-  the change: with a mapped local copy, the PR's head in a worktree; without one, a snapshot folder of the changed
-  files at the head, fetched in batches through GraphQL (`object(expression: "sha:path")`), and three tools,
-  `read_file`, `list_files` and `search_code`, served in-process to Claude and over MCP (`CREWBOTS_TOOLS=review`) to
-  Codex, each fetching only what's asked. Code search covers the default branch, not the PR. With a mapped local
-  copy, the PR's head is fetched (`pull/N/head`) into a detached worktree under `~/.crewbots/worktrees/reviews`, and
-  the read-only reviewer works there. GitHub's inbox and pull requests are cached for a minute or two.
+- **Code review** (`reviews.py`) is apart from the crew's always-on work. A review is one lead task of kind `review`
+  and a child task per configured model (`reviewers:` in `reviews.yaml`), each named
+  `reviewer:<backend>:<model>:<effort>` so it can be resumed from the name alone, read-only, with network (web
+  search) and no roster, crew tools or memory.
+  - `POST /reviews/{repo}/{n}/review` creates the lead (the first model, `QUEUED`, its first message just "Review
+    <url>" and your note) and returns it at once; the checkout happens in the background, then `start_reviewers`
+    starts the children in it. Each reviewer gets only the PR's link, your note and where the code is (`REVIEWER`),
+    and asks for the rest with its tools: `pr_overview` (description, files, checks, linked issues, discussion) and
+    `pr_diff` (a file at a time, or the whole diff in 40k-character parts of whole files).
+  - When every child has finished, `_report_up` sends their findings, whole, to the lead as a message from
+    crewbots (hidden in the app), and the lead runs with `LEAD_REVIEWER`: check each finding against the code, merge
+    duplicates, cover what a failed reviewer missed, draft one line comment per problem, and reply with the review.
+    Only the lead has `draft_comment`, so comments never overlap. Your messages to the lead before then wait.
+  - The code: with a mapped local copy, the PR's head in a detached worktree of it (`~/.crewbots/worktrees/reviews`);
+    otherwise crewbots' own blobless clone (`git clone --filter=blob:none --no-checkout` into
+    `~/.crewbots/reviews/repos`, then `fetch pull/N/head` and `worktree add --detach` under `checkouts/`, six kept
+    per repo; about a minute for a big repo's first review, seconds after). Only if git can't fetch it, a snapshot
+    of the changed files through GraphQL, with `read_file` and `list_files` to read the rest on GitHub.
+  - GitHub's API is for the PR itself, not for browsing code: its code search allows ten queries a minute, so there
+    is none. Reviews are static: the prompts forbid running tests, builds, linters or installs.
+  - Tools are served in-process to Claude and over MCP (`CREWBOTS_TOOLS=review`, `CREWBOTS_REVIEW=github,drafts`)
+    to Codex. GitHub's inbox and pull requests are cached for a minute or two.
 - **Prompt caching** is the CLIs' and the APIs', matched from the start of the prompt. A bot's instructions put what
   stays the same first (who it is, its role card, the roster, the crew tools, skills, team files) and what changes
   last (its notes, the task's setting, a briefing or review), so every session of a bot shares the cached start, and
@@ -298,8 +309,7 @@ Each step leaves the system working.
   lines, LEFT the base's removed and unchanged ones) and kept with the head they were written on. Submitting is a
   single `gh api POST /repos/{repo}/pulls/{n}/reviews` with the event, the summary and the drafts, sent once (a
   write isn't retried: one that timed out may have happened), under the `/v1/reviews` routes, which only the user's
-  token opens; a bot's token reaches `/v1/bot` alone. Every review gets `draft_comment`, local copy or not, so its
-  tools are crewbots' MCP server for Codex either way.
+  token opens; a bot's token reaches `/v1/bot` alone. A review's lead drafts; its reviewers only report findings.
 - **Changed images** in a PR come from GitHub's contents API at the head and the base commit (the blobs API past a
   megabyte), kept like other GitHub answers.
 - **Attachments** (`attachments.py`) are files in the crew's `attachments/<id>/`, which Claude bots may read (an

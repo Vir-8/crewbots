@@ -1,23 +1,29 @@
 """Code review, apart from the always-on crew: the pull requests waiting on you, and private reviews of them.
 
-The reviewer isn't one of your bots. It's its own agent, with its own instructions (`REVIEWER`), run on each of the
-models you choose (`reviewers:` in `reviews.yaml`), side by side: two model families catch different things. Each
-review is a conversation you can carry on.
+A review isn't one of your bots' work. Each of the models you choose (`reviewers:` in `reviews.yaml`) reviews the pull
+request on its own (`REVIEWER`); then the first of them, as the lead (`LEAD_REVIEWER`), checks their findings against
+the code, merges them, drafts the line comments and writes the one review you read and talk to. The reviewers'
+own threads are there if you want them.
 
-What a reviewer gets: the pull request's title, description, author and branches; the issues it refers to; its files
-and diff; which checks fail; and what's been said on it so far. Then the code around the change:
+A reviewer is told only which pull request, and what you'd like looked at. Everything else it asks for: the pull
+request's description, files, checks, linked issues and discussion (`pr_overview`), its diff (`pr_diff`), and the
+code itself, the whole repository checked out at the pull request's head:
 
-- With your local copy mapped (`repos:` in `reviews.yaml`), the pull request's own code, checked out at its head in a
-  worktree of crewbots'.
-- Without one, it's read from GitHub, scoped: the changed files at the head are fetched into the reviewer's folder,
-  and it has tools to read any other file at that commit, list a folder, and search the repo's code, fetched only
-  when it asks. Nothing is cloned.
+- from your local copy, when one is mapped (`repos:` in `reviews.yaml`), in a worktree of crewbots';
+- otherwise from crewbots' own clone of the repository (blobless: file contents come only for what's checked out),
+  so a later pull request of the same repository takes seconds;
+- and only if that can't be had, the changed files fetched from GitHub, with tools to read the rest there.
 
-Everything is read with your own `gh` login, and nothing goes back to GitHub.
+Reviewers read and search the code themselves, and the web for anything outside the repository: GitHub's API is
+used for the pull request itself, not for browsing code, since its code search allows ten queries a minute. A review
+is static: nothing is run. Everything is read with your own `gh` and git logins, and nothing goes to GitHub until you
+submit a review yourself.
 """
 
 import json
+import os
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -33,42 +39,69 @@ from crewbots.github import GitHubError, _gh
 REPOS_FILE = "reviews.yaml"  # in the crew's folder: {repos: {owner/name: local checkout}, reviewers: [...]}
 WORKTREES = Path.home() / ".crewbots" / "worktrees" / "reviews"
 SNAPSHOTS = Path.home() / ".crewbots" / "reviews"  # a pull request's changed files, fetched from GitHub
+# In there: repos/, crewbots' own blobless clone of each repository it reviews, and checkouts/, pull requests' heads.
+KEEP_CHECKOUTS = 6  # per repository; older ones are removed (each is a whole working tree)
+REMOTE = "https://github.com/{repo}.git"
+DIFF_PART_CHARS = 40_000  # pr_diff hands the diff over in parts this size, or a file at a time
 SNAPSHOT_FILES = 200
 FILE_BYTES = 400_000  # a changed file bigger than this is left out of the snapshot; the reviewer can still read it
 FETCH_BATCH = 40  # files per GraphQL query
 READ_LINES = 400
-SEARCH_RESULTS = 20
 DEFAULT_REVIEWERS = [{"backend": "claude", "model": "sonnet", "effort": "high"},
                      {"backend": "codex", "model": None, "effort": "high"}]  # None: Codex's own default model
 MAX_REVIEWERS = 4
 ISSUE_CHARS = 2_500
 DISCUSSION_CHARS = 5_000
 REVIEWER_PREFIX = "reviewer:"  # a reviewer's name: reviewer:<backend>:<model>:<effort>
-REVIEWER = """You are a code reviewer. You review one pull request, privately, for the person you're talking to.
+HOW_TO_REVIEW = """Your working directory is the repository, checked out at the pull request's head. Start with
+`pr_overview` (what the pull request is for, its files, checks, linked issues and discussion) and `pr_diff` (its
+changes; a file at a time, or in parts, if it's long). Then read around the change in the checkout: the callers, the
+types, the tests, how the touched code is used elsewhere. Check claims against the code rather than speculating. For
+anything outside the repository, such as a library's behaviour or its documentation, search the web.
+
+Review statically, by reading. Never run tests, builds, linters, type checks, package managers, servers or the app,
+and never install anything: a review reads code, it doesn't execute it. If you can run commands, run only ones that
+read and search (rg, grep, ls, cat, git log, git show). Never change files, and never post, comment, approve or submit
+anything anywhere.
 
 Find what's actually wrong: bugs, regressions, broken edge cases, security problems, missing or misleading tests, and
-changes that don't do what the pull request says. Check claims against the code; don't speculate where you can look.
-When you have the repository, read around the change: the callers, the types, the tests, how the touched code is used
-elsewhere. Run read-only commands if you can (git log, git grep, a type check) to confirm a finding.
+changes that don't do what the pull request says. No style nits a linter would catch, and no restating the diff."""
 
-Never change files, and never post, comment, approve, request changes or submit anything anywhere yourself. For each
-finding that belongs on a line, draft a review comment there with `draft_comment(path, line, body)`: `line` is the
-line's number in the pull request's version of the file (`side: LEFT` for a removed line, by its old number), and it
-must be a line the diff shows. Drafts are private; the user reads them, edits or deletes them, and decides whether to
-submit a review. Write each as the comment a careful reviewer would leave: the problem, why it matters, and what would
-fix it.
+REVIEWER = f"""You are one of the reviewers of a pull request. You review it on your own; a lead reviewer then puts
+your findings together with the others' into the review the person reads.
 
-Reply in this shape:
-1. One line: no blocking issues, or how many issues you found.
-2. The findings, most serious first, each as P0 (must fix), P1 (should fix) or P2 (worth fixing): file:line, the
-   problem, and the input or state that goes wrong. No style nits a linter would catch. No restating the diff.
+{HOW_TO_REVIEW}
+
+Reply with your findings, most serious first, each with:
+- P0 (must fix), P1 (should fix) or P2 (worth fixing)
+- where: path:line, the line's number in the pull request's version of the file, or path:line (removed) for a removed
+  line by its old number
+- the problem, and the input or state that goes wrong
+- the comment you'd leave on that line
+Then a line on the change's overall risk, and what you couldn't check. Nothing else."""
+
+LEAD_REVIEWER = f"""You lead a private review of one pull request, for the person you're talking to. Other reviewers,
+on other models, review it on their own first, and their findings are your first message. You put them together.
+
+{HOW_TO_REVIEW}
+
+1. Check every finding against the code: reviewers are sometimes wrong. Drop what doesn't hold up.
+2. Merge findings that are the same problem, however differently worded or on whichever nearby line.
+3. If a reviewer failed or missed part of the change, review that part yourself.
+4. For each finding that belongs on a line, draft one comment with `draft_comment(path, line, body)`: one per problem,
+   never twice. `line` is its number in the pull request's version of the file (`side: LEFT` and its old number for a
+   removed line), a line the diff shows. Write it as a careful reviewer would: the problem, why it matters, what
+   would fix it. Drafts are private: the person reads, edits or deletes them, and decides whether to submit a review.
+
+Then reply with the review:
+1. One line: no blocking issues, or how many issues there are.
+2. The findings, most serious first, each as P0/P1/P2 with path:line and the problem, and which reviewers found it.
 3. Overall impact: what this change affects, and how risky it is.
-4. What you couldn't check, and why.
+4. What couldn't be checked, and why.
 
 Afterwards, answer follow-up questions about the pull request plainly and briefly."""
 INBOX_TTL_S = 60.0
 DETAIL_TTL_S = 120.0
-PROMPT_DIFF_CHARS = 60_000
 VIEW_DIFF_CHARS = 800_000
 BODY_CHARS = 6_000
 REPO = re.compile(r"[\w.-]+/[\w.-]+")
@@ -114,14 +147,19 @@ class _Cached:
 
 
 class Reviews:
-    def __init__(self, crew_home: Path, gh=_gh, worktrees: Path = WORKTREES, snapshots: Path = SNAPSHOTS):
+    def __init__(self, crew_home: Path, gh=_gh, worktrees: Path = WORKTREES, snapshots: Path = SNAPSHOTS,
+                 remote: str = REMOTE):
         self.home = crew_home
         self.gh = gh
         self.worktrees = worktrees
         self.snapshots = snapshots
+        self.clones = snapshots / "repos"
+        self.checkouts = snapshots / "checkouts"
+        self.remote = remote  # where a repository is cloned from: GitHub, or a folder in tests
         self._cache: dict[str, _Cached] = {}
         self._loading: dict[str, threading.Event] = {}  # keys being fetched now, set when each is done
         self._lock = threading.Lock()
+        self._repo_locks: dict[str, threading.Lock] = {}  # one git operation on a repository's clone at a time
 
     # What's waiting.
 
@@ -243,43 +281,130 @@ class Reviews:
 
     # Reviewing.
 
-    def brief(self, repo: str, number: int, note: str = "") -> tuple[str, str]:
-        """The review's title, and everything a reviewer is given about the pull request."""
+    def request(self, repo: str, number: int, note: str = "") -> str:
+        """What you asked for, as the lead's conversation shows it: the pull request, and what to look at."""
+        url = self.pull(repo, number)["url"]
+        return f"Review {url}" + (f"\n\n{note.strip()}" if note.strip() else "")
+
+    def goal(self, repo: str, number: int, note: str, whole: bool) -> str:
+        """A reviewer's first message: which pull request, what you'd like looked at, and where its code is. The rest
+        it asks for with its tools, as it needs it."""
         pr = self.pull(repo, number)
-        body = _clip(pr["body"], BODY_CHARS)
-        files = "\n".join(f"- {f['path']} (+{f['additions']} −{f['deletions']})" for f in pr["files"][:200])
-        facts = (f"{repo}#{number} by {pr['author']}, {pr['head']} → {pr['base']}, {pr['changed_files']} files "
-                 f"(+{pr['additions']} −{pr['deletions']}), checks: {pr['checks']['passed']} of {pr['checks']['total']} "
-                 f"passed, {pr['checks']['failed']} failed.")
-        sections = [f"Review {pr['url']}.", f"# {pr['title']}\n\n{facts}\n\n{body}"]
-        if note.strip():
-            sections.insert(1, f"What I'd like you to look at in particular: {note.strip()}")
-        issues = [self.issue(repo, n) for n in pr["issues"]]
-        if issues := [i for i in issues if i]:
-            sections.append("## The issues it refers to\n\n" + "\n\n".join(
-                f"### #{i['number']}: {i['title']}\n\n{_clip(i['body'], ISSUE_CHARS)}" for i in issues))
-        if pr["failing"]:
-            sections.append("## Failing checks\n\n" + "\n".join(f"- {name}" for name in pr["failing"][:30]))
+        where = (f"Your working directory is the repository, checked out at the pull request's head ({pr['head_sha'][:12]})."
+                 if whole else
+                 f"Your working directory has only the files this pull request changes, as they are at its head "
+                 f"({pr['head_sha'][:12]}): the repository couldn't be checked out. read_file and list_files read the "
+                 "rest of it on GitHub; fetch only what a finding depends on.")
+        asked = f"\n\nWhat I'd like looked at in particular: {note.strip()}" if note.strip() else ""
+        return f"Review {pr['url']}.{asked}\n\n{where}"
+
+    def checkout(self, repo: str, number: int) -> tuple[Path, bool]:
+        """Where reviewers work, and whether it's the whole repository: your mapped copy's worktree, else crewbots'
+        own clone's, else (a private repository git can't fetch, say) the changed files fetched from GitHub."""
+        pr = self.pull(repo, number)
+        ways = [self.worktree] if self.checkout_of(repo) else []
+        for way in [*ways, self.cached_checkout]:
+            try:
+                return way(repo, number, pr["head_sha"]), True
+            except ReviewError:
+                continue
+        return self.snapshot(repo, number, pr["head_sha"], [f["path"] for f in pr["files"]]), False
+
+    def cached_checkout(self, repo: str, number: int, sha: str) -> Path:
+        """The pull request's head, checked out from crewbots' own clone of the repository. The clone is blobless:
+        the history, without file contents until a checkout needs them, so the first review of a big repository
+        takes about a minute and a later pull request of it a few seconds."""
+        _check(repo)
+        target = self.checkouts / f"{repo.replace('/', '-')}-{number}-{sha[:10]}"
+        if (target / ".git").exists():
+            return target
+        clone = self.clones / repo.replace("/", "__")
+        with self._git_lock(repo):
+            if not (clone / ".git").exists():
+                clone.parent.mkdir(parents=True, exist_ok=True)
+                self._git(["clone", "--filter=blob:none", "--no-checkout", "--quiet", self.remote.format(repo=repo),
+                           str(clone)], repo, timeout=900)
+            if self._git(["-C", str(clone), "cat-file", "-t", sha], repo, check=False).strip() != "commit":
+                self._git(["-C", str(clone), "fetch", "--no-tags", "--quiet", "origin", f"pull/{number}/head"], repo)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                self._git(["-C", str(clone), "worktree", "add", "--detach", "--quiet", str(target), sha], repo,
+                          timeout=900)
+            except ReviewError:  # nothing half checked out is left to look finished next time
+                self._git(["-C", str(clone), "worktree", "remove", "--force", str(target)], repo, check=False)
+                shutil.rmtree(target, ignore_errors=True)
+                raise
+            self._prune(clone, repo)
+        return target
+
+    def is_snapshot(self, folder: str | None) -> bool:
+        """Whether a review's folder holds only the changed files, so its reviewers read the rest on GitHub."""
+        return bool(folder) and Path(folder).parent == self.snapshots
+
+    def _prune(self, clone: Path, repo: str) -> None:
+        mine = sorted(self.checkouts.glob(f"{repo.replace('/', '-')}-*"), key=lambda p: p.stat().st_mtime, reverse=True)
+        for old in mine[KEEP_CHECKOUTS:]:
+            self._git(["-C", str(clone), "worktree", "remove", "--force", str(old)], repo, check=False)
+
+    def _git(self, args: list[str], repo: str, timeout: float = 600, check: bool = True) -> str:
+        env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}  # a private repository without a login fails, never asks
+        try:
+            done = subprocess.run(["git", *args], capture_output=True, text=True, timeout=timeout, env=env,
+                                  stdin=subprocess.DEVNULL)
+        except subprocess.TimeoutExpired:
+            raise ReviewError(f"getting {repo}'s code took too long") from None
+        if check and done.returncode != 0:
+            raise ReviewError(f"couldn't get {repo}'s code: {(done.stderr or done.stdout).strip().splitlines()[-1:]}")
+        return done.stdout
+
+    def _git_lock(self, repo: str) -> threading.Lock:
+        with self._lock:
+            return self._repo_locks.setdefault(repo, threading.Lock())
+
+    # What a reviewer asks for about the pull request itself.
+
+    def overview(self, repo: str, number: int) -> str:
+        """`pr_overview`: what the pull request is for and where it stands, without its diff."""
+        pr = self.pull(repo, number)
+        checks = pr["checks"]
+        lines = [f"# {pr['title']}", pr["url"],
+                 f"{repo}#{number} by {pr['author']} · {pr['head']} → {pr['base']} · head {pr['head_sha'][:12]}",
+                 f"{pr['changed_files']} files, +{pr['additions']} −{pr['deletions']} · checks: {checks['passed']} of "
+                 f"{checks['total']} passed, {checks['failed']} failed"
+                 + (f" ({', '.join(pr['failing'][:10])})" if pr["failing"] else ""),
+                 "", "## Description", "", _clip(pr["body"], BODY_CHARS) if pr["body"].strip() else "(none)",
+                 "", "## Files", "", *(f"- {f['path']} (+{f['additions']} −{f['deletions']})" for f in pr["files"][:300])]
+        issues = [i for i in (self.issue(repo, n) for n in pr["issues"]) if i]
+        if issues:
+            lines += ["", "## Issues it refers to", *(f"\n### #{i['number']}: {i['title']}\n\n{_clip(i['body'], ISSUE_CHARS)}"
+                                                      for i in issues)]
         if pr["discussion"]:
             said = "\n\n".join(f"**{d['author']}** ({d['kind']}): {_clip(d['body'], 800)}" for d in pr["discussion"])
-            sections.append(f"## What's been said on it so far\n\n{_clip(said, DISCUSSION_CHARS)}")
-        sections.append(f"## Files\n\n{files}")
-        sections.append(f"## Diff\n\n```diff\n{self.diff(repo, number, PROMPT_DIFF_CHARS)}\n```")
-        where = (f"Your working directory is the pull request's own code, checked out at its head ({pr['head_sha'][:12]})."
-                 if self.checkout_of(repo) else
-                 f"Your working directory has the changed files as they are at the pull request's head ({pr['head_sha'][:12]}), "
-                 "not the whole repository. For anything else, use your tools: read_file and list_files read the "
-                 "repository at that commit, and search_code searches its code (on the default branch). Fetch what a "
-                 "finding depends on, such as callers, types and tests, rather than guessing.")
-        sections.insert(1, where)
-        return f"Review {repo}#{number}: {pr['title']}", "\n\n".join(sections)
+            lines += ["", "## What's been said on it", "", _clip(said, DISCUSSION_CHARS)]
+        return "\n".join(lines)
 
-    def folder(self, repo: str, number: int) -> str:
-        """Where a reviewer works: the pull request's head in a worktree of your copy, or its changed files, fetched."""
-        pr = self.pull(repo, number)
-        if self.checkout_of(repo):
-            return str(self.worktree(repo, number, pr["head_sha"]))
-        return str(self.snapshot(repo, number, pr["head_sha"], [f["path"] for f in pr["files"]]))
+    def diff_part(self, repo: str, number: int, path: str | None = None, part: int = 1) -> str:
+        """`pr_diff`: one file's diff, or the whole diff in parts of whole files, so a big one never floods a turn."""
+        diff = self.diff(repo, number, limit=10**9)
+        files = [f for f in re.split(r"(?m)^(?=diff --git )", diff) if f.strip()]
+        if path:
+            found = [f for f in files if re.match(rf"diff --git a/\S+ b/{re.escape(path)}\n", f)]
+            if not found:
+                raise ReviewError(f"{path} isn't one of this pull request's changed files")
+            return _clip(found[0], DIFF_PART_CHARS * 2)
+        parts: list[str] = []
+        for f in files:
+            if parts and len(parts[-1]) + len(f) <= DIFF_PART_CHARS:
+                parts[-1] += f
+            else:
+                parts.append(f if len(f) <= DIFF_PART_CHARS else
+                             _clip(f, DIFF_PART_CHARS) + "\n(this file's diff goes on: ask for it by its path)\n")
+        if not parts:
+            return "The diff is empty."
+        if not 1 <= part <= len(parts):
+            raise ReviewError(f"the diff has {len(parts)} part(s)")
+        return (f"Part {part} of {len(parts)}" + (f"; ask for part {part + 1} next" if part < len(parts) else "")
+                + f".\n\n{parts[part - 1]}")
 
     def snapshot(self, repo: str, number: int, sha: str, paths: list[str]) -> Path:
         """The changed files as they are at the pull request's head, in a folder of their own: real files the reviewer
@@ -338,19 +463,6 @@ class Reviews:
         if entries is None:
             return f"{path or '/'} isn't a folder at {sha[:12]}."
         return "\n".join(f"{e['name']}{'/' if e['type'] == 'tree' else ''}" for e in entries)
-
-    def search_code(self, repo: str, query: str) -> str:
-        """GitHub's code search, in this repo. It searches the default branch, not the pull request."""
-        raw = self.gh(["api", "-X", "GET", "search/code", "-H", "Accept: application/vnd.github.text-match+json",
-                       "-f", f"q={query} repo:{repo}", "-f", f"per_page={SEARCH_RESULTS}"])
-        items = json.loads(raw).get("items") or []
-        if not items:
-            return "Nothing in the repo matches that (code search covers the default branch)."
-        out = []
-        for item in items:
-            fragments = [m.get("fragment", "").strip() for m in item.get("text_matches") or []][:2]
-            out.append(f"- {item['path']}" + "".join(f"\n    {_clip(f, 300)}" for f in fragments))
-        return "\n".join(out)
 
     def issue(self, repo: str, number: int) -> dict[str, Any] | None:
         def load() -> dict[str, Any] | None:
@@ -509,7 +621,8 @@ def reviewer_bot(name: str):
         return None
     return Bot(name=name, title="Reviewer", description="Reviews one pull request, privately.", instructions=REVIEWER,
                backend=backend, model=None if model == "default" else model, access=Access.READ_ONLY,
-               worktree=False, effort=None if effort == "default" else effort)
+               worktree=False, effort=None if effort == "default" else effort,
+               network=True)  # to search the web for what's outside the repository; it still can't change anything
 
 
 def _clip(text: str, limit: int) -> str:
@@ -567,42 +680,50 @@ def commentable(diff: str) -> dict[str, dict[str, set[int]]]:
     return files
 
 
-def _review_tools(reads_github: bool = True):
+def _review_tools(reads_github: bool = False, drafting: bool = True):
+    """A review's tools. Every reviewer reads the pull request itself (`pr_overview`, `pr_diff`); the lead drafts the
+    line comments; and only without a checkout of the repository do they read it on GitHub. None posts anything."""
     from crewbots.crew_tools import STRING, ToolDef, _object
 
-    drafting = ToolDef(
-        "draft_comment", "Draft a review comment on one line of the pull request, for the user to read, edit or drop "
-        "before they decide whether to submit a review. path: the file, from the repository's root. line: its number "
-        "in the pull request's version of the file, a line the diff shows. side: RIGHT (the default) or LEFT for a "
-        "removed line, by its old number. body: the comment, in markdown. Nothing is posted.",
-        _object({"path": STRING, "line": {"type": "integer"}, "side": {"type": "string", "enum": ["RIGHT", "LEFT"]},
-                 "body": STRING}, ["path", "line", "body"]))
-    if not reads_github:
-        return [drafting]
-    return [drafting,
-        ToolDef("read_file", "Read a file of the repository as it is at the pull request's head, with line numbers. "
-                "path: from the repository's root. start, end: a range of lines, up to 400 at a time.",
-                _object({"path": STRING, "start": {"type": "integer"}, "end": {"type": "integer"}}, ["path"])),
-        ToolDef("list_files", "List a folder of the repository at the pull request's head. path: from the root; "
-                "empty for the root.", _object({"path": STRING}, [])),
-        ToolDef("search_code", "Search the repository's code on GitHub, for callers, definitions and tests. It "
-                "searches the default branch, not the pull request. query: words or an identifier.",
-                _object({"query": STRING}, ["query"])),
+    tools = [
+        ToolDef("pr_overview", "The pull request itself: title, link, author, branches, description, its files with "
+                "lines added and removed, its checks and which fail, the issues it refers to, and what's been said on "
+                "it so far. Not its diff.", _object({}, [])),
+        ToolDef("pr_diff", "The pull request's diff. path: one changed file's diff. Without a path, the whole diff in "
+                "parts of about 40,000 characters, whole files each: part, from 1, says which.",
+                _object({"path": STRING, "part": {"type": "integer"}}, [])),
     ]
+    if drafting:
+        tools.append(ToolDef(
+            "draft_comment", "Draft a review comment on one line of the pull request, for the person to read, edit or "
+            "drop before they decide whether to submit a review. path: the file, from the repository's root. line: its "
+            "number in the pull request's version of the file, a line the diff shows. side: RIGHT (the default) or "
+            "LEFT for a removed line, by its old number. body: the comment, in markdown. Nothing is posted.",
+            _object({"path": STRING, "line": {"type": "integer"}, "side": {"type": "string", "enum": ["RIGHT", "LEFT"]},
+                     "body": STRING}, ["path", "line", "body"])))
+    if reads_github:
+        tools += [
+            ToolDef("read_file", "Read a file of the repository as it is at the pull request's head, with line numbers. "
+                    "path: from the repository's root. start, end: a range of lines, up to 400 at a time.",
+                    _object({"path": STRING, "start": {"type": "integer"}, "end": {"type": "integer"}}, ["path"])),
+            ToolDef("list_files", "List a folder of the repository at the pull request's head. path: from the root; "
+                    "empty for the root.", _object({"path": STRING}, [])),
+        ]
+    return tools
 
 
 class ReviewTools:
-    """The reviewer's tools for one review, called in the daemon's own process: drafting comments, and, without a
-    local copy of the repository, reading it on GitHub. None of them posts anything."""
+    """The tools of one review's reviewer, called in the daemon's own process."""
 
     def __init__(self, reviews: Reviews, pr: str, drafts=None, task_id: str | None = None, author: str = "reviewer",
-                 reads_github: bool = True):
+                 reads_github: bool = False, drafting: bool = True):
         repo, number = pr.rsplit("#", 1)
         self.reviews, self.repo, self.number = reviews, repo, int(number)
-        self.drafts, self.task_id, self.author, self.reads_github = drafts, task_id, author, reads_github
+        self.drafts, self.task_id, self.author = drafts, task_id, author
+        self.reads_github, self.drafting = reads_github, drafting
 
     def definitions(self):
-        return _review_tools(self.reads_github)
+        return _review_tools(self.reads_github, self.drafting)
 
     async def call(self, name: str, args: dict[str, Any]) -> str:
         import asyncio
@@ -611,20 +732,24 @@ class ReviewTools:
 
         try:
             match name:
-                case "draft_comment" if self.drafts is not None:
+                case "pr_overview":
+                    return await asyncio.to_thread(self.reviews.overview, self.repo, self.number)
+                case "pr_diff":
+                    return await asyncio.to_thread(self.reviews.diff_part, self.repo, self.number,
+                                                   str(args["path"]) if args.get("path") else None,
+                                                   int(args.get("part") or 1))
+                case "draft_comment" if self.drafting and self.drafts is not None:
                     draft = await asyncio.to_thread(self.reviews.check_draft, self.repo, self.number, str(args["path"]),
                                                     int(args["line"]), str(args.get("side") or "RIGHT").upper())
                     saved = self.drafts.add_draft(self.repo, self.number, draft["path"], draft["line"], draft["side"],
                                                   str(args["body"]), self.author, self.task_id, draft["commit_sha"])
                     return (f"Drafted comment {saved['id']} on {saved['path']}:{saved['line']}. It stays private until "
-                            "the user submits a review.")
+                            "the person submits a review.")
                 case "read_file" if self.reads_github:
                     return await asyncio.to_thread(self.reviews.read_file, self.repo, self.number, str(args["path"]),
                                                    int(args.get("start") or 1), int(args["end"]) if args.get("end") else None)
                 case "list_files" if self.reads_github:
                     return await asyncio.to_thread(self.reviews.list_files, self.repo, self.number, str(args.get("path") or ""))
-                case "search_code" if self.reads_github:
-                    return await asyncio.to_thread(self.reviews.search_code, self.repo, str(args["query"]))
         except ReviewError as e:
             raise ToolRefused(str(e)) from None
         except (GitHubError, KeyError, ValueError) as e:

@@ -115,7 +115,7 @@ export function Settings({ crew }: { crew: Crew }) {
       <section className="page-section">
         <h2>Code review's local copies</h2>
         <p className="faint small">
-          Without a local copy, reviewers get the changed files from GitHub and read anything else there as they need it. Point a repo at your copy, and they get the whole repository at the pull request's head, checked out beside your copy.
+          Reviewers always get the whole repository at the pull request's head, from crewbots' own copy of it (the first review of a repository fetches it, in about a minute). Point a repo at your copy to check pull requests out beside yours instead.
         </p>
         <div className="list">
           {Object.entries(repos).map(([name, folder]) => (
@@ -158,7 +158,7 @@ export function Settings({ crew }: { crew: Crew }) {
   );
 }
 
-/** The models that review a pull request, side by side. Two model families catch different things. */
+/** The models that review a pull request, each on its own, the first leading. Two model families catch different things. */
 function Reviewers({ crew }: { crew: Crew }) {
   const [reviewers, setReviewers] = useState<Reviewer[] | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -192,7 +192,7 @@ function Reviewers({ crew }: { crew: Crew }) {
         </button>
       </div>
       <p className="faint small">
-        Pressing Review runs each of these on the pull request, side by side, with the reviewer's own instructions: not your bots. Each review is a conversation you can carry on.
+        Pressing Review has each of these review the pull request on its own, with the reviewer's own instructions: not your bots. Then the first, as the lead, checks their findings, puts them into one review and drafts its line comments; that review is a conversation you can carry on.
       </p>
       <div className="list">
         {reviewers.map((r, i) => (

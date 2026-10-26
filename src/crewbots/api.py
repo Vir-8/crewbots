@@ -824,13 +824,15 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
     scheduler = scheduler or Scheduler(runner)
     reviews = reviews or Reviews(runner.crew.home)
     def review_tools(task: Task) -> ReviewTools | None:
-        """A review's tools: drafting line comments always, and reading the repository on GitHub without a local copy."""
+        """A review's tools: the pull request for every reviewer, drafting for the lead (the one with no parent), and
+        reading the repository on GitHub only when it couldn't be checked out."""
         if not task.pr:
             return None
         return ReviewTools(reviews, task.pr, drafts=store, task_id=task.id, author=task.bot,
-                           reads_github=not reviews.checkout_of(task.pr.rsplit("#", 1)[0]))
+                           reads_github=reviews.is_snapshot(task.workspace), drafting=task.parent_id is None)
 
     runner.review_tools = review_tools
+    starting: set[asyncio.Task] = set()  # reviews getting their code, kept until they've started
     hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
 
     def allowed(host: str | None, credential: str | None) -> bool:
@@ -1253,13 +1255,30 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
 
     @v1.post("/reviews/{owner}/{name}/{number}/review", status_code=201, response_model=list[TaskOut])
     async def review_start(owner: str, name: str, number: int, body: ReviewRequest | None = None):
-        """A private review by each of your reviewer models, side by side. Follow-ups go to each task like any
-        other."""
-        repo = f"{owner}/{name}"
-        title, goal = await asyncio.to_thread(reviewing, reviews.brief, repo, number, body.note if body else "")
-        folder = await asyncio.to_thread(reviewing, reviews.folder, repo, number)
-        return [runner.start_review(reviewer_name(r), goal, title=title, pr=f"{repo}#{number}", folder=folder).to_json()
-                for r in reviews.reviewers()]
+        """A private review: each of your reviewer models reviews the pull request on its own, then the first, as the
+        lead, puts their findings together into one review, with its line comments drafted. Returns the lead, whose
+        conversation it is; the reviewers start once the code is checked out, which the first review of a
+        repository takes about a minute for."""
+        repo, note = f"{owner}/{name}", body.note if body else ""
+        pr = await asyncio.to_thread(reviewing, reviews.pull, repo, number)
+        names = [reviewer_name(r) for r in reviews.reviewers()]
+        lead = runner.start_review(names[0], title=f"Review {repo}#{number}: {pr['title']}", pr=f"{repo}#{number}",
+                                   request=reviews.request(repo, number, note))
+
+        async def begin() -> None:
+            runner.note(lead.id, f"Getting {repo}'s code. The first review of a repository takes about a minute; "
+                                 "later ones, a few seconds.")
+            try:
+                folder, whole = await asyncio.to_thread(reviews.checkout, repo, number)
+                goal = await asyncio.to_thread(reviews.goal, repo, number, note, whole)
+            except (GitHubError, ReviewError) as e:
+                runner.fail(lead.id, f"couldn't get the pull request's code: {e}")
+                return
+            runner.start_reviewers(lead.id, names, goal, str(folder))
+
+        starting.add(task := asyncio.create_task(begin()))
+        task.add_done_callback(starting.discard)
+        return [lead.to_json()]
 
     @v1.get("/reviews/reviewers", response_model=list[Reviewer])
     async def get_reviewers():

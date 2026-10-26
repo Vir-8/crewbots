@@ -612,7 +612,8 @@ class Store:
         one = lambda sql, *a: self.db.execute(sql, a).fetchone()[0]  # noqa: E731
         return {
             "threads": one("select count(*) from tasks where kind = 'thread' and created_at >= ?", since),
-            "reviews": one("select count(*) from tasks where kind = 'review' and created_at >= ?", since),
+            "reviews": one("select count(*) from tasks where kind = 'review' and parent_id is null and created_at >= ?",
+                           since),  # a review, not each of its reviewers
             "routine_runs": one("select count(*) from events where kind = 'message' and at >= ?"
                                 " and json_extract(data, '$.from') like 'routine:%'", since),
             "room_messages": one("select count(*) from room_messages where at >= ?", since),
