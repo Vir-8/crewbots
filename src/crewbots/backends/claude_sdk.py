@@ -193,6 +193,16 @@ class ClaudeAgentSession:
             if self._broken:
                 await self.close()
 
+    async def context_percent(self) -> float | None:
+        """How full the conversation's context window is, as Claude Code's /context counts it."""
+        if not self.client:
+            return None
+        try:
+            usage = await self.client.get_context_usage()
+            return float(usage.get("percentage"))
+        except Exception:
+            return None
+
     async def _interrupt(self) -> None:
         if self.client:
             with contextlib.suppress(Exception):

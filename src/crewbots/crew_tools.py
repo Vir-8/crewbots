@@ -55,6 +55,25 @@ TOOLS = [
         }, ["verdict", "summary"]),
     ),
     ToolDef(
+        "remember",
+        "Keep a note for next time: something that will still be true and useful in later tasks (what the user "
+        "prefers, a decision and why, a pitfall here, how something is done). One fact per note. title: short, names "
+        "the fact. body: the fact, and why it matters. shared: true to keep it for the whole crew, not just you. The "
+        "same title again updates the note.",
+        _object({"title": STRING, "body": STRING, "shared": {"type": "boolean"}}, ["title", "body"]),
+    ),
+    ToolDef(
+        "forget",
+        "Remove a note that's wrong or out of date. name: the note's title or file name. shared: true for a crew note.",
+        _object({"name": STRING, "shared": {"type": "boolean"}}, ["name"]),
+    ),
+    ToolDef(
+        "recall",
+        "Search everything the crew has said and decided (messages, replies, handoffs, reviews, questions) in earlier "
+        "tasks. query: a few words. Results are the best matches, with task ids, bots and dates.",
+        _object({"query": STRING}, ["query"]),
+    ),
+    ToolDef(
         "delegate",
         "Give one task to one bot in the crew. It starts at once and runs in parallel with other delegated tasks. "
         "goal: the outcome, the context the bot needs, and what done means; it must stand alone. workspace: a folder "
@@ -112,6 +131,7 @@ class CrewTools:
 
     async def call(self, name: str, args: dict[str, Any]) -> str:
         """Runs one tool and returns its result for the bot; raises ToolRefused with the reason it can't."""
+        from crewbots.memory import MemoryError
         from crewbots.runner import NotAllowed, UnknownBot
         from crewbots.store import Verdict
 
@@ -153,6 +173,21 @@ class CrewTools:
                 case "propose_merge":
                     r.propose_merge(me, args["task_id"], args["summary"])
                     return f"Proposed {args['task_id']} to the user for merging."
-        except (NotAllowed, UnknownBot) as e:
+                case "remember":
+                    note = r.remember(me, args["title"], args["body"], shared=bool(args.get("shared")))
+                    return f"Remembered: {note.title} ({note.path})."
+                case "forget":
+                    note = r.forget(me, args["name"], shared=bool(args.get("shared")))
+                    return f"Forgot: {note.title}."
+                case "recall":
+                    return recall_text(r.recall(me, args["query"]))
+        except (NotAllowed, UnknownBot, MemoryError) as e:
             raise ToolRefused(str(e.args[0] if e.args else e)) from None
         raise ToolRefused(f"{name} is not implemented")
+
+
+def recall_text(hits: list[dict[str, Any]]) -> str:
+    if not hits:
+        return "Nothing in the crew's record matches that."
+    lines = [f"- {h['task_id']} ({h['bot']}, {h['at'][:10]}, {h['kind']}) {h['title']}: {h['snippet']}" for h in hits]
+    return "\n".join(lines)

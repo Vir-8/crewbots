@@ -144,7 +144,7 @@ async def test_workers_are_not_offered_delegation_tools(crew_app):
 
     names = {t.name for t in await build_server(client, can_delegate=False).list_tools()}
 
-    assert names == {"handoff", "escalate", "review"}
+    assert names == {"handoff", "escalate", "review", "remember", "forget", "recall"}
 
 
 def test_a_verdict_from_a_task_that_is_not_a_review_is_refused_with_a_reason(crew_app):

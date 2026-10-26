@@ -132,3 +132,12 @@ def test_the_crew_can_be_paused_and_resumed_over_the_api(client):
 
     assert client.post("/crew/resume", headers=AUTH).json()["paused"] is False
     assert wait_idle(client, task["id"])["status"] == "idle"
+
+
+def test_the_crews_record_can_be_searched(client):
+    task = client.post("/tasks", json={"bot": "worker", "goal": "Add a pagination cursor"}, headers=AUTH).json()
+    wait_idle(client, task["id"])
+
+    hits = client.get("/search", params={"q": "pagination"}, headers=AUTH).json()
+
+    assert hits and hits[0]["task_id"] == task["id"] and "«pagination»" in hits[0]["snippet"]

@@ -90,10 +90,10 @@ Nothing is hidden: every layer is a file or a SQLite row you can open, edit or d
 
 1. **Working context (one task).**
    - The CLI session, which manages and compacts its own context window.
-   - crewbots adds a **rollover** for long-lived conversations, such as a standing chat with the chief: past a token threshold (crewbots sees usage on every turn), the bot writes itself a handoff, and a fresh session starts from it.
+   - crewbots adds a **rollover** for long-lived conversations, such as a standing chat with the chief: once a turn ends with the conversation past 70% of its context window (from each backend's own count), the bot writes itself a briefing, its session closes, and the next message starts a fresh session with the briefing in its instructions.
 2. **Bot memory (one bot, across tasks).**
    - `crew/memory/<bot>/`: a short `MEMORY.md` index plus one note per fact (who you are, preferences, decisions, pitfalls), each with a date and its source task.
-   - A `remember(note)` tool writes notes; a `forget` tool and you can remove them.
+   - A `remember(title, body, shared?)` tool writes notes (`shared` puts them in `crew/memory/crew/`, for every bot); a `forget` tool and you can remove them.
    - The index goes into the bot's instructions every run, and notes are read when needed, the same progressive disclosure skills use.
 3. **The crew's record (everything that happened).**
    - SQLite already holds every transcript, handoff, review and decision.
@@ -184,7 +184,15 @@ Each step leaves the system working.
      - launchd restarted it after a `kill -9`
      - uninstalling left nothing behind
      - the app attached to the service, and quitting it left the service running
-6. **Memory.** Bot memory files with `remember`/`forget`, FTS `recall`, and the rollover for long conversations.
+6. **Memory** (done).
+   - **Notes:** `remember`, `forget` and `recall` are crew tools on both backends. Notes are Markdown files with frontmatter (title, dates, source task), `MEMORY.md` is regenerated from them, and a note edited by hand is what the bot sees next run.
+   - **Recall:** an FTS5 table (bm25, porter stemming) over messages, replies, handoffs, reviews, questions and task titles, filled as events arrive and backfilled the first time an older crew opens. It matches all words first, then any, and leaves out the asking task.
+   - **Rollover:** as in decision 6, at 70%. The briefing turn is hidden from the task's result, and is skipped when the bot writes nothing.
+   - **Checked live:**
+     - a Claude reviewer remembered a crew note
+     - a Codex critic in a new task answered from that note, with no tool call
+     - a Codex bot used `recall` to find which earlier task decided an edge case
+     - the rollover is covered by tests only, since filling a real context window costs too much to run
 7. **Routines, triggers, budgets.** The scheduler, GitHub triggers, per-bot budgets, and the standup and retro routines.
 8. **Sandboxed shells** for writing bots on both backends (done, with the policy). Containers once there's a reason.
 

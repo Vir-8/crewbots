@@ -72,6 +72,11 @@ export interface FindingOut {
   scenario?: string | null;
 }
 
+export interface Forget {
+  name: string;
+  shared?: boolean;
+}
+
 export interface HTTPValidationError {
   detail?: ValidationError[];
 }
@@ -128,6 +133,16 @@ export interface NewTask {
   workspace?: string | null;
 }
 
+export interface Recall {
+  query: string;
+}
+
+export interface Remember {
+  title: string;
+  body: string;
+  shared?: boolean;
+}
+
 export interface ReviewBody {
   verdict: Verdict;
   summary: string;
@@ -152,6 +167,15 @@ export interface ReviewStateOut {
   failed: boolean;
   out_of_rounds: boolean;
   reviews: ReviewEntryOut[];
+}
+
+export interface SearchHit {
+  task_id: string;
+  kind: string;
+  at: string;
+  snippet: string;
+  bot: string;
+  title: string;
 }
 
 export type Status = "queued" | "running" | "idle" | "needs_input" | "failed" | "cancelled" | "interrupted";

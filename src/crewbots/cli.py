@@ -339,6 +339,12 @@ def _format_stored(e: dict[str, Any]) -> str:
             return f"⇢ proposed for merging by {e['data']['by']}: {e['data']['summary']}"
         case "merged":
             return f"✓ merged as {e['data']['commit'][:12]} into {e['data']['into']}"
+        case "memory":
+            d = e["data"]
+            where = "the crew's notes" if d["scope"] == "crew" else "its notes"
+            return f"✎ {'remembered' if d['action'] == 'remember' else 'forgot'} in {where}: {d['title']}"
+        case "rollover":
+            return f"↻ continued in a fresh session; the conversation was {e['data']['percent']}% of its context"
     event = from_json(e["kind"], e["data"])
     return _format(event) if event else f"· {e['kind']} {json.dumps(e['data'])}"
 

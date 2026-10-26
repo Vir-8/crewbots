@@ -14,6 +14,7 @@ from typing import Any
 import yaml
 
 from crewbots.backends import BACKENDS, Access, McpServer
+from crewbots.memory import MEMORY_GUIDE, Memory
 
 DEFAULT_HOME = Path.home() / ".crewbots" / "crew"
 CARD_FIELDS = {
@@ -90,7 +91,12 @@ class Crew:
             return list(self.skills.values())
         return [self.skills[name] for name in bot.skills]
 
-    def system_prompt(self, bot: Bot, delegated_by: str | None = None, reviewing: str | None = None) -> str:
+    @property
+    def memory(self) -> Memory:
+        return Memory(self.home)
+
+    def system_prompt(self, bot: Bot, delegated_by: str | None = None, reviewing: str | None = None,
+                      briefing: str | None = None) -> str:
         roster = "\n".join(
             f"- {b.name} ({b.title}){' ← you' if b.name == bot.name else ''}: {b.description}" for b in self.bots.values()
         )
@@ -104,6 +110,11 @@ class Crew:
         ]
         if reviewing:
             parts.insert(2, f"# This review\n\n{reviewing}")
+        if briefing:
+            parts.insert(2, "# Where things stand\n\nThis task's conversation grew long, so it continues in a fresh session. "
+                         f"This is the briefing you wrote for it:\n\n{briefing}")
+        notes = self.memory.prompt(bot.name)
+        parts.append(MEMORY_GUIDE + (f"\n\n{notes}" if notes else "\n\nNo notes yet."))
         if skills := self.skills_for(bot):
             listing = "\n".join(f"- {s.name}: {s.description} ({s.path})" for s in skills)
             parts.append(

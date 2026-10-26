@@ -14,7 +14,7 @@ import httpx
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
-from crewbots.crew_tools import BY_NAME
+from crewbots.crew_tools import BY_NAME, recall_text
 
 INSTRUCTIONS = "Tools for working in a crewbots crew: hand work back, escalate decisions, and (for coordinators) delegate."
 
@@ -51,6 +51,20 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
     def review(verdict: str, summary: str, findings: list[dict[str, str]] | None = None) -> str:
         call("POST", "/bot/review", {"verdict": verdict.lower(), "summary": summary, "findings": findings or []})
         return "Verdict recorded. End your reply with a short summary."
+
+    @server.tool(description=BY_NAME["remember"].description)
+    def remember(title: str, body: str, shared: bool = False) -> str:
+        note = call("POST", "/bot/remember", {"title": title, "body": body, "shared": shared})
+        return f"Remembered: {note['title']} ({note['path']})."
+
+    @server.tool(description=BY_NAME["forget"].description)
+    def forget(name: str, shared: bool = False) -> str:
+        note = call("POST", "/bot/forget", {"name": name, "shared": shared})
+        return f"Forgot: {note['title']}."
+
+    @server.tool(description=BY_NAME["recall"].description)
+    def recall(query: str) -> str:
+        return recall_text(call("POST", "/bot/recall", {"query": query}))
 
     if not can_delegate:
         return server

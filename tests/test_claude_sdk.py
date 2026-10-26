@@ -273,7 +273,7 @@ async def test_workers_cant_reach_coordinator_tools(store, tmp_path):
     task = store.create_task("engineer", "x")
     tools = CrewTools(crew.runner, task.id, can_delegate=False)
 
-    assert {d.name for d in tools.definitions()} == {"handoff", "escalate", "review"}
+    assert {d.name for d in tools.definitions()} == {"handoff", "escalate", "review", "remember", "forget", "recall"}
     with pytest.raises(ToolRefused, match="not one of this bot's crew tools"):
         await tools.call("delegate", {"bot": "engineer", "goal": "x"})
     reply = await tools.call("handoff", {"done": "built", "output": ["a.py"]})

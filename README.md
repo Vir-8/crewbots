@@ -32,6 +32,10 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
 - **Skills** are [Agent Skills](https://agentskills.io) folders (a `SKILL.md` each). A role card lists the ones its bot gets, and the bot sees each skill's name, description and path, then reads the `SKILL.md` when a task matches.
   - The starter crew ships `interrogate`, `arena` and `swarm`: crew versions of [pstack](https://github.com/cursor/plugins/tree/main/pstack)'s multi-agent skills. They use real model diversity, a Claude reviewer and a Codex critic.
   - Whole skill packs can be dropped in with `crewbots skills add`, and are namespaced (`pstack:tdd`).
+- **Memory.** Every bot can `remember` a fact for later tasks (its own, or `shared` with the crew), `forget` one, and `recall` what the crew said or decided before.
+  - Notes are files in `crew/memory/<bot>/notes/`, listed in each bot's instructions, so you can read, edit or delete them.
+  - `recall` searches the whole record with SQLite FTS5, and so does `GET /v1/search?q=`.
+  - A conversation that fills 70% of its context continues in a fresh session, from a briefing the bot writes.
 - **The daemon** runs the tasks and serves an HTTP and WebSocket API on localhost. The desktop app and the `crewbots` command both use that API.
   - Every request needs the daemon's token, which is written to `daemon.json` and readable only by you.
   - The daemon also checks the Host header, so no web page you have open can drive your bots.
@@ -178,7 +182,8 @@ src/crewbots/
   events.py          the shared event stream
   backends/          claude_cli, codex_cli, and the subprocess runner they share
   crew.py            role cards and team files → bots and their instructions
-  store.py           tasks and events, in SQLite
+  memory.py          bot and crew notes, as files
+  store.py           tasks and events, in SQLite, with full-text search
   runner.py          runs tasks: sessions, worktrees, queued follow-ups, delegation and reporting back
   api.py             the daemon: HTTP + WebSocket, user and run tokens, host checks
   mcp_server.py      the crewbots tools each bot gets (handoff, escalate, review; delegate, tasks, message, propose_merge)

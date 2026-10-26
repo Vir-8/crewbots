@@ -32,6 +32,7 @@ from crewbots.backends.base import Session
 from crewbots.crew import Bot, Crew
 from crewbots.crew_tools import CrewTools
 from crewbots.events import Done, Event, SessionStarted, Usage
+from crewbots.memory import CREW_SCOPE, Note
 from crewbots.store import Handoff, Review, Status, Store, Task, Verdict
 
 SUBSCRIBER_QUEUE = 10_000
@@ -40,6 +41,13 @@ MAX_REVIEW_ROUNDS = 3  # a stop condition: after this many reviewed versions, th
 REPORT_RESULT_CHARS = 3000
 IDLE_TIMEOUT_S = 600.0  # an idle session is closed after this; its next message resumes it from the stored id
 MAX_SESSIONS = 8  # open sessions at once; past this the least recently used idle one is closed
+ROLLOVER_PERCENT = 70.0  # past this much of its context window, a conversation continues in a fresh session
+BRIEFING_PROMPT = (
+    "This conversation is getting long, so it will continue in a fresh session that has none of it. Write the briefing "
+    "that session will start from: the goal, what's been decided and why, what's done, the current state (files, "
+    "branches, task ids), what's open, and what comes next. Be complete but brief. Reply with only the briefing, and "
+    "don't use any tools."
+)
 MCP_SERVER_NAME = "crewbots"
 MCP_COMMAND = (sys.executable, "-m", "crewbots.mcp_server")
 
@@ -146,6 +154,7 @@ class Runner:
         idle_timeout_s: float = IDLE_TIMEOUT_S,
         max_sessions: int = MAX_SESSIONS,
         keep_awake: tuple[str, ...] | None = None,  # a command that stops the Mac sleeping while it runs
+        rollover_percent: float | None = ROLLOVER_PERCENT,
     ):
         self.store = store
         self.crew = crew
@@ -166,6 +175,7 @@ class Runner:
         self._sessions: dict[str, OpenSession] = {}
         self._reaper: asyncio.Task[None] | None = None
         self.keep_awake = keep_awake
+        self.rollover_percent = rollover_percent
         self._awake: subprocess.Popen[bytes] | None = None
         self._resumed = asyncio.Event()  # cleared while the crew is paused: no new turn starts
         self._resumed.set()
@@ -303,6 +313,32 @@ class Runner:
                 f"stop condition: {task_id} failed review in all {MAX_REVIEW_ROUNDS} rounds. Report to the user with "
                 "the best version and the open objections, instead of sending it back again (team/rules.md).")
         return self.send(task_id, text, sender=self.store.get_task(parent_id).bot)
+
+    def remember(self, task_id: str, title: str, body: str, shared: bool = False) -> Note:
+        task = self.store.get_task(task_id)
+        scope = CREW_SCOPE if shared else task.bot
+        note = self.crew.memory.remember(scope, title, body, source=f"{task.id} ({task.bot})")
+        self._record(task_id, kind="memory", data={"action": "remember", "scope": scope, "title": note.title,
+                                                   "body": note.body, "path": str(note.path)})
+        return note
+
+    def forget(self, task_id: str, name: str, shared: bool = False) -> Note:
+        task = self.store.get_task(task_id)
+        scope = CREW_SCOPE if shared else task.bot
+        note = self.crew.memory.forget(scope, name)
+        self._record(task_id, kind="memory", data={"action": "forget", "scope": scope, "title": note.title})
+        return note
+
+    def recall(self, task_id: str, query: str, limit: int = 8) -> list[dict[str, Any]]:
+        """The best matches in the crew's record, one per task, leaving out the asking task's own conversation."""
+        hits, seen = [], set()
+        for hit in self.store.search(query, limit=limit * 4, exclude_task=task_id):
+            if hit["task_id"] not in seen:
+                seen.add(hit["task_id"])
+                hits.append(hit)
+            if len(hits) == limit:
+                break
+        return hits
 
     def review(self, task_id: str, verdict: Verdict, summary: str, findings: list[dict[str, str]]) -> Review:
         task = self.store.get_task(task_id)
@@ -455,6 +491,8 @@ class Runner:
                 self._escalated.discard(task_id)
                 self._set(task_id, status=Status.NEEDS_INPUT, result=done.final_text, turns=task.turns + 1)
             else:
+                if open_session and open_session.session.alive:
+                    await self._maybe_roll_over(task_id, open_session)
                 # Not idle yet if messages are waiting: the next turn starts right away, and watchers should not stop.
                 next_status = Status.QUEUED if self._waiting.get(task_id) else Status.IDLE
                 self._set(task_id, status=next_status, result=done.final_text, turns=task.turns + 1)
@@ -465,11 +503,11 @@ class Runner:
         return RunSpec(
             prompt=prompt, cwd=cwd, access=bot.access, model=bot.model,
             system_prompt=self.crew.system_prompt(bot, delegated_by=task.created_by if task.parent_id else None,
-                                                  reviewing=self._review_brief(task)),
+                                                  reviewing=self._review_brief(task), briefing=task.briefing),
             resume_session_id=task.session_id,
             mcp_servers={**bot.mcp, **({} if in_process else self._crew_tools(token, bot))},
             crew=CrewTools(self, task.id, bot.can_delegate) if in_process else None,
-            read_dirs=[self.crew.skills_dir] if self.crew.skills_for(bot) else [], timeout_s=bot.timeout_s,
+            read_dirs=[d for d in (self.crew.skills_dir, self.crew.memory.root) if d.is_dir()], timeout_s=bot.timeout_s,
         )
 
     # Sessions.
@@ -496,6 +534,33 @@ class Runner:
         opened = OpenSession(session=session, token=token, cwd=cwd, last_used=asyncio.get_running_loop().time())
         self._sessions[task.id] = opened
         return opened
+
+    async def _maybe_roll_over(self, task_id: str, opened: OpenSession) -> None:
+        """A conversation past `rollover_percent` of its context gets a briefing, written by its own bot, and the next
+        turn starts a fresh session from it, instead of the CLI compacting it over and over."""
+        measure = getattr(opened.session, "context_percent", None)
+        if not self.rollover_percent or measure is None:
+            return
+        percent = await measure()
+        if percent is None or percent < self.rollover_percent:
+            return
+        briefing, usage = "", None
+        try:
+            async with aclosing(opened.session.turn(BRIEFING_PROMPT)) as stream:
+                async for event in stream:
+                    if isinstance(event, Usage):
+                        usage = event
+                    elif isinstance(event, Done) and not event.is_error:
+                        briefing = event.final_text
+        except Exception:
+            briefing = ""
+        if usage:
+            self.store.add_usage(task_id, usage.input_tokens, usage.output_tokens, usage.cost_usd)
+        if not briefing.strip():
+            return  # no briefing, no rollover: the CLI's own compaction carries on
+        await self._close_session(task_id)
+        self.store.update_task(task_id, briefing=briefing, session_id=None)
+        self._record(task_id, kind="rollover", data={"percent": round(percent, 1), "briefing": briefing})
 
     async def _close_session(self, task_id: str) -> None:
         opened = self._sessions.pop(task_id, None)

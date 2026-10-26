@@ -5,6 +5,7 @@ message resumes where it left off), optionally its own worktree, and a transcrip
 """
 
 import json
+import re
 import sqlite3
 import uuid
 from dataclasses import asdict, dataclass
@@ -42,6 +43,7 @@ create table if not exists tasks (
     review_version integer,                    -- the work's `turns` when this review was asked for
     merge_state   text,                        -- null, proposed (by its coordinator), or merged (by the user)
     merged_commit text,
+    briefing      text,                        -- where things stood, carried into a fresh session at rollover
     created_at    text not null,
     updated_at    text not null
 );
@@ -77,6 +79,15 @@ create table if not exists handoffs (
     at       text not null
 );
 """
+# Full-text search over what the crew said and decided: the `recall` tool. Kept in step with events as they're added.
+SEARCH = """
+create virtual table search using fts5(
+    text, task_id unindexed, event_id unindexed, kind unindexed, at unindexed, tokenize = 'porter unicode61'
+);
+"""
+SEARCHABLE = {"message", "text", "handoff", "review", "escalation", "merge_proposed"}
+SNIPPET_TOKENS = 18
+
 MIGRATIONS = {  # columns added after a crew's database may already exist
     "reported": "alter table tasks add column reported integer not null default 0",
     "turns": "alter table tasks add column turns integer not null default 0",
@@ -84,6 +95,7 @@ MIGRATIONS = {  # columns added after a crew's database may already exist
     "review_version": "alter table tasks add column review_version integer",
     "merge_state": "alter table tasks add column merge_state text",
     "merged_commit": "alter table tasks add column merged_commit text",
+    "briefing": "alter table tasks add column briefing text",
 }
 
 
@@ -122,6 +134,7 @@ class Task:
     review_version: int | None
     merge_state: str | None
     merged_commit: str | None
+    briefing: str | None
     created_at: str
     updated_at: str
 
@@ -197,6 +210,9 @@ class Store:
         for column, sql in MIGRATIONS.items():
             if column not in columns:
                 self.db.execute(sql)
+        if not self.db.execute("select 1 from sqlite_master where name = 'search'").fetchone():
+            self.db.executescript(SEARCH)
+            self._index_history()
 
     def close(self) -> None:
         self.db.close()
@@ -214,6 +230,8 @@ class Store:
             " created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (task_id, bot, title, Status.QUEUED, created_by, parent_id, workspace, review_of, review_version, now, now),
         )
+        self.db.execute("insert into search (text, task_id, event_id, kind, at) values (?, ?, 0, 'task', ?)",
+                        (title, task_id, now))
         return self.get_task(task_id)
 
     def get_task(self, task_id: str) -> Task:
@@ -310,7 +328,41 @@ class Store:
             "insert into events (task_id, kind, data, at) values (?, ?, ?, ?)",
             (task_id, kind, json.dumps(data or {}), now),
         )
+        self._index(task_id, cur.lastrowid, kind, data or {}, now)
         return StoredEvent(id=cur.lastrowid, task_id=task_id, kind=kind, data=data or {}, at=now)
+
+    def search(self, query: str, limit: int = 20, exclude_task: str | None = None) -> list[dict[str, Any]]:
+        """What the crew said or decided that matches `query`, best first: all the words if anything has them all,
+        otherwise any of them."""
+        words = re.findall(r"\w+", query.lower())
+        if not words:
+            return []
+        for joiner in (" ", " OR "):
+            match = joiner.join(f'"{w}"' for w in words)
+            rows = self.db.execute(
+                f"select s.task_id, s.kind, s.at, snippet(search, 0, '«', '»', '…', {SNIPPET_TOKENS}) as snippet,"
+                " t.bot, t.title from search s join tasks t on t.id = s.task_id"
+                " where search match ? and s.task_id != ? order by bm25(search) limit ?",
+                (match, exclude_task or "", limit),
+            ).fetchall()
+            if rows:
+                return [dict(r) for r in rows]
+        return []
+
+    def _index(self, task_id: str, event_id: int, kind: str, data: dict[str, Any], at: str) -> None:
+        if kind not in SEARCHABLE:
+            return
+        text = _searchable_text(kind, data)
+        if text:
+            self.db.execute("insert into search (text, task_id, event_id, kind, at) values (?, ?, ?, ?, ?)",
+                            (text, task_id, event_id, kind, at))
+
+    def _index_history(self) -> None:
+        for row in self.db.execute("select id, title, created_at from tasks").fetchall():
+            self.db.execute("insert into search (text, task_id, event_id, kind, at) values (?, ?, 0, 'task', ?)",
+                            (row["title"], row["id"], row["created_at"]))
+        for row in self.db.execute("select * from events").fetchall():
+            self._index(row["task_id"], row["id"], row["kind"], json.loads(row["data"]), row["at"])
 
     def recent_events(self, limit: int = 200, kinds: tuple[str, ...] | None = None) -> list[StoredEvent]:
         """The newest events across the crew, oldest first."""
@@ -333,6 +385,22 @@ class Store:
             StoredEvent(id=r["id"], task_id=r["task_id"], kind=r["kind"], data=json.loads(r["data"]), at=r["at"])
             for r in self.db.execute(sql, args).fetchall()
         ]
+
+
+def _searchable_text(kind: str, data: dict[str, Any]) -> str:
+    match kind:
+        case "message" | "text":
+            return str(data.get("text", ""))
+        case "handoff":
+            return " ".join(str(data.get(k, "")) for k in ("done", "open", "needs")) + " " + " ".join(data.get("output") or [])
+        case "review":
+            findings = " ".join(f"{f.get('location', '')} {f.get('problem', '')}" for f in data.get("findings") or [])
+            return f"{data.get('verdict', '')} {data.get('summary', '')} {findings}"
+        case "escalation":
+            return str(data.get("question", ""))
+        case "merge_proposed":
+            return str(data.get("summary", ""))
+    return ""
 
 
 def _review(row: sqlite3.Row) -> Review:

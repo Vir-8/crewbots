@@ -119,6 +119,19 @@ function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>
         flush();
         out.push({ kind: "line", id: e.id, text: `${d.by} proposed it for merging`, icon: "merge" });
         break;
+      case "memory":
+        flush();
+        out.push({
+          kind: "line",
+          id: e.id,
+          text: `${d.action === "remember" ? "Remembered" : "Forgot"}${d.scope === "crew" ? " for the crew" : ""}: ${d.title}`,
+          icon: "check",
+        });
+        break;
+      case "rollover":
+        flush();
+        out.push({ kind: "line", id: e.id, text: `Continued in a fresh session from a briefing (the conversation had used ${d.percent}% of its context)` });
+        break;
       case "merged":
         flush();
         out.push({ kind: "line", id: e.id, text: `Merged as ${String(d.commit).slice(0, 7)}${d.forced ? ", without approval" : ""}`, icon: "check", tone: "good" });

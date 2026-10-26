@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 
 from crewbots import crew as crew_module
 from crewbots.backends import codex_isolation
+from crewbots.memory import MemoryError
 from crewbots.runner import MergeError, NotAllowed, Runner, UnknownBot
 from crewbots.store import Status, Store, Verdict
 
@@ -208,6 +209,30 @@ class ReviewBody(BaseModel):
     findings: list[Finding] = []
 
 
+class Remember(BaseModel):
+    title: str
+    body: str
+    shared: bool = False
+
+
+class Forget(BaseModel):
+    name: str
+    shared: bool = False
+
+
+class Recall(BaseModel):
+    query: str
+
+
+class SearchHit(BaseModel):
+    task_id: str
+    kind: str
+    at: str
+    snippet: str
+    bot: str
+    title: str
+
+
 class MergeProposal(BaseModel):
     task_id: str
     summary: str
@@ -242,6 +267,10 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT) -> FastAPI:
     @app.exception_handler(NotAllowed)
     async def not_allowed(request: Request, e: NotAllowed):
         return JSONResponse({"detail": str(e)}, status_code=403)
+
+    @app.exception_handler(MemoryError)
+    async def memory_error(request: Request, e: MemoryError):
+        return JSONResponse({"detail": str(e)}, status_code=422)
 
     @app.exception_handler(MergeError)
     async def merge_error(request: Request, e: MergeError):
@@ -298,6 +327,11 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT) -> FastAPI:
     async def changes(task_id: str):
         task_or_404(task_id)
         return {"diff": runner.changes(task_id)}
+
+    @v1.get("/search", response_model=list[SearchHit])
+    async def search(q: str, limit: int = Query(20, le=200)):
+        """Everything the crew said or decided that matches `q`."""
+        return store.search(q, limit=limit)
 
     @v1.get("/crew", response_model=CrewState)
     async def crew_state():
@@ -370,6 +404,20 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT) -> FastAPI:
     async def bot_propose_merge(request: Request, body: MergeProposal):
         task = runner.propose_merge(request.state.task.id, body.task_id, body.summary)
         return {"id": task.id, "merge_state": task.merge_state}
+
+    @v1.post("/bot/remember", status_code=201)
+    async def bot_remember(request: Request, body: Remember):
+        note = runner.remember(request.state.task.id, body.title, body.body, shared=body.shared)
+        return {"title": note.title, "path": str(note.path)}
+
+    @v1.post("/bot/forget")
+    async def bot_forget(request: Request, body: Forget):
+        note = runner.forget(request.state.task.id, body.name, shared=body.shared)
+        return {"title": note.title}
+
+    @v1.post("/bot/recall", response_model=list[SearchHit])
+    async def bot_recall(request: Request, body: Recall):
+        return runner.recall(request.state.task.id, body.query)
 
     @v1.post("/bot/escalate")
     async def bot_escalate(request: Request, body: Escalation):

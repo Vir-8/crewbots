@@ -56,6 +56,7 @@ class CodexSession:
         self._turn_id: str | None = None
         self._steers: list[str] = []  # reasons to tell the model, after a refusal
         self.temp: Path | None = None
+        self._context: tuple[int, int] | None = None  # (tokens in the latest request, the model's context window)
 
     @classmethod
     async def open(cls, cli: "CodexCLI", spec: RunSpec) -> "CodexSession":
@@ -139,6 +140,12 @@ class CodexSession:
                 self._broken = True
                 await self.process.stop()
 
+    async def context_percent(self) -> float | None:
+        if not self._context:
+            return None
+        used, window = self._context
+        return 100.0 * used / window
+
     async def close(self) -> None:
         self._broken = True
         await self.process.stop()
@@ -172,6 +179,11 @@ class CodexSession:
                 return None
             if isinstance(obj, str):
                 continue  # stray output that isn't JSON-RPC
+            if obj.get("method") == "thread/tokenUsage/updated":
+                usage = (obj.get("params") or {}).get("tokenUsage") or {}
+                window = usage.get("modelContextWindow")
+                if window:
+                    self._context = ((usage.get("last") or {}).get("inputTokens", 0), window)
             if obj.get("method") in ("item/started", "item/completed"):
                 item = (obj.get("params") or {}).get("item") or {}
                 if item.get("type") == "fileChange":
