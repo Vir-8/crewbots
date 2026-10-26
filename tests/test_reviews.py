@@ -85,7 +85,7 @@ def test_the_inbox_and_a_pull_request_come_from_gh_and_are_cached(tmp_path):
     assert len(gh.calls) == 3  # one a list, then kept
     pull = reviews.pull("vir/app", 7)
     assert pull["checks"] == {"total": 3, "passed": 1, "failed": 1} and pull["checkout"] is None
-    assert pull["failing"] == ["tests"] and pull["issues"] == [5]
+    assert pull["failing"] == ["tests"] and pull["issues"] == [5] and pull["people"] == ["sam", "lee"]
     assert reviews.diff("vir/app", 7, limit=20).endswith("more characters)")
     with pytest.raises(ReviewError, match="owner/name"):
         reviews.pull("not a repo", 1)

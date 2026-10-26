@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import type { Draft } from "../types";
 import { Markdown } from "./bits";
 import { Icon } from "./Icon";
+import { MentionArea } from "./Mentions";
 
 type Side = "RIGHT" | "LEFT";
 type Row = { kind: "hunk" | "add" | "del" | "ctx"; text: string; old?: number; new?: number };
@@ -16,6 +17,7 @@ const IMAGE = /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i;
  * what you're looking for in file names and lines, and brings the `current` match into view. */
 export function PullDiff(props: {
   diff: string;
+  people: string[];
   find?: string;
   current?: number;
   onMatches?: (count: number) => void;
@@ -104,10 +106,11 @@ export function PullDiff(props: {
                       </span>
                     </div>
                     {here.map((d) => (
-                      <DraftCard key={d.id} draft={d} author={props.author(d.author)} onEdit={props.onEdit} onDelete={props.onDelete} />
+                      <DraftCard key={d.id} draft={d} author={props.author(d.author)} people={props.people} onEdit={props.onEdit} onDelete={props.onDelete} />
                     ))}
                     {editing && (
                       <DraftEditor
+                        people={props.people}
                         onCancel={() => setOpen(null)}
                         onSave={async (body) => {
                           await props.onAdd(open!, body);
@@ -126,7 +129,7 @@ export function PullDiff(props: {
   );
 }
 
-function DraftCard({ draft, author, onEdit, onDelete }: { draft: Draft; author: string; onEdit: (id: number, body: string) => Promise<unknown>; onDelete: (id: number) => Promise<unknown> }) {
+function DraftCard({ draft, author, people, onEdit, onDelete }: { draft: Draft; author: string; people: string[]; onEdit: (id: number, body: string) => Promise<unknown>; onDelete: (id: number) => Promise<unknown> }) {
   const [editing, setEditing] = useState(false);
   return (
     <div className="pd-draft" id={`draft-${draft.id}`}>
@@ -149,6 +152,7 @@ function DraftCard({ draft, author, onEdit, onDelete }: { draft: Draft; author: 
       {editing ? (
         <DraftEditor
           initial={draft.body}
+          people={people}
           saveLabel="Save"
           onCancel={() => setEditing(false)}
           onSave={async (body) => {
@@ -165,7 +169,7 @@ function DraftCard({ draft, author, onEdit, onDelete }: { draft: Draft; author: 
   );
 }
 
-function DraftEditor({ initial = "", saveLabel = "Add to review", onSave, onCancel }: { initial?: string; saveLabel?: string; onSave: (body: string) => Promise<unknown>; onCancel: () => void }) {
+function DraftEditor({ initial = "", saveLabel = "Add to review", people, onSave, onCancel }: { initial?: string; saveLabel?: string; people: string[]; onSave: (body: string) => Promise<unknown>; onCancel: () => void }) {
   const [body, setBody] = useState(initial);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -182,12 +186,13 @@ function DraftEditor({ initial = "", saveLabel = "Add to review", onSave, onCanc
   };
   return (
     <div className="pd-editor">
-      <textarea
+      <MentionArea
         autoFocus
         rows={3}
         value={body}
+        people={people}
         placeholder="Leave a comment on this line"
-        onChange={(e) => setBody(e.target.value)}
+        onChange={setBody}
         onKeyDown={(e) => {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) save();
           if (e.key === "Escape") onCancel();

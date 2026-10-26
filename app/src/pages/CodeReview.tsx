@@ -4,6 +4,7 @@ import { Markdown, ago } from "../components/bits";
 import { Composer } from "../components/Composer";
 import { PullDiff } from "../components/PullDiff";
 import { Icon } from "../components/Icon";
+import { MentionArea } from "../components/Mentions";
 import { modelLabel } from "../components/ModelPicker";
 import { Resizer, useWidth } from "../components/Resizer";
 import { Thread } from "../components/Thread";
@@ -358,6 +359,7 @@ function PullView({ crew, selected, onSettings }: { crew: Crew; selected: Select
           ) : (
             <PullDiff
               diff={diff}
+              people={people(pull)}
               find={lookFor}
               current={current}
               onMatches={(n) => {
@@ -411,7 +413,7 @@ function SubmitPanel({ pull, drafts, yours, onClose, onDone }: { pull: Pull; dra
           <Icon name="x" size={13} />
         </button>
       </div>
-      <textarea rows={4} autoFocus value={body} onChange={(e) => setBody(e.target.value)} placeholder="Leave a summary (optional when approving)" />
+      <MentionArea rows={4} autoFocus value={body} onChange={setBody} people={people(pull)} placeholder="Leave a summary (optional when approving)" />
       <div className="verdicts">
         {VERDICTS.map(([value, label, hint]) => {
           const blocked = yours && value !== "COMMENT";
@@ -428,7 +430,7 @@ function SubmitPanel({ pull, drafts, yours, onClose, onDone }: { pull: Pull; dra
       </div>
       {error && <p className="error-text small">{error}</p>}
       <div className="form-actions">
-        <span className="faint small">{drafts ? `${drafts} line comment${drafts === 1 ? "" : "s"} go with it` : "No line comments"}</span>
+        <span className="faint small">{drafts ? `${drafts} line comment${drafts === 1 ? " goes" : "s go"} with it` : "No line comments"}</span>
         <span className="grow" />
         <button
           className="button small primary"
@@ -450,6 +452,9 @@ function SubmitPanel({ pull, drafts, yours, onClose, onDone }: { pull: Pull; dra
     </div>
   );
 }
+
+/** Who a comment might @mention, the author first: from GitHub, or just the author for a pull request kept from before. */
+const people = (pull: Pull) => (pull.people?.length ? pull.people : [pull.author]);
 
 /** "reviewer:claude:sonnet:high" → the reviewer it was. */
 function reviewerOf(task: Task): Reviewer {

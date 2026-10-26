@@ -342,6 +342,7 @@ class PullOut(BaseModel):
     checks: Checks
     failing: list[str]  # the checks that fail
     issues: list[int]  # the issues it refers to
+    people: list[str] = []  # who a comment might @mention: the author first
     checkout: str | None  # the local copy reviews read, if the repo is mapped
     reviews: list[TaskOut]
 

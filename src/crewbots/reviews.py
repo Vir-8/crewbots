@@ -144,12 +144,22 @@ def inbox_query(keys) -> str:
 
 DETAIL_FIELDS = ("number,title,body,url,state,isDraft,author,headRefName,baseRefName,headRefOid,baseRefOid,additions,deletions,"
                  "changedFiles,files,reviewDecision,createdAt,updatedAt,statusCheckRollup,labels,reviews,comments,"
-                 "closingIssuesReferences")
+                 "closingIssuesReferences,assignees,reviewRequests")
 ISSUE_REF = re.compile(r"(?<![\w/])#(\d{1,7})\b")
 
 
 class ReviewError(ValueError):
     pass
+
+
+def _people(raw: dict[str, Any]) -> list[str]:
+    """Who a comment might @mention: the author first, then assignees, requested reviewers, and whoever has reviewed
+    or commented, each once."""
+    logins = [(raw.get("author") or {}).get("login")]
+    logins += [a.get("login") for a in raw.get("assignees") or []]
+    logins += [r.get("login") or r.get("slug") for r in raw.get("reviewRequests") or []]  # a user, or a team
+    logins += [(x.get("author") or {}).get("login") for x in [*(raw.get("reviews") or []), *(raw.get("comments") or [])]]
+    return list(dict.fromkeys(str(login) for login in logins if login))
 
 
 @dataclass
@@ -222,6 +232,7 @@ class Reviews:
                            "failed": len(failing)},
                 "failing": failing,
                 "discussion": said,
+                "people": _people(raw),
                 "issues": sorted({int(i["number"]) for i in raw.get("closingIssuesReferences") or [] if "number" in i}
                                  | {int(n) for n in ISSUE_REF.findall(f"{raw['title']}\n{raw.get('body') or ''}")})[:3],
                 "checkout": str(self.checkout_of(repo)) if self.checkout_of(repo) else None,

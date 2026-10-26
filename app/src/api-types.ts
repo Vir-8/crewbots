@@ -496,6 +496,7 @@ export interface PullOut {
   checks: Checks;
   failing: string[];
   issues: number[];
+  people?: string[];
   checkout: string | null;
   reviews: TaskOut[];
 }

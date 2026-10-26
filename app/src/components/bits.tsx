@@ -59,8 +59,8 @@ export function ago(iso: string, short = false): string {
 }
 
 /**
- * The Markdown bots write: paragraphs, headings, lists, fenced code, `code` and **bold**. Built as React elements,
- * never as HTML, so nothing a bot writes can run in the window.
+ * The Markdown bots write: paragraphs, headings, lists (nested, and numbered from where they start), fenced code,
+ * `code` and **bold**. Built as React elements, never as HTML, so nothing a bot writes can run in the window.
  */
 export function Markdown({ text, onSelect }: { text: string; onSelect: (id: string) => void }) {
   const blocks: ReactNode[] = [];
@@ -78,15 +78,10 @@ export function Markdown({ text, onSelect }: { text: string; onSelect: (id: stri
       const Tag = line.startsWith("# ") || line.startsWith("## ") ? "h3" : "h4";
       blocks.push(<Tag key={blocks.length}>{inline(line.replace(/^#+\s*/, ""))}</Tag>);
       i++;
-    } else if (/^\s*([-*]|\d+\.)\s/.test(line)) {
-      const ordered = /^\s*\d+\./.test(line);
-      const items: string[] = [];
-      while (i < lines.length && /^\s*([-*]|\d+\.)\s/.test(lines[i])) {
-        items.push(lines[i].replace(/^\s*([-*]|\d+\.)\s+/, ""));
-        i++;
-      }
-      const List = ordered ? "ol" : "ul";
-      blocks.push(<List key={blocks.length}>{items.map((item, j) => <li key={j}>{inline(item)}</li>)}</List>);
+    } else if (ITEM.test(line)) {
+      const [node, next] = list(lines, i, inline, blocks.length);
+      blocks.push(node);
+      i = next;
     } else if (!line.trim()) {
       i++;
     } else {
@@ -99,6 +94,54 @@ export function Markdown({ text, onSelect }: { text: string; onSelect: (id: stri
     }
   }
   return <div className="md">{blocks}</div>;
+}
+
+const ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
+const indentOf = (line: string) => (/^\s*/.exec(line)?.[0] ?? "").replace(/\t/g, "    ").length;
+
+/** The list starting at `start`, and the line after it. An item takes the lines indented under it, its own list
+ * included, and a blank line doesn't end the list when the next item, or more of this one, follows it. */
+function list(lines: string[], start: number, inline: (s: string) => ReactNode, key: number): [ReactNode, number] {
+  const base = indentOf(lines[start]);
+  const ordered = /\d/.test(ITEM.exec(lines[start])![2]);
+  const items: { text: string[]; children: ReactNode[] }[] = [];
+  let i = start;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.trim()) {
+      let j = i + 1;
+      while (j < lines.length && !lines[j].trim()) j++;
+      const after = lines[j] === undefined ? null : ITEM.exec(lines[j]);
+      const more = j < lines.length && (indentOf(lines[j]) > base || (after && indentOf(lines[j]) === base && /\d/.test(after[2]) === ordered));
+      if (!more) break;
+      i = j;
+      continue;
+    }
+    const item = ITEM.exec(line);
+    const indent = indentOf(line);
+    if (item && indent === base) {
+      if (/\d/.test(item[2]) !== ordered) break; // a different kind of list starts here
+      items.push({ text: [item[3]], children: [] });
+      i++;
+    } else if (item && indent > base && items.length) {
+      const [child, next] = list(lines, i, inline, items.at(-1)!.children.length);
+      items.at(-1)!.children.push(child);
+      i = next;
+    } else if (!item && items.length && (indent > base || lines[i - 1]?.trim()) && !/^(```|#{1,6}\s)/.test(line.trim())) {
+      items.at(-1)!.text.push(line.trim()); // more of the item: indented under it, or carrying straight on
+      i++;
+    } else {
+      break;
+    }
+  }
+  const first = Number.parseInt(ITEM.exec(lines[start])![2], 10);
+  const body = items.map((item, j) => (
+    <li key={j}>
+      {inline(item.text.join("\n"))}
+      {item.children}
+    </li>
+  ));
+  return [ordered ? <ol key={key} start={first === 1 ? undefined : first}>{body}</ol> : <ul key={key}>{body}</ul>, i];
 }
 
 export function Inline({ text, onSelect }: { text: string; onSelect: (id: string) => void }) {

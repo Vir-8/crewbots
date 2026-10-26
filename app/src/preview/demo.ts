@@ -238,7 +238,7 @@ export const pullReviews: Task[] = [];
   tool(lead.id, "mcp__crewbots__pr_diff", { path: "server/reports.py" }, "diff --git a/server/reports.py b/server/reports.py");
   tool(lead.id, "Read", { file_path: "server/reports.py" });
   tool(lead.id, "mcp__crewbots__draft_comment", { path: "server/reports.py", line: 64, body: "…" }, "Drafted comment 1 on server/reports.py:64.");
-  say(lead.id, "**One issue, not blocking.**\n\n- **P1** `server/reports.py:64`: the export's filename is fixed, so a second export overwrites the first in the browser's downloads. Both reviewers found it; I drafted a comment.\n\n**Overall impact:** small. The button moves; the endpoint's behaviour is unchanged.\n\n**Couldn't check:** how Safari names repeated downloads. Nothing was run.");
+  say(lead.id, "One issue, not blocking. I drafted a comment for it.\n\n**Findings**\n\n1. **P1** `server/reports.py:64`\n   - The export's filename is fixed, so a second export overwrites the first in the browser's downloads.\n   - Both reviewers found it.\n\n2. **P2** `web/src/reports/Toolbar.tsx:40` (no comment drafted)\n   - The button has no busy state, so a double click starts two exports.\n   - Sonnet found this; GPT didn't.\n\n**Overall impact:** small. The button moves; the endpoint's behaviour is unchanged.\n\n**Couldn't check:** how Safari names repeated downloads. Nothing was run.");
   done(lead.id);
   pullReviews.push(tasks.get(lead.id)!, ...kids.map((k) => tasks.get(k.id)!));
 }
