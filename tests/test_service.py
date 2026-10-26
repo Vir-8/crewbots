@@ -119,6 +119,34 @@ async def test_pausing_lets_running_turns_finish(store, tmp_path):
     await wait_until(lambda: store.get_task(task.id).status is Status.IDLE)
 
 
+async def test_a_restart_waits_only_for_turns_under_way(store, tmp_path):
+    gate = asyncio.Event()
+    backend = FakeBackend(gate=gate)
+    runner = Runner(store, make_crew(tmp_path), {"fake": backend}, max_parallel=1)
+    running = runner.submit("worker", "one")
+    waiting = runner.submit("worker", "two")  # waits for the only slot
+    await wait_until(lambda: backend.active == 1)
+
+    runner.restart_when_idle()
+    assert runner.turns_running() == 1 and not await runner.idle(0.05, poll_s=0.01)
+    gate.set()
+    assert await runner.idle(2, poll_s=0.01)
+    assert store.get_task(running.id).status is Status.IDLE
+    assert store.get_task(waiting.id).status is Status.QUEUED and len(backend.specs) == 1  # none started meanwhile
+
+
+async def test_pausing_during_a_restart_is_kept_for_after_it_is_called_off(store, tmp_path):
+    runner = Runner(store, make_crew(tmp_path), {"fake": FakeBackend()})
+    runner.restart_when_idle()
+    runner.pause()
+    assert runner.paused
+    runner.cancel_restart()
+    assert runner.paused  # still paused, as asked
+    runner.resume()
+    task = runner.submit("worker", "x")
+    await wait_until(lambda: store.get_task(task.id).status is Status.IDLE)
+
+
 async def test_pause_and_resume_are_announced(store, tmp_path):
     runner = Runner(store, make_crew(tmp_path), {"fake": FakeBackend()})
     with runner.bus.subscribe() as queue:

@@ -123,8 +123,8 @@ def test_the_apps_types_match_the_api():
 
 
 def test_the_crew_can_be_paused_and_resumed_over_the_api(client):
-    assert client.get("/crew", headers=AUTH).json() == {"paused": False, "running": 0, "held": 0, "sessions": 0,
-                                                         "limits": []}
+    assert client.get("/crew", headers=AUTH).json() == {"paused": False, "restarting": False, "running": 0,
+                                                         "turns_running": 0, "held": 0, "sessions": 0, "limits": []}
 
     assert client.post("/crew/pause", headers=AUTH).json()["paused"] is True
     task = client.post("/tasks", json={"bot": "worker", "goal": "x"}, headers=AUTH).json()
@@ -132,6 +132,48 @@ def test_the_crew_can_be_paused_and_resumed_over_the_api(client):
     assert client.get(f"/tasks/{task['id']}", headers=AUTH).json()["status"] == "queued"
 
     assert client.post("/crew/resume", headers=AUTH).json()["paused"] is False
+    assert wait_idle(client, task["id"])["status"] == "idle"
+
+
+def test_a_restart_waits_for_the_crew_to_be_idle_then_stops_the_server(tmp_path):
+    import asyncio
+
+    from crewbots.api import RESTART_EXIT
+
+    gate = asyncio.Event()
+    store = Store(tmp_path / "crew.db")
+    runner = Runner(store, make_crew(tmp_path), {"fake": FakeBackend(gate=gate)})
+    app = create_app(runner, TOKEN, PORT)
+    stopped = []
+    app.state.stop = stopped.append
+    with TestClient(app, base_url=f"http://127.0.0.1:{PORT}/v1") as client:
+        busy = client.post("/tasks", json={"bot": "worker", "goal": "long"}, headers=AUTH).json()
+        for _ in range(100):
+            if client.get(f"/tasks/{busy['id']}", headers=AUTH).json()["status"] == "running":
+                break
+            time.sleep(0.02)
+
+        state = client.post("/crew/restart", json={"timeout_s": 60}, headers=AUTH).json()
+        assert state["restarting"] and state["turns_running"] == 1 and not state["paused"]
+        later = client.post("/tasks", json={"bot": "worker", "goal": "later"}, headers=AUTH).json()
+        time.sleep(0.2)
+        assert stopped == [] and client.get(f"/tasks/{later['id']}", headers=AUTH).json()["status"] == "queued"
+
+        client.portal.call(gate.set)  # the running turn finishes
+        for _ in range(300):
+            if stopped:
+                break
+            time.sleep(0.01)
+        assert stopped == [RESTART_EXIT]
+        assert client.get(f"/tasks/{later['id']}", headers=AUTH).json()["status"] == "queued"  # carried on after
+    store.close()
+
+
+def test_a_restart_can_be_called_off(client):
+    assert client.post("/crew/restart", json={"timeout_s": 60}, headers=AUTH).json()["restarting"] is True
+    state = client.delete("/crew/restart", headers=AUTH).json()
+    assert state["restarting"] is False and state["paused"] is False
+    task = client.post("/tasks", json={"bot": "worker", "goal": "x"}, headers=AUTH).json()
     assert wait_idle(client, task["id"])["status"] == "idle"
 
 

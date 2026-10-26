@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { DirectChat, GroupChat } from "./components/ChatView";
+import { CrewBanner } from "./components/CrewBanner";
 import { Icon } from "./components/Icon";
 import { Panel } from "./components/Panel";
 import { Profile, RoomProfile } from "./components/Profile";
@@ -83,7 +84,7 @@ export function App() {
     else setCurrent([...crew.chats].sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0].key);
   }, [crew.chats.length, crew.tasks.size]);
 
-  if (crew.status.state !== "connected") return <Connecting status={crew.status} />;
+  if (crew.status.state !== "connected" && !crew.connectedOnce) return <Connecting status={crew.status} />;
   const chat = crew.chats.find((c) => c.key === current);
   const thread = thread_ ? crew.tasks.get(thread_) : undefined;
   const profile = !thread && profileOn && chat?.kind === "direct" && current === chat.key ? chat.bot : null;
@@ -183,6 +184,7 @@ export function App() {
           }}
         />
       )}
+      <CrewBanner crew={crew} />
       {crew.error && (
         <div className="toast" onClick={crew.clearError}>
           <Icon name="alert" size={14} />

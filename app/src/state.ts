@@ -12,6 +12,7 @@ const REVIEWS_EVERY_MS = 5 * 60_000; // pull requests waiting on you, from GitHu
 /** Everything a layout needs: the crew, its tasks, recent activity, and the actions. Layouts only arrange it. */
 export function useCrew() {
   const [status, setStatus] = useState<ConnectionStatus>({ state: "connecting", home: "" });
+  const [connectedOnce, setConnectedOnce] = useState(false);
   const [bots, setBots] = useState<Bot[]>([]);
   const [tasks, setTasks] = useState<Map<string, Task>>(new Map());
   const [events, setEvents] = useState<Map<string, StoredEvent[]>>(new Map()); // only tasks someone opened
@@ -99,7 +100,10 @@ export function useCrew() {
   }, [loadAll, reloadChats]);
 
   useEffect(() => {
-    if (status.state === "connected") loadAll();
+    if (status.state === "connected") {
+      setConnectedOnce(true);
+      loadAll();
+    }
   }, [status.state, loadAll]);
 
   useEffect(() => {
@@ -173,6 +177,10 @@ export function useCrew() {
     models,
     loadModels,
     pause: (on: boolean) => act(api.pause(on)).then(setCrewState),
+    restart: (whenIdle: boolean) => act(api.restart(whenIdle)).then(setCrewState),
+    cancelRestart: () => act(api.cancelRestart()).then(setCrewState),
+    /** It has been connected: from then on a lost daemon keeps the window as it is while it reconnects. */
+    connectedOnce,
     /** Reads the crew again after an edit: its bots, their chats and the routines. */
     refresh: async () => {
       const b = await api.bots();

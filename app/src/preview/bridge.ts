@@ -50,6 +50,10 @@ async function request(method: string, path: string, body?: any) {
   if (method === "GET" && url.pathname === "/events/cursor") return ok({ id: allEvents.at(-1)?.id ?? 0 });
   if (parts[0] === "bot") return { ok: false, status: 0, data: { detail: "not an app path" } };
   if (method === "GET" && url.pathname === "/crew") return ok(crewState);
+  if (url.pathname === "/crew/restart") {
+    crewState.restarting = method === "POST" && body?.when_idle !== false;
+    return ok({ ...crewState });
+  }
   if (method === "GET" && url.pathname === "/chats") return ok(chats());
   if (method === "POST" && parts[0] === "chats" && parts[1] === "bot") {
     const chat = demo.chatIds[parts[2]];
@@ -334,7 +338,7 @@ const skills = [
 ];
 
 const crewState = {
-  paused: false, running: 1, held: 1, sessions: 2,
+  paused: false, restarting: false, running: 1, turns_running: 1, held: 1, sessions: 2,
   limits: [{ plan: "claude", window: "five_hour", status: "limited", used_percent: 100, resets_at: demo.resetsAt }],
 };
 

@@ -80,6 +80,9 @@ export const api = {
   newRoutine: (fields: Partial<RoutineFile> & { name: string }) => call<RoutineFile>("POST", "/routines", fields),
   deleteRoutine: (name: string) => call<{ ok: boolean }>("DELETE", `/routines/${encodeURIComponent(name)}`),
   pause: (on: boolean) => call<CrewState>("POST", on ? "/crew/pause" : "/crew/resume"),
+  /** Restarts the daemon once no turn is running (or now, `whenIdle` false); turns cut off carry on after. */
+  restart: (whenIdle: boolean) => call<CrewState>("POST", "/crew/restart", { when_idle: whenIdle }),
+  cancelRestart: () => call<CrewState>("DELETE", "/crew/restart"),
   usageSummary: (days = 365) => call<UsageSummary>("GET", `/usage/summary?days=${days}`),
   mcpServers: () => call<McpServerInfo[]>("GET", "/mcp/servers"),
   saveMcpServer: (name: string, body: { transport: "stdio" | "http" | "sse"; command?: string; args?: string[]; env?: Record<string, string> | null; url?: string; headers?: Record<string, string> | null }) =>

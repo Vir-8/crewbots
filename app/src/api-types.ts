@@ -149,7 +149,9 @@ export interface ChildOut {
 
 export interface CrewState {
   paused: boolean;
+  restarting: boolean;
   running: number;
+  turns_running: number;
   held: number;
   sessions: number;
   limits: PlanLimitOut[];
@@ -567,6 +569,11 @@ export interface Remember {
 
 export interface RepoFolder {
   folder: string | null;
+}
+
+export interface RestartBody {
+  when_idle?: boolean;
+  timeout_s?: number;
 }
 
 export interface ReviewBody {

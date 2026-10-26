@@ -31,7 +31,7 @@ import secrets
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping
 from contextlib import aclosing
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
@@ -220,6 +220,8 @@ class Runner:
         self._awake: subprocess.Popen[bytes] | None = None
         self._resumed = asyncio.Event()  # cleared while the crew is paused: no new turn starts
         self._resumed.set()
+        self.restarting = False  # the daemon restarts once no turn is running; meanwhile none starts
+        self._user_paused = False  # what pausing was before a restart was asked for
         self._held: set[str] = set()  # tasks whose next turn waits on a budget or a plan limit
         self._released: set[str] = set()  # top-level tasks the user let past their budgets, until the daemon stops
         self._recheck = asyncio.Event()  # set when a hold may be over: a release, or a reloaded crew
@@ -478,20 +480,56 @@ class Runner:
 
     @property
     def paused(self) -> bool:
-        return not self._resumed.is_set()
+        return self._user_paused if self.restarting else not self._resumed.is_set()
 
     def pause(self) -> None:
-        self._resumed.clear()
+        self._user_paused = True
+        if not self.restarting:
+            self._resumed.clear()
         self.bus.publish({"type": "crew", "crew": self.state()})
 
     def resume(self) -> None:
-        self._resumed.set()
+        self._user_paused = False
+        if not self.restarting:
+            self._resumed.set()
         self.bus.publish({"type": "crew", "crew": self.state()})
+
+    # Restarting when idle: no new turn starts, and the daemon stops once the turns running now have finished.
+
+    def restart_when_idle(self) -> None:
+        if not self.restarting:
+            self._user_paused = self.paused
+            self.restarting = True
+            self._resumed.clear()
+            self.bus.publish({"type": "crew", "crew": self.state()})
+
+    def cancel_restart(self) -> None:
+        if self.restarting:
+            self.restarting = False
+            if not self._user_paused:
+                self._resumed.set()
+            self.bus.publish({"type": "crew", "crew": self.state()})
+
+    def turns_running(self) -> int:
+        """Turns under way now: not ones waiting their turn, held, or waiting to try again, which a restart carries
+        on as they were."""
+        return sum(1 for t in list(self._runs) if self.store.get_task(t).status == Status.RUNNING)
+
+    async def idle(self, timeout_s: float, poll_s: float = 1.0) -> bool:
+        """Waits until no turn is running, for at most `timeout_s`. Whether it got there."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_s
+        while self.turns_running():
+            if loop.time() >= deadline:
+                return False
+            await asyncio.sleep(poll_s)
+        return True
 
     def state(self) -> dict[str, Any]:
         limits = [asdict(limit) for windows in self.limits.values() for limit in windows.values()]
-        return {"paused": self.paused, "running": len(self._runs) - len(self._held), "held": len(self._held),
-                "sessions": len(self._sessions), "limits": [{k: v for k, v in x.items() if k != "kind"} for x in limits]}
+        return {"paused": self.paused, "restarting": self.restarting, "running": len(self._runs) - len(self._held),
+                "turns_running": self.turns_running(), "held": len(self._held), "sessions": len(self._sessions),
+                "limits": [{k: v for k, v in x.items() if k != "kind"} for x in limits]}
 
     def reload(self, crew: Crew) -> None:
         """Takes up edited role cards (and their budgets). Running turns carry on as they started."""
@@ -568,6 +606,22 @@ class Runner:
 
     def _wake_held(self) -> None:
         self._recheck.set()
+
+    @contextlib.asynccontextmanager
+    async def _turn_slot(self, task_id: str) -> AsyncIterator[None]:
+        """A run slot, once the crew isn't paused and the task is within its budgets. A pause (or a restart) that came
+        while it waited for the slot sends it back to wait, so no turn starts after one."""
+        while True:
+            await self._resumed.wait()
+            await self._within_budget(task_id)
+            await self._slots.acquire()
+            if self._resumed.is_set():
+                break
+            self._slots.release()
+        try:
+            yield
+        finally:
+            self._slots.release()
         self._recheck = asyncio.Event()
 
     def _note_limit(self, task_id: str, limit: RateLimit) -> None:
@@ -848,9 +902,7 @@ class Runner:
 
     async def _run(self, task_id: str, prompt: str) -> Done | None:
         """One turn. Returns its Done if it failed, for `_tries` to settle; None once the task is settled."""
-        await self._resumed.wait()
-        await self._within_budget(task_id)
-        async with self._slots:
+        async with self._turn_slot(task_id):
             task = self._set(task_id, status=Status.RUNNING, error=None)
             self.store.pending_started(task_id)
             try:
@@ -1156,6 +1208,8 @@ class Runner:
     def _set(self, task_id: str, **fields: Any) -> Task:
         task = self.store.update_task(task_id, **fields)
         self.bus.publish({"type": "task", "task": task.to_json()})
+        if self.restarting and "status" in fields:  # how many turns the restart still waits for
+            self.bus.publish({"type": "crew", "crew": self.state()})
         return task
 
 

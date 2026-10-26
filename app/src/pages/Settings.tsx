@@ -93,6 +93,15 @@ export function Settings({ crew }: { crew: Crew }) {
             </span>
             <Switch on={Boolean(crew.crewState?.paused)} label="Pause the crew" onChange={(on) => crew.pause(on)} />
           </div>
+          <div className="list-row">
+            <span className="list-text">
+              <span className="list-title">Restart the crew's daemon</span>
+              <span className="faint">Once no turn is running: none starts meanwhile, and anything waiting carries on after.</span>
+            </span>
+            <button className="button small" disabled={Boolean(crew.crewState?.restarting)} onClick={() => crew.restart(true)}>
+              {crew.crewState?.restarting ? "Restarting when idle…" : "Restart when idle"}
+            </button>
+          </div>
         </div>
       </section>
 

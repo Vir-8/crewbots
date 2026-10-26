@@ -87,6 +87,11 @@ def main(argv: list[str] | None = None) -> int:
     release = sub.add_parser("release", help="let a task held on a budget or plan limit go ahead")
     release.add_argument("task_id")
     sub.add_parser("reload", help="take up edited role cards and budgets without restarting the daemon")
+    restart = sub.add_parser("restart", help="restart the daemon; turns it cuts off carry on by themselves after")
+    restart.add_argument("--when-idle", action="store_true",
+                         help="start no new turn, and restart once the ones running have finished")
+    restart.add_argument("--timeout", type=float, default=api.RESTART_TIMEOUT_S / 60,
+                         help="with --when-idle, minutes to wait for running turns (default 20)")
 
     openapi = sub.add_parser("openapi", help="print the API's OpenAPI schema (what the app's types are generated from)")
     openapi.add_argument("--out", type=Path)
@@ -259,6 +264,34 @@ def _reload(args: argparse.Namespace) -> int:
     return 0
 
 
+def _restart(args: argparse.Namespace) -> int:
+    before = api.read_daemon_info(args.home).pid
+    state = _client(args).post("/crew/restart", json={"when_idle": args.when_idle, "timeout_s": args.timeout * 60}
+                               ).raise_for_status().json()
+    if args.when_idle and state["turns_running"]:
+        print(f"restarting when the crew is idle: {state['turns_running']} turn(s) running; no new one starts",
+              file=sys.stderr)
+    deadline = time.monotonic() + (args.timeout * 60 if args.when_idle else 0) + 120
+    gone_at = None
+    while time.monotonic() < deadline:
+        time.sleep(POLL_S)
+        try:
+            info = api.read_daemon_info(args.home)
+            if info.pid != before:
+                httpx.get(f"{info.url}/v1/crew", headers={"Authorization": f"Bearer {info.token}"}, timeout=5
+                          ).raise_for_status()
+                print(f"restarted (pid {info.pid})")
+                return 0
+        except (FileNotFoundError, httpx.HTTPError, ValueError):
+            gone_at = gone_at or time.monotonic()
+        if gone_at and time.monotonic() - gone_at > 30 and not svc.status().installed:
+            print("the daemon stopped, and nothing started it again: it isn't a login service (`crewbots service "
+                  "install`), and the app isn't running it. Start it with `crewbots serve`.", file=sys.stderr)
+            return 1
+    print("crewbots: the daemon hasn't come back yet; see its log", file=sys.stderr)
+    return 1
+
+
 def _watch(args: argparse.Namespace) -> int:
     return _follow(_client(args), args.task_id)
 
@@ -343,7 +376,7 @@ COMMANDS = {
     "init": _init, "serve": _serve, "bots": _bots, "task": _task, "tasks": _tasks, "watch": _watch, "say": _say,
     "cancel": _cancel, "diff": _diff, "review": _review, "merge": _merge, "skills": _skills, "service": _service,
     "openapi": _openapi, "run": _run, "routines": _routines, "budgets": _budgets, "release": _release,
-    "reload": _reload,
+    "reload": _reload, "restart": _restart,
 }
 
 

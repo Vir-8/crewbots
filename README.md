@@ -141,7 +141,7 @@ To keep the crew running whenever you're logged in, even with the app closed, in
 uv run crewbots service install
 ```
 
-It starts at login and restarts if it ever crashes. `crewbots service status` and `crewbots service uninstall` check on it and remove it, and its log is `~/.crewbots/logs/daemon.log`. The app's menu bar item has the same switch ("Start at login"). While tasks are running, the daemon keeps the Mac from sleeping (`caffeinate`), and it lets go as soon as the crew is idle.
+It starts at login and restarts if it ever crashes. `crewbots service status` and `crewbots service uninstall` check on it and remove it, and its log is `~/.crewbots/logs/daemon.log`. `crewbots restart --when-idle` restarts it once no turn is running (no new one starts meanwhile, and after 20 minutes the turns still running are cut off and carry on after), and Settings has the same button; the app keeps its window while it reconnects. The app's menu bar item has the same switch ("Start at login"). While tasks are running, the daemon keeps the Mac from sleeping (`caffeinate`), and it lets go as soon as the crew is idle.
 
 `crewbots routines` lists the routines with their next run, `routines run standup` runs one now, and `routines add`
 copies in a starter one. `crewbots budgets` shows each bot's use against its budget and where the plans' limits

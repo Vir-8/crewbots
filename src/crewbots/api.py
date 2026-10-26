@@ -45,6 +45,8 @@ from crewbots.scheduler import Scheduler
 from crewbots.store import Status, Store, Task, Verdict
 
 DEFAULT_PORT = 8765
+RESTART_EXIT = 75  # EX_TEMPFAIL: stopped to be started again
+RESTART_TIMEOUT_S = 20 * 60.0  # how long a restart waits for running turns; then they're cut off and carried on
 DAEMON_FILE = "daemon.json"  # in the crew's folder: where the daemon is and its token, readable only by the user
 
 
@@ -569,9 +571,16 @@ class PlanLimitOut(BaseModel):
     resets_at: int | None
 
 
+class RestartBody(BaseModel):
+    when_idle: bool = True
+    timeout_s: float = RESTART_TIMEOUT_S
+
+
 class CrewState(BaseModel):
     paused: bool
+    restarting: bool  # the daemon restarts once no turn is running; meanwhile none starts
     running: int
+    turns_running: int  # under way now, not waiting their turn or held
     held: int
     sessions: int
     limits: list[PlanLimitOut]
@@ -844,6 +853,8 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
 
     app = FastAPI(title="crewbots", version="1", openapi_url=None, docs_url=None, redoc_url=None)
     app.state.reviews = reviews
+    app.state.restart = None  # the restart waiting for the crew to be idle
+    app.state.stop = lambda code: None  # serve() replaces it: stops the server, which exits with `code`
 
     @app.middleware("http")
     async def guard(request: Request, call_next):
@@ -1339,6 +1350,27 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
         runner.resume()
         return runner.state()
 
+    @v1.post("/crew/restart", response_model=CrewState)
+    async def restart(body: RestartBody):
+        """Restarts the daemon once no turn is running: none starts meanwhile. After `timeout_s` (or at once, unless
+        `when_idle`), turns still running are cut off, and carry on by themselves when it starts again."""
+        runner.restart_when_idle()
+        if app.state.restart is None or app.state.restart.done():
+            async def restart_after() -> None:
+                await runner.idle(body.timeout_s if body.when_idle else 0)
+                app.state.stop(RESTART_EXIT)
+
+            app.state.restart = asyncio.create_task(restart_after(), name="restart when idle")
+        return runner.state()
+
+    @v1.delete("/crew/restart", response_model=CrewState)
+    async def cancel_restart():
+        if app.state.restart is not None:
+            app.state.restart.cancel()
+            app.state.restart = None
+        runner.cancel_restart()
+        return runner.state()
+
     @v1.post("/crew/reload", response_model=CrewState)
     async def reload():
         """Reads the crew's folder again: edited role cards and budgets count from the next turn."""
@@ -1634,5 +1666,18 @@ def serve(home: Path, port: int = DEFAULT_PORT, max_parallel: int = 4, sessions:
     scheduler = Scheduler(runner)
     app = create_app(runner, token, port, scheduler)
     app.router.lifespan_context = lifespan
-    print(f"crewbots: {len(crew.bots)} bots ({', '.join(crew.bots)}) from {home}, on http://127.0.0.1:{port}")
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+    print(f"crewbots: {len(crew.bots)} bots ({', '.join(crew.bots)}) from {home}, on http://127.0.0.1:{port}", flush=True)
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    exit_code = 0
+
+    def stop(code: int) -> None:
+        nonlocal exit_code
+        exit_code = code
+        server.should_exit = True
+
+    app.state.stop = stop
+    server.run()
+    if exit_code:
+        # Not a clean stop, so launchd starts it again (KeepAlive: SuccessfulExit false), as the app does its own.
+        print("restarting", flush=True)
+        sys.exit(exit_code)
