@@ -13,8 +13,11 @@ fn dictation_helper() {
     let target = std::env::var("TARGET").unwrap_or_else(|_| "aarch64-apple-darwin".into());
     let out = Path::new("binaries").join(format!("crewbots-dictate-{target}"));
     std::fs::create_dir_all("binaries").expect("making binaries/");
+    // Named outright: a build started from an Intel tool under Rosetta (an x86_64 node, say) would otherwise get an
+    // Intel helper inside an Apple silicon app, and macOS warns about Intel code.
+    let arch = if target.starts_with("x86_64") { "x86_64" } else { "arm64" };
     let status = Command::new("swiftc")
-        .args(["-O", "dictation/main.swift", "-o"])
+        .args(["-O", "-target", &format!("{arch}-apple-macos13"), "dictation/main.swift", "-o"])
         .arg(&out)
         .status()
         .expect("swiftc is needed to build the dictation helper (install the Xcode command line tools)");

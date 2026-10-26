@@ -75,6 +75,24 @@ async function request(method: string, path: string, body?: any) {
     return ok({ bot: parts[1], working: threads.some((t) => t.status === "running"), last_active: threads[0]?.updated_at ?? null, threads, outputs });
   }
   if (method === "GET" && url.pathname === "/routines") return ok(routines());
+  if (method === "GET" && url.pathname === "/usage") return ok(usage(Number(url.searchParams.get("days") ?? 14)));
+  if (method === "GET" && url.pathname === "/reviews/inbox") return ok(reviewInbox);
+  if (method === "GET" && url.pathname === "/reviews/repos") return ok({ "acme/web": "~/code/acme-web" });
+  if (parts[0] === "reviews" && parts.length >= 4) {
+    const pr = reviewInbox.direct.find((p) => p.number === Number(parts[3])) ?? reviewInbox.direct[0];
+    if (parts[4] === "diff") return ok({ diff: demo.diffs.get("t_csv0000002") ?? "" });
+    if (parts[4] === "review") return ok(demo.tasks.get("t_truncate03"));
+    return ok({ ...pr, body: "Moves the export button into the toolbar and adds a test for the filters.\n\n- [x] Tests added\n- [x] Screenshots updated", state: "OPEN", head: "toolbar-export", base: "main", head_sha: "abc", labels: [], files: [{ path: "web/src/reports/Toolbar.tsx", additions: 40, deletions: 12 }], checks: { total: 12, passed: 12, failed: 0 }, checkout: null, reviews: [] });
+  }
+  if (method === "GET" && parts[0] === "bots" && parts[2] === "card") {
+    const b = demo.bots.find((x) => x.name === parts[1])!;
+    return ok({ ...b, budget: null, instructions: `## Mission\n\nBe the ${b.title.toLowerCase()} of the crew.\n\n## Owns\n\n- What its role card says\n` });
+  }
+  if (method === "PUT" || (method === "POST" && (url.pathname === "/bots" || url.pathname === "/routines"))) return ok({});
+  if (method === "GET" && parts[0] === "routines" && parts[2] === "file") {
+    const r = routines().routines.find((x) => x.name === parts[1])!;
+    return ok({ ...r, goal: "Write the standup for what the crew did since {{since}}.\n\n{{activity}}" });
+  }
   if (method === "GET" && url.pathname === "/budgets") {
     return ok(demo.bots.map((b) => ({ bot: b.name, tokens: b.name === "engineer" ? 2_000_000 : null, per: "week", used: b.name === "engineer" ? 1_460_000 : 310_000, held: b.name === "chief" ? ["t_docs000001"] : [] })));
   }
@@ -158,6 +176,28 @@ function chats() {
   return [...direct, ...groups];
 }
 
+const reviewInbox = {
+  direct: [
+    { repo: "acme/web", number: 412, title: "Move the export button into the reports toolbar", url: "https://github.com/acme/web/pull/412", draft: false, author: "sam", author_avatar: null, created_at: new Date(Date.now() - 5 * 3600e3).toISOString(), updated_at: new Date(Date.now() - 3600e3).toISOString(), additions: 40, deletions: 12, changed_files: 3, review_decision: "REVIEW_REQUIRED", checks: "SUCCESS", reviewed_at: null },
+    { repo: "acme/web", number: 409, title: "Fix the date filter's off-by-one at month boundaries", url: "https://github.com/acme/web/pull/409", draft: false, author: "lee", author_avatar: null, created_at: new Date(Date.now() - 30 * 3600e3).toISOString(), updated_at: new Date(Date.now() - 20 * 3600e3).toISOString(), additions: 18, deletions: 6, changed_files: 2, review_decision: "REVIEW_REQUIRED", checks: "FAILURE", reviewed_at: new Date().toISOString() },
+  ],
+  team: [
+    { repo: "acme/api", number: 88, title: "Paginate the audit log endpoint", url: "https://github.com/acme/api/pull/88", draft: true, author: "kim", author_avatar: null, created_at: new Date(Date.now() - 50 * 3600e3).toISOString(), updated_at: new Date(Date.now() - 48 * 3600e3).toISOString(), additions: 120, deletions: 30, changed_files: 6, review_decision: null, checks: "PENDING", reviewed_at: null },
+  ],
+  mine: [],
+  error: null,
+};
+
+function usage(days: number) {
+  const dates = Array.from({ length: days }, (_, i) => new Date(Date.now() - (days - 1 - i) * 86400e3).toISOString().slice(0, 10));
+  const wave = (scale: number, phase: number) => dates.map((_, i) => (i % 7 === 5 || i % 7 === 6 ? 0 : Math.round(scale * (0.6 + 0.4 * Math.sin(i / 2 + phase)))));
+  const bots = [
+    { bot: "chief", by_day: wave(42_000, 0) }, { bot: "engineer", by_day: wave(180_000, 1) },
+    { bot: "reviewer", by_day: wave(60_000, 2) }, { bot: "critic", by_day: wave(55_000, 3) },
+  ];
+  return { days: dates, bots: bots.map((b) => ({ ...b, turns: b.by_day.map((v) => Math.round(v / 9000)), total: b.by_day.reduce((a, v) => a + v, 0) })) };
+}
+
 const crewState = {
   paused: false, running: 1, held: 1, sessions: 2,
   limits: [{ plan: "claude", window: "five_hour", status: "limited", used_percent: 100, resets_at: demo.resetsAt }],
@@ -190,6 +230,8 @@ export const previewBridge = {
   pickFolder: async () => "~/code/acme-web",
   reveal: async (_path: string) => undefined,
   openPath: async (_path: string) => undefined,
+  openUrl: async (url: string) => void window.open(url, "_blank"),
+  startAtLogin: async (enabled?: boolean) => enabled ?? true,
   dictation: browserDictation(),
   onStatus: (_callback: Listener<ConnectionStatus>) => () => undefined,
   onLive: (callback: Listener<Live>) => {

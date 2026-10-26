@@ -3,7 +3,13 @@
 import type {
   BotOut,
   BudgetOut,
+  CardOut,
   ChatOut,
+  Inbox as InboxOut,
+  PullOut,
+  PullSummary as PullSummaryOut,
+  RoutineFileOut,
+  UsageOut,
   CrewState as CrewStateOut,
   EventOut,
   FindingOut,
@@ -33,6 +39,12 @@ export type Chat = ChatOut;
 export type Room = RoomOut;
 export type RoomMessage = RoomMessageOut;
 export type Profile = ProfileOut;
+export type Card = CardOut;
+export type RoutineFile = RoutineFileOut;
+export type Usage = UsageOut;
+export type ReviewInbox = InboxOut;
+export type PullSummary = PullSummaryOut;
+export type Pull = PullOut;
 export type CrewState = CrewStateOut;
 export type Routine = RoutineOut;
 export type Routines = RoutinesOut;

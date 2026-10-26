@@ -40,6 +40,24 @@ fn menu_bar(items: State<'_, TrayItems>) -> Value {
     json!({ "title": summary.title(), "line": summary.line(), "paused": summary.paused })
 }
 
+/// Whether the crew starts at login (the launchd service), and, given `enabled`, turns it on or off.
+#[tauri::command]
+async fn start_at_login(app: AppHandle, crew: State<'_, Arc<Crew>>, enabled: Option<bool>) -> Result<bool, String> {
+    if let Some(want) = enabled
+        && want != crew.service_installed()
+    {
+        let result = crew.service(if want { "install" } else { "uninstall" }).await;
+        if let Some(error) = result["error"].as_str() {
+            return Err(error.to_string());
+        }
+    }
+    let installed = crew.service_installed();
+    if let Some(items) = app.try_state::<TrayItems>() {
+        let _ = items.login.set_checked(installed);
+    }
+    Ok(installed)
+}
+
 /// For checking the app without someone at the screen: with CREWBOTS_SELFTEST set, the window runs its checks,
 /// reports here, and the app prints the report and quits.
 #[tauri::command]
@@ -152,6 +170,7 @@ pub fn run() {
             menu_bar,
             selftest_wanted,
             selftest_report,
+            start_at_login,
             dictation::dictation_start,
             dictation::dictation_stop
         ])

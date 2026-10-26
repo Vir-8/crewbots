@@ -14,7 +14,11 @@ export function DiffView({ task }: { task: Task }) {
   if (diff === undefined) return <p className="muted pad">Loading…</p>;
   if (diff === null) return <p className="muted pad">This task has no worktree.</p>;
   if (!diff.trim()) return <p className="muted pad">No changes.</p>;
+  return <DiffText diff={diff} />;
+}
 
+/** A unified diff, a file at a time. */
+export function DiffText({ diff }: { diff: string }) {
   const files = diff.split(/^(?=diff --git )/m).filter(Boolean);
   return (
     <div className="diff">

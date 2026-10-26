@@ -1,10 +1,14 @@
 import { useEffect, useState } from "react";
 import { DirectChat, GroupChat } from "./components/ChatView";
-import { CrewPage } from "./components/CrewPage";
 import { Icon } from "./components/Icon";
 import { Panel } from "./components/Panel";
 import { Profile } from "./components/Profile";
 import { Sidebar } from "./components/Sidebar";
+import { CodeReview } from "./pages/CodeReview";
+import { CrewBots } from "./pages/CrewBots";
+import { Routines } from "./pages/Routines";
+import { Settings } from "./pages/Settings";
+import { Usage } from "./pages/Usage";
 import type { Crew } from "./state";
 import { useCrew } from "./state";
 import type { ConnectionStatus, Task } from "./types";
@@ -14,7 +18,8 @@ type Side = { kind: "profile" } | { kind: "thread"; id: string } | null;
 export function App() {
   const crew = useCrew();
   const initial = new URLSearchParams(location.search).get("task");
-  const [current, setCurrent] = useState<string | null>(null); // a chat's key, or "settings"
+  const [current, setCurrent] = useState<string | null>(null); // a chat's key, "review", or a page ("page:crew", ...)
+  const [editing, setEditing] = useState<string | null>(null); // a bot being edited on the Crew page; "" for a new one
   const [side, setSide] = useState<Side>(null);
   const [newGroup, setNewGroup] = useState(false);
 
@@ -42,20 +47,28 @@ export function App() {
   const profile = side?.kind === "profile" && chat?.kind === "direct" ? chat.bot : null;
 
   return (
-    <div className={`app ${thread || profile ? "with-panel" : ""} ${profile ? "with-profile" : ""}`}>
+    <div className={`app ${thread || profile ? "with-panel" : ""} ${profile ? "with-profile" : ""} ${current === "review" ? "reviewing" : ""}`}>
       <Sidebar
         crew={crew}
         current={current}
         onChat={(key) => {
           setCurrent(key);
-          if (side?.kind === "thread" || key === "settings" || key.startsWith("room:")) setSide(null);
+          if (side?.kind === "thread" || !key.startsWith("bot:")) setSide(null);
         }}
         onOpen={openTask}
         onNewGroup={() => setNewGroup(true)}
       />
       <main className="main">
-        {current === "settings" ? (
-          <CrewPage crew={crew} onOpen={openTask} />
+        {current === "page:crew" ? (
+          <CrewBots crew={crew} editing={editing} onEdit={setEditing} onChat={(bot) => setCurrent(`bot:${bot}`)} />
+        ) : current === "page:routines" ? (
+          <Routines crew={crew} onOpen={openTask} />
+        ) : current === "page:usage" ? (
+          <Usage crew={crew} />
+        ) : current === "page:settings" ? (
+          <Settings crew={crew} />
+        ) : current === "review" ? (
+          <CodeReview crew={crew} onSettings={() => setCurrent("page:settings")} />
         ) : chat?.kind === "direct" ? (
           <DirectChat crew={crew} chat={chat} onOpen={openTask} profileOpen={Boolean(profile)} onProfile={() => setSide(profile ? null : { kind: "profile" })} />
         ) : chat?.kind === "group" ? (
@@ -65,7 +78,19 @@ export function App() {
         )}
       </main>
       {thread && <Panel crew={crew} task={thread} onOpen={openTask} onClose={() => setSide(chat?.kind === "direct" ? { kind: "profile" } : null)} />}
-      {profile && <Profile crew={crew} bot={profile} onOpen={openTask} onClose={() => setSide(null)} />}
+      {profile && (
+        <Profile
+          crew={crew}
+          bot={profile}
+          onOpen={openTask}
+          onClose={() => setSide(null)}
+          onEdit={() => {
+            setEditing(profile);
+            setCurrent("page:crew");
+            setSide(null);
+          }}
+        />
+      )}
       {newGroup && (
         <NewGroup
           crew={crew}

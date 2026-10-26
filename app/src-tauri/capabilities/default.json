@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "What the window may do: talk to the crew through the shell, pick folders, show and open files in the crew's folder, drag the title bar",
+  "description": "What the window may do: talk to the crew through the shell, pick folders, show and open files in the crew's folder, open GitHub pages, drag the title bar",
   "windows": [
     "main"
   ],
@@ -15,6 +15,14 @@
       "allow": [
         {
           "path": "$HOME/.crewbots/**"
+        }
+      ]
+    },
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "https://github.com/*"
         }
       ]
     }

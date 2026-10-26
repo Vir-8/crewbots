@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { api, bridge } from "../api";
+import { api } from "../api";
 import type { Crew } from "../state";
 import { oneLine } from "../state";
 import type { Profile as ProfileData } from "../types";
 import { ACTIVE } from "../types";
-import { Avatar } from "./Avatar";
+import { Avatar, labelOf } from "./Avatar";
 import { ago } from "./bits";
 import { Icon } from "./Icon";
 
@@ -12,7 +12,7 @@ const ACCESS: Record<string, string> = { read_only: "Reads only", workspace_writ
 const SHOWN = 6;
 
 /** A bot, beside your chat with it: what it's doing, what runs on its own, the work it has done, and how it's set up. */
-export function Profile(props: { crew: Crew; bot: string; onOpen: (id: string) => void; onClose: () => void }) {
+export function Profile(props: { crew: Crew; bot: string; onOpen: (id: string) => void; onClose: () => void; onEdit: () => void }) {
   const { crew } = props;
   const bot = crew.bots.find((b) => b.name === props.bot);
   const [data, setData] = useState<ProfileData | null>(null);
@@ -39,17 +39,16 @@ export function Profile(props: { crew: Crew; bot: string; onOpen: (id: string) =
       <div className="profile-body">
         <div className="profile-head">
           <Avatar name={bot.name} size={64} working={data?.working} />
-          <div className="profile-name">{bot.title}</div>
+          <div className="profile-name">{labelOf(bot.name)}</div>
+          {bot.display_name && <div className="faint">{bot.title}</div>}
           <div className="faint">
             {data?.working ? "Working now" : data?.last_active ? `Active ${ago(data.last_active)}` : bot.name}
           </div>
           <p className="profile-desc">{bot.description}</p>
-          {bot.path && (
-            <button className="button small" onClick={() => bridge.openPath(bot.path!)}>
-              <Icon name="compose" size={13} />
-              Edit role card
-            </button>
-          )}
+          <button className="button small" onClick={props.onEdit}>
+            <Icon name="compose" size={13} />
+            Edit
+          </button>
         </div>
 
         {routines.length > 0 && (

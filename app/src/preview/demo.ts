@@ -5,10 +5,10 @@
 import type { Bot, ReviewState, StoredEvent, Task } from "../types";
 
 export const bots: Bot[] = [
-  { name: "chief", title: "Chief of Staff", description: "Plans goals into tasks, tracks them, and reports back.", backend: "claude", model: "opus", access: "read_only", workspace: null, network: false, mcp: [], skills: ["interrogate", "arena", "swarm"], can_delegate: true, path: "~/.crewbots/crew/bots/chief.md" },
-  { name: "engineer", title: "Engineer", description: "Writes and changes code, with tests, on its own branch.", backend: "codex", model: null, access: "workspace_write", workspace: null, network: true, mcp: [], skills: [], can_delegate: false, path: "~/.crewbots/crew/bots/engineer.md" },
-  { name: "reviewer", title: "Reviewer", description: "Checks work against team/standards.md.", backend: "claude", model: "sonnet", access: "read_only", workspace: null, network: false, mcp: [], skills: [], can_delegate: false, path: "~/.crewbots/crew/bots/reviewer.md" },
-  { name: "critic", title: "Critic", description: "A second reviewer on another model family; tries to break the work.", backend: "codex", model: null, access: "read_only", workspace: null, network: false, mcp: [], skills: [], can_delegate: false, path: "~/.crewbots/crew/bots/critic.md" },
+  { name: "chief", title: "Chief of Staff", description: "Plans goals into tasks, tracks them, and reports back.", backend: "claude", model: "opus", access: "read_only", workspace: null, network: false, mcp: [], skills: ["interrogate", "arena", "swarm"], can_delegate: true, path: "~/.crewbots/crew/bots/chief.md", display_name: null, avatar: null },
+  { name: "engineer", title: "Engineer", description: "Writes and changes code, with tests, on its own branch.", backend: "codex", model: null, access: "workspace_write", workspace: null, network: true, mcp: [], skills: [], can_delegate: false, path: "~/.crewbots/crew/bots/engineer.md", display_name: null, avatar: null },
+  { name: "reviewer", title: "Reviewer", description: "Checks work against team/standards.md.", backend: "claude", model: "sonnet", access: "read_only", workspace: null, network: false, mcp: [], skills: [], can_delegate: false, path: "~/.crewbots/crew/bots/reviewer.md", display_name: null, avatar: null },
+  { name: "critic", title: "Critic", description: "A second reviewer on another model family; tries to break the work.", backend: "codex", model: null, access: "read_only", workspace: null, network: false, mcp: [], skills: [], can_delegate: false, path: "~/.crewbots/crew/bots/critic.md", display_name: null, avatar: null },
 ];
 
 let clock = Date.now() - 1000 * 60 * 60 * 5;
@@ -25,7 +25,7 @@ function task(id: string, bot: string, title: string, fields: Partial<Task> = {}
     id, bot, title, status: "idle", created_by: "user", parent_id: null, workspace: "~/code/acme-web", repo: null,
     worktree_path: null, branch: null, base: null, session_id: `s-${id}`, result: null, error: null,
     input_tokens: 40_000, output_tokens: 1_200, cost_usd: 0, reported: true, turns: 1, review_of: null,
-    review_version: null, merge_state: null, merged_commit: null, kind: "thread", room_id: null, routine: null, budget: null, created_at: at,
+    review_version: null, merge_state: null, merged_commit: null, kind: "thread", room_id: null, pr: null, routine: null, budget: null, created_at: at,
     updated_at: at, ...fields,
   };
   tasks.set(id, t);

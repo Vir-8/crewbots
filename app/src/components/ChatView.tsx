@@ -3,7 +3,7 @@ import type { Crew } from "../state";
 import { doing, oneLine } from "../state";
 import type { Chat, RoomMessage } from "../types";
 import { ACTIVE } from "../types";
-import { Avatar, GroupAvatar } from "./Avatar";
+import { Avatar, GroupAvatar, labelOf } from "./Avatar";
 import { Markdown, ago } from "./bits";
 import { Composer } from "./Composer";
 import { Icon } from "./Icon";
@@ -30,7 +30,7 @@ export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string)
         <button className="chat-head-who" onClick={props.onProfile} title="Profile">
           <Avatar name={chat.bot!} size={30} working={chat.working} />
           <span className="chat-head-text">
-            <span className="chat-head-title">{chat.title}</span>
+            <span className="chat-head-title">{labelOf(chat.bot!)}</span>
             <span className="chat-head-sub">{oneLine(status, 90)}</span>
           </span>
         </button>
@@ -43,7 +43,7 @@ export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string)
       <div className="dock">
         <Composer
           key={chat.key}
-          placeholder={task?.status === "needs_input" ? `Answer ${chat.title}` : `Message ${chat.title}`}
+          placeholder={task?.status === "needs_input" ? `Answer ${labelOf(chat.bot!)}` : `Message ${labelOf(chat.bot!)}`}
           asking={task?.status === "needs_input"}
           onSend={(text) => crew.say(chat.bot!, text)}
           autoFocus
@@ -79,7 +79,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
           <span className="chat-head-text">
             <span className="chat-head-title">{room.title}</span>
             <span className="chat-head-sub">
-              {room.members.join(", ")} · {room.lead} leads
+              {room.members.map(labelOf).join(", ")} · {labelOf(room.lead)} leads
             </span>
           </span>
         </span>
@@ -103,7 +103,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
                 <Avatar name={group.author} size={28} />
                 <div className="room-group-body">
                   <div className="room-author">
-                    {group.author}
+                    {labelOf(group.author)}
                     <span className="faint"> · {ago(group.messages[0].at)}</span>
                   </div>
                   {group.messages.map((m) => (
@@ -119,7 +119,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
             <div className="working">
               <span className="working-dot" />
               <span className="shimmer">
-                {typing.join(", ")} {typing.length === 1 ? "is" : "are"} replying
+                {typing.map(labelOf).join(", ")} {typing.length === 1 ? "is" : "are"} replying
               </span>
             </div>
           )}

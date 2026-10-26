@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, bridge } from "./api";
 import { setCrew } from "./components/Avatar";
-import type { Bot, Chat, ConnectionStatus, CrewState, Live, RoomMessage, Routines, StoredEvent, Task } from "./types";
+import type { Bot, Chat, ConnectionStatus, CrewState, Live, ReviewInbox, RoomMessage, Routines, StoredEvent, Task } from "./types";
 import { ACTIVE } from "./types";
 
 const RECENT = 400;
 const ROUTINES_EVERY_MS = 60_000; // next and last run times move on their own
+const REVIEWS_EVERY_MS = 5 * 60_000; // pull requests waiting on you, from GitHub
 
 /** Everything a layout needs: the crew, its tasks, recent activity, and the actions. Layouts only arrange it. */
 export function useCrew() {
@@ -28,6 +29,9 @@ export function useCrew() {
     chatsTimer.current = window.setTimeout(loadChats, 250);
   }, [loadChats]);
 
+  const [reviewInbox, setReviewInbox] = useState<ReviewInbox | null>(null);
+  const loadReviews = useCallback((fresh = false) => api.reviewInbox(fresh).then(setReviewInbox, () => undefined), []);
+
   const loadRoutines = useCallback(() => api.routines().then(setRoutines, () => setRoutines(null)), []);
 
   const loadAll = useCallback(async () => {
@@ -37,7 +41,7 @@ export function useCrew() {
       loadRoutines();
       loadChats();
       setBots(b);
-      setCrew(b.map((x) => x.name));
+      setCrew(b);
       setTasks(new Map(t.map((task) => [task.id, task])));
       setRecent(r as StoredEvent[]);
       setEvents(new Map());
@@ -95,9 +99,10 @@ export function useCrew() {
 
   useEffect(() => {
     if (status.state !== "connected") return;
-    const timer = setInterval(loadRoutines, ROUTINES_EVERY_MS);
-    return () => clearInterval(timer);
-  }, [status.state, loadRoutines]);
+    loadReviews();
+    const timers = [setInterval(loadRoutines, ROUTINES_EVERY_MS), setInterval(loadReviews, REVIEWS_EVERY_MS)];
+    return () => timers.forEach(clearInterval);
+  }, [status.state, loadRoutines, loadReviews]);
 
   const ensureEvents = useCallback(
     (taskId: string) => {
@@ -157,6 +162,17 @@ export function useCrew() {
     clearError: () => setError(null),
     ensureEvents,
     ...derived,
+    reviewInbox,
+    loadReviews,
+    pause: (on: boolean) => act(api.pause(on)).then(setCrewState),
+    /** Reads the crew again after an edit: its bots, their chats and the routines. */
+    refresh: async () => {
+      const b = await api.bots();
+      setCrew(b);
+      setBots(b);
+      loadChats();
+      loadRoutines();
+    },
     newTask: (bot: string, goal: string, workspace?: string) => act(api.newTask(bot, goal, workspace)),
     send: (taskId: string, text: string) => act(api.send(taskId, text)),
     cancel: (taskId: string) => act(api.cancel(taskId)),

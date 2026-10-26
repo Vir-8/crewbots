@@ -3,7 +3,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
-import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { previewBridge } from "./preview/bridge";
 import type { ConnectionStatus, Live } from "./types";
 
@@ -32,7 +32,11 @@ const tauriBridge = {
     return typeof picked === "string" ? picked : null;
   },
   reveal: (path: string) => revealItemInDir(path),
+  /** Whether the crew starts at login; pass `enabled` to change it. */
+  startAtLogin: (enabled?: boolean) => invoke<boolean>("start_at_login", { enabled: enabled ?? null }),
   openPath: (path: string) => openPath(path),
+  /** A GitHub page, in your browser. */
+  openUrl: (url: string) => openUrl(url),
   onStatus: (callback: (status: ConnectionStatus) => void) => subscribe("crew:status", callback),
   onLive: (callback: (message: Live) => void) => subscribe("crew:live", callback),
   onResync: (callback: () => void) => subscribe<null>("crew:resync", () => callback()),

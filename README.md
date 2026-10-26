@@ -165,13 +165,23 @@ The app works like a messaging app:
   dot, and the group chats. Above them, work that needs you (merges, questions, holds). Search filters them.
 - **A chat:** the bot's replies as bubbles, its tool use folded into one line, and its threads as cards that open
   beside the chat, with the thread's own conversation, its changes, its reviews and a Merge button.
-- **Profile:** beside a chat, the bot's status, routines, recent threads, the files its threads produced, its setup,
-  and a button to edit its role card.
+- **Profile:** beside a chat, the bot's status, routines, recent threads, the files its threads produced, and its setup.
 - **Group chats:** messages with who said them, @mention suggestions as you type, and who's replying.
-- **The mic** dictates into any message box with macOS's own speech recognizer, on this Mac when it can. The first
-  time, macOS asks to allow the microphone and speech recognition.
-- **Crew settings:** problems with role cards or routines, the plans' limits, each bot's budget use, and the routines,
-  with Run now and the starter routines to add.
+- **The mic** dictates into any message box with macOS's own speech recognizer, on this Mac when it can, across
+  pauses and past the recognizer's one-minute limit. The first time, macOS asks to allow the microphone and speech
+  recognition.
+- **Code review**, above the chats: pull requests that ask you for a review, your teams' and your own, read with your
+  `gh` login. Each has its summary, checks and diff, and a private review by the bot you pick, which you can then
+  talk to about the change. Nothing is posted to GitHub. Point a repo at your local copy in Settings, and reviews
+  read the pull request's own code, checked out at its head in a worktree beside your copy.
+- **The crew menu**, at the bottom left:
+  - **Crew:** your bots, and an editor for each: its name and face, title and description, backend and model,
+    access, network, budget, and its role card's text. Saving rewrites the card after checking it loads, and the
+    crew uses it from the next turn. New bots start here too.
+  - **Routines:** turn them on and off, run them, edit when and what (schedules as "weekdays at 9:00", or cron),
+    and add new ones or the starters.
+  - **Usage:** where the plans' limits stand, fresh tokens by bot and day, and each bot against its budget.
+  - **Settings:** start at login, the crew's folder, pausing, GitHub, and code review's local copies.
 - **Menu bar and notifications:** a bot's reply or a message in a group chat notifies you when the window isn't in
   front, and so do merges to approve, questions and holds.
 

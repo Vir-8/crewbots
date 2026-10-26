@@ -1,5 +1,10 @@
 // Generated from the crewbots API schema by `crewbots openapi --ts`. Do not edit; regenerate.
 
+export interface Avatar {
+  color?: string | null;
+  shape?: string | null;
+}
+
 export interface BotOut {
   name: string;
   title: string;
@@ -13,6 +18,13 @@ export interface BotOut {
   skills: string[];
   can_delegate: boolean;
   path: string | null;
+  display_name: string | null;
+  avatar: Record<string, string> | null;
+}
+
+export interface Budget {
+  tokens: number;
+  per?: "day" | "week";
 }
 
 export interface BudgetOut {
@@ -21,6 +33,34 @@ export interface BudgetOut {
   per: "day" | "week";
   used: number;
   held: string[];
+}
+
+/** A role card's editable parts. Fields left out are left as they are. */
+export interface CardBody {
+  display_name?: string | null;
+  title?: string | null;
+  description?: string | null;
+  backend?: string | null;
+  model?: string | null;
+  access?: "read_only" | "workspace_write" | "full" | null;
+  network?: boolean | string[] | null;
+  avatar?: Avatar | null;
+  budget?: Budget | null;
+  instructions?: string | null;
+}
+
+export interface CardOut {
+  display_name?: string | null;
+  title?: string | null;
+  description?: string | null;
+  backend?: string | null;
+  model?: string | null;
+  access?: "read_only" | "workspace_write" | "full" | null;
+  network?: boolean | string[] | null;
+  avatar?: Avatar | null;
+  budget?: Budget | null;
+  instructions?: string | null;
+  name: string;
 }
 
 export interface ChangesOut {
@@ -38,6 +78,12 @@ export interface ChatOut {
   unread: number;
   working: boolean;
   updated_at: string;
+}
+
+export interface Checks {
+  total: number;
+  passed: number;
+  failed: number;
 }
 
 export interface ChildMessage {
@@ -127,6 +173,13 @@ export interface HandoffOut {
   at: string;
 }
 
+export interface Inbox {
+  direct: PullSummary[];
+  team: PullSummary[];
+  mine: PullSummary[];
+  error: string | null;
+}
+
 export interface LastMessage {
   author: string;
   text: string;
@@ -171,10 +224,37 @@ export interface Message {
   text: string;
 }
 
+export interface NewBot {
+  display_name?: string | null;
+  title?: string | null;
+  description?: string | null;
+  backend?: string | null;
+  model?: string | null;
+  access?: "read_only" | "workspace_write" | "full" | null;
+  network?: boolean | string[] | null;
+  avatar?: Avatar | null;
+  budget?: Budget | null;
+  instructions?: string | null;
+  name: string;
+}
+
 export interface NewRoom {
   title?: string;
   members: string[];
   lead?: string | null;
+}
+
+export interface NewRoutine {
+  description?: string | null;
+  bot?: string | null;
+  schedule?: string | null;
+  on?: string | null;
+  repo?: string | null;
+  workspace?: string | null;
+  budget?: number | null;
+  enabled?: boolean | null;
+  goal?: string | null;
+  name: string;
 }
 
 export interface NewTask {
@@ -211,6 +291,55 @@ export interface ProfileOut {
   outputs: OutputOut[];
 }
 
+export interface PullFile {
+  path: string;
+  additions: number;
+  deletions: number;
+}
+
+export interface PullOut {
+  repo: string;
+  number: number;
+  title: string;
+  body: string;
+  url: string;
+  state: string | null;
+  draft: boolean;
+  author: string;
+  head: string;
+  base: string;
+  head_sha: string;
+  additions: number;
+  deletions: number;
+  changed_files: number;
+  review_decision: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  labels: string[];
+  files: PullFile[];
+  checks: Checks;
+  checkout: string | null;
+  reviews: TaskOut[];
+}
+
+export interface PullSummary {
+  repo: string;
+  number: number;
+  title: string;
+  url: string;
+  draft: boolean;
+  author: string;
+  author_avatar: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  additions: number;
+  deletions: number;
+  changed_files: number;
+  review_decision: string | null;
+  checks: string | null;
+  reviewed_at?: string | null;
+}
+
 export interface Recall {
   query: string;
 }
@@ -219,6 +348,10 @@ export interface Remember {
   title: string;
   body: string;
   shared?: boolean;
+}
+
+export interface RepoFolder {
+  folder: string | null;
 }
 
 export interface ReviewBody {
@@ -234,6 +367,11 @@ export interface ReviewEntryOut {
   verdict: Verdict | null;
   summary: string | null;
   findings: FindingOut[];
+}
+
+export interface ReviewRequest {
+  bot: string;
+  note?: string;
 }
 
 export interface ReviewStateOut {
@@ -263,6 +401,31 @@ export interface RoomOut {
   members: string[];
   created_at: string;
   updated_at: string;
+}
+
+export interface RoutineBody {
+  description?: string | null;
+  bot?: string | null;
+  schedule?: string | null;
+  on?: string | null;
+  repo?: string | null;
+  workspace?: string | null;
+  budget?: number | null;
+  enabled?: boolean | null;
+  goal?: string | null;
+}
+
+export interface RoutineFileOut {
+  description?: string | null;
+  bot?: string | null;
+  schedule?: string | null;
+  on?: string | null;
+  repo?: string | null;
+  workspace?: string | null;
+  budget?: number | null;
+  enabled?: boolean | null;
+  goal?: string | null;
+  name: string;
 }
 
 export interface RoutineOut {
@@ -334,6 +497,7 @@ export interface TaskOut {
   merged_commit: string | null;
   kind: "chat" | "seat" | "thread";
   room_id: string | null;
+  pr: string | null;
   routine: string | null;
   budget: number | null;
   created_at: string;
@@ -343,6 +507,18 @@ export interface TaskOut {
 export interface ThreadBody {
   title: string;
   goal: string;
+}
+
+export interface UsageBot {
+  bot: string;
+  by_day: number[];
+  turns: number[];
+  total: number;
+}
+
+export interface UsageOut {
+  days: string[];
+  bots: UsageBot[];
 }
 
 export interface ValidationError {
