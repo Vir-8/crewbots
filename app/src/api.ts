@@ -1,4 +1,4 @@
-import type { Bot, Budget, CrewState, ReviewState, Routine, Routines, StoredEvent, Task } from "./types";
+import type { Bot, Budget, Chat, CrewState, Profile, ReviewState, Room, RoomMessage, Routine, Routines, StoredEvent, Task } from "./types";
 
 import { bridge } from "./bridge";
 
@@ -34,6 +34,13 @@ export const api = {
   crew: () => call<CrewState>("GET", "/crew"),
   routines: () => call<Routines>("GET", "/routines"),
   budgets: () => call<Budget[]>("GET", "/budgets"),
+  chats: () => call<Chat[]>("GET", "/chats"),
+  say: (bot: string, text: string) => call<Task>("POST", `/chats/bot/${encodeURIComponent(bot)}/messages`, { text }),
+  read: (key: string) => call<{ ok: boolean }>("POST", `/chats/${encodeURIComponent(key)}/read`),
+  roomMessages: (roomId: string) => call<RoomMessage[]>("GET", `/rooms/${roomId}/messages?limit=5000`),
+  post: (roomId: string, text: string) => call<RoomMessage>("POST", `/rooms/${roomId}/messages`, { text }),
+  newRoom: (title: string, members: string[], lead?: string) => call<Room>("POST", "/rooms", { title, members, lead: lead ?? null }),
+  profile: (bot: string) => call<Profile>("GET", `/bots/${encodeURIComponent(bot)}/profile`),
   addStarter: (name: string) => call<Routine>("POST", `/routines/starters/${encodeURIComponent(name)}`),
   runRoutine: (name: string) => call<Task>("POST", `/routines/${encodeURIComponent(name)}/run`),
 };

@@ -13,17 +13,19 @@ type Block =
   | { kind: "say"; id: number; text: string }
   | { kind: "steps"; id: number; calls: { call: StoredEvent; result?: StoredEvent }[] }
   | { kind: "work"; id: number; task: Task }
-  | { kind: "line"; id: number; text: string; icon?: "check" | "merge" | "branch" | "alert" | "play"; tone?: string }
+  | { kind: "line"; id: number; text: string; icon?: "check" | "merge" | "branch" | "alert" | "play" | "message"; tone?: string }
   | { kind: "ask"; id: number; question: string }
   | { kind: "held"; id: number; taskId: string; reason: string }
   | { kind: "handoff"; id: number; data: Record<string, any> }
   | { kind: "verdict"; id: number; data: Record<string, any> };
 
 // Crew tools that are shown as what they did (a card, a verdict, a question), not as steps.
-const SHOWN_ELSEWHERE = new Set(["delegate", "handoff", "review", "escalate", "propose_merge", "message"].map((t) => `mcp__crewbots__${t}`));
+const SHOWN_ELSEWHERE = new Set(
+  ["delegate", "start_thread", "post", "handoff", "review", "escalate", "propose_merge", "message"].map((t) => `mcp__crewbots__${t}`),
+);
 
 /** A task's conversation, as people would tell it: what was said and decided, with the mechanics folded away. */
-export function Thread(props: { crew: Crew; task: Task; onOpen: (id: string) => void; compact?: boolean }) {
+export function Thread(props: { crew: Crew; task: Task; onOpen: (id: string) => void; compact?: boolean; chat?: boolean }) {
   const { crew, task } = props;
   const events = crew.events.get(task.id);
   const box = useRef<HTMLDivElement>(null);
@@ -47,7 +49,7 @@ export function Thread(props: { crew: Crew; task: Task; onOpen: (id: string) => 
         stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
       }}
     >
-      <div className={`thread-col ${props.compact ? "compact" : ""}`}>
+      <div className={`thread-col ${props.compact ? "compact" : ""} ${props.chat ? "chat" : ""}`}>
         {!events && <div className="thread-loading" />}
         {blocks.map((block) => (
           <BlockView key={`${block.kind}-${block.id}`} block={block} crew={crew} lead={task.bot} onOpen={props.onOpen} />
@@ -77,11 +79,14 @@ function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>
     const d = e.data;
     if (e.kind === "tool_call") {
       const result = results.get(d.id);
-      if (d.name === "mcp__crewbots__delegate") {
+      if (d.name === "mcp__crewbots__delegate" || d.name === "mcp__crewbots__start_thread") {
         flush();
         if (d.input?.review_of) continue; // a review shows inside the card of the work it reviews
         if (result?.data.is_error) out.push({ kind: "line", id: e.id, text: `Couldn't delegate: ${oneLine(result.data.output, 160)}`, icon: "alert", tone: "bad" });
         else if (delegated.length) out.push({ kind: "work", id: e.id, task: delegated.shift()! });
+      } else if (d.name === "mcp__crewbots__post") {
+        flush();
+        out.push({ kind: "line", id: e.id, text: `Said in a group chat: ${oneLine(d.input?.text ?? "", 160)}`, icon: "message" });
       } else if (d.name === "mcp__crewbots__message") {
         flush();
         const to = tasks.get(d.input?.task_id)?.bot ?? "the task";
@@ -95,6 +100,8 @@ function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>
       case "message":
         flush();
         if (d.from === "user") out.push({ kind: "you", id: e.id, text: d.text });
+        else if (String(d.from).startsWith("routine:")) out.push({ kind: "brief", id: e.id, from: `the ${String(d.from).slice(8)} routine`, text: String(d.text).replace(/^\[routine: [^\]]+\]\s*/, "") });
+        else if (d.from === "room") continue;
         else if (d.from === "routine") out.push({ kind: "brief", id: e.id, from: `the ${tasks.get(e.task_id)?.routine ?? ""} routine`, text: d.text });
         else if (d.from !== "crewbots") out.push({ kind: "brief", id: e.id, from: d.from, text: d.text });
         break;
@@ -242,7 +249,7 @@ function Brief({ from, text }: { from: string; text: string }) {
   const [open, setOpen] = useState(!long);
   return (
     <div className="brief">
-      <div className="brief-head">Brief from {from}</div>
+      <div className="brief-head">{from.startsWith("the ") ? `From ${from}` : `Brief from ${from}`}</div>
       <div className={`brief-text ${open ? "" : "clamped"}`}>{text}</div>
       {long && (
         <button className="text-button" onClick={() => setOpen(!open)}>

@@ -50,6 +50,30 @@ async function request(method: string, path: string, body?: any) {
   if (method === "GET" && url.pathname === "/events/cursor") return ok({ id: allEvents.at(-1)?.id ?? 0 });
   if (parts[0] === "bot") return { ok: false, status: 0, data: { detail: "not an app path" } };
   if (method === "GET" && url.pathname === "/crew") return ok(crewState);
+  if (method === "GET" && url.pathname === "/chats") return ok(chats());
+  if (method === "POST" && parts[0] === "chats" && parts[1] === "bot") {
+    const chat = demo.chatIds[parts[2]];
+    return request("POST", `/tasks/${chat}/messages`, body);
+  }
+  if (method === "POST" && parts[0] === "chats" && parts[2] === "read") return ok({ ok: true });
+  if (parts[0] === "rooms" && parts[2] === "messages") {
+    const messages = demo.roomMessages.get(parts[1]) ?? [];
+    if (method === "GET") return ok(messages);
+    const message = { id: messages.length + 1, room_id: parts[1], author: "user", text: body.text, depth: 0, at: new Date().toISOString() };
+    messages.push(message);
+    publish({ type: "room_message", message });
+    setTimeout(() => {
+      const reply = { id: messages.length + 1, room_id: parts[1], author: "chief", text: "Got it. (This is the design preview; in the app the lead would answer, and anyone you @mention.)", depth: 1, at: new Date().toISOString() };
+      messages.push(reply);
+      publish({ type: "room_message", message: reply });
+    }, 1200);
+    return ok(message);
+  }
+  if (method === "GET" && parts[0] === "bots" && parts[2] === "profile") {
+    const threads = all.filter((t) => t.bot === parts[1] && t.kind === "thread").sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    const outputs = threads.flatMap((t) => (demo.events.get(t.id) ?? []).filter((e) => e.kind === "handoff").flatMap((e) => (e.data.output as string[]).map((path) => ({ path, task_id: t.id, title: t.title, at: e.at }))));
+    return ok({ bot: parts[1], working: threads.some((t) => t.status === "running"), last_active: threads[0]?.updated_at ?? null, threads, outputs });
+  }
   if (method === "GET" && url.pathname === "/routines") return ok(routines());
   if (method === "GET" && url.pathname === "/budgets") {
     return ok(demo.bots.map((b) => ({ bot: b.name, tokens: b.name === "engineer" ? 2_000_000 : null, per: "week", used: b.name === "engineer" ? 1_460_000 : 310_000, held: b.name === "chief" ? ["t_docs000001"] : [] })));
@@ -114,6 +138,26 @@ async function request(method: string, path: string, body?: any) {
 
 const status: ConnectionStatus = { state: "connected", home: "design preview", ownsDaemon: false };
 
+function chats() {
+  const direct = demo.bots.map((b) => {
+    const id = demo.chatIds[b.name];
+    const events = demo.events.get(id) ?? [];
+    const last = [...events].reverse().find((e) => e.kind === "text" || (e.kind === "message" && e.data.from === "user"));
+    const family = [...demo.tasks.values()].filter((t) => t.parent_id === id || t.id === id);
+    return {
+      key: `bot:${b.name}`, kind: "direct", title: b.title, bot: b.name, task_id: id, room: null,
+      last: last ? { author: last.kind === "text" ? b.name : "user", text: String(last.data.text), at: last.at } : null,
+      unread: b.name === "engineer" ? 1 : 0, working: family.some((t) => t.status === "running") || b.name === "engineer",
+      updated_at: last?.at ?? "",
+    };
+  });
+  const groups = demo.rooms.map((room) => {
+    const last = demo.roomMessages.get(room.id)?.at(-1);
+    return { key: `room:${room.id}`, kind: "group", title: room.title, bot: null, task_id: null, room, last: last ? { author: last.author, text: last.text, at: last.at } : null, unread: 0, working: false, updated_at: last?.at ?? room.updated_at };
+  });
+  return [...direct, ...groups];
+}
+
 const crewState = {
   paused: false, running: 1, held: 1, sessions: 2,
   limits: [{ plan: "claude", window: "five_hour", status: "limited", used_percent: 100, resets_at: demo.resetsAt }],
@@ -146,6 +190,7 @@ export const previewBridge = {
   pickFolder: async () => "~/code/acme-web",
   reveal: async (_path: string) => undefined,
   openPath: async (_path: string) => undefined,
+  dictation: browserDictation(),
   onStatus: (_callback: Listener<ConnectionStatus>) => () => undefined,
   onLive: (callback: Listener<Live>) => {
     liveListeners.add(callback);
@@ -153,3 +198,35 @@ export const previewBridge = {
   },
   onResync: (_callback: () => void) => () => undefined,
 };
+
+/** In a browser, dictation uses its own speech recognition where it has one (Chrome does). */
+function browserDictation() {
+  const listeners = new Set<(text: string) => void>();
+  const stopped = new Set<(error: string | null) => void>();
+  let recognition: any = null;
+  return {
+    start: async () => {
+      const Recognition = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
+      if (!Recognition) throw new Error("This browser can't dictate");
+      recognition = new Recognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.onresult = (event: any) => {
+        const text = Array.from(event.results as ArrayLike<any>).map((r) => r[0].transcript).join("");
+        listeners.forEach((l) => l(text.trim()));
+      };
+      recognition.onend = () => stopped.forEach((l) => l(null));
+      recognition.onerror = (event: any) => stopped.forEach((l) => l(String(event.error)));
+      recognition.start();
+    },
+    stop: async () => recognition?.stop(),
+    onHeard: (callback: (text: string) => void) => {
+      listeners.add(callback);
+      return () => listeners.delete(callback);
+    },
+    onStopped: (callback: (error: string | null) => void) => {
+      stopped.add(callback);
+      return () => stopped.delete(callback);
+    },
+  };
+}

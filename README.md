@@ -1,6 +1,6 @@
 # crewbots
 
-A crew of persistent AI agents that you manage instead of babysit. You give a goal to a chief of staff, which splits it into tasks with one owner each and hands them to specialist bots: an engineer, a reviewer, or whatever you add, such as a video editor working in DaVinci Resolve. The bots run in parallel, each writing bot in its own git worktree, and you hear back when there is something to review or decide.
+A crew of always-on AI agents that you message like teammates. Each bot, a chief of staff, an engineer, a reviewer, or whatever you add such as a video editor working in DaVinci Resolve, has one ongoing chat with you. Real work goes into threads they open beside the chat, each writing bot in its own git worktree. Bots talk to each other in group chats, run routines on their own, and you hear back when there's something to review or decide.
 
 The agents run on the official **Claude Code** and **Codex** CLIs, so they use the Claude and ChatGPT plans you already have. Claude Code is driven through the **Claude Agent SDK**, and Codex through **`codex app-server`**, the two tools' own interfaces for programs. crewbots is the layer above them: bots, tasks, worktrees, delegation, rules and the app. The plan is in [docs/DESIGN.md](docs/DESIGN.md), and the architecture in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -11,7 +11,10 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
   - The frontmatter is what the harness enforces: backend, model, access level, workspace, and the bot's own MCP servers.
   - The body is the card itself: its mission, what it owns, what it does *not* own, and what done means.
   - See [docs/examples/video-editor.md](docs/examples/video-editor.md).
-- **A task** is the unit of work and of conversation:
+- **Chats.** Each bot has one ongoing chat with you. It never resets: the bot's notes, and a briefing when it grows long, carry it from day to day. A scheduled routine posts into its bot's chat too, as a message from the routine.
+- **Threads.** For real work, a bot opens a thread (`start_thread`) beside the chat it's in, works it in parallel, and the result comes back to the chat. A coordinator can also hand a thread to another bot (`delegate`). Threads are where worktrees, reviews and merges happen.
+- **Group chats.** You and some bots, with one bot as the lead. A message that mentions no one goes to the lead; an @mention brings that bot in, and bots @mention each other the same way, up to four replies deep. Every crew has a "Crew" group chat with all its bots, and a bot can speak there from anywhere with `post`.
+- **A task** is the unit underneath: a chat, a bot's seat in a group chat, or a thread.
   - Each task has exactly one owner bot and its own backend session, so a follow-up message picks up where the bot left off.
   - A task by a writing bot in a git repo gets its own worktree, on the branch `crewbots/<task id>`.
   - Every event is stored, so you can read the whole transcript later.
@@ -154,43 +157,23 @@ cp -R src-tauri/target/release/bundle/macos/crewbots.app /Applications/
 ```
 
 The installed app runs the daemon from this checkout, the path it was built in, so keep the checkout where it is (or
-set `CREWBOTS_PROJECT`). Besides goals and their conversations, the app has a **Crew** page: each bot with what it
-may do (access, network, MCP servers, skills), its budget use, and a button to edit its role card; the plans' limits;
-and the routines, with Run now, editing, and the starter routines to add. To work on the UI in a plain browser, run `npm run vite` and open http://localhost:5173. Outside Tauri, the UI runs on a built-in demo crew (`src/preview/`) that covers every state the app shows: working, waiting on you, ready to merge, failed and merged.
+set `CREWBOTS_PROJECT`). To work on the UI in a plain browser, run `npm run vite` and open http://localhost:5173.
+Outside Tauri, the UI runs on a built-in demo crew (`src/preview/`).
 
-The app is an Activity view of your crew:
-- **Sidebar:** the task tree, filtered by all, needs you or running.
-- **Each task:**
-  - its live transcript, with tool calls, handoffs, verdicts and escalations
-  - a review tab with the round and every reviewer's findings
-  - a changes tab with the diff
-  - a reply box and a merge button
-- **New task:** pick a bot, a goal and a workspace.
-
-The app is one conversation per goal:
-- **Sidebar:** your goals, what needs you (questions, merges to approve, failures), and the crew, with who is working.
-- **Thread:**
-  - shows what was said and decided
-  - folds tool use into one line ("Read 3 files, Ran 2 commands")
-  - shows delegated work as cards with their review verdicts and a Merge button
-- **Side panel:** opening a card shows that bot's own thread, its changes and its review.
-- **Composer:** the one place you type, including a new goal with who it's for and the folder to work in.
-
-**The menu bar item:**
-- what's happening ("2 working · 1 needs you")
-- Open
-- Pause the crew: no new turns start, and running ones finish
-- Start at login
-- Quit
-
-Closing the window leaves crewbots in the menu bar. You get a native notification when a goal has a question, work is ready to merge, a goal fails, or a goal is done, unless you're already looking at the app.
-
-**Finding the daemon:** if one is already running, the app attaches to it. If not, the app starts the login service when it's installed, or its own daemon otherwise, which it stops when it quits. The app never stops the login service.
-- **The token stays out of the window.** The Rust side (`src-tauri/src/crew.rs`) holds the daemon's token, makes every call and relays `/v1/live` as events. The window gets nothing but IPC: its CSP allows no network.
-- **Bot output is safe to show.** It's rendered as React elements, never as HTML.
-- **`PATH` is fixed up.** An app launched from Finder gets a bare `PATH`, so the shell adds the usual tool folders before starting the daemon. Otherwise it couldn't find `uv`, `claude` or `codex`.
-- **Pointing it elsewhere.** `CREWBOTS_HOME`, `CREWBOTS_PORT` and `CREWBOTS_PROJECT` choose another crew, port or checkout.
-- **Self-test.** `CREWBOTS_SELFTEST=1` runs a check without anyone watching: connect, load, refuse `/bot/` paths, render the goals and a thread, open a task in the side panel, see live events. The app prints a report and quits.
+The app works like a messaging app:
+- **Sidebar:** your conversations, most recent first, each bot with its own face, the last message and an unread
+  dot, and the group chats. Above them, work that needs you (merges, questions, holds). Search filters them.
+- **A chat:** the bot's replies as bubbles, its tool use folded into one line, and its threads as cards that open
+  beside the chat, with the thread's own conversation, its changes, its reviews and a Merge button.
+- **Profile:** beside a chat, the bot's status, routines, recent threads, the files its threads produced, its setup,
+  and a button to edit its role card.
+- **Group chats:** messages with who said them, @mention suggestions as you type, and who's replying.
+- **The mic** dictates into any message box with macOS's own speech recognizer, on this Mac when it can. The first
+  time, macOS asks to allow the microphone and speech recognition.
+- **Crew settings:** problems with role cards or routines, the plans' limits, each bot's budget use, and the routines,
+  with Run now and the starter routines to add.
+- **Menu bar and notifications:** a bot's reply or a message in a group chat notifies you when the window isn't in
+  front, and so do merges to approve, questions and holds.
 
 ## Skills from pstack
 

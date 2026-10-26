@@ -1,4 +1,5 @@
 mod crew;
+mod dictation;
 mod watch;
 
 use std::sync::{Arc, Mutex};
@@ -144,7 +145,16 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .manage(crew.clone())
-        .invoke_handler(tauri::generate_handler![crew_status, crew_request, menu_bar, selftest_wanted, selftest_report])
+        .manage(dictation::Dictation::default())
+        .invoke_handler(tauri::generate_handler![
+            crew_status,
+            crew_request,
+            menu_bar,
+            selftest_wanted,
+            selftest_report,
+            dictation::dictation_start,
+            dictation::dictation_stop
+        ])
         .setup(move |app| {
             build_tray(app, &crew)?;
             tauri::async_runtime::spawn(crew.clone().run(app.handle().clone()));

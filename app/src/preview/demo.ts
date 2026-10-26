@@ -25,7 +25,7 @@ function task(id: string, bot: string, title: string, fields: Partial<Task> = {}
     id, bot, title, status: "idle", created_by: "user", parent_id: null, workspace: "~/code/acme-web", repo: null,
     worktree_path: null, branch: null, base: null, session_id: `s-${id}`, result: null, error: null,
     input_tokens: 40_000, output_tokens: 1_200, cost_usd: 0, reported: true, turns: 1, review_of: null,
-    review_version: null, merge_state: null, merged_commit: null, routine: null, budget: null, created_at: at,
+    review_version: null, merge_state: null, merged_commit: null, kind: "thread", room_id: null, routine: null, budget: null, created_at: at,
     updated_at: at, ...fields,
   };
   tasks.set(id, t);
@@ -87,7 +87,7 @@ function verdict(reviewTask: string, work: string, reviewer: string, version: nu
   done(e.id, e.result!);
   const r = work("t_truncate03", "reviewer", "Review truncate(s, n)", g.id, { review_of: e.id, review_version: 1, worktree_path: null, branch: null });
   const c = work("t_truncate04", "critic", "Try to break truncate(s, n)", g.id, { review_of: e.id, review_version: 1, worktree_path: null, branch: null });
-  message(g.id, "crewbots", `1 delegated task(s) finished, and none are still running.\n\n## ${e.id} · engineer · idle`);
+  message(g.id, "crewbots", `1 thread(s) you opened or delegated finished, and none are still running.\n\n## ${e.id} · engineer · idle`);
   say(g.id, "The engineer is done and the tests pass. Sending it to the reviewer and the critic.");
   tool(g.id, "mcp__crewbots__delegate", { bot: "reviewer", goal: r.title, review_of: e.id }, `Delegated ${r.id}`);
   tool(g.id, "mcp__crewbots__delegate", { bot: "critic", goal: c.title, review_of: e.id }, `Delegated ${c.id}`);
@@ -100,7 +100,7 @@ function verdict(reviewTask: string, work: string, reviewer: string, version: nu
   tool(c.id, "shell", { command: "python - <<'EOF' # 610 boundary checks" }, "610 passed");
   verdict(c.id, e.id, "critic", 1, true, "No provable defect. 610 boundary and property checks passed, including Unicode and huge n.");
   done(c.id);
-  message(g.id, "crewbots", "2 delegated task(s) finished, and none are still running.\n\n# Review status\n\nround 1 of 3: approved");
+  message(g.id, "crewbots", "2 thread(s) you opened or delegated finished, and none are still running.\n\n# Review status\n\nround 1 of 3: approved");
   say(g.id, "Both reviewers passed it, so I've proposed it for merging.\n\n- **What changed:** `truncate(s, n)`, plus 11 tests\n- **Edge cases:** negative `n` gives `\"\"`, and `n < 3` gives dots only\n- **Worth considering:** it counts code points, not graphemes");
   tool(g.id, "mcp__crewbots__propose_merge", { task_id: e.id, summary: "truncate(s, n) with 11 tests" }, `Proposed ${e.id}`);
   emit(e.id, "merge_proposed", { by: "chief", summary: "truncate(s, n) with 11 tests; two reviewers passed it." });
@@ -217,3 +217,48 @@ export const resetsAt = Math.floor(Date.now() / 1000) + 2 * 3600;
 }
 
 export const live = { taskId: "t_csv0000002" };
+
+// Chats: one ongoing chat with each bot. The chief's opened the work above as threads, so they hang from it.
+export const chatIds: Record<string, string> = {};
+for (const b of bots) {
+  chatIds[b.name] = task(`t_chat_${b.name}`.slice(0, 12).padEnd(12, "0"), b.name, `Chat with ${b.name}`, { kind: "chat", workspace: null }).id;
+}
+{
+  const chief = chatIds.chief;
+  const opened = ["t_truncate01", "t_docs000001", "t_login00001", "t_react00001", "t_csv0000001"].filter((id) => tasks.has(id));
+  for (const id of opened) tasks.set(id, { ...tasks.get(id)!, parent_id: chief });
+  message(chief, "user", "Add truncate(s, n) to text.py, with tests, and have it reviewed before it lands.");
+  tool(chief, "mcp__crewbots__start_thread", { title: "Add truncate(s, n)", goal: "…" }, "Opened thread");
+  say(chief, "On it. I've opened a thread for it; the engineer writes it and two reviewers check it.");
+  message(chief, "user", "Also: translate the onboarding docs into Spanish, fix the flaky login test, and look at upgrading to React 19.");
+  for (const id of opened.slice(1, 4)) tool(chief, "mcp__crewbots__start_thread", { title: tasks.get(id)!.title, goal: "…" }, "Opened thread");
+  say(chief, "Three threads, one each. React 19 will need a call from you on the charts library.");
+  message(chief, "routine:standup", "[routine: standup]\n\nWrite the standup for what the crew did since Fri 23 Oct 09:00.");
+  say(chief, "**Morning. Two things need you**\n- **React 19**: replace legacy-charts with recharts, or stay on React 18?\n- **Flaky login test**: reviewed and ready to merge.\n\n**Done**: `truncate`, merged after review.\n\n**Waiting**: the Spanish docs, until the Claude plan's limit resets.");
+  message(chief, "user", "Merge the login fix. Then add CSV export to the reports page; exports should respect the filters.");
+  tool(chief, "mcp__crewbots__start_thread", { title: "Add CSV export", goal: "…" }, "Opened thread");
+  say(chief, "Merged. The CSV export is with the engineer now, and the reviewer and critic will check it before it comes to you.");
+  done(chief);
+
+  message(chatIds.engineer, "user", "Can you keep the test suite under 30 seconds?");
+  say(chatIds.engineer, "It's at 18s now. The slowest file is `test_reports.py` (6s), mostly fixtures; I can trim that if it grows.");
+  done(chatIds.engineer);
+  message(chatIds.reviewer, "user", "What do you look for first?");
+  say(chatIds.reviewer, "That the change does what the task asked, with a test for each edge case. Then `team/standards.md`.");
+  done(chatIds.reviewer);
+}
+
+// A group chat: the crew's own, where bots talk to each other in the open.
+export const rooms = [{ id: "r_crew000001", title: "Crew", lead: "chief", members: bots.map((b) => b.name), created_at: tick(), updated_at: tick() }];
+export const roomMessages = new Map<string, { id: number; room_id: string; author: string; text: string; depth: number; at: string }[]>();
+{
+  let id = 1;
+  const room = rooms[0].id;
+  const said = (author: string, text: string, depth = 0) => ({ id: id++, room_id: room, author, text, depth, at: tick(1) });
+  roomMessages.set(room, [
+    said("user", "Morning, everyone. @engineer how's CSV export going?"),
+    said("engineer", "Endpoint's in and its tests pass. Wiring the button now. @reviewer it'll be yours in a few minutes.", 1),
+    said("reviewer", "Ready when you are. I'll check the filters reach the export.", 2),
+    said("chief", "Thanks both. I'll propose it for merging once both reviews pass.", 1),
+  ]);
+}

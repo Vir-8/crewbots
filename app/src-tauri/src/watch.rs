@@ -10,8 +10,10 @@ struct TaskLite {
     title: String,
     bot: String,
     status: String,
+    kind: String, // chat, seat or thread
     parent_id: Option<String>,
     merge_state: Option<String>,
+    result: Option<String>,
 }
 
 impl TaskLite {
@@ -23,8 +25,10 @@ impl TaskLite {
                 title: text("title").unwrap_or_default(),
                 bot: text("bot").unwrap_or_default(),
                 status: text("status").unwrap_or_default(),
+                kind: text("kind").unwrap_or_else(|| "thread".into()),
                 parent_id: text("parent_id"),
                 merge_state: text("merge_state"),
+                result: text("result"),
             },
         ))
     }
@@ -52,6 +56,8 @@ pub enum Alert {
     Failed { bot: String, title: String },
     Held { bot: String, title: String },
     Done { title: String },
+    Replied { bot: String, text: String },
+    Said { author: String, text: String },
 }
 
 impl Alert {
@@ -62,8 +68,15 @@ impl Alert {
             Alert::Failed { bot, title } => (format!("{bot} couldn't finish"), title.clone()),
             Alert::Held { bot, title } => (format!("{bot} is waiting on a budget or plan limit"), title.clone()),
             Alert::Done { title } => ("Done".into(), title.clone()),
+            Alert::Replied { bot, text } => (bot.clone(), preview(text)),
+            Alert::Said { author, text } => (format!("{author} in a group chat"), preview(text)),
         }
     }
+}
+
+fn preview(text: &str) -> String {
+    let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.chars().count() > 140 { format!("{}…", flat.chars().take(139).collect::<String>()) } else { flat }
 }
 
 #[derive(Debug, Default, PartialEq, Clone)]
@@ -121,8 +134,8 @@ impl CrewView {
         if before.merge_state.as_deref() != Some("proposed") && now.merge_state.as_deref() == Some("proposed") {
             return Some(Alert::Merge { title: now.title });
         }
-        if before.status == now.status {
-            return None;
+        if before.status == now.status || now.kind == "seat" {
+            return None; // a bot in a group chat is heard through what it says there
         }
         if now.status == "held" {
             return Some(Alert::Held { bot: now.bot, title: now.title }); // at any depth: it holds up its goal
@@ -132,12 +145,25 @@ impl CrewView {
         }
         match now.status.as_str() {
             "needs_input" => Some(Alert::Question { bot: now.bot, title: now.title }),
+            // A bot's chat going quiet means it replied; the reply is the notification.
+            "idle" if now.kind == "chat" && before.active() && !self.busy_below(&id) => {
+                Some(Alert::Replied { bot: now.bot, text: now.result.unwrap_or_default() })
+            }
             "failed" => Some(Alert::Failed { bot: now.bot, title: now.title }),
             // A goal is done when its bot goes idle with nothing it delegated still going. The chief going idle after
             // handing out work isn't it; its last reply, once the work is back, is.
             "idle" if before.active() && !self.busy_below(&id) => Some(Alert::Done { title: now.title }),
             _ => None,
         }
+    }
+
+    /// A message in a group chat: one from a bot is worth a notification.
+    pub fn said(&self, message: &Value) -> Option<Alert> {
+        let author = message["author"].as_str()?;
+        if author == "user" {
+            return None;
+        }
+        Some(Alert::Said { author: author.to_string(), text: message["text"].as_str().unwrap_or_default().to_string() })
     }
 
     pub fn summary(&self) -> Summary {
@@ -194,6 +220,25 @@ mod tests {
         let mut proposed = task("c", "idle", Some("g"));
         proposed["merge_state"] = json!("proposed");
         assert!(matches!(view.update(&proposed), Some(Alert::Merge { .. })));
+    }
+
+    #[test]
+    fn a_reply_in_a_chat_is_announced_with_what_it_said() {
+        let mut view = CrewView::default();
+        let mut chat = task("c", "running", None);
+        chat["kind"] = json!("chat");
+        view.load(&[chat.clone()], false);
+        chat["status"] = json!("idle");
+        chat["result"] = json!("Merged.   The CSV export is with the engineer.");
+        assert_eq!(view.update(&chat), Some(Alert::Replied { bot: "chief".into(), text: "Merged.   The CSV export is with the engineer.".into() }));
+        assert_eq!(Alert::Replied { bot: "chief".into(), text: "a  b".into() }.text().1, "a b");
+    }
+
+    #[test]
+    fn bots_speaking_in_group_chats_are_announced_but_not_you() {
+        let view = CrewView::default();
+        assert!(matches!(view.said(&json!({"author": "engineer", "text": "done"})), Some(Alert::Said { .. })));
+        assert_eq!(view.said(&json!({"author": "user", "text": "hi"})), None);
     }
 
     #[test]

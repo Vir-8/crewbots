@@ -27,6 +27,19 @@ export interface ChangesOut {
   diff: string | null;
 }
 
+export interface ChatOut {
+  key: string;
+  kind: "direct" | "group";
+  title: string;
+  bot: string | null;
+  task_id: string | null;
+  room: RoomOut | null;
+  last: LastMessage | null;
+  unread: number;
+  working: boolean;
+  updated_at: string;
+}
+
 export interface ChildMessage {
   task_id: string;
   text: string;
@@ -114,6 +127,12 @@ export interface HandoffOut {
   at: string;
 }
 
+export interface LastMessage {
+  author: string;
+  text: string;
+  at: string;
+}
+
 export interface LiveCrew {
   type: "crew";
   crew: CrewState;
@@ -122,6 +141,16 @@ export interface LiveCrew {
 export interface LiveEvent {
   type: "event";
   event: EventOut;
+}
+
+export interface LiveRoom {
+  type: "room";
+  room: RoomOut;
+}
+
+export interface LiveRoomMessage {
+  type: "room_message";
+  message: RoomMessageOut;
 }
 
 export interface LiveTask {
@@ -142,10 +171,23 @@ export interface Message {
   text: string;
 }
 
+export interface NewRoom {
+  title?: string;
+  members: string[];
+  lead?: string | null;
+}
+
 export interface NewTask {
   bot: string;
   goal: string;
   workspace?: string | null;
+}
+
+export interface OutputOut {
+  path: string;
+  task_id: string;
+  title: string;
+  at: string;
 }
 
 export interface PlanLimitOut {
@@ -154,6 +196,19 @@ export interface PlanLimitOut {
   status: "ok" | "warning" | "limited";
   used_percent: number | null;
   resets_at: number | null;
+}
+
+export interface PostBody {
+  text: string;
+  room?: string | null;
+}
+
+export interface ProfileOut {
+  bot: string;
+  working: boolean;
+  last_active: string | null;
+  threads: TaskOut[];
+  outputs: OutputOut[];
 }
 
 export interface Recall {
@@ -190,6 +245,24 @@ export interface ReviewStateOut {
   failed: boolean;
   out_of_rounds: boolean;
   reviews: ReviewEntryOut[];
+}
+
+export interface RoomMessageOut {
+  id: number;
+  room_id: string;
+  author: string;
+  text: string;
+  depth: number;
+  at: string;
+}
+
+export interface RoomOut {
+  id: string;
+  title: string;
+  lead: string;
+  members: string[];
+  created_at: string;
+  updated_at: string;
 }
 
 export interface RoutineOut {
@@ -259,10 +332,17 @@ export interface TaskOut {
   review_version: number | null;
   merge_state: "proposed" | "merged" | null;
   merged_commit: string | null;
+  kind: "chat" | "seat" | "thread";
+  room_id: string | null;
   routine: string | null;
   budget: number | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ThreadBody {
+  title: string;
+  goal: string;
 }
 
 export interface ValidationError {

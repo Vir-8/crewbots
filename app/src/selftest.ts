@@ -29,22 +29,18 @@ export async function selftest() {
     report.tasks = (await api.tasks()).length;
     report.botPathRefused = !(await bridge.request("GET", "/bot/tasks")).ok;
 
-    // The conversation: goals in the sidebar, the newest goal's thread, and a delegated task in the side panel.
-    report.goals = (await until(() => document.querySelectorAll(".side-row.goal").length, 10_000)) ?? 0;
-    report.threadBlocks = (await until(() => document.querySelector(".thread-col")?.children.length, 10_000)) ?? 0;
-    let card: HTMLElement | null = null;
-    for (const goal of document.querySelectorAll<HTMLElement>(".side-row.goal")) {
-      goal.click(); // the first goal whose thread has delegated work
-      card = (await until(() => document.querySelector<HTMLElement>(".work"), 2_000)) ?? null;
-      if (card) break;
-    }
-    report.workCards = document.querySelectorAll(".work").length;
-    if (card) {
-      card.click();
-      report.panelOpened = Boolean(await until(() => document.querySelector(".panel .thread-col"), 10_000));
-    }
+    // The conversations: a chat with each bot and the group chats in the sidebar, and a chat's profile beside it.
+    report.chats = (await until(() => document.querySelectorAll(".chat-row").length, 10_000)) ?? 0;
+    document.querySelector<HTMLElement>(".chat-row")?.click();
+    report.chatOpen = Boolean(await until(() => document.querySelector(".chat-head-title")?.textContent, 10_000));
+    document.querySelector<HTMLElement>(".chat-head-who")?.click();
+    report.profileOpened = Boolean(await until(() => document.querySelector(".panel.profile .profile-name"), 10_000));
 
-    // The menu bar follows the crew: pausing shows there, through /v1/live.
+    // The menu bar follows the crew: pausing shows there, through /v1/live. Nothing here starts work in your crew.
+    const crewMessages: boolean[] = [];
+    const off = bridge.onLive((message) => {
+      if (message.type === "crew") crewMessages.push(message.crew.paused);
+    });
     type MenuBar = { title: string; line: string; paused: boolean };
     await bridge.request("POST", "/crew/pause");
     const paused = await until(async () => {
@@ -58,15 +54,8 @@ export async function selftest() {
       return bar.paused ? undefined : bar;
     }, 10_000))?.line;
 
-    // Live updates: start a task and stop it straight away, and see its events arrive through /v1/live.
-    const seen: string[] = [];
-    const off = bridge.onLive((message) => {
-      if (message.type === "event") seen.push(`${message.event.task_id}:${message.event.kind}`);
-    });
-    const task = await api.newTask("reviewer", "Self-test from the app: reply with the single word ok.");
-    await api.cancel(task.id);
-    report.liveEvents = (await until(() => seen.filter((s) => s.startsWith(task.id)).length, 10_000)) ?? 0;
-    report.cancelled = (await api.tasks()).find((t) => t.id === task.id)?.status;
+    // Live updates reach the window too: the pause and resume above arrive as crew messages.
+    report.liveCrewMessages = (await until(() => (crewMessages.length >= 2 ? crewMessages.length : 0), 10_000)) ?? 0;
     off();
   } catch (error) {
     report.error = String(error);

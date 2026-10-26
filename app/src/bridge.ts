@@ -36,6 +36,15 @@ const tauriBridge = {
   onStatus: (callback: (status: ConnectionStatus) => void) => subscribe("crew:status", callback),
   onLive: (callback: (message: Live) => void) => subscribe("crew:live", callback),
   onResync: (callback: () => void) => subscribe<null>("crew:resync", () => callback()),
+  // Dictation through macOS's on-device speech recognizer, in the shell (src-tauri/src/dictation.rs).
+  dictation: {
+    start: () => invoke<void>("dictation_start"),
+    stop: () => invoke<void>("dictation_stop"),
+    /** Everything heard since `start`, as it firms up. */
+    onHeard: (callback: (text: string) => void) => subscribe<string>("dictation:heard", callback),
+    /** Listening ended: you stopped it, it heard the end, or it couldn't listen (with why). */
+    onStopped: (callback: (error: string | null) => void) => subscribe<string | null>("dictation:stopped", callback),
+  },
 };
 
 /** Inside the app, the real shell. In a plain browser, the design preview's made-up crew. */

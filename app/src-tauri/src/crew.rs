@@ -295,6 +295,7 @@ impl Crew {
             let mut alerts = Vec::new();
             match message["type"].as_str() {
                 Some("task") => alerts.extend(view.update(&message["task"])),
+                Some("room_message") => alerts.extend(view.said(&message["message"])),
                 Some("crew") => view.set_paused(message["crew"]["paused"].as_bool().unwrap_or(false)),
                 _ => {}
             }

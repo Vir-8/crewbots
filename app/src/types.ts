@@ -3,13 +3,19 @@
 import type {
   BotOut,
   BudgetOut,
+  ChatOut,
   CrewState as CrewStateOut,
   EventOut,
   FindingOut,
   LiveCrew,
   LiveEvent,
+  LiveRoom,
+  LiveRoomMessage,
   LiveTask,
+  ProfileOut,
   ReviewStateOut,
+  RoomMessageOut,
+  RoomOut,
   RoutineOut,
   RoutinesOut,
   Status as StatusOut,
@@ -22,7 +28,11 @@ export type StoredEvent = Omit<EventOut, "data"> & { data: Record<string, any> }
 export type Bot = BotOut;
 export type Finding = FindingOut;
 export type ReviewState = ReviewStateOut;
-export type Live = LiveTask | LiveCrew | (Omit<LiveEvent, "event"> & { event: StoredEvent });
+export type Live = LiveTask | LiveCrew | LiveRoom | LiveRoomMessage | (Omit<LiveEvent, "event"> & { event: StoredEvent });
+export type Chat = ChatOut;
+export type Room = RoomOut;
+export type RoomMessage = RoomMessageOut;
+export type Profile = ProfileOut;
 export type CrewState = CrewStateOut;
 export type Routine = RoutineOut;
 export type Routines = RoutinesOut;

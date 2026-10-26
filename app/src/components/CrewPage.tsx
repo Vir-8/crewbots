@@ -29,7 +29,7 @@ export function CrewPage({ crew, onOpen }: { crew: Crew; onOpen: (id: string) =>
     <>
       <header className="topbar" data-tauri-drag-region>
         <span className="topbar-title" data-tauri-drag-region>
-          Crew
+          Crew settings
         </span>
       </header>
       <div className="crew-page">

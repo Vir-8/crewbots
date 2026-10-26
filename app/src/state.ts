@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, bridge } from "./api";
-import type { Bot, ConnectionStatus, CrewState, Live, Routines, StoredEvent, Task } from "./types";
+import { setCrew } from "./components/Avatar";
+import type { Bot, Chat, ConnectionStatus, CrewState, Live, RoomMessage, Routines, StoredEvent, Task } from "./types";
 import { ACTIVE } from "./types";
 
 const RECENT = 400;
@@ -16,6 +17,16 @@ export function useCrew() {
   const [error, setError] = useState<string | null>(null);
   const [crewState, setCrewState] = useState<CrewState | null>(null);
   const [routines, setRoutines] = useState<Routines | null>(null);
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [roomMessages, setRoomMessages] = useState<Map<string, RoomMessage[]>>(new Map()); // only rooms someone opened
+
+  // The chat list's previews and unread counts come from the daemon; a burst of live updates reloads it once.
+  const chatsTimer = useRef<number | undefined>(undefined);
+  const loadChats = useCallback(() => api.chats().then(setChats, () => undefined), []);
+  const reloadChats = useCallback(() => {
+    window.clearTimeout(chatsTimer.current);
+    chatsTimer.current = window.setTimeout(loadChats, 250);
+  }, [loadChats]);
 
   const loadRoutines = useCallback(() => api.routines().then(setRoutines, () => setRoutines(null)), []);
 
@@ -24,7 +35,9 @@ export function useCrew() {
       const [b, t, r, c] = await Promise.all([api.bots(), api.tasks(), api.recent(RECENT), api.crew()]);
       setCrewState(c);
       loadRoutines();
+      loadChats();
       setBots(b);
+      setCrew(b.map((x) => x.name));
       setTasks(new Map(t.map((task) => [task.id, task])));
       setRecent(r as StoredEvent[]);
       setEvents(new Map());
@@ -32,7 +45,7 @@ export function useCrew() {
     } catch (e) {
       setError(String(e));
     }
-  }, [loadRoutines]);
+  }, [loadRoutines, loadChats]);
 
   useEffect(() => {
     bridge.status().then(setStatus);
@@ -42,12 +55,28 @@ export function useCrew() {
       bridge.onLive((message: Live) => {
         if (message.type === "task") {
           setTasks((current) => new Map(current).set(message.task.id, message.task));
+          reloadChats();
           return;
         }
         if (message.type === "crew") {
           setCrewState(message.crew);
           return;
         }
+        if (message.type === "room") {
+          reloadChats();
+          return;
+        }
+        if (message.type === "room_message") {
+          const m = message.message;
+          setRoomMessages((current) => {
+            const known = current.get(m.room_id);
+            if (!known || known.some((x) => x.id === m.id)) return current;
+            return new Map(current).set(m.room_id, [...known, m]);
+          });
+          reloadChats();
+          return;
+        }
+        reloadChats();
         const event = message.event;
         setRecent((current) => (current.some((e) => e.id === event.id) ? current : [...current.slice(-RECENT + 1), event]));
         setEvents((current) => {
@@ -58,7 +87,7 @@ export function useCrew() {
       }),
     ];
     return () => offs.forEach((off) => off());
-  }, [loadAll]);
+  }, [loadAll, reloadChats]);
 
   useEffect(() => {
     if (status.state === "connected") loadAll();
@@ -82,6 +111,18 @@ export function useCrew() {
     [events],
   );
 
+  const ensureRoom = useCallback(
+    (roomId: string) => {
+      if (roomMessages.has(roomId)) return;
+      setRoomMessages((current) => new Map(current).set(roomId, []));
+      api.roomMessages(roomId).then(
+        (loaded) => setRoomMessages((current) => new Map(current).set(roomId, loaded)),
+        (e) => setError(String(e)),
+      );
+    },
+    [roomMessages],
+  );
+
   const act = useCallback(
     <T,>(promise: Promise<T>) =>
       promise.catch((e) => {
@@ -97,6 +138,17 @@ export function useCrew() {
     status,
     crewState,
     routines,
+    chats,
+    roomMessages,
+    ensureRoom,
+    say: (bot: string, text: string) => act(api.say(bot, text)),
+    post: (roomId: string, text: string) => act(api.post(roomId, text)),
+    read: (key: string) => api.read(key).then(reloadChats, () => undefined),
+    newRoom: async (title: string, members: string[], lead?: string) => {
+      const room = await act(api.newRoom(title, members, lead));
+      loadChats();
+      return room;
+    },
     bots,
     tasks,
     events,

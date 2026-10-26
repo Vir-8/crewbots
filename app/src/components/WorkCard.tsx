@@ -18,22 +18,27 @@ const STATUS: Record<Task["status"], string> = {
 
 /** Work a bot was given, inside the conversation it came from: who, what, where it is, and its review. */
 export function WorkCard({ crew, task, onOpen }: { crew: Crew; task: Task; onOpen: (id: string) => void }) {
-  const active = ACTIVE.includes(task.status);
+  const below = crew.family(task.id).find((t) => ACTIVE.includes(t.status) && !t.review_of);
+  const active = ACTIVE.includes(task.status) || Boolean(below);
+  const status = ACTIVE.includes(task.status) || !below ? task.status : below.status;
   const reviews = (crew.children.get(task.parent_id ?? "") ?? []).filter((t) => t.review_of === task.id);
   const round = Math.max(0, ...reviews.map((r) => r.review_version ?? 0));
   const latest = reviews.filter((r) => r.review_version === round);
   const verdicts = crew.verdicts.get(task.id) ?? [];
   const verdictOf = (review: Task) => verdicts.filter((v) => v.data.task_id === review.id).at(-1)?.data.verdict as string | undefined;
-  const line = active ? doing(crew.latest.get(task.id)) : oneLine(task.result ?? task.error ?? "", 200);
+  const line = active ? doing(crew.latest.get((ACTIVE.includes(task.status) ? task : below ?? task).id)) : oneLine(task.result ?? task.error ?? "", 200);
 
   return (
     <div className={`work ${task.status}`} onClick={() => onOpen(task.id)} role="button" tabIndex={0}>
       <div className="work-head">
-        <span className="work-bot">{task.bot}</span>
+        <span className="work-bot">
+          <Icon name="message" size={13} />
+          {task.bot === crew.tasks.get(task.parent_id ?? "")?.bot ? "Thread" : `Thread · ${task.bot}`}
+        </span>
         <span className="grow" />
-        <span className={`work-status ${task.status}`}>
+        <span className={`work-status ${status}`}>
           {active && <span className="working-dot small" />}
-          {STATUS[task.status]}
+          {STATUS[status]}
         </span>
       </div>
       <div className="work-title">{oneLine(task.title, 160)}</div>
