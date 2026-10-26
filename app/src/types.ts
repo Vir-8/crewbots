@@ -12,7 +12,8 @@ import type {
   PullOut,
   PullSummary as PullSummaryOut,
   RoutineFileOut,
-  UsageOut,
+  UsageSummary as UsageSummaryOut,
+  PlansOut,
   CrewState as CrewStateOut,
   EventOut,
   FindingOut,
@@ -44,7 +45,8 @@ export type RoomMessage = RoomMessageOut;
 export type Profile = ProfileOut;
 export type Card = CardOut;
 export type RoutineFile = RoutineFileOut;
-export type Usage = UsageOut;
+export type UsageSummary = UsageSummaryOut;
+export type Plans = PlansOut;
 export type ReviewInbox = InboxOut;
 export type PullSummary = PullSummaryOut;
 export type Pull = PullOut;

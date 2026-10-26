@@ -1,5 +1,20 @@
 // Generated from the crewbots API schema by `crewbots openapi --ts`. Do not edit; regenerate.
 
+export interface AccountDay {
+  date: string;
+  tokens: number;
+}
+
+/** Your whole account's activity, as the CLI reports it (Codex does). */
+export interface AccountUsage {
+  lifetime_tokens: number | null;
+  peak_daily_tokens: number | null;
+  longest_turn_sec: number | null;
+  current_streak_days: number | null;
+  longest_streak_days: number | null;
+  daily: AccountDay[];
+}
+
 export interface Avatar {
   color?: string | null;
   shape?: string | null;
@@ -21,6 +36,11 @@ export interface BotOut {
   display_name: string | null;
   effort: string | null;
   avatar: Record<string, string> | null;
+}
+
+export interface BotUse {
+  bot: string;
+  tokens: number;
 }
 
 export interface Budget {
@@ -125,6 +145,11 @@ export interface Delegation {
   review_of?: string | null;
 }
 
+export interface EffortUse {
+  effort: string;
+  turns: number;
+}
+
 export interface Escalation {
   question: string;
 }
@@ -216,6 +241,12 @@ export interface LiveTask {
   task: TaskOut;
 }
 
+export interface LongestTurn {
+  seconds: number;
+  task_id: string | null;
+  title: string;
+}
+
 export interface MergeProposal {
   task_id: string;
   summary: string;
@@ -236,6 +267,12 @@ export interface ModelOut {
   efforts: string[];
   default_effort: string | null;
   default: boolean;
+}
+
+export interface ModelUse {
+  plan: string;
+  model: string;
+  tokens: number;
 }
 
 export interface ModelsOut {
@@ -296,6 +333,25 @@ export interface PlanLimitOut {
   status: "ok" | "warning" | "limited";
   used_percent: number | null;
   resets_at: number | null;
+}
+
+export interface PlanOut {
+  available: boolean;
+  error: string | null;
+  plan: string | null;
+  windows: PlanWindow[];
+  account: AccountUsage | null;
+}
+
+export interface PlanWindow {
+  name: string;
+  used_percent: number;
+  resets_at: number | null;
+}
+
+export interface PlansOut {
+  claude: PlanOut;
+  codex: PlanOut;
 }
 
 export interface PostBody {
@@ -498,6 +554,11 @@ export interface StarterOut {
 
 export type Status = "queued" | "running" | "idle" | "needs_input" | "failed" | "cancelled" | "interrupted" | "held";
 
+export interface Streak {
+  longest: number;
+  current: number;
+}
+
 export interface TaskOut {
   id: string;
   bot: string;
@@ -536,16 +597,37 @@ export interface ThreadBody {
   goal: string;
 }
 
-export interface UsageBot {
-  bot: string;
-  by_day: number[];
-  turns: number[];
-  total: number;
+export interface UsageCounts {
+  threads: number;
+  reviews: number;
+  routine_runs: number;
+  room_messages: number;
 }
 
-export interface UsageOut {
-  days: string[];
-  bots: UsageBot[];
+export interface UsageDay {
+  date: string;
+  claude: number;
+  codex: number;
+}
+
+export interface UsagePeak {
+  date: string;
+  tokens: number;
+}
+
+/** The crew's own use, in fresh tokens. */
+export interface UsageSummary {
+  days: number;
+  daily: UsageDay[];
+  totals: Record<string, number>;
+  turns: number;
+  peak: UsagePeak | null;
+  longest_turn: LongestTurn | null;
+  streak: Streak;
+  models: ModelUse[];
+  bots: BotUse[];
+  efforts: EffortUse[];
+  counts: UsageCounts;
 }
 
 export interface ValidationError {

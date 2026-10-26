@@ -14,6 +14,14 @@ const NEED: Record<InboxItem["reason"], string> = {
   interrupted: "Interrupted",
 };
 
+const NEED_ICON: Record<InboxItem["reason"], "merge" | "question" | "pause" | "alert"> = {
+  merge: "merge",
+  question: "question",
+  held: "pause",
+  failed: "alert",
+  interrupted: "alert",
+};
+
 const PAGES: [string, string, "users" | "repeat" | "chart" | "settings"][] = [
   ["page:crew", "Crew", "users"],
   ["page:routines", "Routines", "repeat"],
@@ -22,35 +30,81 @@ const PAGES: [string, string, "users" | "repeat" | "chart" | "settings"][] = [
 ];
 
 /** Your conversations, like a messaging app: a chat with each bot and the group chats, most recent first. Code review
- * sits above them; the crew's own pages are in the menu at the bottom. */
+ * sits above them; the crew's own pages are in the menu at the bottom. Collapsed, it's a rail of the same things as
+ * icons and faces. */
 export function Sidebar(props: {
   crew: Crew;
   current: string | null; // a chat's key, "review", or a page ("page:crew", ...)
+  rail: boolean;
   onChat: (key: string) => void;
   onOpen: (taskId: string) => void;
   onNewGroup: () => void;
-  onHide: () => void;
+  onExpand: () => void;
 }) {
   const { crew } = props;
   const [query, setQuery] = useState("");
+  // Search from the rail opens the sidebar, then puts you in the box.
+  const search = useRef<HTMLInputElement>(null);
+  const [searching, setSearching] = useState(false);
+  useEffect(() => {
+    if (props.rail || !searching) return;
+    search.current?.focus();
+    setSearching(false);
+  }, [props.rail, searching]);
   const q = query.trim().toLowerCase();
   const chats = [...crew.chats]
-    .filter((c) => !q || [c.title, c.bot, c.last?.text, ...(c.room?.members ?? [])].some((s) => s?.toLowerCase().includes(q)))
+    .filter((c) => props.rail || !q || [c.title, c.bot, c.last?.text, ...(c.room?.members ?? [])].some((s) => s?.toLowerCase().includes(q)))
     .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   const needs = crew.inbox.filter((item) => item.task.kind === "thread");
   const waiting = new Set([...(crew.reviewInbox?.assigned ?? []), ...(crew.reviewInbox?.direct ?? [])].map((p) => `${p.repo}#${p.number}`)).size;
 
+  if (props.rail) {
+    return (
+      <aside className="sidebar rail">
+        <div className="sidebar-drag" data-tauri-drag-region />
+        <button
+          className="rail-button"
+          title="Search"
+          onClick={() => {
+            setSearching(true);
+            props.onExpand();
+          }}
+        >
+          <Icon name="search" size={15} />
+        </button>
+        <button className="rail-button" onClick={props.onNewGroup} title="New group chat">
+          <Icon name="compose" size={15} />
+        </button>
+        <button className={`rail-button ${props.current === "review" ? "on" : ""}`} onClick={() => props.onChat("review")} title={waiting ? `Code review · ${waiting} waiting on you` : "Code review"}>
+          <Icon name="branch" size={15} />
+          {waiting > 0 && <span className="rail-count">{waiting}</span>}
+        </button>
+        {needs.map((item) => (
+          <button key={item.task.id} className={`rail-button rail-need ${item.reason}`} onClick={() => props.onOpen(item.task.id)} title={`${oneLine(item.task.title, 60)} · ${item.task.bot} · ${NEED[item.reason]}`}>
+            <Icon name={NEED_ICON[item.reason]} size={15} />
+          </button>
+        ))}
+        <div className="rail-sep" />
+        <div className="chat-list rail-chats">
+          {chats.map((chat) => (
+            <button key={chat.key} className={`rail-chat ${props.current === chat.key ? "on" : ""}`} onClick={() => props.onChat(chat.key)} title={chat.kind === "group" ? chat.title : labelOf(chat.bot!)}>
+              {chat.kind === "group" ? <GroupAvatar members={chat.room!.members} size={34} /> : <Avatar name={chat.bot!} size={34} working={chat.working} />}
+              {chat.unread > 0 && props.current !== chat.key && <span className="unread-dot" />}
+            </button>
+          ))}
+        </div>
+        <CrewMenu crew={crew} current={props.current} onPage={props.onChat} rail />
+      </aside>
+    );
+  }
+
   return (
     <aside className="sidebar">
-      <div className="sidebar-drag" data-tauri-drag-region>
-        <button className="icon-button" onClick={props.onHide} title="Hide the sidebar">
-          <Icon name="panelClose" size={15} />
-        </button>
-      </div>
+      <div className="sidebar-drag" data-tauri-drag-region />
       <div className="side-top">
         <label className="side-search">
           <Icon name="search" size={14} />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search" />
+          <input ref={search} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search" />
         </label>
         <button className="icon-button" onClick={props.onNewGroup} title="New group chat">
           <Icon name="compose" size={15} />
@@ -94,7 +148,7 @@ export function Sidebar(props: {
 }
 
 /** The crew's own places: who's in it, what runs on its own, what it has used, and how crewbots is set up. */
-function CrewMenu({ crew, current, onPage }: { crew: Crew; current: string | null; onPage: (page: string) => void }) {
+function CrewMenu({ crew, current, onPage, rail }: { crew: Crew; current: string | null; onPage: (page: string) => void; rail?: boolean }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -133,16 +187,23 @@ function CrewMenu({ crew, current, onPage }: { crew: Crew; current: string | nul
           </button>
         </div>
       )}
-      <button className={`side-row crew-button ${open || here ? "on" : ""}`} onClick={() => setOpen(!open)}>
-        <span className="crew-faces">
-          {crew.bots.slice(0, 3).map((b) => (
-            <Avatar key={b.name} name={b.name} size={20} />
-          ))}
-        </span>
-        <span className="side-title">{here ? here[1] : paused ? "Crew · paused" : "Your crew"}</span>
-        {problem && <Icon name="alert" size={13} className="settings-alert" />}
-        <Icon name="chevronDown" size={13} className={open ? "flip" : ""} />
-      </button>
+      {rail ? (
+        <button className={`rail-button crew-button ${open || here ? "on" : ""}`} onClick={() => setOpen(!open)} title={paused ? "Your crew · paused" : "Your crew"}>
+          <Icon name={paused ? "pause" : "users"} size={15} />
+          {problem && <span className="rail-alert" />}
+        </button>
+      ) : (
+        <button className={`side-row crew-button ${open || here ? "on" : ""}`} onClick={() => setOpen(!open)}>
+          <span className="crew-faces">
+            {crew.bots.slice(0, 3).map((b) => (
+              <Avatar key={b.name} name={b.name} size={20} />
+            ))}
+          </span>
+          <span className="side-title">{here ? here[1] : paused ? "Crew · paused" : "Your crew"}</span>
+          {problem && <Icon name="alert" size={13} className="settings-alert" />}
+          <Icon name="chevronDown" size={13} className={open ? "flip" : ""} />
+        </button>
+      )}
     </div>
   );
 }

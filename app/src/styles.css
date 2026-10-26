@@ -21,6 +21,14 @@
   --green: #5cc58f;
   --amber: #e9b45a;
   --red: #f0766d;
+  /* Usage: the plans' colors (validated categorical slots) and the activity grid's one-hue ramp, quiet to loud */
+  --plan-claude: #d95926;
+  --plan-codex: #199e70;
+  --heat-1: #104281;
+  --heat-2: #1c5cab;
+  --heat-3: #2a78d6;
+  --heat-4: #5598e7;
+  --heat-5: #9ec5f4;
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
   color-scheme: dark;
@@ -45,6 +53,13 @@
     --green: #198a52;
     --amber: #a36a08;
     --red: #c9372c;
+    --plan-claude: #eb6834;
+    --plan-codex: #1baf7a;
+    --heat-1: #cde2fb;
+    --heat-2: #9ec5f4;
+    --heat-3: #5598e7;
+    --heat-4: #2a78d6;
+    --heat-5: #1c5cab;
     color-scheme: light;
   }
 }
@@ -376,22 +391,139 @@ select {
 }
 
 .app.side-hidden {
-  --side-w: 0px;
+  --side-w: 72px;
 }
 
-.app.side-hidden .sidebar {
-  visibility: hidden;
-  padding: 0;
-  border: 0;
-  overflow: hidden;
-}
-
+/* Beside the window's buttons in both states: the sidebar grows and shrinks under it, it doesn't move. */
 .side-toggle {
   position: fixed;
   top: 9px;
   left: 82px;
   z-index: 12;
   color: var(--faint);
+}
+
+/* The collapsed sidebar: a rail of icons and faces */
+
+.sidebar.rail {
+  align-items: center;
+  gap: 4px;
+  padding: 0 0 12px;
+}
+
+.rail-button {
+  position: relative;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  color: var(--soft);
+}
+
+.rail-button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.rail-button.on {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.rail-count {
+  position: absolute;
+  top: 1px;
+  right: 0;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--primary);
+  border: 1.5px solid var(--side);
+  color: var(--primary-ink);
+  font-size: 9.5px;
+  font-weight: 650;
+  line-height: 12px;
+  text-align: center;
+}
+
+.rail-need {
+  color: var(--amber);
+}
+
+.rail-need.merge {
+  color: var(--green);
+}
+
+.rail-need.failed,
+.rail-need.interrupted {
+  color: var(--red);
+}
+
+.rail-alert {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--red);
+}
+
+.rail-sep {
+  flex: none;
+  width: 24px;
+  height: 1px;
+  margin: 6px 0;
+  background: var(--line);
+}
+
+.rail-chats {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.rail-chat {
+  position: relative;
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+}
+
+.rail-chat:hover {
+  background: var(--hover);
+}
+
+.rail-chat.on {
+  background: var(--raised);
+}
+
+.rail-chat .unread-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  border: 1.5px solid var(--side);
+  width: 10px;
+  height: 10px;
+}
+
+.rail .crew-menu {
+  margin-top: 8px;
+}
+
+.rail .menu {
+  left: calc(100% + 4px);
+  right: auto;
+  bottom: 0;
+  width: 220px;
 }
 
 .side-toggle:hover {
@@ -543,17 +675,6 @@ select {
 .routine-run:hover {
   background: var(--raised);
   color: var(--text);
-}
-
-.plan-limit {
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--amber);
-  padding-bottom: 6px;
-}
-
-.plan-limit.limited {
-  color: var(--red);
 }
 
 .side-row.need.merge .icon {
@@ -1622,19 +1743,6 @@ button.verdict:hover {
   background: var(--red);
 }
 
-.plan-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 160px;
-  align-items: center;
-  gap: 16px;
-  font-size: 13px;
-  color: var(--soft);
-  padding: 4px 0;
-}
-
-.plan-row.limited {
-  color: var(--red);
-}
 
 .routine-card,
 .starter-row {
@@ -2699,51 +2807,207 @@ button.chat-head-who:hover {
 
 /* Usage */
 
-.limit-grid {
+.plan-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 10px;
 }
 
-.limit-card {
+.plan-card {
   padding: 14px 16px;
   border-radius: 12px;
   background: var(--raised);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
-.limit-head {
+.plan-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.plan-card-head .key {
+  margin: 0;
+}
+
+.plan-card-name {
+  font-weight: 600;
+  flex: 1;
+}
+
+.plan-window {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.plan-window-top {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
   font-size: 13px;
-  font-weight: 550;
+  color: var(--soft);
 }
 
-.limit-value {
-  font-size: 24px;
+.plan-left {
+  color: var(--faint);
+  font-size: 12.5px;
+}
+
+.plan-left strong {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  margin-right: 2px;
+}
+
+.plan-account {
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.plan-window .meter {
+  height: 6px;
+  border-radius: 3px;
+}
+
+.stat-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.stat {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--raised);
+  min-width: 0;
+}
+
+.stat-value {
+  font-size: 22px;
   font-weight: 600;
   letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.limit-card.warning .meter > span {
-  background: var(--amber);
+.stat-label {
+  font-size: 12px;
+  color: var(--faint);
 }
 
-.limit-card.limited .meter > span {
-  background: var(--red);
+.heatmap-wrap {
+  overflow-x: auto;
+  padding-bottom: 4px;
 }
 
-.chart {
+.heatmap {
+  display: flex;
+  gap: 3px;
+  width: max-content;
+  min-width: 100%;
+  justify-content: flex-end;
+}
+
+.heat-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   position: relative;
+  padding-bottom: 18px;
 }
 
-.legend {
+.heat-cell {
+  display: block;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  background: var(--line);
+}
+
+.heat-cell.blank {
+  background: none;
+}
+
+.heat-cell.on {
+  outline: 1.5px solid var(--text);
+  outline-offset: 1px;
+}
+
+.heat-month {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  font-size: 11px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+.heat-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 20px;
+  margin-top: 4px;
+}
+
+.heat-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.heat-legend .heat-cell {
+  width: 10px;
+  height: 10px;
+}
+
+.heat-legend .heat-cell:first-child {
+  margin-left: 4px;
+}
+
+.heat-legend .heat-cell:last-of-type {
+  margin-right: 4px;
+}
+
+.split {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.split-bar {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--line);
+}
+
+.split-bar > span {
+  display: block;
+  height: 100%;
+}
+
+.split-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 14px;
-  margin-bottom: 10px;
+  gap: 18px;
+}
+
+.split-legend strong {
+  color: var(--text);
+  font-weight: 600;
 }
 
 .legend-item {
@@ -2756,6 +3020,7 @@ button.chat-head-who:hover {
 
 .key {
   display: inline-block;
+  flex: none;
   width: 10px;
   height: 10px;
   border-radius: 3px;
@@ -2767,98 +3032,91 @@ button.chat-head-who:hover {
   margin-right: 0;
 }
 
-.chart-scroll {
-  position: relative;
-  overflow-x: auto;
-}
-
-.chart svg .grid {
-  stroke: var(--line-soft);
-  stroke-width: 1;
-}
-
-.chart svg .tick {
-  fill: var(--faint);
-  font-size: 11px;
-  font-family: var(--sans);
-}
-
-.chart-tip {
-  position: absolute;
-  top: 8px;
-  width: 180px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  font-size: 12px;
-  pointer-events: none;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.tip-head {
-  font-weight: 600;
-  margin-bottom: 2px;
-}
-
-.tip-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--soft);
-}
-
-.tip-row .key {
-  margin: 0;
-}
-
-.tip-row.total {
-  border-top: 1px solid var(--line-soft);
-  padding-top: 4px;
-  color: var(--text);
-}
-
 .num {
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
-.chart-empty {
-  padding: 30px 0;
-  text-align: center;
+.usage-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  column-gap: 28px;
 }
 
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
+.ranked {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ranked-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  row-gap: 5px;
+  column-gap: 12px;
   font-size: 13px;
 }
 
-.data-table th {
-  text-align: left;
-  font-weight: 600;
-  font-size: 12px;
-  color: var(--faint);
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--line-soft);
-}
-
-.data-table th.num {
-  text-align: right;
-}
-
-.data-table td {
-  padding: 9px 10px;
-  border-bottom: 1px solid var(--line-soft);
-}
-
-.budget-cell {
+.ranked-label {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-width: 220px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ranked-label .key {
+  margin: 0;
+}
+
+.ranked-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ranked-bar {
+  grid-column: 1 / -1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line-soft);
+  overflow: hidden;
+}
+
+.ranked-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--soft);
+}
+
+.budget-row .meter {
+  width: 160px;
+  flex: none;
+}
+
+.ranked-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: var(--hover);
+  color: var(--soft);
+}
+
+.stat-strip.insights {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.insights .stat-value {
+  font-size: 18px;
+}
+
+@media (max-width: 760px) {
+  .stat-strip.insights {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 /* The sidebar's menu and code review row */
@@ -3381,12 +3639,12 @@ button.chat-head-who:hover {
   resize: vertical;
 }
 
-/* With the sidebar hidden, a header's left end sits under the window's traffic lights and the sidebar button. */
+/* With the sidebar collapsed to its rail, a header's left end sits under the sidebar button. */
 .app.side-hidden .review-list-head,
 .app.side-hidden .chat-head,
 .app.side-hidden .page-head,
 .app.side-hidden .topbar {
-  padding-left: 120px;
+  padding-left: 54px;
 }
 
 /* A bot's chat before its first message */

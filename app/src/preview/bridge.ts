@@ -75,7 +75,8 @@ async function request(method: string, path: string, body?: any) {
     return ok({ bot: parts[1], working: threads.some((t) => t.status === "running"), last_active: threads[0]?.updated_at ?? null, threads, outputs });
   }
   if (method === "GET" && url.pathname === "/routines") return ok(routines());
-  if (method === "GET" && url.pathname === "/usage") return ok(usage(Number(url.searchParams.get("days") ?? 14)));
+  if (method === "GET" && url.pathname === "/usage/summary") return ok(usageSummary(Number(url.searchParams.get("days") ?? 371)));
+  if (method === "GET" && url.pathname === "/plans") return ok(plans);
   if (method === "GET" && url.pathname === "/reviews/inbox") return ok(reviewInbox);
   if (method === "GET" && url.pathname === "/reviews/repos") return ok({ "acme/web": "~/code/acme-web" });
   if (url.pathname === "/reviews/reviewers") return ok(method === "PUT" ? body : [{ backend: "claude", model: "sonnet", effort: "high" }, { backend: "codex", model: null, effort: "high" }]);
@@ -205,15 +206,60 @@ const reviewInbox = {
   error: null,
 };
 
-function usage(days: number) {
-  const dates = Array.from({ length: days }, (_, i) => new Date(Date.now() - (days - 1 - i) * 86400e3).toISOString().slice(0, 10));
-  const wave = (scale: number, phase: number) => dates.map((_, i) => (i % 7 === 5 || i % 7 === 6 ? 0 : Math.round(scale * (0.6 + 0.4 * Math.sin(i / 2 + phase)))));
-  const bots = [
-    { bot: "chief", by_day: wave(42_000, 0) }, { bot: "engineer", by_day: wave(180_000, 1) },
-    { bot: "reviewer", by_day: wave(60_000, 2) }, { bot: "critic", by_day: wave(55_000, 3) },
-  ];
-  return { days: dates, bots: bots.map((b) => ({ ...b, turns: b.by_day.map((v) => Math.round(v / 9000)), total: b.by_day.reduce((a, v) => a + v, 0) })) };
+function usageSummary(days: number) {
+  // Quiet at first, busier lately, with weekends mostly off: enough texture for the activity grid.
+  const daily = Array.from({ length: days }, (_, i) => {
+    const date = new Date(Date.now() - (days - 1 - i) * 86400e3);
+    const ramp = Math.max(0, (i - days * 0.55) / (days * 0.45));
+    const weekend = date.getDay() === 0 || date.getDay() === 6;
+    const on = ramp > 0 && Math.abs(Math.sin(i * 12.9898) * 43758.5453) % 1 < (weekend ? 0.2 : 0.85) * ramp + 0.1;
+    const size = on ? Math.round(ramp * (180_000 + 420_000 * (Math.abs(Math.sin(i * 78.233)) % 1))) : 0;
+    return { date: date.toISOString().slice(0, 10), claude: Math.round(size * 0.45), codex: Math.round(size * 0.55) };
+  });
+  const totals = { claude: daily.reduce((a, d) => a + d.claude, 0), codex: daily.reduce((a, d) => a + d.codex, 0) };
+  const peak = daily.reduce((a, d) => (d.claude + d.codex > a.claude + a.codex ? d : a));
+  return {
+    days, daily, totals, turns: 1_412,
+    peak: { date: peak.date, tokens: peak.claude + peak.codex },
+    longest_turn: { seconds: 2_710, task_id: "t_csv0000002", title: "Add CSV export to the reports page" },
+    streak: { longest: 12, current: 4 },
+    models: [
+      { plan: "codex", model: "gpt-6.1-sol", tokens: Math.round(totals.codex * 0.8) },
+      { plan: "claude", model: "opus", tokens: Math.round(totals.claude * 0.55) },
+      { plan: "claude", model: "sonnet", tokens: Math.round(totals.claude * 0.45) },
+      { plan: "codex", model: "gpt-6-luna", tokens: Math.round(totals.codex * 0.2) },
+    ],
+    bots: [
+      { bot: "engineer", tokens: Math.round(totals.codex * 0.7) }, { bot: "chief", tokens: Math.round(totals.claude * 0.5) },
+      { bot: "reviewer", tokens: Math.round(totals.claude * 0.3) }, { bot: "PR reviewer", tokens: Math.round((totals.claude + totals.codex) * 0.12) },
+      { bot: "critic", tokens: Math.round(totals.codex * 0.18) },
+    ],
+    efforts: [{ effort: "high", turns: 812 }, { effort: "medium", turns: 433 }, { effort: "xhigh", turns: 167 }],
+    counts: { threads: 64, reviews: 23, routine_runs: 41, room_messages: 318 },
+  };
 }
+
+const plans = {
+  claude: {
+    available: true, error: null, plan: "subscription", account: null,
+    windows: [
+      { name: "5-hour session", used_percent: 37, resets_at: demo.resetsAt },
+      { name: "Weekly", used_percent: 12, resets_at: demo.resetsAt + 3 * 86400 },
+      { name: "Weekly · Fable", used_percent: 4, resets_at: demo.resetsAt + 3 * 86400 },
+    ],
+  },
+  codex: {
+    available: true, error: null, plan: "pro",
+    windows: [
+      { name: "5-hour", used_percent: 84, resets_at: demo.resetsAt - 3600 },
+      { name: "Weekly", used_percent: 11, resets_at: demo.resetsAt + 5 * 86400 },
+    ],
+    account: {
+      lifetime_tokens: 21_400_000_000, peak_daily_tokens: 610_000_000, longest_turn_sec: 9_120, current_streak_days: 9, longest_streak_days: 41,
+      daily: Array.from({ length: 371 }, (_, i) => ({ date: new Date(Date.now() - (370 - i) * 86400e3).toISOString().slice(0, 10), tokens: Math.round(Math.max(0, Math.sin(i / 9) + 0.4) * 60_000_000) })),
+    },
+  },
+};
 
 const crewState = {
   paused: false, running: 1, held: 1, sessions: 2,

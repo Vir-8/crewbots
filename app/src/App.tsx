@@ -79,21 +79,21 @@ export function App() {
 
   return (
     <div className={`app ${thread || profile ? "with-panel" : ""} ${profile ? "with-profile" : ""} ${current === "review" ? "reviewing" : ""} ${sideHidden ? "side-hidden" : ""}`}>
-      {sideHidden && (
-        <button className="icon-button side-toggle" onClick={() => setSideHidden(false)} title="Show the sidebar">
-          <Icon name="panelClose" size={15} />
-        </button>
-      )}
+      {/* One place in both states, beside the window's buttons, so it's always under your pointer. */}
+      <button className="icon-button side-toggle" onClick={() => setSideHidden(!sideHidden)} title={sideHidden ? "Expand the sidebar" : "Collapse the sidebar"}>
+        <Icon name="sidebar" size={15} />
+      </button>
       <Sidebar
         crew={crew}
         current={current}
+        rail={sideHidden}
         onChat={(key) => {
           setCurrent(key);
           setThread(null);
         }}
         onOpen={openTask}
         onNewGroup={() => setNewGroup(true)}
-        onHide={() => setSideHidden(true)}
+        onExpand={() => setSideHidden(false)}
       />
       <main className="main">
         {current === "page:crew" ? (

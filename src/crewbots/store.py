@@ -526,13 +526,35 @@ class Store:
         rows = self.db.execute("select pr, max(updated_at) as at from tasks where pr is not null group by pr").fetchall()
         return {r["pr"]: r["at"] for r in rows}
 
-    def usage_by_day(self, since: str) -> list[tuple[str, str, int, int]]:
-        """(bot, UTC time, fresh tokens, 1) for each turn since `since`: the app buckets them into its own days."""
+    def usage_rows(self, since: str) -> list[dict[str, Any]]:
+        """Every turn's usage since `since`, with its task's bot and kind: what the usage page is made from."""
         rows = self.db.execute(
-            "select t.bot, e.at, json_extract(e.data, '$.input_tokens') - coalesce(json_extract(e.data,"
-            " '$.cached_input_tokens'), 0) + json_extract(e.data, '$.output_tokens') as fresh from events e"
-            " join tasks t on t.id = e.task_id where e.kind = 'usage' and e.at >= ? order by e.id", (since,)).fetchall()
-        return [(r["bot"], r["at"], int(r["fresh"] or 0), 1) for r in rows]
+            "select e.task_id, e.at, e.data, t.bot, t.kind from events e join tasks t on t.id = e.task_id"
+            " where e.kind = 'usage' and e.at >= ? order by e.id", (since,)).fetchall()
+        return [{"task_id": r["task_id"], "at": r["at"], "bot": r["bot"], "kind": r["kind"], **json.loads(r["data"])}
+                for r in rows]
+
+    def turn_spans(self) -> list[tuple[str, str, str]]:
+        """(task id, when a turn was asked for, when it finished), for every finished turn."""
+        rows = self.db.execute("select task_id, kind, at from events where kind in ('message', 'done') order by id").fetchall()
+        asked: dict[str, str] = {}
+        spans = []
+        for r in rows:
+            if r["kind"] == "message":
+                asked.setdefault(r["task_id"], r["at"])
+            elif r["task_id"] in asked:
+                spans.append((r["task_id"], asked.pop(r["task_id"]), r["at"]))
+        return spans
+
+    def count_since(self, since: str) -> dict[str, int]:
+        one = lambda sql, *a: self.db.execute(sql, a).fetchone()[0]  # noqa: E731
+        return {
+            "threads": one("select count(*) from tasks where kind = 'thread' and created_at >= ?", since),
+            "reviews": one("select count(*) from tasks where kind = 'review' and created_at >= ?", since),
+            "routine_runs": one("select count(*) from events where kind = 'message' and at >= ?"
+                                " and json_extract(data, '$.from') like 'routine:%'", since),
+            "room_messages": one("select count(*) from room_messages where at >= ?", since),
+        }
 
     def create_room(self, title: str, lead: str, members: list[str]) -> dict[str, Any]:
         room_id = f"r_{uuid.uuid4().hex[:10]}"

@@ -16,7 +16,6 @@ import secrets
 import sys
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -28,7 +27,9 @@ from pydantic import BaseModel, Field
 from crewbots import cards
 from crewbots import crew as crew_module
 from crewbots import models as models_module
+from crewbots import plans as plans_module
 from crewbots import routines as routines_module
+from crewbots import usage as usage_module
 from crewbots.backends import codex_isolation
 from crewbots.crew_tools import ToolRefused
 from crewbots.github import GitHubError
@@ -234,16 +235,100 @@ class RepoFolder(BaseModel):
     folder: str | None
 
 
-class UsageBot(BaseModel):
+class PlanWindow(BaseModel):
+    name: str  # "5-hour session", "Weekly · Fable", ...
+    used_percent: float
+    resets_at: int | None  # unix time
+
+
+class AccountDay(BaseModel):
+    date: str
+    tokens: int
+
+
+class AccountUsage(BaseModel):
+    """Your whole account's activity, as the CLI reports it (Codex does)."""
+
+    lifetime_tokens: int | None
+    peak_daily_tokens: int | None
+    longest_turn_sec: int | None
+    current_streak_days: int | None
+    longest_streak_days: int | None
+    daily: list[AccountDay]
+
+
+class PlanOut(BaseModel):
+    available: bool
+    error: str | None
+    plan: str | None
+    windows: list[PlanWindow]
+    account: AccountUsage | None
+
+
+class PlansOut(BaseModel):
+    claude: PlanOut
+    codex: PlanOut
+
+
+class UsageDay(BaseModel):
+    date: str
+    claude: int
+    codex: int
+
+
+class UsagePeak(BaseModel):
+    date: str
+    tokens: int
+
+
+class LongestTurn(BaseModel):
+    seconds: int
+    task_id: str | None
+    title: str
+
+
+class Streak(BaseModel):
+    longest: int
+    current: int
+
+
+class ModelUse(BaseModel):
+    plan: str
+    model: str
+    tokens: int
+
+
+class BotUse(BaseModel):
     bot: str
-    by_day: list[int]  # fresh tokens, one per day in `days`
-    turns: list[int]
-    total: int
+    tokens: int
 
 
-class UsageOut(BaseModel):
-    days: list[str]  # local dates, oldest first
-    bots: list[UsageBot]
+class EffortUse(BaseModel):
+    effort: str
+    turns: int
+
+
+class UsageCounts(BaseModel):
+    threads: int
+    reviews: int
+    routine_runs: int
+    room_messages: int
+
+
+class UsageSummary(BaseModel):
+    """The crew's own use, in fresh tokens."""
+
+    days: int
+    daily: list[UsageDay]
+    totals: dict[str, int]
+    turns: int
+    peak: UsagePeak | None
+    longest_turn: LongestTurn | None
+    streak: Streak
+    models: list[ModelUse]
+    bots: list[BotUse]
+    efforts: list[EffortUse]
+    counts: UsageCounts
 
 
 class RoutineBody(BaseModel):
@@ -841,22 +926,15 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
         """Maps a repo to your local checkout of it, so reviews read the code, not just the diff."""
         return reviewing(reviews.set_repo, f"{owner}/{name}", body.folder)
 
-    @v1.get("/usage", response_model=UsageOut)
-    async def usage(days: int = Query(14, ge=1, le=90)):
-        """Fresh tokens and turns per bot per day, in this Mac's time zone."""
-        today = datetime.now().astimezone().date()
-        dates = [today - timedelta(days=n) for n in range(days - 1, -1, -1)]
-        since = datetime.combine(dates[0], datetime.min.time()).astimezone().astimezone(UTC)
-        index = {d.isoformat(): i for i, d in enumerate(dates)}
-        rows: dict[str, dict[str, list[int]]] = {
-            b: {"by_day": [0] * days, "turns": [0] * days} for b in runner.crew.bots}
-        for bot, at, fresh, turns in store.usage_by_day(since.isoformat(timespec="milliseconds")):
-            day = datetime.fromisoformat(at).astimezone().date().isoformat()
-            if day in index:
-                row = rows.setdefault(bot, {"by_day": [0] * days, "turns": [0] * days})
-                row["by_day"][index[day]] += fresh
-                row["turns"][index[day]] += turns
-        return {"days": list(index), "bots": [{"bot": b, **r, "total": sum(r["by_day"])} for b, r in rows.items()]}
+    @v1.get("/usage/summary", response_model=UsageSummary)
+    async def usage_summary(days: int = Query(371, ge=7, le=731)):
+        """The crew's use over the last `days`: a year and a week by default, for the activity grid."""
+        return await asyncio.to_thread(usage_module.summary, store, runner.bot_for, days)
+
+    @v1.get("/plans", response_model=PlansOut)
+    async def get_plans(fresh: bool = False):
+        """How much of each plan's limits is used, and when they reset, asked of the CLIs."""
+        return await plans_module.plans(fresh)
 
     @v1.get("/search", response_model=list[SearchHit])
     async def search(q: str, limit: int = Query(20, le=200)):

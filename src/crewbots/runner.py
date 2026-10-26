@@ -707,7 +707,10 @@ class Runner:
                         if isinstance(event, RateLimit):
                             self._note_limit(task_id, event)
                             continue
-                        self._record(task_id, event)
+                        if isinstance(event, Usage):  # kept with what spent it, for the usage page
+                            self._record(task_id, kind="usage", data=_usage_data(event, bot))
+                        else:
+                            self._record(task_id, event)
                         match event:
                             case SessionStarted(session_id=sid):
                                 self.store.update_task(task_id, session_id=sid)
@@ -811,7 +814,11 @@ class Runner:
         except Exception:
             briefing = ""
         if usage:  # it counts toward budgets like any turn
-            self.store.append_event(task_id, usage)
+            bot = self.bot_for(self.store.get_task(task_id).bot)
+            if bot:
+                self.store.append_event(task_id, kind="usage", data=_usage_data(usage, bot))
+            else:
+                self.store.append_event(task_id, usage)
             self.store.add_usage(task_id, usage.input_tokens, usage.output_tokens, usage.cost_usd)
         if not briefing.strip():
             return  # no briefing, no rollover: the CLI's own compaction carries on
@@ -995,6 +1002,12 @@ def _round_status(state: ReviewState, work: Task) -> str:
                 f"{work.id!r}, ...); its next version needs a new review round ({state.round + 1} of "
                 f"{MAX_REVIEW_ROUNDS}).")
     return f"{head}: reviewed an older version ({state.rounds[-1]}); the work has changed since, so review it again."
+
+
+def _usage_data(usage: Usage, bot: Bot) -> dict[str, Any]:
+    """A turn's usage, with the plan, model and effort that spent it."""
+    data = {k: v for k, v in asdict(usage).items() if k != "kind"}
+    return data | {"plan": _plan(bot.backend), "model": bot.model or "default", "effort": bot.effort}
 
 
 def _plan(backend: str) -> str:
