@@ -127,6 +127,19 @@ def test_codex_memories_stay_off_for_every_bot():
         assert "features.memories=false" in [argv[i + 1] for i, a in enumerate(argv) if a == "-c"]
 
 
+async def test_codex_compacts_within_the_bots_window_and_measures_against_it():
+    from crewbots.backends.codex_app_server import CodexSession
+
+    argv = CodexExec(isolate=False).argv(RunSpec(prompt="x", cwd=".", context_window=200_000))
+    assert "model_auto_compact_token_limit=170000" in argv
+
+    session = CodexSession.__new__(CodexSession)
+    session.context_window, session._context = 200_000, (100_000, 872_000)
+    assert await session.context_percent() == 50.0  # of the bot's window, not the model's 872K
+    session.context_window = None
+    assert round(await session.context_percent(), 1) == 11.5
+
+
 def test_an_mcp_name_that_cannot_be_a_config_key_is_refused():
     with pytest.raises(ValueError):
         CodexExec(isolate=False).argv(RunSpec(prompt="x", cwd=".", mcp_servers={"my.crew": McpServer(command="x")}))

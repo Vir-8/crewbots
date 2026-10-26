@@ -70,6 +70,8 @@ class CodexExec:
         """The user's servers, plugins and apps switched off, then the bot's own servers added. Codex's own memories
         stay off whatever the user's config says: a bot's notes are crewbots'."""
         args = ["-c", "features.memories=false"]
+        if spec.context_window:
+            args += ["-c", f"model_auto_compact_token_limit={compact_limit(spec.context_window)}"]
         args += isolation_overrides(self.command, keep=spec.mcp_servers) if self.isolate else []
         for name, server in spec.mcp_servers.items():
             args += _mcp_overrides(name, server)
@@ -210,6 +212,12 @@ def _mcp_overrides(name: str, server: McpServer) -> list[str]:
 
 def _toml_table(values: dict[str, str]) -> str:
     return "{" + ", ".join(f"{json.dumps(k)} = {json.dumps(v)}" for k, v in values.items()) + "}"
+
+
+def compact_limit(window: int) -> int:
+    """Where Codex compacts within a bot's window. Codex compacts at a token count rather than taking a window, so
+    this leaves about the room Claude Code keeps at the end of the same window (167K of 200K)."""
+    return int(window * 0.85)
 
 
 def network_overrides(spec: RunSpec) -> list[str]:

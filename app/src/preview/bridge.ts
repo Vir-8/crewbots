@@ -77,7 +77,7 @@ async function request(method: string, path: string, body?: any) {
   if (method === "GET" && parts[0] === "tasks" && parts[2] === "status") {
     const task = demo.tasks.get(parts[1])!;
     const b = demo.bots.find((x) => x.name === task.bot)!;
-    return ok({ task_id: task.id, bot: task.bot, backend: b.backend, plan: b.backend.split("-")[0], model: b.model, effort: b.effort, session_id: task.session_id ?? "019a2c3e-7f1d-7c4a-9e21-5b8d0c6f4a12", open: true, context_percent: 38.4, rollover_percent: 70, turns: task.turns ?? 12 });
+    return ok({ task_id: task.id, bot: task.bot, backend: b.backend, plan: b.backend.split("-")[0], model: b.model, effort: b.effort, session_id: task.session_id ?? "019a2c3e-7f1d-7c4a-9e21-5b8d0c6f4a12", open: true, context_percent: 38.4, context_window: b.context_window, rollover_percent: 70, turns: task.turns ?? 12 });
   }
   if (method === "GET" && url.pathname === "/mcp/servers") return ok(mcpServers);
   if (method === "GET" && url.pathname === "/skills") return ok(skills);
@@ -151,7 +151,7 @@ async function request(method: string, path: string, body?: any) {
   }
   if (method === "GET" && parts[0] === "bots" && parts[2] === "card") {
     const b = demo.bots.find((x) => x.name === parts[1])!;
-    return ok({ ...b, budget: null, instructions: `## Mission\n\nBe the ${b.title.toLowerCase()} of the crew.\n\n## Owns\n\n- What its role card says\n` });
+    return ok({ ...b, context_window: b.context_window ?? "auto", budget: null, instructions: `## Mission\n\nBe the ${b.title.toLowerCase()} of the crew.\n\n## Owns\n\n- What its role card says\n` });
   }
   if (method === "PUT" || (method === "POST" && (url.pathname === "/bots" || url.pathname === "/routines"))) return ok({});
   if (method === "GET" && parts[0] === "routines" && parts[2] === "file") {

@@ -244,6 +244,18 @@ def test_a_bot_can_have_a_name_and_a_face():
         parse_card("---\ndescription: d\navatar: {color: plaid}\n---\nbody", "x")
 
 
+def test_a_bots_context_window():
+    card = lambda value: f"---\ndescription: d\n{value}---\nbody"  # noqa: E731
+    assert parse_card(card(""), "x").context_window == 200_000  # explicit, never the model's whole window
+    assert parse_card(card("context_window: 400k\n"), "x").context_window == 400_000
+    assert parse_card(card("context_window: 1m\n"), "x").context_window == 1_000_000
+    assert parse_card(card("context_window: 300000\n"), "x").context_window == 300_000
+    assert parse_card(card("context_window: auto\n"), "x").context_window is None
+    for bad in ("50k", "2m", "lots"):
+        with pytest.raises(CrewError, match="context_window"):
+            parse_card(card(f"context_window: {bad}\n"), "x")
+
+
 def test_a_bots_reasoning_effort():
     assert parse_card("---\ndescription: d\neffort: xhigh\n---\nbody", "x").effort == "xhigh"
     with pytest.raises(CrewError, match="effort is one of"):

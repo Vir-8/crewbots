@@ -38,7 +38,10 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
 - **Memory.** Every bot can `remember` a fact for later tasks (its own, or `shared` with the crew), `forget` one, and `recall` what the crew said or decided before.
   - Notes are files in `crew/memory/<bot>/notes/`, listed in each bot's instructions, so you can read, edit or delete them.
   - `recall` searches the whole record with SQLite FTS5, and so does `GET /v1/search?q=`.
-  - A conversation that fills 70% of its context continues in a fresh session, from a briefing the bot writes.
+  - A conversation that fills 70% of its context window continues in a fresh session, from a briefing the bot
+    writes. The window is the role card's `context_window` (200K tokens unless it says otherwise, up to `1m`, or
+    `auto` for the model's whole window): the CLI compacts within it, so a 1M-token model doesn't carry 700K
+    tokens before rolling over. `/status` shows how full it is.
   - Bots never use the CLIs' own memory: Claude Code's auto memory and Codex's memories are off for every bot, so
     nothing a bot learns lands beside your own Claude or Codex memory.
 - **Routines** are work the crew starts on its own: Markdown files in `routines/`, each naming a bot, a goal, and when.

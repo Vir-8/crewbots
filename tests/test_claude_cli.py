@@ -96,6 +96,13 @@ async def test_running_sends_the_prompt_on_stdin_and_hides_the_api_key(tmp_path,
     assert events[-1] == Done(final_text="hi")
 
 
+def test_an_explicit_context_window_becomes_autocompact(tmp_path):
+    argv = ClaudeCLI().argv(RunSpec(prompt="x", cwd=tmp_path, context_window=200_000))
+
+    assert argv[argv.index("--autocompact") + 1] == "200000"
+    assert "--autocompact" not in ClaudeCLI().argv(RunSpec(prompt="x", cwd=tmp_path))
+
+
 async def test_a_bot_never_uses_claude_codes_auto_memory(tmp_path, monkeypatch):
     # Auto memory would keep a folder per bot working folder in ~/.claude/projects, beside the user's own memory.
     record = tmp_path / "record.json"

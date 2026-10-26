@@ -570,6 +570,7 @@ class Runner:
             "plan": _plan(bot.backend) if bot else None, "model": bot.model if bot else None,
             "effort": bot.effort if bot else None, "session_id": task.session_id, "open": opened is not None,
             "context_percent": round(percent, 1) if percent is not None else None,
+            "context_window": bot.context_window if bot and task.kind != "review" else None,
             "rollover_percent": self.rollover_percent, "turns": task.turns,
         }
 
@@ -913,7 +914,7 @@ class Runner:
             crew=CrewTools(self, task.id, bot.can_delegate) if in_process else None,
             read_dirs=[*self.crew.skill_dirs, *[d for d in (self.crew.memory.root, self.crew.home / attachments_module.FOLDER)
                                                  if d.is_dir()]], timeout_s=bot.timeout_s,
-            network=bot.network, effort=bot.effort,
+            network=bot.network, effort=bot.effort, context_window=bot.context_window,
         )
 
     # Sessions.

@@ -103,7 +103,7 @@ Nothing is hidden: every layer is a file or a SQLite row you can open, edit or d
 
 1. **Working context (one task).**
    - The CLI session, which manages and compacts its own context window.
-   - crewbots adds a **rollover** for long-lived conversations, such as a standing chat with the chief: once a turn ends with the conversation past 70% of its context window (from each backend's own count), the bot writes itself a briefing, its session closes, and the next message starts a fresh session with the briefing in its instructions.
+   - crewbots adds a **rollover** for long-lived conversations, such as a standing chat with the chief: once a turn ends with the conversation past 70% of its context window (from each backend's own count), the bot writes itself a briefing, its session closes, and the next message starts a fresh session with the briefing in its instructions. The window is explicit, per bot (`context_window`, 200K by default): Claude Code takes it as `--autocompact`, which also makes `/context` count against it, and Codex compacts at 85% of it (`model_auto_compact_token_limit`) while crewbots measures its usage against the smaller of it and the model's window. Measured against a model's whole window, a 1M-token model rolled over only at about 700K.
 2. **Bot memory (one bot, across tasks).**
    - `crew/memory/<bot>/`: a short `MEMORY.md` index plus one note per fact (who you are, preferences, decisions, pitfalls), each with a date and its source task.
    - A `remember(title, body, shared?)` tool writes notes (`shared` puts them in `crew/memory/crew/`, for every bot); a `forget` tool and you can remove them.

@@ -108,6 +108,7 @@ class BotOut(BaseModel):
     display_name: str | None  # what you call it; `name` is its handle
     effort: str | None  # reasoning effort; none: the CLI's default
     avatar: dict[str, str] | None  # {color, shape}; none: picked from its name
+    context_window: int | None  # tokens its sessions hold before compacting; none: the model's whole window
 
 
 class Avatar(BaseModel):
@@ -129,6 +130,7 @@ class CardBody(BaseModel):
     backend: str | None = None
     model: str | None = None
     effort: str | None = None
+    context_window: int | Literal["auto"] | None = None  # tokens, or the model's whole window; blank: the default
     access: Literal["read_only", "workspace_write", "full"] | None = None
     network: bool | list[str] | None = None
     avatar: Avatar | None = None
@@ -387,6 +389,7 @@ class TaskStatus(BaseModel):
     session_id: str | None
     open: bool  # its session is open now; a closed one resumes from session_id
     context_percent: float | None  # how full its context is, when last measured
+    context_window: int | None  # the tokens it's measured against; None: the model's whole window
     rollover_percent: float | None  # past this, it continues in a fresh session from a briefing
     turns: int
 
@@ -894,7 +897,8 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
              "access": b.access, "workspace": str(b.workspace) if b.workspace else None,
              "network": list(b.network) if isinstance(b.network, tuple) else b.network, "mcp": sorted(b.mcp),
              "skills": list(b.skills), "can_delegate": b.can_delegate, "path": str(b.path) if b.path else None,
-             "display_name": b.display_name, "avatar": b.avatar, "effort": b.effort}
+             "display_name": b.display_name, "avatar": b.avatar, "effort": b.effort,
+             "context_window": b.context_window}
             for b in runner.crew.bots.values()
         ]
 

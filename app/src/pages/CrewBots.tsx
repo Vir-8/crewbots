@@ -3,10 +3,13 @@ import { api } from "../api";
 import { Avatar, COLORS, COLOR_NAMES, SHAPE_NAMES, face, labelOf } from "../components/Avatar";
 import { Icon } from "../components/Icon";
 import { ModelPicker } from "../components/ModelPicker";
+import { tokens } from "../components/StatusPanel";
 import { Field, Page, Segmented, Sheet } from "../components/ui";
 import type { Crew } from "../state";
 import type { Bot, Card, McpServerInfo } from "../types";
 
+// The window a bot's sessions compact within; "auto" is the model's whole window (a million tokens on some).
+const WINDOWS: [string, string][] = [["200000", "200K"], ["400000", "400K"], ["1000000", "1M"], ["auto", "The model's"]];
 const ACCESS: Record<string, string> = { read_only: "Reads only", workspace_write: "Writes in its task's folder", full: "Full access" };
 
 /** Your bots: who they are, what each may do, and an editor for each. Saving rewrites its role card. */
@@ -120,6 +123,7 @@ export function BotEditor({ crew, name, onClose }: { crew: Crew; name: string | 
       backend: draft.backend,
       model: draft.model ?? "",
       effort: draft.effort ?? "",
+      context_window: draft.context_window === 200000 ? null : draft.context_window ?? null, // the default stays off the card
       access: draft.access,
       network: networkMode === "hosts" ? (draft.hosts ?? "").split(/[\s,]+/).filter(Boolean) : networkMode === "any",
       avatar: draft.avatar ?? null,
@@ -208,6 +212,14 @@ export function BotEditor({ crew, name, onClose }: { crew: Crew; name: string | 
       </Field>
       <Field label="Model and reasoning" hint="Its chat and every thread it opens use these. Blank: the CLI's own default.">
         <ModelPicker crew={crew} backend={draft.backend ?? "claude"} model={draft.model} effort={draft.effort} onChange={(model, effort) => set({ model, effort })} />
+      </Field>
+
+      <Field label="Context window" hint="How much of a conversation it keeps before compacting. Past 70% it carries on in a fresh session, from a briefing. Smaller is quicker and cheaper.">
+        <Segmented
+          value={String(draft.context_window ?? 200000)}
+          options={[...WINDOWS, ...(typeof draft.context_window === "number" && !WINDOWS.some(([v]) => v === String(draft.context_window)) ? [[String(draft.context_window), tokens(draft.context_window)] as [string, string]] : [])]}
+          onChange={(v) => set({ context_window: v === "auto" ? "auto" : Number(v) })}
+        />
       </Field>
 
       <Field label="Access">

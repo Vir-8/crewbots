@@ -110,6 +110,8 @@ class ClaudeAgent:
             env=env,
             sandbox=sandbox,
             effort=spec.effort if spec.effort in CLAUDE_EFFORTS else None,
+            # The window it compacts within, and /context's percentage is of this rather than the model's whole window.
+            extra_args={"autocompact": str(spec.context_window)} if spec.context_window else {},
             stderr=session.stderr_lines.append,
         )
 

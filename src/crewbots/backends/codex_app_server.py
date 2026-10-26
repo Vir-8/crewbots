@@ -61,6 +61,7 @@ class CodexSession:
         self._steers: list[str] = []  # reasons to tell the model, after a refusal
         self.temp: Path | None = None
         self._context: tuple[int, int] | None = None  # (tokens in the latest request, the model's context window)
+        self.context_window = spec.context_window  # the bot's own window, when it's smaller than the model's
 
     @classmethod
     async def open(cls, cli: "CodexCLI", spec: RunSpec) -> "CodexSession":
@@ -152,7 +153,7 @@ class CodexSession:
         if not self._context:
             return None
         used, window = self._context
-        return 100.0 * used / window
+        return 100.0 * used / min(window, self.context_window or window)
 
     async def close(self) -> None:
         self._broken = True

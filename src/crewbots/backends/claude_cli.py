@@ -68,6 +68,8 @@ class ClaudeCLI:
             args += ["--add-dir", str(path)]
         if spec.model:
             args += ["--model", spec.model]
+        if spec.context_window:
+            args += ["--autocompact", str(spec.context_window)]
         if spec.system_prompt:
             args += ["--append-system-prompt", spec.system_prompt]
         if spec.resume_session_id:

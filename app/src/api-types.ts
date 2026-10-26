@@ -45,6 +45,7 @@ export interface BotOut {
   display_name: string | null;
   effort: string | null;
   avatar: Record<string, string> | null;
+  context_window: number | null;
 }
 
 export interface BotUse {
@@ -80,6 +81,7 @@ export interface CardBody {
   backend?: string | null;
   model?: string | null;
   effort?: string | null;
+  context_window?: number | "auto" | null;
   access?: "read_only" | "workspace_write" | "full" | null;
   network?: boolean | string[] | null;
   avatar?: Avatar | null;
@@ -95,6 +97,7 @@ export interface CardOut {
   backend?: string | null;
   model?: string | null;
   effort?: string | null;
+  context_window?: number | "auto" | null;
   access?: "read_only" | "workspace_write" | "full" | null;
   network?: boolean | string[] | null;
   avatar?: Avatar | null;
@@ -385,6 +388,7 @@ export interface NewBot {
   backend?: string | null;
   model?: string | null;
   effort?: string | null;
+  context_window?: number | "auto" | null;
   access?: "read_only" | "workspace_write" | "full" | null;
   network?: boolean | string[] | null;
   avatar?: Avatar | null;
@@ -758,6 +762,7 @@ export interface TaskStatus {
   session_id: string | null;
   open: boolean;
   context_percent: number | null;
+  context_window: number | null;
   rollover_percent: number | null;
   turns: number;
 }

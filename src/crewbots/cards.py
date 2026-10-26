@@ -14,11 +14,11 @@ from typing import Any
 import yaml
 
 from crewbots import routines as routines_module
-from crewbots.crew import CrewError, parse_card
+from crewbots.crew import CrewError, _context_window, parse_card
 
 HANDLE = re.compile(r"[a-z][a-z0-9-]{0,30}")
-BOT_FIELDS = ("display_name", "title", "description", "backend", "model", "effort", "access", "network", "avatar", "budget",
-              "mcp", "skills", "can_delegate")
+BOT_FIELDS = ("display_name", "title", "description", "backend", "model", "effort", "context_window", "access", "network",
+              "avatar", "budget", "mcp", "skills", "can_delegate")
 ROUTINE_FIELDS = ("description", "bot", "schedule", "on", "repo", "workspace", "budget", "enabled")
 
 
@@ -35,6 +35,11 @@ def card(home: Path, name: str) -> dict[str, Any]:
     out = {"name": name, **{k: meta.get(k) for k in BOT_FIELDS}, "instructions": body}
     if isinstance(out.get("mcp"), dict):  # servers defined on the card itself: the app shows them by name
         out["mcp"] = sorted(out["mcp"])
+    if out.get("context_window") not in (None, "auto"):  # written by hand as "200k", say: the app shows tokens
+        try:
+            out["context_window"] = _context_window(out["context_window"], name)
+        except CrewError:
+            out["context_window"] = None
     return out
 
 

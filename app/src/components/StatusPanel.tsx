@@ -5,6 +5,11 @@ import type { TaskStatus } from "../types";
 import { labelOf } from "./Avatar";
 import { Icon } from "./Icon";
 
+/** 200000 → "200K", 1000000 → "1M". */
+export function tokens(n: number): string {
+  return n >= 1_000_000 ? `${+(n / 1_000_000).toFixed(1)}M` : `${Math.round(n / 1000)}K`;
+}
+
 const EFFORT: Record<string, string> = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max", ultra: "Ultra" };
 
 /** /status: this chat's bot, model and session, how full its context is, and what's left on its plan. */
@@ -54,7 +59,7 @@ export function StatusPanel({ taskId, onClose }: { taskId: string; onClose: () =
                   <span style={{ width: `${Math.min(100, used)}%` }} />
                 </span>
                 <span>
-                  <strong>{Math.round(100 - used)}%</strong> left
+                  <strong>{Math.round(100 - used)}%</strong> left of {status.context_window ? tokens(status.context_window) : "the model's window"}
                 </span>
                 {status.rollover_percent && <span className="faint">· a fresh session from a briefing at {status.rollover_percent}%</span>}
               </span>
