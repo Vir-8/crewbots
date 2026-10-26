@@ -45,16 +45,19 @@ class ModelUse(BaseModel):
     tokens: int
     input: int  # all input, cached or not
     cached: int  # input the model had cached
+    written: int = 0  # input written to the cache (Claude reports it)
 
 class BotUse(BaseModel):
     bot: str
     tokens: int
     input: int
     cached: int
+    written: int = 0
 
 class CacheUse(BaseModel):
     input: int
     cached: int
+    written: int = 0
 
 class EffortUse(BaseModel):
     effort: str

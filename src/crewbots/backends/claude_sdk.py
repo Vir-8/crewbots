@@ -321,7 +321,8 @@ def _usage(message: ResultMessage) -> Usage:
     u = message.usage or {}
     cache_read = u.get("cache_read_input_tokens", 0)
     return Usage(input_tokens=u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0) + cache_read,
-                 output_tokens=u.get("output_tokens", 0), cached_input_tokens=cache_read, cost_usd=message.total_cost_usd)
+                 output_tokens=u.get("output_tokens", 0), cached_input_tokens=cache_read, cost_usd=message.total_cost_usd,
+                 cache_write_tokens=u.get("cache_creation_input_tokens", 0))
 
 
 def crew_server(crew: "CrewTools | Any") -> Any:

@@ -33,6 +33,7 @@ def test_usage_counts_cached_input_as_input_like_codex_does():
 
     assert usage.input_tokens == 7 + 10180 + 19357
     assert usage.cached_input_tokens == 19357
+    assert usage.cache_write_tokens == 10180  # what it wrote to the cache, for how well the cache works
     assert usage.output_tokens == 187
     assert usage.cost_usd == 0.0780135
 

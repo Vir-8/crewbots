@@ -200,6 +200,7 @@ class ClaudeParser:
             output_tokens=u.get("output_tokens", 0),
             cached_input_tokens=cache_read,
             cost_usd=obj.get("total_cost_usd"),
+            cache_write_tokens=u.get("cache_creation_input_tokens", 0),
         )
         failed = bool(obj.get("is_error")) or obj.get("subtype") != "success"
         text = obj.get("result") or self._last_text

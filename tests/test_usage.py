@@ -129,7 +129,7 @@ def test_the_crews_use_by_day_plan_model_and_bot(store):
     review = store.create_task("reviewer:claude:sonnet:high", "Review", kind="review", pr="vir/app#7")
     for task, data in [
         (chief, {"input_tokens": 1000, "cached_input_tokens": 600, "output_tokens": 100, "plan": "claude", "model": "opus",
-                 "effort": "high"}),
+                 "effort": "high", "cache_write_tokens": 350}),
         (work, {"input_tokens": 5000, "cached_input_tokens": 0, "output_tokens": 500}),  # from before models were kept
         (review, {"input_tokens": 300, "cached_input_tokens": 0, "output_tokens": 50, "plan": "claude",
                   "model": "sonnet", "effort": "high"}),
@@ -143,10 +143,10 @@ def test_the_crews_use_by_day_plan_model_and_bot(store):
     assert s["totals"] == {"claude": 500 + 350, "codex": 5500} and s["turns"] == 3
     assert s["daily"][-1] == {"date": datetime.now().astimezone().date().isoformat(), "claude": 850, "codex": 5500}
     assert s["models"][0] == {"plan": "codex", "model": "gpt-6.1-sol", "tokens": 5500, "input": 5000,
-                              "cached": 0}  # put down to its bot's model
-    assert s["cache"] == {"input": 6300, "cached": 600}
+                              "cached": 0, "written": 0}  # put down to its bot's model
+    assert s["cache"] == {"input": 6300, "cached": 600, "written": 350}
     assert next(b for b in s["bots"] if b["bot"] == "chief") == {"bot": "chief", "tokens": 500, "input": 1000,
-                                                                    "cached": 600}
+                                                                    "cached": 600, "written": 350}
     assert {b["bot"] for b in s["bots"]} == {"engineer", "chief", "PR reviewer"}
     assert s["efforts"][0] == {"effort": "high", "turns": 2} and s["streak"] == {"longest": 1, "current": 1}
     assert s["longest_turn"]["task_id"] == work.id and s["counts"]["threads"] == 1 and s["counts"]["reviews"] == 1

@@ -138,7 +138,11 @@ export function Analytics({ crew }: { crew: Crew }) {
               <Stat value={data.efforts[0] ? (EFFORT_LABEL[data.efforts[0].effort] ?? data.efforts[0].effort) : "–"} label={data.efforts[0] ? `Most used reasoning, ${Math.round((data.efforts[0].turns / Math.max(1, data.turns)) * 100)}% of turns` : "Most used reasoning"} />
               <Stat value={data.turns ? compact((data.totals.claude + data.totals.codex) / data.turns) : "–"} label={`Tokens in an average turn, of ${data.turns.toLocaleString()}`} />
               <Stat value={share(data.cache) === null ? "–" : `${share(data.cache)}%`} label="Of input from the prompt cache" title="Cached input costs a fraction of fresh input, and doesn't count toward budgets." />
-              <Stat value={compact(data.cache.cached)} label="Tokens read from the cache" />
+              <Stat
+                value={compact(data.cache.cached)}
+                label={data.cache.written ? `Tokens read from the cache, ${compact(data.cache.written)} written to it` : "Tokens read from the cache"}
+                title="Written is Claude's count of what it stored to read back cheaply later. A good start to the prompt is written once and read many times."
+              />
               <Stat value={data.counts.threads.toLocaleString()} label="Threads opened" />
               <Stat value={data.counts.reviews.toLocaleString()} label="Pull request reviews" />
               <Stat value={data.counts.routine_runs.toLocaleString()} label="Routine runs" />

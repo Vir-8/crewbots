@@ -332,7 +332,9 @@ Each step leaves the system working.
 - **Prompt caching** is the CLIs' and the APIs', matched from the start of the prompt. A bot's instructions put what
   stays the same first (who it is, its role card, the roster, the crew tools, skills, team files) and what changes
   last (its notes, the task's setting, a briefing or review), so every session of a bot shares the cached start, and
-  a new note only changes the end. Analytics shows how much input came from the cache, per model and bot.
+  a new note only changes the end. Analytics shows how much input came from the cache, per model and bot, and how
+  much Claude wrote to it (Codex doesn't say); every turn's usage records both. A test holds the start of a bot's
+  instructions byte-identical across its sessions, and when a note is added.
 - **Changes reach a running session in the turn.** A session keeps the instructions it started with (both CLIs do),
   so the role card, roster, skills, team files and notes index (`Crew.living_parts`) are fingerprinted when a session
   starts (the `primed` table), and a later turn carries whatever changed since in a `<crew-updates>` block before the

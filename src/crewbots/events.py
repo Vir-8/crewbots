@@ -40,6 +40,7 @@ class Usage:
     output_tokens: int
     cached_input_tokens: int = 0
     cost_usd: float | None = None  # what the CLI reports; on a subscription it is notional, not billed
+    cache_write_tokens: int = 0  # input written to the prompt cache: Claude says how much; Codex doesn't
     kind: str = field(default="usage", init=False)
 
 

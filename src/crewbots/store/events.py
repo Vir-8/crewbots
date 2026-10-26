@@ -75,7 +75,8 @@ class Events:
             " - coalesce(json_extract(e.data, '$.cached_input_tokens'), 0))"
             " + coalesce(json_extract(e.data, '$.output_tokens'), 0)) as fresh, count(*) as turns,"
             " sum(coalesce(json_extract(e.data, '$.input_tokens'), 0)) as input,"
-            " sum(coalesce(json_extract(e.data, '$.cached_input_tokens'), 0)) as cached"
+            " sum(coalesce(json_extract(e.data, '$.cached_input_tokens'), 0)) as cached,"
+            " sum(coalesce(json_extract(e.data, '$.cache_write_tokens'), 0)) as written"
             " from events e join tasks t on t.id = e.task_id where e.kind = 'usage' and e.at >= ?"
             " group by day, t.bot, t.kind, plan, model, effort", (since,)).fetchall()
         return [dict(r) for r in rows]

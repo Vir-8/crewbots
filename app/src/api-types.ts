@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "5dad8f456eda";
+export const API_SCHEMA = "97c04cc75383";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -75,6 +75,7 @@ export interface BotUse {
   tokens: number;
   input: number;
   cached: number;
+  written?: number;
 }
 
 export interface Budget {
@@ -93,6 +94,7 @@ export interface BudgetOut {
 export interface CacheUse {
   input: number;
   cached: number;
+  written?: number;
 }
 
 /** A role card's editable parts. Fields left out are left as they are. */
@@ -420,6 +422,7 @@ export interface ModelUse {
   tokens: number;
   input: number;
   cached: number;
+  written?: number;
 }
 
 export interface ModelsOut {

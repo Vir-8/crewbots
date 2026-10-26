@@ -72,7 +72,7 @@ export function usageSummary(days: number) {
     ],
     efforts: [{ effort: "high", turns: 812 }, { effort: "medium", turns: 433 }, { effort: "xhigh", turns: 167 }],
     counts: { threads: 64, reviews: 23, routine_runs: 41, room_messages: 318 },
-    cache: { input: (totals.claude + totals.codex) * 4, cached: (totals.claude + totals.codex) * 3 },
+    cache: { input: (totals.claude + totals.codex) * 4, cached: (totals.claude + totals.codex) * 3, written: Math.round((totals.claude + totals.codex) * 0.4) },
   };
 }
 

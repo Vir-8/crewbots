@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from fakes import bot, make_crew
 
 from crewbots import crew, paths
 from crewbots.backends import Access, McpServer
@@ -261,3 +262,19 @@ def test_a_bots_reasoning_effort():
     assert parse_card("---\ndescription: d\neffort: xhigh\n---\nbody", "x").effort == "xhigh"
     with pytest.raises(CrewError, match="effort is one of"):
         parse_card("---\ndescription: d\neffort: lots\n---\nbody", "x")
+
+
+def test_the_start_of_a_bots_instructions_is_the_same_for_every_session_and_turn(tmp_path):
+    """The prompt cache matches from the start, so whatever varies by task or by day comes after what doesn't."""
+    crewed = make_crew(tmp_path, bot("engineer"), bot("chief", can_delegate=True), team={"rules.md": "Ask first."})
+    engineer = crewed.bots["engineer"]
+    chat = crewed.system_prompt(engineer, setting="Your ongoing chat with the user.")
+    thread = crewed.system_prompt(engineer, delegated_by="chief", recent="- 09:00 t_1 Shipped the export",
+                                state="Goal: the export.", briefing="Where it stood.")
+    stable = chat.index("# Memory")  # role, roster, tools, skills, team files and core memory: the same for all
+    assert thread[:stable] == chat[:stable] and chat.index("# team/rules.md") < stable
+
+    crewed.memory.remember("engineer", "Deploys", "On Tuesdays.", "t_1")
+    later = crewed.system_prompt(engineer, setting="Your ongoing chat with the user.")
+    assert later[:stable] == chat[:stable] and later != chat  # a new note only changes what comes after it
+    assert later.index("Deploys") > stable

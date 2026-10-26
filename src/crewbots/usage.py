@@ -21,7 +21,7 @@ def summary(store: Store, bot_for, days: int = 371) -> dict[str, Any]:
     by_day: dict[str, dict[str, int]] = defaultdict(lambda: {"claude": 0, "codex": 0})
     models: Counter[tuple[str, str]] = Counter()
     bots: Counter[str] = Counter()
-    cache: dict[str, Counter[str]] = defaultdict(Counter)  # "all", "model:<plan>:<model>", "bot:<bot>" → input, cached
+    cache: dict[str, Counter[str]] = defaultdict(Counter)  # "all", "model:<plan>:<model>", "bot:<bot>" → input, cached, written
     efforts: Counter[str] = Counter()
     turns = 0
     for row in store.usage_by(since):
@@ -36,6 +36,7 @@ def summary(store: Store, bot_for, days: int = 371) -> dict[str, Any]:
         for key in ("all", f"model:{plan}:{model}", f"bot:{who}"):
             cache[key]["input"] += int(row["input"] or 0)
             cache[key]["cached"] += int(row["cached"] or 0)
+            cache[key]["written"] += int(row["written"] or 0)
         efforts[row["effort"] or (bot.effort if bot and bot.effort else "default")] += row["turns"]
         turns += row["turns"]
     daily = [{"date": d.isoformat(), **by_day.get(d.isoformat(), {"claude": 0, "codex": 0})}
@@ -63,7 +64,7 @@ def summary(store: Store, bot_for, days: int = 371) -> dict[str, Any]:
 
 
 def _cached(counts: Counter[str]) -> dict[str, int]:
-    return {"input": counts["input"], "cached": counts["cached"]}
+    return {"input": counts["input"], "cached": counts["cached"], "written": counts["written"]}
 
 
 def _streaks(active: list[date], today: date) -> dict[str, int]:
