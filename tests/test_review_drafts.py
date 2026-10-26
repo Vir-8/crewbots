@@ -91,6 +91,11 @@ async def test_a_reviewer_drafts_a_comment_on_a_line_the_diff_shows(world):
     with pytest.raises(ToolRefused, match="isn't one of this pull request's changed files"):
         await tools.call("draft_comment", {"path": "elsewhere.py", "line": 1, "body": "x"})
     assert await tools.call("draft_comment", {"path": "old.py", "line": 2, "side": "LEFT", "body": "why remove this?"})
+    essay = "This is a problem because " + "of a long chain of reasoning " * 20
+    with pytest.raises(ToolRefused, match="that comment is 1.. words: make it one to three plain sentences"):
+        await tools.call("draft_comment", {"path": "export.py", "line": 12, "body": essay})
+    fix = "Empty filters drop every row; keep them?\n```suggestion\n" + "    rows = report_rows(filters or {})\n" * 40 + "```"
+    assert await tools.call("draft_comment", {"path": "export.py", "line": 12, "body": fix})  # code doesn't count
 
 
 async def test_only_the_lead_drafts_and_only_without_the_repository_does_a_reviewer_read_github(world):

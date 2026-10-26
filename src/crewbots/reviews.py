@@ -67,6 +67,13 @@ anything anywhere.
 Find what's actually wrong: bugs, regressions, broken edge cases, security problems, missing or misleading tests, and
 changes that don't do what the pull request says. No style nits a linter would catch, and no restating the diff."""
 
+COMMENT_WORDS = 70  # past this, a reviewer's draft is sent back to be shortened (code blocks don't count)
+LINE_COMMENT = """A line comment is for the pull request's author, and short: one to three plain sentences, under
+50 words, saying what's wrong and what to change, so they know at once what's expected. Write it as a request or a
+question ("This skips the last row when `rows` is empty; start the range at 0?"), not an essay: no background, no
+walkthrough of your reasoning, no severity labels, headings or lists. A one-line fix can be a ```suggestion block
+holding the line's replacement. The why and the evidence belong in your reply, not on the line."""
+
 REVIEWER = f"""You are one of the reviewers of a pull request. You review it on your own; a lead reviewer then puts
 your findings together with the others' into the review the person reads.
 
@@ -78,6 +85,9 @@ Reply with your findings, most serious first, each with:
   line by its old number
 - the problem, and the input or state that goes wrong
 - the comment you'd leave on that line
+
+{LINE_COMMENT}
+
 Then a line on the change's overall risk, and what you couldn't check. Nothing else."""
 
 LEAD_REVIEWER = f"""You lead a private review of one pull request, for the person you're talking to. Other reviewers,
@@ -90,8 +100,10 @@ on other models, review it on their own first, and their findings are your first
 3. If a reviewer failed or missed part of the change, review that part yourself.
 4. For each finding that belongs on a line, draft one comment with `draft_comment(path, line, body)`: one per problem,
    never twice. `line` is its number in the pull request's version of the file (`side: LEFT` and its old number for a
-   removed line), a line the diff shows. Write it as a careful reviewer would: the problem, why it matters, what
-   would fix it. Drafts are private: the person reads, edits or deletes them, and decides whether to submit a review.
+   removed line), a line the diff shows. Reviewers' suggested comments are often too long: rewrite them. Drafts are
+   private: the person reads, edits or deletes them, and decides whether to submit a review.
+
+{LINE_COMMENT}
 
 Then reply with the review:
 1. One line: no blocking issues, or how many issues there are.
@@ -698,7 +710,9 @@ def _review_tools(reads_github: bool = False, drafting: bool = True):
             "draft_comment", "Draft a review comment on one line of the pull request, for the person to read, edit or "
             "drop before they decide whether to submit a review. path: the file, from the repository's root. line: its "
             "number in the pull request's version of the file, a line the diff shows. side: RIGHT (the default) or "
-            "LEFT for a removed line, by its old number. body: the comment, in markdown. Nothing is posted.",
+            "LEFT for a removed line, by its old number. body: the comment, in markdown: one to three plain sentences, "
+            f"under 50 words, saying what's wrong and what to change (over {COMMENT_WORDS} words, not counting code "
+            "blocks, is refused). Nothing is posted.",
             _object({"path": STRING, "line": {"type": "integer"}, "side": {"type": "string", "enum": ["RIGHT", "LEFT"]},
                      "body": STRING}, ["path", "line", "body"])))
     if reads_github:
@@ -739,6 +753,9 @@ class ReviewTools:
                                                    str(args["path"]) if args.get("path") else None,
                                                    int(args.get("part") or 1))
                 case "draft_comment" if self.drafting and self.drafts is not None:
+                    if (words := len(re.sub(r"```.*?(```|$)", "", str(args["body"]), flags=re.S).split())) > COMMENT_WORDS:
+                        raise ReviewError(f"that comment is {words} words: make it one to three plain sentences, under "
+                                          "50, saying what's wrong and what to change. The why belongs in your reply.")
                     draft = await asyncio.to_thread(self.reviews.check_draft, self.repo, self.number, str(args["path"]),
                                                     int(args["line"]), str(args.get("side") or "RIGHT").upper())
                     saved = self.drafts.add_draft(self.repo, self.number, draft["path"], draft["line"], draft["side"],
