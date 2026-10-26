@@ -120,3 +120,15 @@ def test_the_apps_types_match_the_api():
 
     committed = Path(__file__).parent.parent / "app" / "src" / "api-types.ts"
     assert committed.read_text() == typescript.from_openapi(openapi_schema()), "app/src/api-types.ts is stale"
+
+
+def test_the_crew_can_be_paused_and_resumed_over_the_api(client):
+    assert client.get("/crew", headers=AUTH).json() == {"paused": False, "running": 0, "sessions": 0}
+
+    assert client.post("/crew/pause", headers=AUTH).json()["paused"] is True
+    task = client.post("/tasks", json={"bot": "worker", "goal": "x"}, headers=AUTH).json()
+    time.sleep(0.2)
+    assert client.get(f"/tasks/{task['id']}", headers=AUTH).json()["status"] == "queued"
+
+    assert client.post("/crew/resume", headers=AUTH).json()["paused"] is False
+    assert wait_idle(client, task["id"])["status"] == "idle"

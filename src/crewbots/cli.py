@@ -17,6 +17,7 @@ from typing import Any
 import httpx
 
 from crewbots import api, crew, typescript, worktree
+from crewbots import service as svc
 from crewbots.backends import BACKENDS, Access, RunSpec
 from crewbots.events import Done, Event, Notice, SessionStarted, Text, ToolCall, ToolResult, Usage, from_json
 
@@ -62,6 +63,12 @@ def main(argv: list[str] | None = None) -> int:
     merge.add_argument("task_id")
     merge.add_argument("--force", action="store_true", help="merge even though its current version is not approved")
 
+    service = sub.add_parser("service", help="run the daemon as a login service (macOS launchd)")
+    service.add_argument("action", choices=["install", "uninstall", "status", "start"])
+    service.add_argument("--port", type=int, default=api.DEFAULT_PORT)
+    service.add_argument("--label", default=svc.LABEL, help="the launchd label (another one for a second crew)")
+    service.add_argument("--json", action="store_true")
+
     skills = sub.add_parser("skills", help="list the crew's skills, or add some")
     skills_sub = skills.add_subparsers(dest="skills_command")
     add = skills_sub.add_parser("add", help="copy in a skill folder, or a folder of skills such as pstack's skills/")
@@ -86,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return COMMANDS[args.command](args)
-    except (crew.CrewError, FileNotFoundError) as e:
+    except (crew.CrewError, FileNotFoundError, RuntimeError) as e:
         print(f"crewbots: {e}", file=sys.stderr)
         return 1
     except httpx.HTTPStatusError as e:
@@ -143,6 +150,29 @@ def _tasks(args: argparse.Namespace) -> int:
 
     for task in reversed(children.get(None, [])):  # newest top-level task first
         show(task, 0)
+    return 0
+
+
+def _service(args: argparse.Namespace) -> int:
+    match args.action:
+        case "install":
+            crew.load(args.home)  # refuse to install a service for a folder that isn't a crew
+            state = svc.install(args.home, args.port, args.label)
+        case "uninstall":
+            state = svc.uninstall(args.label)
+        case "start":
+            svc.start(args.label)
+            state = svc.status(args.label)
+        case _:
+            state = svc.status(args.label)
+    if args.json:
+        print(json.dumps({"label": state.label, "installed": state.installed, "running": state.running,
+                          "pid": state.pid, "plist": str(state.plist)}))
+    elif not state.installed:
+        print(f"{state.label}: not installed")
+    else:
+        print(f"{state.label}: installed ({state.plist}), {'running, pid ' + str(state.pid) if state.running else 'not running'}")
+        print(f"logs: {svc.LOGS / 'daemon.log'}")
     return 0
 
 
@@ -244,7 +274,8 @@ async def _run_direct(args: argparse.Namespace) -> int:
 
 COMMANDS = {
     "init": _init, "serve": _serve, "bots": _bots, "task": _task, "tasks": _tasks, "watch": _watch, "say": _say,
-    "cancel": _cancel, "diff": _diff, "review": _review, "merge": _merge, "skills": _skills, "openapi": _openapi, "run": _run,
+    "cancel": _cancel, "diff": _diff, "review": _review, "merge": _merge, "skills": _skills, "service": _service,
+    "openapi": _openapi, "run": _run,
 }
 
 

@@ -13,6 +13,7 @@ import contextlib
 import json
 import os
 import secrets
+import sys
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -138,6 +139,17 @@ class ChangesOut(BaseModel):
     diff: str | None
 
 
+class CrewState(BaseModel):
+    paused: bool
+    running: int
+    sessions: int
+
+
+class LiveCrew(BaseModel):
+    type: Literal["crew"]
+    crew: CrewState
+
+
 class LiveTask(BaseModel):
     type: Literal["task"]
     task: TaskOut
@@ -148,7 +160,7 @@ class LiveEvent(BaseModel):
     event: EventOut
 
 
-LiveMessage = Annotated[LiveTask | LiveEvent, Field(discriminator="type")]
+LiveMessage = Annotated[LiveTask | LiveEvent | LiveCrew, Field(discriminator="type")]
 
 
 class NewTask(BaseModel):
@@ -286,6 +298,21 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT) -> FastAPI:
     async def changes(task_id: str):
         task_or_404(task_id)
         return {"diff": runner.changes(task_id)}
+
+    @v1.get("/crew", response_model=CrewState)
+    async def crew_state():
+        return runner.state()
+
+    @v1.post("/crew/pause", response_model=CrewState)
+    async def pause():
+        """No new turn starts until resumed; turns already running finish."""
+        runner.pause()
+        return runner.state()
+
+    @v1.post("/crew/resume", response_model=CrewState)
+    async def resume():
+        runner.resume()
+        return runner.state()
 
     @v1.get("/events/recent", response_model=list[EventOut])
     async def recent_events(limit: int = Query(200, le=2000), kinds: str | None = None):
@@ -445,7 +472,9 @@ def serve(home: Path, port: int = DEFAULT_PORT, max_parallel: int = 4, sessions:
             info_path.unlink(missing_ok=True)
             store.close()
 
-    runner = Runner(store, crew, max_parallel=max_parallel, api_url=f"http://127.0.0.1:{port}/v1", sessions=sessions)
+    keep_awake = ("caffeinate", "-i") if sys.platform == "darwin" else None
+    runner = Runner(store, crew, max_parallel=max_parallel, api_url=f"http://127.0.0.1:{port}/v1", sessions=sessions,
+                    keep_awake=keep_awake)
     app = create_app(runner, token, port)
     app.router.lifespan_context = lifespan
     print(f"crewbots: {len(crew.bots)} bots ({', '.join(crew.bots)}) from {home}, on http://127.0.0.1:{port}")

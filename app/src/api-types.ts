@@ -31,6 +31,12 @@ export interface ChildOut {
   error?: string | null;
 }
 
+export interface CrewState {
+  paused: boolean;
+  running: number;
+  sessions: number;
+}
+
 export interface CursorOut {
   id: number;
 }
@@ -86,6 +92,11 @@ export interface HandoffOut {
   open: string;
   needs: string;
   at: string;
+}
+
+export interface LiveCrew {
+  type: "crew";
+  crew: CrewState;
 }
 
 export interface LiveEvent {

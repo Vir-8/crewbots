@@ -170,7 +170,20 @@ Each step leaves the system working.
        The Bash pattern is a guardrail, not a boundary. Containers are the boundary.
      - `claude-cli` remains as a backend for the plain `claude -p` path.
    - **Codex's slow first turn** (15s) was mostly `codex mcp list`, which isolation needs. It takes 5.3s every call and was cached for only 60 seconds. It's now cached until the Codex config or plugins change, warmed when the daemon starts, and run off the event loop. A new thread still costs about 1.6s, and its first turn about 4s (a cold prompt cache) against about 1.5s later. Through the daemon, the first Codex turn is now 5.4s, against 15s before and about 10s one-shot.
-5. **Login service and menu bar.** launchd install and uninstall from the app, the app attaching rather than owning, the power assertion, notifications.
+5. **Login service and menu bar** (done).
+   - **The service:** `crewbots service install|uninstall|status|start` manages a launchd LaunchAgent. It starts at login, restarts after a crash, uses a login-like `PATH`, and logs to `~/.crewbots/logs`.
+   - **The app:**
+     - attaches to the service, or starts it, and never stops it
+     - has a menu bar item: a status line, Open, Pause/Resume, "Start at login", Quit
+     - closes to the menu bar
+     - sends native notifications for questions, merges to approve, failures and finished goals, unless its window is in front
+   - **Pausing** (`/v1/crew/pause`) stops new turns from starting.
+   - **Keeping the Mac awake:** while any task runs, the daemon holds `caffeinate -i -w <daemon pid>`, and lets go when the crew is idle or the daemon dies.
+   - **Checked live:**
+     - a test LaunchAgent started the daemon
+     - launchd restarted it after a `kill -9`
+     - uninstalling left nothing behind
+     - the app attached to the service, and quitting it left the service running
 6. **Memory.** Bot memory files with `remember`/`forget`, FTS `recall`, and the rollover for long conversations.
 7. **Routines, triggers, budgets.** The scheduler, GitHub triggers, per-bot budgets, and the standup and retro routines.
 8. **Sandboxed shells** for writing bots on both backends (done, with the policy). Containers once there's a reason.

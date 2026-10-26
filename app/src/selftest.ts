@@ -44,6 +44,20 @@ export async function selftest() {
       report.panelOpened = Boolean(await until(() => document.querySelector(".panel .thread-col"), 10_000));
     }
 
+    // The menu bar follows the crew: pausing shows there, through /v1/live.
+    type MenuBar = { title: string; line: string; paused: boolean };
+    await bridge.request("POST", "/crew/pause");
+    const paused = await until(async () => {
+      const bar = await invoke<MenuBar>("menu_bar");
+      return bar.paused ? bar : undefined;
+    }, 10_000);
+    report.menuBarWhilePaused = paused?.line ?? "never showed paused";
+    await bridge.request("POST", "/crew/resume");
+    report.menuBarAfter = (await until(async () => {
+      const bar = await invoke<MenuBar>("menu_bar");
+      return bar.paused ? undefined : bar;
+    }, 10_000))?.line;
+
     // Live updates: start a task and stop it straight away, and see its events arrive through /v1/live.
     const seen: string[] = [];
     const off = bridge.onLive((message) => {

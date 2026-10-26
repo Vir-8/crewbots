@@ -91,6 +91,14 @@ uv run crewbots review <task id>
 uv run crewbots merge <task id>
 ```
 
+To keep the crew running whenever you're logged in, even with the app closed, install the daemon as a login service:
+
+```bash
+uv run crewbots service install
+```
+
+It starts at login and restarts if it ever crashes. `crewbots service status` and `crewbots service uninstall` check on it and remove it, and its log is `~/.crewbots/logs/daemon.log`. The app's menu bar item has the same switch ("Start at login"). While tasks are running, the daemon keeps the Mac from sleeping (`caffeinate`), and it lets go as soon as the crew is idle.
+
 `crewbots tasks` lists everything as a tree, `watch` follows a task and everything it delegates, and `cancel` stops one. Tasks still running when the daemon stops are marked interrupted; send them a message to carry on. `crewbots run` skips the crew and the daemon entirely and sends one prompt through one backend.
 
 ## The desktop app
@@ -125,7 +133,16 @@ The app is one conversation per goal:
 - **Side panel:** opening a card shows that bot's own thread, its changes and its review.
 - **Composer:** the one place you type, including a new goal with who it's for and the folder to work in.
 
-If a daemon is already running the app attaches to it; otherwise it starts one, and stops it on quit.
+**The menu bar item:**
+- what's happening ("2 working · 1 needs you")
+- Open
+- Pause the crew: no new turns start, and running ones finish
+- Start at login
+- Quit
+
+Closing the window leaves crewbots in the menu bar. You get a native notification when a goal has a question, work is ready to merge, a goal fails, or a goal is done, unless you're already looking at the app.
+
+**Finding the daemon:** if one is already running, the app attaches to it. If not, the app starts the login service when it's installed, or its own daemon otherwise, which it stops when it quits. The app never stops the login service.
 - **The token stays out of the window.** The Rust side (`src-tauri/src/crew.rs`) holds the daemon's token, makes every call and relays `/v1/live` as events. The window gets nothing but IPC: its CSP allows no network.
 - **Bot output is safe to show.** It's rendered as React elements, never as HTML.
 - **`PATH` is fixed up.** An app launched from Finder gets a bare `PATH`, so the shell adds the usual tool folders before starting the daemon. Otherwise it couldn't find `uv`, `claude` or `codex`.

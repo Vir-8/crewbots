@@ -1,6 +1,7 @@
-//! The window's only way to the crew. This side finds the crew's daemon, or starts one, holds its token, makes every
-//! request for the window, and relays /v1/live as events. The window never sees the token and can't reach the
-//! network itself (its CSP allows nothing but IPC).
+//! The window's only way to the crew. This side finds the crew's daemon, or starts it (the login service when it's
+//! installed, a child of the app otherwise), holds its token, makes every request for the window, and relays /v1/live
+//! as events. The window never sees the token and can't reach the network itself (its CSP allows nothing but IPC).
+//! It also keeps the crew view the menu bar and notifications use.
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -16,6 +17,10 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::Message;
+
+use crate::watch::CrewView;
+
+const SERVICE_LABEL: &str = "app.crewbots.daemon";
 
 const START_TIMEOUT: Duration = Duration::from_secs(30);
 const RECONNECT_AFTER: Duration = Duration::from_secs(2);
@@ -49,6 +54,8 @@ pub struct Crew {
     status: Mutex<ConnectionStatus>,
     child: Mutex<Option<Child>>,
     log: Arc<Mutex<VecDeque<String>>>,
+    label: String,
+    pub view: Mutex<CrewView>,
 }
 
 impl Crew {
@@ -75,6 +82,8 @@ impl Crew {
             daemon: Mutex::new(None),
             child: Mutex::new(None),
             log: Arc::new(Mutex::new(VecDeque::new())),
+            label: std::env::var("CREWBOTS_SERVICE_LABEL").unwrap_or_else(|_| SERVICE_LABEL.into()),
+            view: Mutex::new(CrewView::default()),
         }
     }
 
@@ -124,8 +133,16 @@ impl Crew {
             self.set_status(app, "no-crew", Some(message)).await;
             return None;
         }
-        self.set_status(app, "starting", Some("Starting the crew's daemon…".into())).await;
-        if let Err(error) = self.start_daemon().await {
+        // The login service, when it's installed, is the crew's daemon: start that rather than one of our own.
+        let via_service = self.service_installed();
+        let started = if via_service {
+            self.set_status(app, "starting", Some("Starting the crew's login service…".into())).await;
+            self.launchctl(&["kickstart", &format!("gui/{}/{}", unsafe { libc::getuid() }, self.label)]).await
+        } else {
+            self.set_status(app, "starting", Some("Starting the crew's daemon…".into())).await;
+            self.start_daemon().await
+        };
+        if let Err(error) = started {
             self.set_status(app, "error", Some(format!("Couldn't start the daemon: {error}"))).await;
             return None;
         }
@@ -136,10 +153,11 @@ impl Crew {
                     return Some(daemon);
                 }
             }
-            let exited = match self.child.lock().await.as_mut() {
-                Some(child) => child.try_wait().ok().flatten().is_some(),
-                None => true,
-            };
+            let exited = !via_service
+                && match self.child.lock().await.as_mut() {
+                    Some(child) => child.try_wait().ok().flatten().is_some(),
+                    None => true,
+                };
             if exited {
                 break;
             }
@@ -178,6 +196,41 @@ impl Crew {
         Ok(())
     }
 
+    pub fn service_installed(&self) -> bool {
+        let home = PathBuf::from(std::env::var("HOME").unwrap_or_default());
+        home.join("Library/LaunchAgents").join(format!("{}.plist", self.label)).exists()
+    }
+
+    async fn launchctl(&self, args: &[&str]) -> std::io::Result<()> {
+        let status = Command::new("/bin/launchctl").args(args).stdin(Stdio::null()).status().await?;
+        if status.success() { Ok(()) } else { Err(std::io::Error::other(format!("launchctl {} failed", args.join(" ")))) }
+    }
+
+    /// `crewbots service <action>`: install or uninstall the login service, or ask about it. Installing while this
+    /// app runs its own daemon hands over to the service: ours stops first, so the two never fight over the port.
+    pub async fn service(&self, action: &str) -> Value {
+        if action == "install" {
+            self.stop_owned_daemon().await;
+        }
+        let path = login_path();
+        let output = Command::new(find_in(&path, "uv"))
+            .args(["run", "--directory"])
+            .arg(&self.project)
+            .args(["crewbots", "--home"])
+            .arg(&self.home)
+            .args(["service", action, "--label", &self.label, "--port", &self.port.to_string(), "--json"])
+            .env("PATH", &path)
+            .stdin(Stdio::null())
+            .output()
+            .await;
+        match output {
+            Ok(out) if out.status.success() => serde_json::from_slice(&out.stdout)
+                .unwrap_or_else(|_| json!({ "error": String::from_utf8_lossy(&out.stdout).to_string() })),
+            Ok(out) => json!({ "error": String::from_utf8_lossy(&out.stderr).trim().to_string() }),
+            Err(error) => json!({ "error": error.to_string() }),
+        }
+    }
+
     /// Stops the daemon if this app started it. SIGINT lets it mark running tasks interrupted, so they can resume.
     pub async fn stop_owned_daemon(&self) {
         if let Some(mut child) = self.child.lock().await.take() {
@@ -211,12 +264,45 @@ impl Crew {
         let url = format!("{}/v1/live?after={after}&token={}", daemon.url.replacen("http", "ws", 1), daemon.token);
         let Ok((mut socket, _)) = tokio_tungstenite::connect_async(url).await else { return };
         let _ = app.emit("crew:resync", ()); // anything missed while disconnected
+        self.load_view(app).await;
         while let Some(Ok(message)) = socket.next().await {
             if let Message::Text(text) = message {
                 if let Ok(value) = serde_json::from_str::<Value>(&text) {
+                    self.watch(app, &value).await;
                     let _ = app.emit("crew:live", value);
                 }
             }
+        }
+    }
+
+    async fn load_view(&self, app: &AppHandle) {
+        let tasks = self.request("GET", "/tasks?limit=1000", None).await;
+        let crew = self.request("GET", "/crew", None).await;
+        let list = tasks["data"].as_array().cloned().unwrap_or_default();
+        let paused = crew["data"]["paused"].as_bool().unwrap_or(false);
+        let summary = {
+            let mut view = self.view.lock().await;
+            view.load(&list, paused);
+            view.summary()
+        };
+        crate::show_summary(app, &summary);
+    }
+
+    /// Keeps the menu bar current, and notifies on what needs you.
+    async fn watch(&self, app: &AppHandle, message: &Value) {
+        let (alerts, summary) = {
+            let mut view = self.view.lock().await;
+            let mut alerts = Vec::new();
+            match message["type"].as_str() {
+                Some("task") => alerts.extend(view.update(&message["task"])),
+                Some("crew") => view.set_paused(message["crew"]["paused"].as_bool().unwrap_or(false)),
+                _ => {}
+            }
+            (alerts, view.summary())
+        };
+        crate::show_summary(app, &summary);
+        for alert in alerts {
+            crate::notify(app, &alert);
         }
     }
 

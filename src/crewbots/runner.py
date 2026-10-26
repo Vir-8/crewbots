@@ -16,7 +16,9 @@ never waits or polls. Each run gets a token that lets its MCP server act for tha
 
 import asyncio
 import contextlib
+import os
 import secrets
+import subprocess
 import sys
 from collections.abc import Iterator, Mapping
 from contextlib import aclosing
@@ -143,6 +145,7 @@ class Runner:
         sessions: bool = True,
         idle_timeout_s: float = IDLE_TIMEOUT_S,
         max_sessions: int = MAX_SESSIONS,
+        keep_awake: tuple[str, ...] | None = None,  # a command that stops the Mac sleeping while it runs
     ):
         self.store = store
         self.crew = crew
@@ -162,6 +165,10 @@ class Runner:
         self.max_sessions = max_sessions
         self._sessions: dict[str, OpenSession] = {}
         self._reaper: asyncio.Task[None] | None = None
+        self.keep_awake = keep_awake
+        self._awake: subprocess.Popen[bytes] | None = None
+        self._resumed = asyncio.Event()  # cleared while the crew is paused: no new turn starts
+        self._resumed.set()
 
     # Commands from the user (and, through `delegate` and `message_child`, from coordinators).
 
@@ -211,6 +218,7 @@ class Runner:
         await asyncio.gather(*runs.values(), return_exceptions=True)
         if self._reaper:
             self._reaper.cancel()
+        self._resumed.set()
         for task_id in list(self._sessions):
             await self._close_session(task_id)
         for task_id in runs:
@@ -218,6 +226,23 @@ class Runner:
 
     def running(self) -> list[str]:
         return list(self._runs)
+
+    # Pausing: no new turn starts while paused; turns already running finish. Waiting tasks stay queued.
+
+    @property
+    def paused(self) -> bool:
+        return not self._resumed.is_set()
+
+    def pause(self) -> None:
+        self._resumed.clear()
+        self.bus.publish({"type": "crew", "crew": self.state()})
+
+    def resume(self) -> None:
+        self._resumed.set()
+        self.bus.publish({"type": "crew", "crew": self.state()})
+
+    def state(self) -> dict[str, Any]:
+        return {"paused": self.paused, "running": len(self._runs), "sessions": len(self._sessions)}
 
     def open_sessions(self) -> list[str]:
         return list(self._sessions)
@@ -363,6 +388,7 @@ class Runner:
 
     def _start(self, task_id: str, prompt: str) -> None:
         self._runs[task_id] = asyncio.create_task(self._turns(task_id, prompt), name=f"task {task_id}")
+        self._stay_awake()
         if self.use_sessions and (self._reaper is None or self._reaper.done()):
             self._reaper = asyncio.create_task(self._reap_idle(), name="session reaper")
 
@@ -374,9 +400,11 @@ class Runner:
                 prompt = "\n\n".join(waiting) if waiting else None
         finally:
             self._runs.pop(task_id, None)
+            self._stay_awake()
         self._report_up(task_id)
 
     async def _run(self, task_id: str, prompt: str) -> None:
+        await self._resumed.wait()
         async with self._slots:
             task = self._set(task_id, status=Status.RUNNING, error=None)
             try:
@@ -489,6 +517,20 @@ class Runner:
             for task_id, opened in list(self._sessions.items()):
                 if task_id not in self._runs and now - opened.last_used >= self.idle_timeout_s:
                     await self._close_session(task_id)
+
+    def _stay_awake(self) -> None:
+        """Holds a power assertion while any task is running, and only then: work in progress shouldn't stall
+        because the Mac went to sleep, but an idle crew shouldn't keep it awake."""
+        if not self.keep_awake:
+            return
+        busy = bool(self._runs)
+        if busy and (self._awake is None or self._awake.poll() is not None):
+            # -w: let go if the daemon itself dies, so a crash never leaves the Mac unable to sleep.
+            self._awake = subprocess.Popen([*self.keep_awake, "-w", str(os.getpid())],
+                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif not busy and self._awake is not None:
+            self._awake.terminate()
+            self._awake = None
 
     def _review_brief(self, task: Task) -> str | None:
         if not task.review_of:
