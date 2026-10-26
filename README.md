@@ -62,6 +62,9 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
     - writing bots' shell commands have no network unless their role card says `network: true`, or lists the hosts
       (`network: [pypi.org, files.pythonhosted.org, "*.npmjs.org"]`). A list needs Claude: Codex's sandbox only
       switches the network on or off.
+    - writing bots' shells never get your logins: `gh` sees an empty config, git has no credential helper and offers
+      no SSH key, and there's no SSH agent. Your git name and email stay. This stops ordinary signing in, not a
+      determined command, which could still read a key file; containers are that boundary.
   - **How it's enforced:** Claude asks on every tool call. Codex's sandbox is the boundary, and every request to leave it is declined. Writing bots' shell commands are OS-sandboxed on both.
   - **Claude's tools run inside the daemon.**
   - **Interrupts:** a cancelled or timed-out Claude turn is interrupted, not killed, so its session stays warm.
@@ -123,7 +126,8 @@ It starts at login and restarts if it ever crashes. `crewbots service status` an
 
 `crewbots routines` lists the routines with their next run, `routines run standup` runs one now, and `routines add`
 copies in a starter one. `crewbots budgets` shows each bot's use against its budget and where the plans' limits
-stand, `release <task>` lets a held task go ahead, and `reload` takes up edited role cards without a restart.
+stand, and `release <task>` lets a held task go ahead. Edited role cards, team files, skills and routines count
+within 30 seconds, with nothing to reload.
 
 `crewbots tasks` lists everything as a tree, `watch` follows a task and everything it delegates, and `cancel` stops one. Tasks still running when the daemon stops are marked interrupted; send them a message to carry on. `crewbots run` skips the crew and the daemon entirely and sends one prompt through one backend.
 
@@ -139,7 +143,20 @@ cd app && npm install
 npm run dev
 ```
 
-`npm run build` makes the `.app`. To work on the UI in a plain browser, run `npm run vite` and open http://localhost:5173. Outside Tauri, the UI runs on a built-in demo crew (`src/preview/`) that covers every state the app shows: working, waiting on you, ready to merge, failed and merged.
+To install it, build the `.app` and copy it to Applications:
+
+```bash
+npx tauri build --bundles app
+```
+
+```bash
+cp -R src-tauri/target/release/bundle/macos/crewbots.app /Applications/
+```
+
+The installed app runs the daemon from this checkout, the path it was built in, so keep the checkout where it is (or
+set `CREWBOTS_PROJECT`). Besides goals and their conversations, the app has a **Crew** page: each bot with what it
+may do (access, network, MCP servers, skills), its budget use, and a button to edit its role card; the plans' limits;
+and the routines, with Run now, editing, and the starter routines to add. To work on the UI in a plain browser, run `npm run vite` and open http://localhost:5173. Outside Tauri, the UI runs on a built-in demo crew (`src/preview/`) that covers every state the app shows: working, waiting on you, ready to merge, failed and merged.
 
 The app is an Activity view of your crew:
 - **Sidebar:** the task tree, filtered by all, needs you or running.

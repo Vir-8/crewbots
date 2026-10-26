@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Composer } from "./components/Composer";
+import { CrewPage } from "./components/CrewPage";
 import { Icon } from "./components/Icon";
 import { Panel } from "./components/Panel";
 import { Sidebar } from "./components/Sidebar";
@@ -15,6 +16,7 @@ export function App() {
   const [goal, setGoal] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null); // a delegated task shown in the side panel
   const [ready, setReady] = useState(false);
+  const [crewPage, setCrewPage] = useState(false);
 
   const rootOf = (id: string): Task | undefined => {
     let task = crew.tasks.get(id);
@@ -26,6 +28,7 @@ export function App() {
     if (!root) return;
     setGoal(root.id);
     setOpen(root.id === id ? null : id);
+    setCrewPage(false);
   };
 
   // Open on the most recent goal, or on the task asked for in the URL.
@@ -44,15 +47,23 @@ export function App() {
     <div className={`app ${panel ? "with-panel" : ""}`}>
       <Sidebar
         crew={crew}
-        goal={current?.id ?? null}
+        goal={crewPage ? undefined : current?.id ?? null}
         onGoal={(id) => {
           setGoal(id);
           setOpen(null);
+          setCrewPage(false);
         }}
         onOpen={openTask}
+        crewPage={crewPage}
+        onCrew={() => {
+          setCrewPage(true);
+          setOpen(null);
+        }}
       />
       <main className="main">
-        {current ? (
+        {crewPage ? (
+          <CrewPage crew={crew} onOpen={openTask} />
+        ) : current ? (
           <Conversation crew={crew} goal={current} onOpen={openTask} />
         ) : (
           <NewGoal crew={crew} onStarted={(task) => setGoal(task.id)} />

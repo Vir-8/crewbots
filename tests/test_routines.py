@@ -1,5 +1,6 @@
 """Routines: cron schedules, routine files, the scheduler, and GitHub triggers."""
 
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from crewbots import routines
 from crewbots.events import Done
 from crewbots.github import PullRequest, Snapshot, _prs
 from crewbots.routines import Cron, RoutineError
+from crewbots.runner import Runner
 from crewbots.scheduler import MAX_STARTS_PER_POLL, Scheduler, activity
 from crewbots.store import Store, Verdict
 
@@ -340,3 +342,29 @@ async def test_a_routine_task_is_held_to_its_budget_with_what_it_delegates(store
     await wait_until(lambda: store.get_task(task.id).status == "held")
     assert "used 24 of its 20 tokens" in [e for e in store.events(task.id) if e.kind == "held"][0].data["reason"]
     await scripted.runner.cancel(task.id)
+
+
+# The crew's own files.
+
+
+async def test_edited_role_cards_count_without_a_reload(store, tmp_path):
+    home = crew_module.init(tmp_path / "crew")
+    runner = Runner(store, crew_module.load(home), {})
+    scheduler = Scheduler(runner)
+    card = home / "bots" / "engineer.md"
+    assert runner.crew.bots["engineer"].network is False and runner.crew.bots["engineer"].path == card
+
+    card.write_text(card.read_text().replace("access: workspace_write\n", "access: workspace_write\nnetwork: true\n"))
+    os_utime_later(card)
+    assert scheduler.reload_if_changed() and runner.crew.bots["engineer"].network is True
+
+    card.write_text(card.read_text().replace("network: true\n", "network: everywhere\n"))
+    os_utime_later(card)
+    assert not scheduler.reload_if_changed()
+    assert "network is true, or a list of hosts" in scheduler.crew_error
+    assert runner.crew.bots["engineer"].network is True  # the crew carries on as it was
+
+
+def os_utime_later(path: Path) -> None:
+    stat = path.stat()
+    os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))

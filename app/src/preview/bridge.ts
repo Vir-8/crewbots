@@ -51,6 +51,10 @@ async function request(method: string, path: string, body?: any) {
   if (parts[0] === "bot") return { ok: false, status: 0, data: { detail: "not an app path" } };
   if (method === "GET" && url.pathname === "/crew") return ok(crewState);
   if (method === "GET" && url.pathname === "/routines") return ok(routines());
+  if (method === "GET" && url.pathname === "/budgets") {
+    return ok(demo.bots.map((b) => ({ bot: b.name, tokens: b.name === "engineer" ? 2_000_000 : null, per: "week", used: b.name === "engineer" ? 1_460_000 : 310_000, held: b.name === "chief" ? ["t_docs000001"] : [] })));
+  }
+  if (method === "POST" && parts[0] === "routines" && parts[1] === "starters") return ok({});
   if (method === "POST" && parts[0] === "routines" && parts[2] === "run") {
     return request("POST", "/tasks", { bot: "chief", goal: `Write the ${parts[1]} (a routine run by hand).` });
   }
@@ -131,6 +135,8 @@ function routines() {
     ],
     errors: {},
     github_error: null,
+    crew_error: null,
+    starters: [{ name: "ci-failed", description: "Works out why checks failed on one of your pull requests, and what would fix it.", when: "on github.ci_failed in owner/name" }],
   };
 }
 
@@ -139,6 +145,7 @@ export const previewBridge = {
   request,
   pickFolder: async () => "~/code/acme-web",
   reveal: async (_path: string) => undefined,
+  openPath: async (_path: string) => undefined,
   onStatus: (_callback: Listener<ConnectionStatus>) => () => undefined,
   onLive: (callback: Listener<Live>) => {
     liveListeners.add(callback);

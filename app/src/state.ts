@@ -110,6 +110,10 @@ export function useCrew() {
     cancel: (taskId: string) => act(api.cancel(taskId)),
     merge: (taskId: string, force: boolean) => act(api.merge(taskId, force)),
     release: (taskId: string) => act(api.release(taskId)),
+    addStarter: async (name: string) => {
+      await act(api.addStarter(name));
+      loadRoutines();
+    },
     runRoutine: async (name: string) => {
       const task = await act(api.runRoutine(name));
       loadRoutines();

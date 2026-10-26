@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from crewbots import crew as crew_module
 from crewbots import github as github_module
 from crewbots import routines as routines_module
 from crewbots.routines import Routine, RoutineError
@@ -50,6 +51,8 @@ class Scheduler:
         self.github_error: str | None = None
         self._polled: float | None = None
         self._skipped: dict[str, str] = {}
+        self.crew_error: str | None = None  # a role card or team file that couldn't be read; the crew carries on as it was
+        self._stamp = crew_module.stamp(runner.crew.home)
 
     def load(self) -> None:
         """Read every tick, so a routine file you add or edit counts without restarting anything."""
@@ -63,7 +66,22 @@ class Scheduler:
                 log.exception("scheduler tick failed")
             await asyncio.sleep(self.tick_s)
 
+    def reload_if_changed(self) -> bool:
+        """Edited role cards, team files and skills count from the next turn, with no reload to remember."""
+        current = crew_module.stamp(self.runner.crew.home)
+        if current == self._stamp:
+            return False
+        self._stamp = current
+        try:
+            self.runner.reload(crew_module.load(self.runner.crew.home))
+        except crew_module.CrewError as e:
+            self.crew_error = str(e)
+            return False
+        self.crew_error = None
+        return True
+
     async def tick(self, now: datetime | None = None) -> list[Task]:
+        self.reload_if_changed()
         self.load()
         if self.runner.paused:
             return []  # nothing is marked checked, so what came due while paused runs once on resume

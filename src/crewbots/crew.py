@@ -6,7 +6,7 @@ servers); the body is the card itself (mission, owns, does not own, done means),
 """
 
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import timedelta
 from importlib import resources
 from pathlib import Path
@@ -82,6 +82,7 @@ class Bot:
     skills: tuple[str, ...] = ()  # names from the crew's skills/ folder, or ("all",)
     budget: Budget | None = None
     network: bool | tuple[str, ...] = False  # for its shell commands: none, any host, or these hosts
+    path: Path | None = None  # its role card
 
 
 @dataclass(frozen=True)
@@ -159,7 +160,7 @@ def load(home: Path) -> Crew:
         raise CrewError(f"no crew at {home}: expected a bots/ folder (run `crewbots init`)")
     bots: dict[str, Bot] = {}
     for path in sorted(bots_dir.glob("*.md")):
-        bot = parse_card(path.read_text(), default_name=path.stem, source=path)
+        bot = replace(parse_card(path.read_text(), default_name=path.stem, source=path), path=path)
         if bot.name in bots:
             raise CrewError(f"{path}: a bot named {bot.name!r} already exists")
         bots[bot.name] = bot
@@ -172,6 +173,19 @@ def load(home: Path) -> Crew:
         if missing := [s for s in bot.skills if s != "all" and s not in skills]:
             raise CrewError(f"{bot.name}: no skills named {missing} in {home / 'skills'}")
     return Crew(home=home, bots=bots, team_files=team_files, skills=skills)
+
+
+def stamp(home: Path) -> tuple[tuple[str, int], ...]:
+    """What the crew is made of on disk, as names and modification times: when it changes, the crew is read again."""
+    home = home.expanduser()
+    paths = [*home.glob("bots/*.md"), *home.glob("team/*.md"), *home.glob("skills/**/SKILL.md")]
+    found = []
+    for p in sorted(paths):
+        try:
+            found.append((str(p.relative_to(home)), p.stat().st_mtime_ns))
+        except OSError:
+            continue  # deleted while looking
+    return tuple(found)
 
 
 def load_skills(skills_dir: Path) -> dict[str, Skill]:

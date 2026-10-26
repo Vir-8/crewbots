@@ -83,6 +83,13 @@ Worktrees keep bots from colliding, not from misbehaving. A bot reading a hostil
      the policy answers from the role card, so a list of hosts works. Codex's sandbox has the network on or off for
      the whole run (`sandbox_workspace_write.network_access`), so a Codex card with a list is refused when the crew
      loads, rather than quietly given every host. Checked live on both: off, on, and Claude keeping to a list.
+   - **No logins in the shell:** a writing bot's commands run as the user, so with the network on they could sign in
+     as the user: on Codex, `gh api user` answered `Vir-8` and `git ls-remote` over SSH reached a private repo. Every
+     writing bot now gets an environment without them (`backends/credentials.py`): an empty `GH_CONFIG_DIR`, a git
+     config with only the user's name and email, the credential helper list cleared (Apple's git has its own
+     `osxkeychain` default), an SSH command that offers no key, and no agent. Checked live: `gh` isn't logged in,
+     SSH and HTTPS git are refused, and `pip install` still works. It isn't a wall: a command could still read
+     `~/.ssh` or ask the keychain directly, since both sandboxes allow reads.
    - **Remaining difference:** Claude's sandbox allows `/tmp`, which it needs for its own temp folder.
 3. **Separate checkouts.** Every writing task works in its own worktree, and the user's checkout is only ever touched by the user's merge.
 4. **The user for anything irreversible.** Merges, pushes, publishing and anything outside the crew need you, as team/rules.md says, and the harness enforces it.
@@ -250,6 +257,9 @@ Each step leaves the system working.
 - Claude Code's sandbox asks for network access one host at a time through `can_use_tool`, as a tool named
   `SandboxNetworkAccess`. The policy allowed tools it didn't know, so until the `network` setting, Claude's writing
   bots could reach any host while Codex's could reach none.
+- On Codex, crewbots' rules only apply when Codex asks to leave its sandbox; a command that stays inside runs without
+  asking. With no network, that sandbox was what kept a bot from pushing. With the network on, only the absence of
+  credentials does.
 - Codex can approve one host at a time only through its experimental `network_proxy` feature, which is off by
   default. Worth revisiting once it's stable, for host lists on Codex too.
 - Claude Code's sandbox points `TMPDIR` at `/tmp/claude` without creating it, so tools that need a temp folder fail until crewbots creates it.

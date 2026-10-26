@@ -161,4 +161,8 @@ def test_budgets_routines_and_release_over_the_api(store, tmp_path):
         assert client.get("/budgets", headers=auth).json()[0]["used"] == 12
         assert client.post(f"/tasks/{task['id']}/release", headers=auth).json()["id"] == task["id"]
         assert client.post("/crew/reload", headers=auth).status_code == 200
+        starters = [s["name"] for s in client.get("/routines", headers=auth).json()["starters"]]
+        assert "standup" not in starters and "retro" in starters  # standup.md is already there
+        assert client.post("/routines/starters/retro", headers=auth).json()["schedule"] == "0 16 * * 5"
+        assert client.get("/bots", headers=auth).json()[0]["path"].endswith("bots/chief.md")
         assert runner.crew.bots["chief"].backend == "claude"  # read from the folder again

@@ -8,6 +8,11 @@ export interface BotOut {
   model: string | null;
   access: string;
   workspace: string | null;
+  network: boolean | string[];
+  mcp: string[];
+  skills: string[];
+  can_delegate: boolean;
+  path: string | null;
 }
 
 export interface BudgetOut {
@@ -209,6 +214,8 @@ export interface RoutinesOut {
   routines: RoutineOut[];
   errors: Record<string, string>;
   github_error: string | null;
+  crew_error: string | null;
+  starters: StarterOut[];
 }
 
 export interface SearchHit {
@@ -218,6 +225,12 @@ export interface SearchHit {
   snippet: string;
   bot: string;
   title: string;
+}
+
+export interface StarterOut {
+  name: string;
+  description: string;
+  when: string;
 }
 
 export type Status = "queued" | "running" | "idle" | "needs_input" | "failed" | "cancelled" | "interrupted" | "held";

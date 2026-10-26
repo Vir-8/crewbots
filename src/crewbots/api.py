@@ -25,6 +25,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from crewbots import crew as crew_module
+from crewbots import routines as routines_module
 from crewbots.backends import codex_isolation
 from crewbots.memory import MemoryError
 from crewbots.routines import RoutineError
@@ -85,6 +86,11 @@ class BotOut(BaseModel):
     model: str | None
     access: str
     workspace: str | None
+    network: bool | list[str]  # its shell commands: none, any host, or these hosts
+    mcp: list[str]  # the MCP servers its role card grants, besides crewbots' own
+    skills: list[str]
+    can_delegate: bool
+    path: str | None  # its role card
 
 
 class FindingOut(BaseModel):
@@ -178,10 +184,18 @@ class RoutineOut(BaseModel):
     skipped_at: str | None
 
 
+class StarterOut(BaseModel):
+    name: str
+    description: str
+    when: str
+
+
 class RoutinesOut(BaseModel):
     routines: list[RoutineOut]
     errors: dict[str, str]  # routine file → why it couldn't be read
     github_error: str | None
+    crew_error: str | None  # a role card or team file that couldn't be read; the crew carries on as it was
+    starters: list[StarterOut]  # starter routines this crew doesn't have yet
 
 
 class BudgetOut(BaseModel):
@@ -347,7 +361,9 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
     async def bots():
         return [
             {"name": b.name, "title": b.title, "description": b.description, "backend": b.backend, "model": b.model,
-             "access": b.access, "workspace": str(b.workspace) if b.workspace else None}
+             "access": b.access, "workspace": str(b.workspace) if b.workspace else None,
+             "network": list(b.network) if isinstance(b.network, tuple) else b.network, "mcp": sorted(b.mcp),
+             "skills": list(b.skills), "can_delegate": b.can_delegate, "path": str(b.path) if b.path else None}
             for b in runner.crew.bots.values()
         ]
 
@@ -411,9 +427,23 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
 
     @v1.get("/routines", response_model=RoutinesOut)
     async def routines():
+        scheduler.reload_if_changed()
         scheduler.load()
+        have = {r.name for r in scheduler.routines} | {Path(f).stem for f in scheduler.errors}
+        starters = []
+        for name, text in sorted(routines_module.starters().items()):
+            if name not in have:
+                starter = routines_module.parse(text, name, Path(name))
+                starters.append({"name": name, "description": starter.description, "when": starter.when})
         return {"routines": [_routine_out(v) for v in scheduler.views()], "errors": scheduler.errors,
-                "github_error": scheduler.github_error}
+                "github_error": scheduler.github_error, "crew_error": scheduler.crew_error, "starters": starters}
+
+    @v1.post("/routines/starters/{name}", status_code=201, response_model=RoutineOut)
+    async def add_starter(name: str):
+        """Copies a starter routine into the crew's routines/ folder."""
+        routines_module.add_starter(runner.crew.home, name)
+        scheduler.load()
+        return _routine_out(next(v for v in scheduler.views() if v.routine.name == name))
 
     @v1.post("/routines/{name}/run", status_code=201, response_model=TaskOut)
     async def run_routine(name: str):

@@ -1,4 +1,4 @@
-import type { Bot, CrewState, ReviewState, Routines, StoredEvent, Task } from "./types";
+import type { Bot, Budget, CrewState, ReviewState, Routine, Routines, StoredEvent, Task } from "./types";
 
 import { bridge } from "./bridge";
 
@@ -33,5 +33,7 @@ export const api = {
   release: (taskId: string) => call<Task>("POST", `/tasks/${taskId}/release`),
   crew: () => call<CrewState>("GET", "/crew"),
   routines: () => call<Routines>("GET", "/routines"),
+  budgets: () => call<Budget[]>("GET", "/budgets"),
+  addStarter: (name: string) => call<Routine>("POST", `/routines/starters/${encodeURIComponent(name)}`),
   runRoutine: (name: string) => call<Task>("POST", `/routines/${encodeURIComponent(name)}/run`),
 };

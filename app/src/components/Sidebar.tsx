@@ -13,7 +13,14 @@ const NEED: Record<InboxItem["reason"], { label: string; icon: "merge" | "questi
   interrupted: { label: "Interrupted", icon: "alert" },
 };
 
-export function Sidebar(props: { crew: Crew; goal: string | null; onGoal: (id: string | null) => void; onOpen: (id: string) => void }) {
+export function Sidebar(props: {
+  crew: Crew;
+  goal: string | null | undefined; // undefined: no goal is showing
+  onGoal: (id: string | null) => void;
+  onOpen: (id: string) => void;
+  crewPage: boolean;
+  onCrew: () => void;
+}) {
   const { crew } = props;
   return (
     <aside className="sidebar">
@@ -58,6 +65,11 @@ export function Sidebar(props: { crew: Crew; goal: string | null; onGoal: (id: s
       <Routines crew={crew} onStarted={props.onGoal} />
 
       <section className="side-crew">
+        <button className={`side-row crew-link ${props.crewPage ? "on" : ""}`} onClick={props.onCrew}>
+          <span className="side-title">Crew</span>
+          {crew.routines?.crew_error || Object.keys(crew.routines?.errors ?? {}).length ? <Icon name="alert" size={13} className="crew-link-alert" /> : null}
+          <Icon name="chevronRight" size={13} />
+        </button>
         {(crew.crewState?.limits ?? [])
           .filter((l) => l.status !== "ok")
           .map((l) => (
