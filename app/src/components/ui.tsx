@@ -6,9 +6,9 @@ import { Icon } from "./Icon";
 export function Page(props: { title: string; actions?: ReactNode; children: ReactNode; wide?: boolean }) {
   return (
     <>
-      <header className="page-head" data-tauri-drag-region>
-        <h1 data-tauri-drag-region>{props.title}</h1>
-        <span className="grow" data-tauri-drag-region />
+      <header className="page-head" data-tauri-drag-region="deep">
+        <h1>{props.title}</h1>
+        <span className="grow" />
         {props.actions}
       </header>
       <div className="page-scroll">
@@ -23,7 +23,7 @@ export function Sheet(props: { title: string; onClose: () => void; children: Rea
   return (
     <div className="sheet-backdrop" onMouseDown={props.onClose}>
       <aside className="sheet" onMouseDown={(e) => e.stopPropagation()}>
-        <header className="sheet-head">
+        <header className="sheet-head" data-tauri-drag-region="deep">
           <h2>{props.title}</h2>
           <button className="icon-button" onClick={props.onClose} title="Close">
             <Icon name="x" size={15} />

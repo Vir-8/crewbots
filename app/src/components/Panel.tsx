@@ -33,7 +33,7 @@ export function Panel(props: { crew: Crew; task: Task; onOpen: (id: string) => v
   return (
     <aside className="panel">
       {props.edge}
-      <header className="panel-head">
+      <header className="panel-head" data-tauri-drag-region="deep">
         <div className="panel-top">
           <div className="panel-who">
             <span className="panel-bot">{task.bot}</span>

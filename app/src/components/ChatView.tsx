@@ -31,7 +31,7 @@ export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string)
 
   return (
     <>
-      <header className="chat-head" data-tauri-drag-region>
+      <header className="chat-head" data-tauri-drag-region="deep">
         <button className="chat-head-who" onClick={props.onProfile} title="Profile">
           <Avatar name={chat.bot!} size={30} working={chat.working} />
           <span className="chat-head-text">
@@ -39,7 +39,7 @@ export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string)
             <span className="chat-head-sub">{oneLine(status, 90)}</span>
           </span>
         </button>
-        <span className="grow" data-tauri-drag-region />
+        <span className="grow" />
         <button
           className={`icon-button ${props.profileOpen ? "on" : ""}`}
           onClick={(e) => {
@@ -92,7 +92,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
 
   return (
     <>
-      <header className="chat-head" data-tauri-drag-region>
+      <header className="chat-head" data-tauri-drag-region="deep">
         <button className="chat-head-who" onClick={props.onPanel} title="About this group">
           <GroupAvatar members={room.members} size={30} />
           <span className="chat-head-text">
@@ -102,7 +102,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
             </span>
           </span>
         </button>
-        <span className="grow" data-tauri-drag-region />
+        <span className="grow" />
         <button
           className={`icon-button ${props.panelOpen ? "on" : ""}`}
           onClick={(e) => {

@@ -64,7 +64,7 @@ export function Sidebar(props: {
     return (
       <aside className="sidebar rail">
         {props.edge}
-        <div className="sidebar-drag" data-tauri-drag-region />
+        <div className="sidebar-drag" data-tauri-drag-region="deep" />
         <button
           className="rail-button"
           title="Search"
@@ -104,7 +104,7 @@ export function Sidebar(props: {
   return (
     <aside className="sidebar">
       {props.edge}
-      <div className="sidebar-drag" data-tauri-drag-region />
+      <div className="sidebar-drag" data-tauri-drag-region="deep" />
       <div className="side-top">
         <label className="side-search">
           <Icon name="search" size={14} />

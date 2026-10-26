@@ -32,6 +32,7 @@ export function Profile(props: { crew: Crew; bot: string; onOpen: (id: string) =
   return (
     <aside className="panel profile">
       {props.edge}
+      <div className="panel-drag" data-tauri-drag-region />
       <div className="profile-close">
         <button className="icon-button" onClick={props.onClose} title="Close">
           <Icon name="x" size={15} />
@@ -155,6 +156,7 @@ export function RoomProfile(props: { crew: Crew; room: Room; onOpen: (id: string
   return (
     <aside className="panel profile">
       {props.edge}
+      <div className="panel-drag" data-tauri-drag-region />
       <div className="profile-close">
         <button className="icon-button" onClick={props.onClose} title="Close">
           <Icon name="x" size={15} />

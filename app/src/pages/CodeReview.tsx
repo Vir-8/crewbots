@@ -55,9 +55,9 @@ export function CodeReview({ crew, onSettings }: { crew: Crew; onSettings: () =>
     <div className="review-area">
       <aside className="review-list">
         <Resizer label="Resize the list" edge="right" width={listWidth} min={200} max={480} keep={320} cssVar="--review-list-user" host={area} pane={() => area()?.querySelector<HTMLElement>(":scope > .review-list") ?? null} flexible={() => area()?.querySelector<HTMLElement>(":scope > .pull-view, :scope > .review-empty") ?? null} onChange={setListWidth} />
-        <header className="review-list-head" data-tauri-drag-region>
-          <h1 data-tauri-drag-region>Code review</h1>
-          <span className="grow" data-tauri-drag-region />
+        <header className="review-list-head" data-tauri-drag-region="deep">
+          <h1>Code review</h1>
+          <span className="grow" />
           <button
             className="icon-button"
             title="Refresh"
@@ -204,15 +204,17 @@ function PullView({ crew, selected, onSettings }: { crew: Crew; selected: Select
   return (
     <>
       <main className="pull-view">
-        <header className="pull-head" data-tauri-drag-region>
+        <header className="pull-head" data-tauri-drag-region="deep">
           <Segmented value={tab} options={[["summary", "Summary"], ["changes", "Changes"]]} onChange={setTab} />
           <span className="pull-delta">
             <span className="add">+{pull.additions}</span> <span className="del">−{pull.deletions}</span>
           </span>
-          <span className="grow" data-tauri-drag-region />
+          <span className="grow" />
           <span className="submit-anchor">
-            <button className={`button small ${drafts.length ? "primary" : ""}`} onClick={() => setSubmitting(!submitting)} title="Approve, request changes or comment, on GitHub">
-              Submit review{drafts.length ? ` (${drafts.length})` : ""}
+            <button className={`button small submit-button ${drafts.length ? "primary" : ""}`} onClick={() => setSubmitting(!submitting)} title="Approve, request changes or comment, on GitHub" aria-haspopup="dialog" aria-expanded={submitting}>
+              Submit<span className="long-label"> review</span>
+              {drafts.length ? ` (${drafts.length})` : ""}
+              <Icon name="chevronDown" size={12} className={submitting ? "flip" : ""} />
             </button>
             {submitting && (
               <SubmitPanel
@@ -229,7 +231,7 @@ function PullView({ crew, selected, onSettings }: { crew: Crew; selected: Select
               />
             )}
           </span>
-          <button className="icon-button" onClick={() => bridge.openUrl(pull.url)} title="Open on GitHub">
+          <button className="icon-button github-link" onClick={() => bridge.openUrl(pull.url)} title="Open on GitHub">
             <Icon name="external" size={14} />
           </button>
         </header>
@@ -256,9 +258,10 @@ function PullView({ crew, selected, onSettings }: { crew: Crew; selected: Select
             <div className="pull-col">
               <div className="pull-state">
                 <span className={`state-pill ${pull.draft ? "draft" : "open"}`}>{pull.draft ? "Draft" : "Open"}</span>
-                <span className="faint">
+                <button className="text-button pull-ref" onClick={() => bridge.openUrl(pull.url)} title="Open on GitHub">
                   {pull.repo}#{pull.number}
-                </span>
+                  <Icon name="external" size={12} />
+                </button>
               </div>
               <h1 className="pull-title">{pull.title}</h1>
               <div className="faint pull-by">
@@ -443,7 +446,7 @@ function ReviewPane({ crew, pull, reviews, onStarted, onSettings }: { crew: Crew
   return (
     <aside className="review-pane">
       <Resizer label="Resize the review" edge="left" width={paneWidth} min={280} max={760} keep={320} cssVar="--review-pane-user" host={area} pane={() => area()?.querySelector<HTMLElement>(":scope > .review-pane") ?? null} flexible={() => area()?.querySelector<HTMLElement>(":scope > .pull-view") ?? null} onChange={setPaneWidth} />
-      <header className="review-pane-head">
+      <header className="review-pane-head" data-tauri-drag-region="deep">
         <span className="review-pane-title">Private review</span>
         <span className="grow" />
         <button className="icon-button" onClick={onSettings} title="Choose the reviewer models">
