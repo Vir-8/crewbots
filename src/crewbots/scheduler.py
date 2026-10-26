@@ -89,6 +89,10 @@ class Scheduler:
         for routine in self.routines:
             if routine.enabled and routine.schedule and (task := self._check_schedule(routine, now)):
                 started.append(task)
+        for bot in self.runner.crew.bots:  # overnight, while the crew is idle: one bot's memory at a time
+            if self.runner.dream_due(bot, now):
+                self.runner.dream(bot)
+                break
         triggers = [r for r in self.routines if r.enabled and r.on]
         loop = asyncio.get_running_loop()
         if triggers and (self._polled is None or loop.time() - self._polled >= self.github_every_s):

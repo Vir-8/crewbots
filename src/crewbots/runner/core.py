@@ -52,6 +52,7 @@ from crewbots.runner.common import (
     _usage_data,
 )
 from crewbots.runner.delegation import MAX_CHILDREN, MAX_DEPTH, MAX_OUT, Delegation
+from crewbots.runner.dreams import Dreams
 from crewbots.runner.holds import Holds
 from crewbots.runner.reviews import Reviewing
 from crewbots.runner.rooms import Rooms
@@ -72,8 +73,9 @@ STALL_S = 1200.0  # no event at all from a turn for this long: it's stuck, so it
 WORK = "work"  # in the crew's folder: where each writing bot with no folder of its own works
 
 
-class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds):
-    """Runs the crew's tasks. Its parts are by area: sessions, rooms, delegation, reviews, work and holds."""
+class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds, Dreams):
+    """Runs the crew's tasks. Its parts are by area: sessions, rooms, delegation, reviews, work, holds, and dreams
+    (memory consolidated overnight)."""
 
     def __init__(
         self,
@@ -125,6 +127,8 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds):
         self.flush_idle_s = flush_idle_s
         self._turn_ended: dict[str, float] = {}  # task id → when its last turn ended (time.time())
         self._flushed: set[str] = set()  # tasks whose bot set down where things stand since their last turn
+        self._dreaming: set[str] = set()  # bots whose memory is being consolidated now
+        self._started = time.time()
         self.retry_waits_s = RETRY_WAITS_S if retry_waits_s is None else retry_waits_s
         self.stall_s = STALL_S if stall_s is None else stall_s
         self._awake: subprocess.Popen[bytes] | None = None

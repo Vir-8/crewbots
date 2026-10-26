@@ -10,7 +10,7 @@ from fastapi import APIRouter, Query
 from crewbots import crew as crew_module
 from crewbots import typescript
 from crewbots.api.context import API_VERSION, Context, checkout_commit
-from crewbots.api.schemas import AgentLogOut, ClientError, CrewState, RestartBody, VersionOut
+from crewbots.api.schemas import AgentLogOut, ClientError, Consolidate, CrewState, RestartBody, TaskOut, VersionOut
 
 RESTART_EXIT = 75  # EX_TEMPFAIL: stopped to be started again
 CLIENT_ERRORS_PER_MINUTE = 30
@@ -49,6 +49,11 @@ def routes(c: Context) -> APIRouter:
             stack = (body.stack or "")[:4000]
             print(f"app: {body.where} failed: {body.message[:500]}" + (f"\n{stack}" if stack else ""), file=sys.stderr,
                   flush=True)
+
+    @v1.post("/memory/consolidate", status_code=201, response_model=TaskOut)
+    async def consolidate(body: Consolidate):
+        """Consolidates a bot's memory now, rather than overnight."""
+        return runner.dream(body.bot, body.weekly).to_json()
 
     @v1.get("/agent-log", response_model=list[AgentLogOut])
     async def agent_log(limit: int = Query(200, ge=1, le=5000), before: int | None = None):

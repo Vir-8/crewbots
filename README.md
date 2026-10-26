@@ -51,6 +51,7 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
 - **Memory.** Every bot can `remember` a fact for later tasks (its own, or `shared` with the crew), `forget` one, and `recall` what the crew said or decided before.
   - Notes are files in `crew/memory/<bot>/notes/`, listed in each bot's instructions, so you can read, edit or delete them.
   - Around them: a short `CORE.md` pinned in every session, a daily log (a line for each finished task; a new session starts with the last two days), and each task's state, which the bot keeps with `update_state` and a fresh session of the task starts from. `recall` searches the logs and notes too.
+  - Overnight, while the crew is idle, each bot consolidates its memory: it reads what it logged and noted, and crewbots applies what it decides (add, update, supersede, delete or share notes, and rewrite `CORE.md`), then commits the memory folder, its own git repository, so any change can be undone. `crewbots memory consolidate` runs it now.
   - `recall` searches the whole record with SQLite FTS5, and so does `GET /v1/search?q=`.
   - A conversation that fills 65% of its context window is kept in shape at the end of a turn: the bot sets down the
     task's state and a few lines for today's log, then the CLI compacts the conversation in place, and the next turn

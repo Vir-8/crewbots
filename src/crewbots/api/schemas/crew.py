@@ -55,3 +55,7 @@ class AgentLogOut(BaseModel):
     task_id: str | None
     room_id: str | None
     text: str
+
+class Consolidate(BaseModel):
+    bot: str
+    weekly: bool | None = None  # also merge duplicate notes; None: only on Sundays, as overnight

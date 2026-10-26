@@ -10,11 +10,13 @@
 A bot writes notes with the `remember` tool and removes them with `forget`, and keeps its task's state with
 `update_state`. Every session starts with its CORE, its notes' index (title, first line, path), its last two days'
 logs and, for a task it has worked on, that task's state; it reads a note's file when a task needs it, the way skills
-work, and `recall` searches the logs and notes along with the crew's record. The files are the source of truth: edit
-or delete one and the rest follows.
+work, and `recall` searches the logs and notes along with the crew's record. Overnight, consolidation (the runner's
+dreams) supersedes, merges, shares and rewrites them, and commits the folder, its own git repository. The files are
+the source of truth: edit or delete one and the rest follows.
 """
 
 import re
+import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -37,6 +39,8 @@ class Note:
     created: str
     source: str
     path: Path
+    updated: str = ""
+    superseded_by: str = ""  # the note that replaced it: it's kept, for history, but no longer listed
 
     @property
     def gist(self) -> str:
@@ -52,11 +56,12 @@ class Memory:
     def __init__(self, crew_home: Path):
         self.root = crew_home / "memory"
 
-    def notes(self, scope: str) -> list[Note]:
+    def notes(self, scope: str, superseded: bool = False) -> list[Note]:
+        """The scope's notes, newest first: those still current, or with `superseded`, every one."""
         folder = self._notes_dir(scope)
         if not folder.is_dir():
             return []
-        notes = [n for n in (_read(p) for p in folder.glob("*.md")) if n]
+        notes = [n for n in (_read(p) for p in folder.glob("*.md")) if n and (superseded or not n.superseded_by)]
         return sorted(notes, key=lambda n: n.created, reverse=True)
 
     def remember(self, scope: str, title: str, body: str, source: str) -> Note:
@@ -72,10 +77,65 @@ class Memory:
             created = old.created if old else _today()
         else:
             created = _today()
-        meta = {"title": title, "created": created, "updated": _today(), "source": source}
-        path.write_text(f"---\n{yaml.safe_dump(meta, sort_keys=False, allow_unicode=True)}---\n{body.strip()}\n")
+        _write(path, {"title": title, "created": created, "updated": _today(), "valid_from": created, "source": source},
+               body)
         self._write_index(scope)
         return _read(path)  # type: ignore[return-value]
+
+    def supersede(self, scope: str, name: str, by: str) -> Note:
+        """Marks a note as replaced by note `by`: it stays, with when it stopped being true, but drops out of the
+        index and every session."""
+        path = self._notes_dir(scope) / f"{_slug(name)}.md"
+        note = _read(path)
+        if note is None:
+            raise MemoryError(f"no note named {name!r}")
+        meta = yaml.safe_load(path.read_text().split("---", 2)[1]) or {}
+        _write(path, {**meta, "superseded_by": by, "valid_until": _today()}, note.body)
+        self._write_index(scope)
+        return _read(path)  # type: ignore[return-value]
+
+    def promote(self, scope: str, name: str) -> Note:
+        """Moves one of a bot's notes to the crew's, for every bot."""
+        note = _read(self._notes_dir(scope) / f"{_slug(name)}.md")
+        if note is None:
+            raise MemoryError(f"no note named {name!r}")
+        shared = self.remember(CREW_SCOPE, note.title, note.body, f"{note.source} (from {scope})")
+        self.forget(scope, name)
+        return shared
+
+    def changed_since(self, scope: str, day: str) -> list[Note]:
+        """Current notes written or updated on `day` (YYYY-MM-DD) or later."""
+        return [n for n in self.notes(scope) if (n.updated or n.created) >= day]
+
+    def logs_since(self, scope: str, day: str) -> str:
+        """The scope's daily logs from `day` (YYYY-MM-DD) on, oldest first."""
+        folder = self._scope_dir(scope) / "daily"
+        logs = sorted(p for p in folder.glob("*.md") if p.stem >= day) if folder.is_dir() else []
+        return "\n\n".join(p.read_text().strip() for p in logs)
+
+    def write_core(self, scope: str, text: str) -> Path:
+        """Consolidation's CORE.md for the scope, cut to CORE_CHARS."""
+        path = self._scope_dir(scope) / "CORE.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        text = text.strip()
+        path.write_text((text if len(text) <= CORE_CHARS else text[:CORE_CHARS].rstrip()) + "\n")
+        return path
+
+    def commit(self, message: str) -> str | None:
+        """Commits the memory folder, its own git repository (made the first time), so every change can be looked
+        back on and undone. Returns the commit, or None if nothing changed."""
+        if not self.root.is_dir():
+            return None
+        git = ["git", "-C", str(self.root), "-c", "user.name=crewbots", "-c", "user.email=crewbots@localhost",
+               "-c", "commit.gpgsign=false"]
+        if not (self.root / ".git").exists():
+            subprocess.run([*git, "init", "-q"], check=True, capture_output=True)
+        subprocess.run([*git, "add", "-A"], check=True, capture_output=True)
+        if not subprocess.run([*git, "diff", "--cached", "--quiet"], capture_output=True).returncode:
+            return None
+        subprocess.run([*git, "commit", "-q", "-m", message], check=True, capture_output=True)
+        return subprocess.run([*git, "rev-parse", "--short", "HEAD"], check=True, capture_output=True,
+                              text=True).stdout.strip()
 
     def forget(self, scope: str, name: str) -> Note:
         path = self._notes_dir(scope) / f"{_slug(name)}.md"
@@ -198,7 +258,12 @@ def _read(path: Path) -> Note | None:
         except (ValueError, yaml.YAMLError):
             meta = {}
     return Note(name=path.stem, title=str(meta.get("title") or path.stem), body=body.strip(),
-                created=str(meta.get("created") or ""), source=str(meta.get("source") or ""), path=path)
+                created=str(meta.get("created") or ""), source=str(meta.get("source") or ""), path=path,
+                updated=str(meta.get("updated") or ""), superseded_by=str(meta.get("superseded_by") or ""))
+
+
+def _write(path: Path, meta: dict, body: str) -> None:
+    path.write_text(f"---\n{yaml.safe_dump(meta, sort_keys=False, allow_unicode=True)}---\n{body.strip()}\n")
 
 
 def _slug(title: str) -> str:

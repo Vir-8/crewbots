@@ -131,6 +131,16 @@ Nothing is hidden: every layer is a file or a SQLite row you can open, edit or d
      whose last two days a new session starts with; and each task's `state/<task id>.md`, written whole by the bot
      with `update_state` at milestones and given to any fresh session of that task. `recall` searches the logs and
      notes as well as the record. Live on Haiku: a new session asked what it finished today answered from the log.
+   - **Consolidation, or "dreaming"** (`runner/dreams.py`): once a night (from 3:00, before 8:00, or after an hour of
+     quiet for a Mac asleep then), one bot at a time, while the crew is idle and its plan's limits are clear, each bot
+     with something new reads its logs and changed notes, its CORE.md and the other bots' notes, with its own model
+     and effort, read-only and with no tools, and replies with decisions in JSON: add, update, supersede (the old
+     note stays with `superseded_by` and `valid_until`, out of the index), delete or promote (to the crew's notes,
+     when another bot learned the same) a note, and a new CORE.md. crewbots applies them, skipping any about a note
+     that isn't there, and commits the memory folder, which is its own git repository, for history and undo. On
+     Sundays it also merges duplicates, with every note in full. The run is a task of the bot's, so its cost counts
+     and its result says what changed; `crewbots memory consolidate [bot]` runs it now. Live on Haiku: from a day's
+     logs it added two notes, wrote a first CORE.md and committed.
 3. **The crew's record (everything that happened).**
    - SQLite already holds every transcript, handoff, review and decision.
    - An **FTS5** index over it gives bots `recall(query)`, for questions like "what did we decide about auth?", answered with task ids so they can look closer.

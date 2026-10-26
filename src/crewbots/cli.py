@@ -89,6 +89,10 @@ def main(argv: list[str] | None = None) -> int:
     release = sub.add_parser("release", help="let a task held on a budget or plan limit go ahead")
     release.add_argument("task_id")
     sub.add_parser("reload", help="take up edited role cards and budgets without restarting the daemon")
+    memory = sub.add_parser("memory", help="consolidate bots' memory now, rather than overnight")
+    memory.add_argument("action", choices=["consolidate"])
+    memory.add_argument("bots", nargs="*", help="which bots (default: every one)")
+    memory.add_argument("--weekly", action="store_true", help="also merge duplicate notes")
     sub.add_parser("doctor", help="check the CLIs, the daemon, the database and the disk, and say how to fix or clean up")
     restart = sub.add_parser("restart", help="restart the daemon; turns it cuts off carry on by themselves after")
     restart.add_argument("--when-idle", action="store_true",
@@ -277,6 +281,14 @@ def _release(args: argparse.Namespace) -> int:
     return 0
 
 
+def _memory(args: argparse.Namespace) -> int:
+    client = _client(args)
+    for bot in args.bots or [b["name"] for b in client.get("/bots").raise_for_status().json()]:
+        task = client.post("/memory/consolidate", json={"bot": bot, "weekly": args.weekly or None}).raise_for_status().json()
+        print(f"{bot}: consolidating in {task['id']}; `crewbots watch {task['id']}` follows it")
+    return 0
+
+
 def _reload(args: argparse.Namespace) -> int:
     _client(args).post("/crew/reload").raise_for_status()
     print("reloaded the crew's role cards")
@@ -404,8 +416,8 @@ async def _run_direct(args: argparse.Namespace) -> int:
 COMMANDS = {
     "init": _init, "serve": _serve, "bots": _bots, "task": _task, "tasks": _tasks, "watch": _watch, "say": _say,
     "cancel": _cancel, "diff": _diff, "review": _review, "merge": _merge, "skills": _skills, "service": _service,
-    "openapi": _openapi, "run": _run, "routines": _routines, "budgets": _budgets, "log": _log, "release": _release,
-    "reload": _reload, "restart": _restart, "doctor": _doctor,
+    "openapi": _openapi, "run": _run, "routines": _routines, "budgets": _budgets, "log": _log, "memory": _memory,
+    "release": _release, "reload": _reload, "restart": _restart, "doctor": _doctor,
 }
 
 
