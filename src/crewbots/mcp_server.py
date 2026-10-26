@@ -76,6 +76,11 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
         message = call("POST", "/bot/post", {"text": text, "room": room})
         return f"Posted in the group chat ({message['room_id']})."
 
+    @server.tool(description=describe("ask"))
+    def ask(bot: str, question: str) -> str:
+        asked = call("POST", "/bot/ask", {"bot": bot, "question": question})
+        return f"Asked {asked['bot']} ({asked['id']}). End your turn: the answer arrives as your next message."
+
     @server.tool(description=describe("delegate"))
     def delegate(bot: str, goal: str, workspace: str | None = None, review_of: str | None = None) -> str:
         task = call("POST", "/bot/delegate", {"bot": bot, "goal": goal, "workspace": workspace, "review_of": review_of})

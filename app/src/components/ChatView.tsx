@@ -24,12 +24,15 @@ export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string)
   }, [task?.id, crew.ensureEvents]);
 
   const threads = task ? crew.family(task.id) : [];
-  const busy = threads.filter((t) => ACTIVE.includes(t.status));
+  const busy = threads.filter((t) => ACTIVE.includes(t.status) && t.kind !== "ask");
+  const asking = threads.filter((t) => ACTIVE.includes(t.status) && t.kind === "ask"); // a teammate answering, not this bot working
   const status = task && ACTIVE.includes(task.status)
     ? doing(crew.latest.get(task.id)) || "Working…"
     : busy.length
       ? `Working on ${oneLine(busy[0].title, 60)}${busy.length > 1 ? ` and ${busy.length - 1} more` : ""}`
-      : chat.last ? `Active ${ago(chat.last.at)}` : bot?.description ?? "";
+      : asking.length
+        ? `Waiting on ${labelOf(asking[0].bot)}'s answer${asking.length > 1 ? ` and ${asking.length - 1} more` : ""}`
+        : chat.last ? `Active ${ago(chat.last.at)}` : bot?.description ?? "";
 
   return (
     <>

@@ -23,6 +23,9 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
     (`can_delegate: true`, the chief in the starter crew) also adds bots (`add_bot`) and proposes work for merging.
   - Delegated tasks run in parallel, each as its own bot with its own access. The delegating bot ends its turn instead
     of waiting, and when none of its tasks are still running, their handoffs and results arrive as its next message.
+  - `ask(bot, question)` asks a teammate a quick question instead: the teammate answers read-only, with no worktree,
+    starts nothing from it, and the answer comes back the same way. The app shows it as a card, "Asked Critic: …
+    Answer: …".
   - An escalation reaches it at once.
   - The harness enforces the rules:
     - never to yourself, nor to a coordinator, nor back to a bot already in the chain (a circle)

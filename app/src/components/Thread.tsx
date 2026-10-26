@@ -4,6 +4,7 @@ import { describeCall, doing, limitText, oneLine } from "../state";
 import type { Attachment, StoredEvent, Task } from "../types";
 import { ACTIVE } from "../types";
 import { MessageFiles } from "./Attachments";
+import { labelOf } from "./Avatar";
 import { Boundary } from "./Boundary";
 import { Markdown } from "./bits";
 import { Icon } from "./Icon";
@@ -16,6 +17,7 @@ type Block =
   | { kind: "say"; id: number; text: string }
   | { kind: "steps"; id: number; calls: { call: StoredEvent; result?: StoredEvent }[] }
   | { kind: "work"; id: number; task: Task }
+  | { kind: "asked"; id: number; bot: string; question: string; task?: Task }
   | { kind: "line"; id: number; text: string; icon?: "check" | "merge" | "branch" | "alert" | "play" | "message"; tone?: string }
   | { kind: "ask"; id: number; question: string }
   | { kind: "held"; id: number; taskId: string; reason: string }
@@ -24,7 +26,7 @@ type Block =
 
 // Crew tools that are shown as what they did (a card, a verdict, a question), not as steps.
 const SHOWN_ELSEWHERE = new Set(
-  ["delegate", "start_thread", "post", "handoff", "review", "escalate", "propose_merge", "message"].map((t) => `mcp__crewbots__${t}`),
+  ["delegate", "start_thread", "post", "handoff", "review", "escalate", "propose_merge", "message", "ask"].map((t) => `mcp__crewbots__${t}`),
 );
 
 /** A task's conversation, as people would tell it: what was said and decided, with the mechanics folded away. */
@@ -72,7 +74,8 @@ export function Thread(props: { crew: Crew; task: Task; onOpen: (id: string) => 
 
 function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>): Block[] {
   const out: Block[] = [];
-  const delegated = children.filter((c) => !c.review_of && c.kind !== "review"); // in the order they were delegated, like the calls; a review's reviewers show in its pane
+  const delegated = children.filter((c) => !c.review_of && c.kind !== "review" && c.kind !== "ask"); // in the order they were delegated, like the calls; a review's reviewers show in its pane
+  const asked = children.filter((c) => c.kind === "ask");
   const results = new Map(events.filter((e) => e.kind === "tool_result").map((e) => [e.data.id, e]));
   let steps: { call: StoredEvent; result?: StoredEvent }[] = [];
   const flush = () => {
@@ -89,6 +92,10 @@ function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>
         if (d.input?.review_of) continue; // a review shows inside the card of the work it reviews
         if (result?.data.is_error) out.push({ kind: "line", id: e.id, text: `Couldn't delegate: ${oneLine(result.data.output, 160)}`, icon: "alert", tone: "bad" });
         else if (delegated.length) out.push({ kind: "work", id: e.id, task: delegated.shift()! });
+      } else if (d.name === "mcp__crewbots__ask") {
+        flush();
+        if (result?.data.is_error) out.push({ kind: "line", id: e.id, text: `Couldn't ask: ${oneLine(result.data.output, 160)}`, icon: "alert", tone: "bad" });
+        else out.push({ kind: "asked", id: e.id, bot: d.input?.bot ?? "", question: d.input?.question ?? "", task: asked.shift() });
       } else if (d.name === "mcp__crewbots__post") {
         flush();
         out.push({ kind: "line", id: e.id, text: `Said in a group chat: ${oneLine(d.input?.text ?? "", 160)}`, icon: "message" });
@@ -185,6 +192,7 @@ function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>
   }
   flush();
   for (const left of delegated) out.push({ kind: "work", id: Number.MAX_SAFE_INTEGER - out.length, task: left }); // no call seen
+  for (const left of asked) out.push({ kind: "asked", id: Number.MAX_SAFE_INTEGER - out.length, bot: left.bot, question: left.title, task: left });
   return out;
 }
 
@@ -210,6 +218,8 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
       return <Steps calls={block.calls} />;
     case "work":
       return <WorkCard crew={props.crew} task={block.task} onOpen={props.onOpen} />;
+    case "asked":
+      return <AskCard bot={block.bot} question={block.question} task={block.task} onOpen={props.onOpen} />;
     case "line":
       return (
         <div className={`line ${block.tone ?? ""}`}>
@@ -350,6 +360,23 @@ function Step({ call, result }: { call: StoredEvent; result?: StoredEvent }) {
         <span className="step-arg">{describeCall(String(call.data.name), call.data.input ?? {})}</span>
       </button>
       {open && <pre className="step-output">{output.length > 4000 ? output.slice(0, 4000) + "\n…" : output}</pre>}
+    </div>
+  );
+}
+
+/** A question this bot asked a teammate, and the answer once it's in: a click opens the teammate's side of it. */
+function AskCard({ bot, question, task, onOpen }: { bot: string; question: string; task?: Task; onOpen: (id: string) => void }) {
+  const answering = !task || ACTIVE.includes(task.status) || task.status === "held";
+  const answer = task && !answering ? (task.status === "idle" ? task.result : task.error ?? task.status) : null;
+  return (
+    <div className={`ask-card ${task ? "" : "pending"}`} onClick={() => task && onOpen(task.id)} role="button" tabIndex={0}>
+      <span className="ask-line">
+        <Icon name="question" size={13} />
+        <span className="ask-who">Asked {labelOf(bot)}:</span> {oneLine(question, 220)}
+      </span>
+      <span className="ask-line answer">
+        {answering ? <span className="shimmer">Answering…</span> : <><span className="ask-who">Answer:</span> {oneLine(answer ?? "", 320)}</>}
+      </span>
     </div>
   );
 }

@@ -2,7 +2,12 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "83abb297b87f";
+export const API_SCHEMA = "160e40b0620c";
+
+export interface AskBody {
+  bot: string;
+  question: string;
+}
 
 export interface AttachmentCopy {
   path: string;
@@ -760,7 +765,7 @@ export interface TaskOut {
   review_version: number | null;
   merge_state: "proposed" | "merged" | null;
   merged_commit: string | null;
-  kind: "chat" | "seat" | "thread" | "review";
+  kind: "chat" | "seat" | "thread" | "review" | "ask";
   room_id: string | null;
   pr: string | null;
   routine: string | null;

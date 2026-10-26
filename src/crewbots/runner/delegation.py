@@ -7,7 +7,7 @@ most a few delegations deep, a cap on how many tasks one bot has out at once, an
 
 from typing import Any
 
-from crewbots import cards
+from crewbots import cards, prompts
 from crewbots import crew as crew_module
 from crewbots.backends import Access
 from crewbots.crew import Bot
@@ -27,6 +27,7 @@ class Delegation:
     def start_thread(self, task_id: str, title: str, goal: str) -> Task:
         """A bot opens a thread for itself, under the conversation it's in. Its result comes back there."""
         parent = self.store.get_task(task_id)
+        _not_answering(parent)
         if len(self.store.children(task_id)) >= self.max_children:
             raise NotAllowed(f"stop condition: this conversation already opened {self.max_children} threads. Finish or "
                              "report on those before opening more.")
@@ -36,6 +37,7 @@ class Delegation:
     def delegate(self, parent_id: str, bot: str, goal: str, *, workspace: str | None = None,
                  review_of: str | None = None) -> Task:
         parent = self.store.get_task(parent_id)
+        _not_answering(parent)
         if bot not in self.crew.bots:
             raise UnknownBot(f"no bot named {bot!r}; the crew is {sorted(self.crew.bots)}")
         if bot == parent.bot:
@@ -78,6 +80,24 @@ class Delegation:
             workspace = work.worktree_path or work.workspace
         return self.submit(bot, goal, created_by=parent.bot, parent_id=parent_id,
                            workspace=workspace or parent.workspace, review_of=review_of, review_version=version)
+
+    def ask(self, task_id: str, bot: str, question: str) -> Task:
+        """A bot asks a teammate a quick question. The teammate answers in a small task of its own (kind `ask`),
+        read-only and with no worktree, and starts nothing from it; the answer comes back like a thread's result."""
+        parent = self.store.get_task(task_id)
+        _not_answering(parent)
+        if bot not in self.crew.bots:
+            raise UnknownBot(f"no bot named {bot!r}; the crew is {sorted(self.crew.bots)}")
+        if bot == parent.bot:
+            raise NotAllowed("that's you: answer it yourself")
+        out = self.store.delegated_out(parent.bot)
+        if out >= self.max_out:
+            raise NotAllowed(f"stop condition: you already have {out} questions and delegated tasks that haven't "
+                             f"finished, and the most is {self.max_out}. Wait for their answers, which come to you.")
+        if reason := self.hold_reason(parent) or self.budget_reason(bot, parent):
+            raise NotAllowed(f"no budget for a question: {reason}")
+        return self.submit(bot, prompts.text("ask", self.crew.home, asker=parent.bot, question=question),
+                           created_by=parent.bot, parent_id=task_id, title=" ".join(question.split()), kind="ask")
 
     def children_of(self, parent_id: str) -> list[dict[str, Any]]:
         return [self._summary(c, include_result=True) for c in self.store.children(parent_id)]
@@ -144,9 +164,12 @@ class Delegation:
             _report_section(s, self.store.latest_handoff(s.id), self.store.latest_review(s.id)) for s in finished)
         reviewed = dict.fromkeys(s.review_of for s in finished if s.review_of)
         status = "\n".join(_round_status(self.review_state(w), self.store.get_task(w)) for w in reviewed)
+        asked = sum(1 for s in finished if s.kind == "ask")
+        head = (f"{len(finished)} thread(s) you opened or delegated finished, and none are still running."
+                if asked < len(finished) else "Your question was answered." if asked == 1
+                else f"Your {asked} questions were answered.")
         self.send(task.parent_id, sender="crewbots", text=(
-            f"{len(finished)} thread(s) you opened or delegated finished, and none are still running.\n\n{sections}"
-            + (f"\n\n# Review status\n\n{status}" if status else "")))
+            f"{head}\n\n{sections}" + (f"\n\n# Review status\n\n{status}" if status else "")))
 
     def _chain(self, task: Task) -> list[Task]:
         """The task and every task above it, up to the one that started the work."""
@@ -176,6 +199,9 @@ class Delegation:
 
 
 def _report_section(task: Task, handoff: Handoff | None, review: Review | None = None) -> str:
+    if task.kind == "ask":
+        answer = _clip(task.result) if task.status is Status.IDLE and task.result else f"(no answer: {task.status})"
+        return f"## {task.bot} answered ({task.id})\nYou asked: {task.title}\n{answer}"
     lines = [f"## {task.id} · {task.bot} · {task.status}", f"Task: {task.title}"]
     if task.review_of:
         lines.append(f"Review of {task.review_of} (version {task.review_version}): "
@@ -200,3 +226,8 @@ def _delegated(task: Task) -> bool:
     """Whether a bot handed this task to another (rather than the user starting it, or a bot opening it for itself)."""
     return bool(task.parent_id) and task.created_by not in ("user", task.bot) and not task.created_by.startswith(
         "routine")
+
+
+def _not_answering(task: Task) -> None:
+    if task.kind == "ask":
+        raise NotAllowed("you're answering a teammate's question: answer it, rather than starting more work")

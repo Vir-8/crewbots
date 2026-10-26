@@ -76,7 +76,7 @@ export function App() {
     while (root.parent_id && crew.tasks.has(root.parent_id)) root = crew.tasks.get(root.parent_id)!;
     if (root.kind === "chat") setCurrent(`bot:${root.bot}`);
     else if (root.kind === "seat" && root.room_id) setCurrent(`room:${root.room_id}`);
-    setThread(task.kind === "thread" ? id : null);
+    setThread(task.kind === "thread" || task.kind === "ask" ? id : null);
   };
 
   // Open on the most recent conversation, or the task asked for in the URL.

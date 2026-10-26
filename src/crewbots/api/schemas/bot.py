@@ -12,6 +12,11 @@ class Delegation(BaseModel):
     workspace: str | None = None
     review_of: str | None = None
 
+class AskBody(BaseModel):
+    bot: str
+    question: str
+
+
 class ChildMessage(BaseModel):
     task_id: str
     text: str

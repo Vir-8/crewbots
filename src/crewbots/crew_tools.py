@@ -52,6 +52,7 @@ SPECS: dict[str, Spec] = {
     "recall": Spec(_object({"query": STRING}, ["query"])),
     "start_thread": Spec(_object({"title": STRING, "goal": STRING}, ["title", "goal"])),
     "post": Spec(_object({"text": STRING, "room": STRING}, ["text"])),
+    "ask": Spec(_object({"bot": STRING, "question": STRING}, ["bot", "question"])),
     "add_bot": Spec(_object(
         {"name": STRING, "title": STRING, "description": STRING, "instructions": STRING, "display_name": STRING,
          "backend": {"type": "string", "enum": ["claude", "codex"]}, "model": STRING, "effort": STRING,
@@ -150,6 +151,9 @@ class CrewTools:
                 case "start_thread":
                     thread = r.start_thread(me, args["title"], args["goal"])
                     return f"Opened thread {thread.id}: {thread.title}. Its result comes back here when it's done."
+                case "ask":
+                    asked = r.ask(me, args["bot"], args["question"])
+                    return f"Asked {asked.bot} ({asked.id}). End your turn: the answer arrives as your next message."
                 case "post":
                     message = r.post_from(me, args["text"], args.get("room") or None)
                     return f"Posted in the group chat ({message['room_id']})."

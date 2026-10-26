@@ -123,12 +123,12 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds):
     def submit(self, bot: str, goal: str, *, created_by: str = "user", parent_id: str | None = None,
                workspace: str | None = None, review_of: str | None = None, review_version: int | None = None,
                routine: str | None = None, budget: int | None = None, title: str | None = None,
-               pr: str | None = None) -> Task:
+               pr: str | None = None, kind: str = "thread") -> Task:
         if bot not in self.crew.bots:
             raise UnknownBot(f"no bot named {bot!r}; the crew is {sorted(self.crew.bots)}")
         task = self.store.create_task(bot, goal, created_by=created_by, parent_id=parent_id, workspace=workspace,
                                       review_of=review_of, review_version=review_version, routine=routine,
-                                      budget=budget, title=title, pr=pr)
+                                      budget=budget, title=title, pr=pr, kind=kind)
         self.bus.publish({"type": "task", "task": task.to_json()})
         self._message(task.id, created_by, goal)
         self._start(task.id, goal)
@@ -415,7 +415,8 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds):
         # A backend that hosts tools in-process gets the crew tools as Python; any other, as an MCP server with a token.
         in_process = getattr(backend, "in_process_tools", False) and self.api_url is not None
         return RunSpec(
-            prompt=prompt, cwd=cwd, access=bot.access, model=bot.model,
+            prompt=prompt, cwd=cwd, model=bot.model,
+            access=Access.READ_ONLY if task.kind == "ask" else bot.access,  # a question is answered, not worked on
             system_prompt=self.crew.system_prompt(bot, delegated_by=task.created_by if task.parent_id else None,
                                                   reviewing=self._review_brief(task), briefing=task.briefing,
                                                   routine=task.routine, setting=self._setting(task)),
@@ -444,6 +445,8 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds):
     def _setting(self, task: Task) -> str | None:
         if task.kind == "chat":
             return prompts.text("chat-setting", self.crew.home)
+        if task.kind == "ask":
+            return prompts.text("ask-setting", self.crew.home, asker=task.created_by)
         if task.kind == "seat" and task.room_id:
             room = self.store.room(task.room_id)
             others = [m for m in room["members"] if m != task.bot]
@@ -468,7 +471,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds):
         workspace = Path(task.workspace).expanduser() if task.workspace else bot.workspace or self.crew.home
         if not workspace.is_dir():
             raise FileNotFoundError(f"workspace {workspace} does not exist")
-        if bot.access is Access.READ_ONLY or not bot.worktree or not worktree.is_repo(workspace):
+        if bot.access is Access.READ_ONLY or task.kind == "ask" or not bot.worktree or not worktree.is_repo(workspace):
             return workspace
         wt = worktree.create(workspace, task.id, root=self.worktree_root)
         self._set(task.id, repo=str(wt.repo), worktree_path=str(wt.path), branch=wt.branch, base=wt.base)  # watchers see it now

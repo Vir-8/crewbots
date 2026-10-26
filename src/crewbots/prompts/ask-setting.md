@@ -1,0 +1,1 @@
+This is a question from {asker}, a teammate, asked from their own work. Answer it briefly and plainly, from what you know, your notes, and what you can read or look up: it's a question, not a task, so change nothing and start nothing. Your final message is the answer they get. If you don't know, say so, and who might.

@@ -1,6 +1,7 @@
 """The API's models, by area. The app's TypeScript types are generated from them (`crewbots openapi --ts`)."""
 
 from crewbots.api.schemas.bot import (
+    AskBody,
     ChildMessage,
     Delegation,
     Escalation,
@@ -102,6 +103,7 @@ from crewbots.api.schemas.usage import (
 )
 
 __all__ = [
+    "AskBody",
     "AttachmentCopy",
     "AttachmentData",
     "AttachmentOut",

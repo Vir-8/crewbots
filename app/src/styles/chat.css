@@ -296,6 +296,51 @@
   border-color: color-mix(in srgb, var(--soft) 30%, var(--line));
 }
 
+/* A question asked of a teammate, and its answer: quieter than work, since nothing is being built */
+.ask-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line-soft);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.ask-card:hover {
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--raised) 40%, transparent);
+}
+
+.ask-card.pending {
+  cursor: default;
+}
+
+.ask-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ask-line .icon {
+  flex: none;
+  align-self: center;
+  color: var(--soft);
+}
+
+.ask-line.answer {
+  padding-left: 19px;
+  color: var(--soft);
+}
+
+.ask-who {
+  flex: none;
+  font-weight: 600;
+  color: var(--soft);
+}
+
 .work-head {
   display: flex;
   align-items: center;

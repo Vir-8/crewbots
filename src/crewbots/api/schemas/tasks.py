@@ -31,7 +31,7 @@ class TaskOut(BaseModel):
     review_version: int | None
     merge_state: Literal["proposed", "merged"] | None
     merged_commit: str | None
-    kind: Literal["chat", "seat", "thread", "review"]
+    kind: Literal["chat", "seat", "thread", "review", "ask"]
     room_id: str | None
     pr: str | None  # a code review's pull request, owner/name#number
     routine: str | None

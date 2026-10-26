@@ -284,3 +284,48 @@ async def test_a_cancelled_chief_is_not_woken_by_its_children(store, tmp_path):
 
     assert store.get_task(parent.id).status is Status.CANCELLED
     assert messages(store, parent.id) == []
+
+
+# Asking a teammate
+
+
+async def test_a_bot_asks_a_teammate_and_hears_the_answer(store, tmp_path):
+    repo = git_repo(tmp_path / "repo")
+    crew = ScriptedCrew(store, tmp_path, chief(), bot("engineer", access=Access.WORKSPACE_WRITE, workspace=repo),
+                        bot("critic", access=Access.WORKSPACE_WRITE, workspace=repo))
+    asked = []
+
+    def engineer(spec, me):
+        if spec.prompt.startswith("fix the parser"):
+            asked.append(crew.runner.ask(me.id, "critic", "Did we decide to keep the old date format?"))
+            return [Done(final_text="asked the critic")]
+        return [Done(final_text=f"thanks: {spec.prompt[:200]}")]
+
+    crew.script = {"engineer": engineer, "critic": lambda spec, me: [Done(final_text="Yes: ISO dates stay, see t_1.")]}
+    top = crew.runner.submit("engineer", "fix the parser")
+    await wait_until(lambda: len(crew.specs_for("engineer")) == 2 and crew.settled(top.id)())
+
+    question = store.get_task(asked[0].id)
+    assert question.kind == "ask" and question.created_by == "engineer" and question.parent_id == top.id
+    assert question.worktree_path is None  # a question gets no worktree, even from a bot that writes
+    [critic_spec] = crew.specs_for("critic")
+    assert critic_spec.access is Access.READ_ONLY and "engineer asks: Did we decide" in critic_spec.prompt
+    assert "a question from engineer" in critic_spec.system_prompt
+    report = messages(store, top.id)[-1]["text"]
+    assert report.startswith("Your question was answered.")
+    assert "You asked: Did we decide to keep the old date format?" in report and "Yes: ISO dates stay" in report
+
+
+async def test_a_question_is_answered_not_turned_into_work(store, tmp_path):
+    crew = ScriptedCrew(store, tmp_path, chief(), bot("engineer"), bot("critic"), gate=asyncio.Event())
+    top = store.create_task("engineer", "work")
+    question = crew.runner.ask(top.id, "critic", "how does the cache expire?")
+
+    for start in (lambda: crew.runner.delegate(question.id, "engineer", "x"),
+                  lambda: crew.runner.ask(question.id, "engineer", "x"),
+                  lambda: crew.runner.start_thread(question.id, "x", "x")):
+        with pytest.raises(NotAllowed, match="answering a teammate's question"):
+            start()
+    with pytest.raises(NotAllowed, match="answer it yourself"):
+        crew.runner.ask(top.id, "engineer", "what do I think?")
+    await crew.runner.shutdown()

@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from crewbots.api.context import Context
 from crewbots.api.schemas import (
+    AskBody,
     ChildMessage,
     Delegation,
     Escalation,
@@ -31,6 +32,11 @@ def routes(c: Context) -> APIRouter:
         child = runner.delegate(request.state.task.id, body.bot, body.goal, workspace=body.workspace,
                                 review_of=body.review_of)
         return {"id": child.id, "bot": child.bot, "title": child.title, "status": child.status}
+
+    @v1.post("/bot/ask", status_code=201)
+    async def bot_ask(request: Request, body: AskBody):
+        asked = runner.ask(request.state.task.id, body.bot, body.question)
+        return {"id": asked.id, "bot": asked.bot, "status": asked.status}
 
     @v1.get("/bot/tasks")
     async def bot_tasks(request: Request):

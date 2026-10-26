@@ -1,0 +1,1 @@
+Ask a teammate a quick question: what they know, decided or found, or how something works, without handing them work. bot: who to ask. question: one clear question, with the context they need. They answer from what they know and can read, and change nothing. End your turn after asking: the answer arrives as your next message. For work, delegate instead.

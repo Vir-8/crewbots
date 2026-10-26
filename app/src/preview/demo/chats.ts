@@ -27,6 +27,21 @@ for (const b of bots) {
   message(chatIds.engineer, "user", "Can you keep the test suite under 30 seconds?");
   say(chatIds.engineer, "It's at 18s now. The slowest file is `test_reports.py` (6s), mostly fixtures; I can trim that if it grows.");
   done(chatIds.engineer);
+
+  // The engineer asks teammates: one answer is in, one is still coming.
+  message(chatIds.engineer, "user", "Is the filtered export safe to ship on Friday?");
+  const question = "Did the filtered export pass your break-it tests, with an empty filter too?";
+  tool(chatIds.engineer, "mcp__crewbots__ask", { bot: "critic", question }, "Asked critic (t_ask0000001).");
+  const answered = task("t_ask0000001", "critic", question, { kind: "ask", parent_id: chatIds.engineer, created_by: "engineer", workspace: null, result: "Yes. An empty filter exports every row, as the page shows, and 2,000 runs of the break-it script found nothing." });
+  message(answered.id, "engineer", `engineer asks: ${question}`);
+  say(answered.id, answered.result!);
+  done(answered.id);
+  message(chatIds.engineer, "crewbots", "Your question was answered.");
+  say(chatIds.engineer, "The critic ran it 2,000 times with no failures, an empty filter included, so yes: it's safe for Friday. I've asked the reviewer whether release days are in our standards.");
+  const rule = "Anything in team/standards.md about which days we release on?";
+  tool(chatIds.engineer, "mcp__crewbots__ask", { bot: "reviewer", question: rule }, "Asked reviewer (t_ask0000002).");
+  task("t_ask0000002", "reviewer", rule, { kind: "ask", parent_id: chatIds.engineer, created_by: "engineer", workspace: null, status: "running", reported: false });
+  done(chatIds.engineer);
   message(chatIds.reviewer, "user", "What do you look for first?");
   say(chatIds.reviewer, "That the change does what the task asked, with a test for each edge case. Then `team/standards.md`.");
   done(chatIds.reviewer);
