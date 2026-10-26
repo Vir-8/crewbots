@@ -74,6 +74,7 @@ def serve(home: Path, port: int = DEFAULT_PORT, max_parallel: int = 4, sessions:
             json.dump({"url": f"http://127.0.0.1:{port}", "token": token, "pid": os.getpid()}, f)
         if resumed := runner.resume_interrupted():
             print(f"carrying on {len(resumed)} turn(s) the last stop cut off", flush=True)
+        runner.capacity.source = plans_module.plans  # background work goes by the plans' limits
         ticking = asyncio.create_task(scheduler.run(), name="scheduler")
         rotating = asyncio.create_task(_rotate_log_now_and_then(), name="log rotation")
         warming = asyncio.gather(  # the CLIs and GitHub take seconds: ask before the app does

@@ -85,6 +85,7 @@ class Scheduler:
         if self.runner.paused:
             return []  # nothing is marked checked, so what came due while paused runs once on resume
         now = now or datetime.now().astimezone()
+        await self.runner.capacity.refresh()
         started = []
         for routine in self.routines:
             if routine.enabled and routine.schedule and (task := self._check_schedule(routine, now)):

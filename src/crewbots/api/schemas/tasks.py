@@ -59,8 +59,9 @@ class TaskStatus(BaseModel):
     open: bool  # its session is open now; a closed one resumes from session_id
     context_percent: float | None  # how full its context is, when last measured
     context_window: int | None  # the tokens it's measured against; None: the model's whole window
-    rollover_percent: float | None  # past this, it continues in a fresh session from a briefing
+    rollover_percent: float | None  # past this, it's flushed to memory and compacted
     turns: int
+    background: str | None = None  # whether the crew's background work runs on its plan now, and why
 
 class FindingOut(BaseModel):
     location: str | None = None

@@ -145,10 +145,13 @@ def test_the_apps_errors_go_to_the_daemons_log_without_flooding_it(client, capsy
 
 
 def test_the_crew_can_be_paused_and_resumed_over_the_api(client):
-    assert client.get("/crew", headers=AUTH).json() == {"paused": False, "restarting": False, "running": 0,
-                                                         "turns_running": 0, "held": 0, "sessions": 0, "limits": []}
+    unknown = "running (its plan's limits aren't known yet)"
+    assert client.get("/crew", headers=AUTH).json() == {
+        "paused": False, "restarting": False, "running": 0, "turns_running": 0, "held": 0, "sessions": 0, "limits": [],
+        "background": [{"plan": "claude", "go": True, "reason": unknown}, {"plan": "codex", "go": True, "reason": unknown}]}
 
     assert client.post("/crew/pause", headers=AUTH).json()["paused"] is True
+    assert client.get("/crew", headers=AUTH).json()["background"][0]["reason"] == "waiting while the crew is paused"
     task = client.post("/tasks", json={"bot": "worker", "goal": "x"}, headers=AUTH).json()
     time.sleep(0.2)
     assert client.get(f"/tasks/{task['id']}", headers=AUTH).json()["status"] == "queued"

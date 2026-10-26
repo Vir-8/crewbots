@@ -83,6 +83,14 @@ export function StatusPanel({ taskId, onClose }: { taskId: string; onClose: () =
           ))}
           <dt>Turns</dt>
           <dd>{status.turns}</dd>
+          {status.background && (
+            <>
+              <dt>Background</dt>
+              <dd title="Memory consolidation and other work the crew does by itself runs only with spare capacity, and never beside yours.">
+                {status.background.charAt(0).toUpperCase() + status.background.slice(1)}
+              </dd>
+            </>
+          )}
         </dl>
       )}
       {status && !status.open && status.session_id && (

@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "97c04cc75383";
+export const API_SCHEMA = "29d222e0e2de";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -49,6 +49,13 @@ export interface AttachmentUpload {
 export interface Avatar {
   color?: string | null;
   shape?: string | null;
+}
+
+/** Whether the crew's background work may run on a plan now, and why (`capacity.py`). */
+export interface BackgroundOut {
+  plan: string;
+  go: boolean;
+  reason: string;
 }
 
 export interface BotOut {
@@ -191,6 +198,7 @@ export interface CrewState {
   held: number;
   sessions: number;
   limits: PlanLimitOut[];
+  background?: BackgroundOut[];
 }
 
 export interface CursorOut {
@@ -850,6 +858,7 @@ export interface TaskStatus {
   context_window: number | null;
   rollover_percent: number | null;
   turns: number;
+  background?: string | null;
 }
 
 export interface ThreadBody {

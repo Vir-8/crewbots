@@ -37,6 +37,7 @@ from typing import Any
 from crewbots import attachments as attachments_module
 from crewbots import prompts, worktree
 from crewbots.backends import BACKENDS, Access, Backend, McpServer, RunSpec
+from crewbots.capacity import Capacity
 from crewbots.crew import NO_REPLY, Bot, Crew
 from crewbots.crew_tools import CrewTools
 from crewbots.events import Compacted, Done, Event, Notice, RateLimit, SessionStarted, Usage
@@ -128,6 +129,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds, Dreams):
         self._turn_ended: dict[str, float] = {}  # task id → when its last turn ended (time.time())
         self._flushed: set[str] = set()  # tasks whose bot set down where things stand since their last turn
         self._dreaming: set[str] = set()  # bots whose memory is being consolidated now
+        self.capacity = Capacity(self)  # whether background work may run now
         self._started = time.time()
         self.retry_waits_s = RETRY_WAITS_S if retry_waits_s is None else retry_waits_s
         self.stall_s = STALL_S if stall_s is None else stall_s
@@ -279,7 +281,16 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds, Dreams):
         limits = [asdict(limit) for windows in self.limits.values() for limit in windows.values()]
         return {"paused": self.paused, "restarting": self.restarting, "running": len(self._runs) - len(self._held),
                 "turns_running": self.turns_running(), "held": len(self._held), "sessions": len(self._sessions),
-                "limits": [{k: v for k, v in x.items() if k != "kind"} for x in limits]}
+                "limits": [{k: v for k, v in x.items() if k != "kind"} for x in limits],
+                "background": self.capacity.summary()}
+
+    def user_busy(self) -> bool:
+        """Whether any of the user's own work is running: anything but the crew's background work."""
+        return any(not self._background(task_id) for task_id in self._runs if task_id not in self._held)
+
+    def _background(self, task_id: str) -> bool:
+        """Work the crew does for itself: started by crewbots (memory consolidation, check-ins), however deep."""
+        return self.store.work_of(task_id).created_by == "crewbots"
 
     def reload(self, crew: Crew) -> None:
         """Takes up edited role cards (and their budgets). Running turns carry on as they started. Bots new to the crew

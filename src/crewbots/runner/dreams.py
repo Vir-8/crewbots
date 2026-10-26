@@ -28,11 +28,10 @@ class Dreams:
     """The part of Runner that consolidates bots' memory."""
 
     def dream_due(self, bot: str, now: datetime) -> bool:
-        """Whether `bot`'s memory is due: once a night (counted from DREAM_HOUR), with something new since, while the
-        crew is idle, in the early hours or after an hour of quiet, and its plan's limits are clear (the spare-capacity
-        check E1 refines)."""
-        if self._runs or self.paused or self._dreaming:
-            return False  # one bot at a time, and never beside the user's own work
+        """Whether `bot`'s memory is due: once a night (counted from DREAM_HOUR), with something new since, in the early
+        hours or after an hour of quiet, when there's spare capacity (`capacity.py`: never beside the user's work)."""
+        if self._dreaming:
+            return False  # one bot at a time
         quiet = time.time() - max(self._turn_ended.values(), default=self._started) >= QUIET_S
         if not (DREAM_HOUR <= now.hour < DREAM_UNTIL or quiet):
             return False
@@ -42,10 +41,9 @@ class Dreams:
             return False
         since = (last or "0000-00-00")[:10]
         memory = self.crew.memory
-        if not (memory.logs_since(bot, since) or memory.changed_since(bot, since)):
+        if not (memory.logs_since(bot, since) or memory.changed_since(bot, since)) or bot not in self.crew.bots:
             return False
-        plan = _plan(self.crew.bots[bot].backend) if bot in self.crew.bots else None
-        return all(limit.status == "ok" for limit in self.limits.get(plan, {}).values())
+        return self.capacity.verdict(_plan(self.crew.bots[bot].backend)).go
 
     def dream(self, bot: str, weekly: bool | None = None) -> Task:
         """Starts consolidating one bot's memory. The run is a task of its own, so what it cost is counted, and its

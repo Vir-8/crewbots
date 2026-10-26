@@ -34,6 +34,14 @@ class RestartBody(BaseModel):
     when_idle: bool = True
     timeout_s: float = RESTART_TIMEOUT_S
 
+class BackgroundOut(BaseModel):
+    """Whether the crew's background work may run on a plan now, and why (`capacity.py`)."""
+
+    plan: str
+    go: bool
+    reason: str
+
+
 class CrewState(BaseModel):
     paused: bool
     restarting: bool  # the daemon restarts once no turn is running; meanwhile none starts
@@ -42,6 +50,7 @@ class CrewState(BaseModel):
     held: int
     sessions: int
     limits: list[PlanLimitOut]
+    background: list[BackgroundOut] = []
 
 class AgentLogOut(BaseModel):
     """One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a

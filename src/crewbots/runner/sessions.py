@@ -52,6 +52,7 @@ class Sessions:
             "context_percent": round(percent, 1) if percent is not None else None,
             "context_window": bot.context_window if bot and task.kind != "review" else None,
             "rollover_percent": self.rollover_percent, "turns": task.turns,
+            "background": self.capacity.verdict(_plan(bot.backend)).reason if bot else None,
         }
 
     async def _session_for(self, task: Task, bot: Bot, cwd: Path, backend: Backend) -> OpenSession | None:
