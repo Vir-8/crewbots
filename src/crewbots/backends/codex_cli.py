@@ -1,9 +1,11 @@
 """Codex, run headless: `codex exec --json`. It uses the CLI's own sign-in, so a ChatGPT plan works."""
 
+import asyncio
 import json
 import os
 import re
 from collections.abc import AsyncIterator, Sequence
+from contextlib import aclosing
 from typing import TYPE_CHECKING, Any
 
 from crewbots.backends.base import Access, McpServer, RunSpec
@@ -26,11 +28,12 @@ class CodexCLI:
         self.command = list(command)
         self.isolate = isolate
 
-    def run(self, spec: RunSpec) -> AsyncIterator[Event]:
-        return stream_jsonl(
-            self.argv(spec), cwd=spec.cwd, env=dict(os.environ), parser=CodexParser(), stdin_text=self.prompt(spec),
-            timeout_s=spec.timeout_s,
-        )
+    async def run(self, spec: RunSpec) -> AsyncIterator[Event]:
+        argv = await asyncio.to_thread(self.argv, spec)  # may list Codex's MCP servers, which takes seconds
+        async with aclosing(stream_jsonl(argv, cwd=spec.cwd, env=dict(os.environ), parser=CodexParser(),
+                                         stdin_text=self.prompt(spec), timeout_s=spec.timeout_s)) as stream:
+            async for event in stream:
+                yield event
 
     async def open(self, spec: RunSpec) -> "CodexSession":
         from crewbots.backends.codex_app_server import CodexSession

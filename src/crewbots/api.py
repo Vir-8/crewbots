@@ -24,6 +24,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from crewbots import crew as crew_module
+from crewbots.backends import codex_isolation
 from crewbots.runner import MergeError, NotAllowed, Runner, UnknownBot
 from crewbots.store import Status, Store, Verdict
 
@@ -430,6 +431,9 @@ def serve(home: Path, port: int = DEFAULT_PORT, max_parallel: int = 4, sessions:
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        if any(b.backend == "codex" for b in crew.bots.values()):
+            # Listing Codex's MCP servers (to keep bots away from them) takes seconds; do it before any bot needs it.
+            asyncio.get_running_loop().run_in_executor(None, codex_isolation.warm)
         fd = os.open(info_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         os.fchmod(fd, 0o600)  # in case an older file was readable by others
         with os.fdopen(fd, "w") as f:

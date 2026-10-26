@@ -148,8 +148,18 @@ Each step leaves the system working.
    - Follow-up turns, measured through the daemon:
      - Claude: from about 1.9s to 1.1s.
      - Codex: from about 5.3s to 1.75s.
-   - Codex's first turn is slower with a session (15s against 10s). Opening the app-server needs a closer look.
-   - Next: Claude moves onto the Agent SDK (see "Learned building sessions").
+   - Claude now runs on the **Claude Agent SDK** (`backends/claude_sdk.py`). It's still the user's own `claude` binary, but over the SDK's control protocol:
+     - **Interrupts:** a cancel or a timeout interrupts the turn and keeps the session warm. A live `sleep 30` stopped in under 6s, and the next turn answered in 1s.
+     - **In-process crew tools:** the tools run in the daemon as an SDK MCP server, so Claude bots have no tool subprocess and no token.
+     - **Every tool call goes through `can_use_tool`:**
+       - read-only bots only read
+       - writing bots only write inside their task's own folder (its worktree, when it has one)
+       - nobody pushes, merges, publishes or rewrites history
+       - each refusal tells Claude why and shows in the transcript
+
+       The Bash pattern is a guardrail, not a boundary. Containers are the boundary.
+     - `claude-cli` remains as a backend for the plain `claude -p` path.
+   - **Codex's slow first turn** (15s) was mostly `codex mcp list`, which isolation needs. It takes 5.3s every call and was cached for only 60 seconds. It's now cached until the Codex config or plugins change, warmed when the daemon starts, and run off the event loop. A new thread still costs about 1.6s, and its first turn about 4s (a cold prompt cache) against about 1.5s later. Through the daemon, the first Codex turn is now 5.4s, against 15s before and about 10s one-shot.
 5. **Login service and menu bar.** launchd install and uninstall from the app, the app attaching rather than owning, the power assertion, notifications.
 6. **Memory.** Bot memory files with `remember`/`forget`, FTS `recall`, and the rollover for long conversations.
 7. **Routines, triggers, budgets.** The scheduler, GitHub triggers, per-bot budgets, and the standup and retro routines.

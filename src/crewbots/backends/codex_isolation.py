@@ -19,11 +19,11 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
-CACHE_S = 60.0
+CACHE_S = 3600.0  # `codex mcp list` takes about 5s, and its answer only changes with the config or the plugins
 LIST_TIMEOUT_S = 30.0
 BARE_KEY = re.compile(r"[A-Za-z0-9_-]+")
 
-_cache: dict[tuple[str, ...], tuple[float, float, list[str], list[str]]] = {}
+_cache: dict[tuple[str, ...], tuple[float, tuple[float, float], list[str]]] = {}
 
 
 def codex_home() -> Path:
@@ -59,22 +59,33 @@ def _config() -> dict[str, Any]:
         return {}
 
 
+def warm(command: Sequence[str] = ("codex",)) -> None:
+    """Fills the cache ahead of the first Codex run (the daemon does this at start-up, off its event loop)."""
+    _listed_servers(command)
+
+
 def _listed_servers(command: Sequence[str]) -> tuple[list[str], str | None]:
-    """Every server Codex knows about, from `codex mcp list --json`, cached while config.toml is unchanged."""
-    path = codex_home() / "config.toml"
-    mtime = path.stat().st_mtime if path.exists() else 0.0
+    """Every server Codex knows about, from `codex mcp list --json`, cached while the config and plugins are unchanged."""
+    stamp = (_mtime(codex_home() / "config.toml"), _mtime(codex_home() / "plugins"))
     key = tuple(command)
     cached = _cache.get(key)
-    if cached and cached[1] == mtime and time.monotonic() - cached[0] < CACHE_S:
+    if cached and cached[1] == stamp and time.monotonic() - cached[0] < CACHE_S:
         return cached[2], None
     try:
         result = subprocess.run([*command, "mcp", "list", "--json"], capture_output=True, text=True,
-                                timeout=LIST_TIMEOUT_S)
+                                stdin=subprocess.DEVNULL, timeout=LIST_TIMEOUT_S)
         names = [s["name"] for s in json.loads(result.stdout or "[]")]
     except (OSError, subprocess.TimeoutExpired, ValueError, KeyError, TypeError) as e:
         return [], str(e)
-    _cache[key] = (time.monotonic(), mtime, names, [])
+    _cache[key] = (time.monotonic(), stamp, names)
     return names, None
+
+
+def _mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
 
 
 def _key(name: str) -> str:

@@ -36,6 +36,7 @@ class RunSpec:
     resume_session_id: str | None = None
     mcp_servers: dict[str, McpServer] = field(default_factory=dict)
     read_dirs: list[Path] = field(default_factory=list)  # outside cwd, readable even when read-only (e.g. skills)
+    crew: Any = None  # the crew tools as Python (crewbots.crew_tools.CrewTools), for backends that host them in-process
     timeout_s: float | None = None
     extra_args: list[str] = field(default_factory=list)  # passed through to the CLI unchanged
 

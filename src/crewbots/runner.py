@@ -28,6 +28,7 @@ from crewbots import worktree
 from crewbots.backends import BACKENDS, Access, Backend, McpServer, RunSpec
 from crewbots.backends.base import Session
 from crewbots.crew import Bot, Crew
+from crewbots.crew_tools import CrewTools
 from crewbots.events import Done, Event, SessionStarted, Usage
 from crewbots.store import Handoff, Review, Status, Store, Task, Verdict
 
@@ -194,7 +195,9 @@ class Runner:
             run.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await run
-        await self._close_session(task_id)
+        opened = self._sessions.get(task_id)
+        if not (opened and opened.session.alive and getattr(opened.session, "interruptible", False)):
+            await self._close_session(task_id)  # an interruptible session stopped its turn and stays warm
         task = self._set(task_id, status=Status.CANCELLED)
         self._report_up(task_id)
         return task
@@ -392,7 +395,7 @@ class Runner:
                 if open_session:
                     stream = open_session.session.turn(prompt)
                 else:
-                    stream = backend.run(self._spec(task, bot, cwd, token, prompt))
+                    stream = backend.run(self._spec(task, bot, cwd, token, prompt, backend))
                 async with aclosing(stream) as stream:
                     async for event in stream:
                         self._record(task_id, event)
@@ -428,12 +431,16 @@ class Runner:
                 next_status = Status.QUEUED if self._waiting.get(task_id) else Status.IDLE
                 self._set(task_id, status=next_status, result=done.final_text, turns=task.turns + 1)
 
-    def _spec(self, task: Task, bot: Bot, cwd: Path, token: str, prompt: str) -> RunSpec:
+    def _spec(self, task: Task, bot: Bot, cwd: Path, token: str, prompt: str, backend: Backend) -> RunSpec:
+        # A backend that hosts tools in-process gets the crew tools as Python; any other, as an MCP server with a token.
+        in_process = getattr(backend, "in_process_tools", False) and self.api_url is not None
         return RunSpec(
             prompt=prompt, cwd=cwd, access=bot.access, model=bot.model,
             system_prompt=self.crew.system_prompt(bot, delegated_by=task.created_by if task.parent_id else None,
                                                   reviewing=self._review_brief(task)),
-            resume_session_id=task.session_id, mcp_servers={**bot.mcp, **self._crew_tools(token, bot)},
+            resume_session_id=task.session_id,
+            mcp_servers={**bot.mcp, **({} if in_process else self._crew_tools(token, bot))},
+            crew=CrewTools(self, task.id, bot.can_delegate) if in_process else None,
             read_dirs=[self.crew.skills_dir] if self.crew.skills_for(bot) else [], timeout_s=bot.timeout_s,
         )
 
@@ -452,7 +459,7 @@ class Runner:
         token = secrets.token_urlsafe(32)
         self._tokens[token] = task.id  # its MCP server may call in while the session starts
         try:
-            session = await backend.open(self._spec(task, bot, cwd, token, prompt=""))
+            session = await backend.open(self._spec(task, bot, cwd, token, "", backend))
         except Exception as e:
             self._tokens.pop(token, None)
             self._record(task.id, kind="notice", data={"message": f"couldn't keep a session open ({e}); "

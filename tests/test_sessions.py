@@ -177,3 +177,41 @@ async def test_shutdown_closes_every_session(store, tmp_path):
     await runner.shutdown()
 
     assert all(s.closed for s in backend.opened) and runner.open_sessions() == []
+
+
+class InProcessBackend(SessionBackend):
+    """Like the Agent SDK backend: hosts the crew tools itself, and its sessions can stop a turn and stay open."""
+
+    in_process_tools = True
+
+    async def open(self, spec):
+        session = await super().open(spec)
+        session.interruptible = True
+        return session
+
+
+async def test_an_in_process_backend_gets_the_crew_tools_as_python_not_a_server(store, tmp_path):
+    from crewbots.crew_tools import CrewTools
+
+    runner, backend = make(store, tmp_path, InProcessBackend(), bot("chief", can_delegate=True))
+    task = runner.submit("chief", "x")
+    await wait_until(settled(store, runner, task.id))
+
+    spec = backend.opened[0].spec
+    assert isinstance(spec.crew, CrewTools) and spec.crew.task_id == task.id and spec.crew.can_delegate
+    assert MCP_SERVER_NAME not in spec.mcp_servers
+
+
+async def test_cancelling_an_interruptible_session_keeps_it_warm(store, tmp_path):
+    backend = InProcessBackend()
+    backend.gate = asyncio.Event()
+    runner, _ = make(store, tmp_path, backend)
+    task = runner.submit("worker", "forever")
+    await wait_until(lambda: len(backend.opened) == 1 and backend.opened[0].turns)
+
+    await runner.cancel(task.id)
+    backend.gate.set()
+    runner.send(task.id, "do something else")
+    await wait_until(lambda: len(backend.opened[0].turns) == 2 and settled(store, runner, task.id)())
+
+    assert len(backend.opened) == 1 and not backend.opened[0].closed  # the same session took the next turn

@@ -40,7 +40,8 @@ class CodexSession:
 
     @classmethod
     async def open(cls, cli: "CodexCLI", spec: RunSpec) -> "CodexSession":
-        argv = [*cli.command, "app-server", "-c", 'approval_policy="never"', *cli.config_overrides(spec), *spec.extra_args]
+        overrides = await asyncio.to_thread(cli.config_overrides, spec)  # may list Codex's MCP servers, which takes seconds
+        argv = [*cli.command, "app-server", "-c", 'approval_policy="never"', *overrides, *spec.extra_args]
         session = cls(await JsonlProcess.start(argv, cwd=spec.cwd, env=dict(os.environ)), spec)
         try:
             await session._request("initialize", {"clientInfo": CLIENT, "capabilities": None})

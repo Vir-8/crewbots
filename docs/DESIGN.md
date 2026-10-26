@@ -98,7 +98,7 @@ crewbots daemon (Python, asyncio)
 
 | Layer | What | Why |
 |---|---|---|
-| Agent loop | Claude Code CLI (`claude -p --output-format stream-json`), Codex CLI (`codex exec --json`) | Coding agents that already work, on subscriptions you already pay for |
+| Agent loop | Claude Code through the Claude Agent SDK, Codex through `codex app-server` (one-shot `codex exec` and `claude -p` as fallbacks) | Coding agents that already work, on subscriptions you already pay for, driven through their official integration points |
 | Daemon | Python 3.12, asyncio, FastAPI + uvicorn (HTTP + WebSocket), httpx | One process that runs every bot; the API is the contract for every client |
 | State | SQLite (stdlib, WAL): tasks, events, handoffs, reviews | One file per crew, no server to run |
 | Crew tools | MCP Python SDK 2.x, a stdio server per run | Both CLIs speak MCP, so one set of tools works on either |

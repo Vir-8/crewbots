@@ -2,7 +2,7 @@
 
 A crew of persistent AI agents that you manage instead of babysit. You give a goal to a chief of staff, which splits it into tasks with one owner each and hands them to specialist bots: an engineer, a reviewer, or whatever you add, such as a video editor working in DaVinci Resolve. The bots run in parallel, each writing bot in its own git worktree, and you hear back when there is something to review or decide.
 
-The agents run on the official **Claude Code** and **Codex** CLIs in non-interactive mode, so they use the Claude and ChatGPT plans you already have. crewbots is the layer above them: bots, tasks, worktrees, delegation, rules and the app. The plan is in [docs/DESIGN.md](docs/DESIGN.md), and the architecture in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+The agents run on the official **Claude Code** and **Codex** CLIs, so they use the Claude and ChatGPT plans you already have. Claude Code is driven through the **Claude Agent SDK**, and Codex through **`codex app-server`**, the two tools' own interfaces for programs. crewbots is the layer above them: bots, tasks, worktrees, delegation, rules and the app. The plan is in [docs/DESIGN.md](docs/DESIGN.md), and the architecture in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## How it works
 
@@ -35,7 +35,12 @@ The agents run on the official **Claude Code** and **Codex** CLIs in non-interac
 - **The daemon** runs the tasks and serves an HTTP and WebSocket API on localhost. The desktop app and the `crewbots` command both use that API.
   - Every request needs the daemon's token, which is written to `daemon.json` and readable only by you.
   - The daemon also checks the Host header, so no web page you have open can drive your bots.
-- **Backends** translate each CLI's JSON output into one shared event stream.
+- **Backends** translate each CLI's output into one shared event stream.
+  - **Claude:** crewbots' tools run inside the daemon. Every tool call goes through crewbots' policy:
+    - read-only bots only read
+    - writing bots only write in their task's folder
+    - nobody pushes, merges or publishes
+  - **Interrupts:** a cancelled or timed-out Claude turn is interrupted, not killed, so its session stays warm.
   - Bots get crewbots' MCP servers and their own, never your personal ones. On Claude that's `--strict-mcp-config`. On Codex, which has no such switch, every server, plugin and app from your config is turned off by name.
   - Each active task keeps its CLI running between turns, so follow-ups skip start-up. Idle sessions close after 10 minutes, and `serve --no-sessions` turns this off.
   - `ANTHROPIC_API_KEY` is hidden from Claude by default, so a run stays on your subscription.
