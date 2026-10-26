@@ -6,9 +6,15 @@ asks, every few minutes.
 import json
 import re
 import subprocess
+import time
 from dataclasses import dataclass, field
 
 GH_TIMEOUT_S = 60
+GH_WAITS_S = (2.0, 5.0)  # before each new try of a call that failed for a passing reason
+# GitHub's own passing failures, as gh reports them: its servers and gateways (502, 503, 504, and GraphQL's
+# "something went wrong", which is its query timeout), and the network on the way there.
+PASSING = re.compile(r"HTTP 5\d\d|something went wrong|timeout|timed out|connection (reset|refused)|\bEOF\b|"
+                     r"TLS handshake|temporarily unavailable|no such host|network is unreachable", re.IGNORECASE)
 DIFF_CHARS = 60_000
 LOG_LINES = 80  # of each failed job's log
 QUERY = """
@@ -28,7 +34,9 @@ JOB_URL = re.compile(r"/actions/runs/\d+/job/(\d+)")
 
 
 class GitHubError(RuntimeError):
-    pass
+    def __init__(self, message: str, passing: bool = False):
+        super().__init__(message)
+        self.passing = passing  # GitHub or the network failed this time; the same call may well work in a moment
 
 
 @dataclass(frozen=True)
@@ -107,14 +115,27 @@ def _prs(search: dict | None) -> list[PullRequest]:
 
 
 def _gh(args: list[str]) -> str:
+    """Runs gh, and again after a short wait when GitHub or the network failed for a passing reason."""
+    for attempt, wait in enumerate((0.0, *GH_WAITS_S)):
+        time.sleep(wait)
+        try:
+            return _gh_once(args)
+        except GitHubError as e:
+            if not e.passing or attempt == len(GH_WAITS_S):
+                raise
+    raise AssertionError("unreachable")
+
+
+def _gh_once(args: list[str]) -> str:
     try:
         done = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=GH_TIMEOUT_S,
                               stdin=subprocess.DEVNULL)
     except FileNotFoundError:
         raise GitHubError("the GitHub CLI (gh) isn't installed") from None
     except subprocess.TimeoutExpired:
-        raise GitHubError(f"gh {args[0]} took more than {GH_TIMEOUT_S}s") from None
+        raise GitHubError(f"gh {args[0]} took more than {GH_TIMEOUT_S}s", passing=True) from None
     if done.returncode != 0:
-        raise GitHubError((done.stderr or done.stdout).strip().splitlines()[-1] if (done.stderr or done.stdout).strip()
-                          else f"gh exited with {done.returncode}")
+        output = (done.stderr or done.stdout).strip()
+        message = output.splitlines()[-1] if output else f"gh exited with {done.returncode}"
+        raise GitHubError(message, passing=bool(PASSING.search(output)))
     return done.stdout

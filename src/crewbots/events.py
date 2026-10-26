@@ -66,11 +66,14 @@ class RateLimit:
 
 @dataclass(frozen=True)
 class Done:
-    """Always the last event of a run, exactly once."""
+    """Always the last event of a run, exactly once. A failure the backend knows is passing says so in `retry`:
+    `transient` (the service was down or overloaded, the connection dropped, the CLI died) or `limit` (a rate or plan
+    limit), and the runner tries the turn again."""
 
     final_text: str
     is_error: bool = False
     error: str | None = None
+    retry: str | None = None
     kind: str = field(default="done", init=False)
 
 

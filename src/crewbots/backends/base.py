@@ -18,6 +18,30 @@ class Access(StrEnum):
     FULL = "full"  # no restrictions; only inside an isolated worktree or container
 
 
+# Codex's error kinds (`codexErrorInfo`) for a turn that failed on the way to the model or back, after Codex's own
+# retries: worth trying the turn again later. Its other kinds (context window, auth, bad request, policy, sandbox)
+# would fail the same way again.
+CODEX_TRANSIENT = {"serverOverloaded", "internalServerError", "flexUnavailable", "httpConnectionFailed",
+                   "responseStreamConnectionFailed", "responseStreamDisconnected", "responseTooManyFailedAttempts"}
+CODEX_LIMIT = {"usageLimitExceeded", "rateLimitExceeded"}
+
+
+def claude_retry(status: int | None, error: str | None) -> str | None:
+    """Whether a failed Claude turn is worth trying again, from the HTTP status of the API call that failed and the
+    kind Claude Code gave the error. Claude Code has already retried the call itself by then."""
+    if status == 429 or error == "rate_limit":
+        return "limit"
+    if (status or 0) >= 500 or error == "server_error":  # 529 is Anthropic's "overloaded"
+        return "transient"
+    return None
+
+
+def codex_retry(info: Any) -> str | None:
+    """The same for a failed Codex turn, from its `codexErrorInfo`: a kind's name, or an object keyed by it."""
+    kind = next(iter(info), None) if isinstance(info, dict) else info
+    return "limit" if kind in CODEX_LIMIT else "transient" if kind in CODEX_TRANSIENT else None
+
+
 @dataclass(frozen=True)
 class McpServer:
     """A stdio MCP server to start alongside the CLI. This is how crewbots gives bots its orchestration tools."""

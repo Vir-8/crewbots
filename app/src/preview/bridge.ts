@@ -75,7 +75,7 @@ async function request(method: string, path: string, body?: any) {
     return ok({ bot: parts[1], working: threads.some((t) => t.status === "running"), last_active: threads[0]?.updated_at ?? null, threads, outputs });
   }
   if (method === "GET" && url.pathname === "/routines") return ok(routines());
-  if (method === "GET" && url.pathname === "/usage/summary") return ok(usageSummary(Number(url.searchParams.get("days") ?? 30)));
+  if (method === "GET" && url.pathname === "/usage/summary") return ok(usageSummary(Number(url.searchParams.get("days") ?? 365)));
   if (method === "GET" && url.pathname === "/plans") return ok(plans);
   if (method === "GET" && url.pathname === "/reviews/inbox") return ok(reviewInbox);
   if (method === "GET" && url.pathname === "/reviews/repos") return ok({ "acme/web": "~/code/acme-web" });
@@ -242,18 +242,18 @@ function usageSummary(days: number) {
 
 const plans = {
   claude: {
-    available: true, error: null, plan: "subscription", checked_at: Date.now() / 1000,
+    available: true, error: null, notes: [], checked_at: Date.now() / 1000,
     windows: [
-      { name: "5-hour session", used_percent: 37, resets_at: demo.resetsAt },
-      { name: "Weekly", used_percent: 12, resets_at: demo.resetsAt + 3 * 86400 },
-      { name: "Weekly · Fable", used_percent: 4, resets_at: demo.resetsAt + 3 * 86400 },
+      { name: "Session", used_percent: 37, resets_at: demo.resetsAt },
+      { name: "Week · all models", used_percent: 12, resets_at: demo.resetsAt + 3 * 86400 },
+      { name: "Week · Fable", used_percent: 4, resets_at: demo.resetsAt + 3 * 86400 },
     ],
   },
   codex: {
-    available: true, error: null, plan: "prolite", checked_at: Date.now() / 1000,
+    available: true, error: null, notes: ["12,400 credits"], checked_at: Date.now() / 1000,
     windows: [
-      { name: "5-hour", used_percent: 84, resets_at: demo.resetsAt - 3600 },
-      { name: "Weekly", used_percent: 11, resets_at: demo.resetsAt + 5 * 86400 },
+      { name: "5 hours", used_percent: 84, resets_at: demo.resetsAt - 3600 },
+      { name: "Week", used_percent: 11, resets_at: demo.resetsAt + 5 * 86400 },
     ],
   },
 };

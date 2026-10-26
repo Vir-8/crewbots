@@ -69,7 +69,7 @@ export const api = {
   newRoutine: (fields: Partial<RoutineFile> & { name: string }) => call<RoutineFile>("POST", "/routines", fields),
   deleteRoutine: (name: string) => call<{ ok: boolean }>("DELETE", `/routines/${encodeURIComponent(name)}`),
   pause: (on: boolean) => call<CrewState>("POST", on ? "/crew/pause" : "/crew/resume"),
-  usageSummary: (days = 30) => call<UsageSummary>("GET", `/usage/summary?days=${days}`),
+  usageSummary: (days = 365) => call<UsageSummary>("GET", `/usage/summary?days=${days}`),
   plans: (fresh = false) => call<Plans>("GET", `/plans${fresh ? "?fresh=true" : ""}`),
   reviewInbox: (fresh = false) => call<ReviewInbox>("GET", `/reviews/inbox${fresh ? "?fresh=true" : ""}`),
   pull: (repo: string, number: number) => call<Pull>("GET", `/reviews/${repo}/${number}`),

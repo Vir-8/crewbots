@@ -9,7 +9,7 @@ import pytest
 from fakes import bot
 
 from crewbots import plans
-from crewbots.plans import parse_claude_usage
+from crewbots.plans import parse_claude_usage, parse_codex_limits
 from crewbots.store import Store
 from crewbots.usage import _streaks, summary
 
@@ -29,10 +29,32 @@ def test_claudes_usage_command_becomes_windows_with_their_resets():
     windows = parse_claude_usage(USAGE, now)
 
     assert [(w["name"], w["used_percent"]) for w in windows] == [
-        ("5-hour session", 5.0), ("Weekly · Fable", 0.0), ("Weekly", 12.0)]
+        ("Session", 5.0), ("Week · Fable", 0.0), ("Week · all models", 12.0)]
     assert datetime.fromtimestamp(windows[0]["resets_at"], ZoneInfo("Asia/Calcutta")) == datetime(
         2026, 10, 26, 17, 40, tzinfo=ZoneInfo("Asia/Calcutta"))
     assert parse_claude_usage("nothing here") == []
+
+
+def test_codex_limits_come_from_every_bucket_with_credits_and_resets_as_notes():
+    window = {"usedPercent": 12, "windowDurationMins": 10080, "resetsAt": 1793599181}
+    limits = {
+        "rateLimits": {"limitId": "codex", "primary": window},
+        "rateLimitsByLimitId": {
+            "codex": {"limitId": "codex", "limitName": None, "primary": {**window, "windowDurationMins": 300},
+                      "secondary": window, "credits": {"hasCredits": True, "unlimited": False, "balance": "73911.98"}},
+            "spark": {"limitId": "spark", "limitName": "GPT-6 Spark", "primary": {**window, "usedPercent": 40}},
+        },
+        "rateLimitResetCredits": {"availableCount": 2},
+    }
+
+    found = parse_codex_limits(limits)
+
+    assert [(w["name"], w["used_percent"]) for w in found["windows"]] == [
+        ("5 hours", 12.0), ("Week", 12.0), ("Week · GPT-6 Spark", 40.0)]
+    assert found["notes"] == ["73,912 credits", "2 free limit resets to use"]
+    assert parse_codex_limits({"rateLimits": {"primary": {"usedPercent": 3, "windowDurationMins": 1440},
+                                              "credits": {"hasCredits": False, "unlimited": True}}}) == {
+        "windows": [{"name": "Day", "used_percent": 3.0, "resets_at": None}], "notes": ["Unlimited credits"]}
 
 
 @pytest.fixture
@@ -44,8 +66,8 @@ def asks(monkeypatch):
         async def ask():
             count[name] += 1
             await asyncio.sleep(0.01)
-            return {"available": True, "error": None, "plan": None,
-                    "windows": [{"name": "Weekly", "used_percent": count[name], "resets_at": None}]}
+            return {"available": True, "error": None, "notes": [],
+                    "windows": [{"name": "Week", "used_percent": count[name], "resets_at": None}]}
         return ask
 
     monkeypatch.setattr(plans, "_claude", cli("claude"))

@@ -98,6 +98,7 @@ async def stream_jsonl(
                 final_text=parser.final_text(),
                 is_error=True,
                 error=f"{Path(argv[0]).name} exited with code {returncode} before finishing: {detail}",
+                retry="transient",
             )
     finally:
         await _stop(proc)

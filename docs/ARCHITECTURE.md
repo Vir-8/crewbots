@@ -269,11 +269,27 @@ Each step leaves the system working.
   Codex, each fetching only what's asked. Code search covers the default branch, not the PR. With a mapped local
   copy, the PR's head is fetched (`pull/N/head`) into a detached worktree under `~/.crewbots/worktrees/reviews`, and
   the read-only reviewer works there. GitHub's inbox and pull requests are cached for a minute or two.
+- **When a turn fails:** the CLIs retry a failed API call themselves first (Claude Code with backoff, Codex per
+  request and per stream, `request_max_retries` and `stream_max_retries`). When they give up, the backend says whether the failure is
+  passing, from what the CLI reports rather than its wording: Codex's `codexErrorInfo` (overloaded, server error,
+  connection or stream failures; usage or rate limits), the Agent SDK's error kind and `api_error_status` (5xx and
+  529; 429), and a CLI that died or broke its protocol. The runner then tries the turn again after 30s, 2 min and
+  5 min, resuming the session with a note to carry on and check what's already done, and leaves it failed after the
+  fourth try. A plan limit with a known reset waits in the existing hold until it resets instead. A turn with no
+  event at all for 20 minutes is stopped and tried the same way (Claude's commands can't run silent past 10). Auth,
+  context window, bad request and policy failures aren't retried: they'd fail the same way again.
+- **GitHub:** every `gh` call is tried again twice, after 2s and 5s, when GitHub or the network failed for a passing
+  reason (5xx, GraphQL's "something went wrong", which is its query timeout, timeouts and dropped connections). The
+  code review inbox asks for each of its four lists on its own, in parallel: in one query they took GitHub 7 to 8s
+  for a busy account, close to its GraphQL time limit (the 504s), and apart the slowest takes about 4s.
 - **Analytics** (`usage.py`, `plans.py`): every turn's usage event carries its plan, model and effort, so the page
   can split the crew's fresh tokens by day, plan, model, bot and effort (older events fall back to the bot's current
   model). The store sums them in SQL by local day, so a year of turns comes back as a few rows. Where the plans
   stand is asked of the CLIs, without a model call: Claude Code's `/usage` command run with `-p` prints the
   session's and weeks' percentages and resets as text, and Codex's app-server answers `account/rateLimits/read`.
+  Nothing about a particular plan is built in: limits are named in each CLI's terms ("Session", "Week · Fable",
+  "5 hours"), Codex's every metered bucket is shown, and what else they report (Codex credits and free resets,
+  Claude's reason when there are no limits, such as an API key) shows as notes.
   Starting the CLIs takes seconds (Claude about 2.5s even without MCP servers, Chrome or a saved session; 1 to 2s for
   Codex), so the daemon asks when it starts and keeps the answers: an answer over two minutes old is served at once
   while a new one is asked for behind it, one ask per CLI at a time, and a failed ask keeps the last good answer.

@@ -6,7 +6,7 @@ import os
 from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
-from crewbots.backends.base import Access, RunSpec, mcp_servers_json
+from crewbots.backends.base import Access, RunSpec, claude_retry, mcp_servers_json
 from crewbots.backends.process import JsonlProcess, stream_jsonl
 from crewbots.events import Done, Event, Notice, RateLimit, SessionStarted, Text, ToolCall, ToolResult, Usage
 
@@ -98,7 +98,8 @@ class ClaudeSession:
                     yield Done(final_text=parser.final_text(), is_error=True, error=f"timed out after {self.timeout_s:g}s")
                     return
                 if obj is None:
-                    yield Done(final_text=parser.final_text(), is_error=True, error=self.process.exit_detail())
+                    yield Done(final_text=parser.final_text(), is_error=True, error=self.process.exit_detail(),
+                               retry="transient")
                     return
                 if isinstance(obj, str):
                     yield Notice(message=obj)
@@ -111,7 +112,8 @@ class ClaudeSession:
                         finished = True
                         return
         except (BrokenPipeError, ConnectionResetError):
-            yield Done(final_text=parser.final_text(), is_error=True, error=self.process.exit_detail())
+            yield Done(final_text=parser.final_text(), is_error=True, error=self.process.exit_detail(),
+                       retry="transient")
         finally:
             if not finished:
                 self._broken = True  # mid-turn, there's no way back to a clean state: stop it
@@ -137,6 +139,7 @@ def rate_limit(info: dict[str, Any]) -> RateLimit:
 class ClaudeParser:
     def __init__(self) -> None:
         self._last_text = ""
+        self._api_error: str | None = None  # the kind of the last API error Claude Code gave up on, if any
 
     def final_text(self) -> str:
         return self._last_text
@@ -148,6 +151,7 @@ class ClaudeParser:
             case "system" if obj.get("subtype") == "init":
                 return [SessionStarted(session_id=obj["session_id"])]
             case "assistant":
+                self._api_error = obj.get("error") or self._api_error
                 return self._assistant(obj["message"].get("content") or [])
             case "user":
                 content = obj["message"].get("content")
@@ -187,10 +191,11 @@ class ClaudeParser:
         )
         failed = bool(obj.get("is_error")) or obj.get("subtype") != "success"
         text = obj.get("result") or self._last_text
-        error = None
+        error = retry = None
         if failed:
             error = "; ".join(obj.get("errors") or []) or obj.get("result") or obj.get("subtype") or "failed"
-        return [usage, Done(final_text=text, is_error=failed, error=error)]
+            retry = claude_retry(obj.get("api_error_status"), self._api_error)
+        return [usage, Done(final_text=text, is_error=failed, error=error, retry=retry)]
 
 
 def _stringify(content: Any) -> str:

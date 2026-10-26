@@ -20,7 +20,9 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 TTL_S = 120.0
-USAGE_LINE = re.compile(r"^Current ([^:]+):\s*(\d+(?:\.\d+)?)% used(?:\s*·\s*resets (.+?)(?:\s*\(([^)]+)\))?)?\s*$")
+# A limit line of Claude Code's /usage: "Current session: 5% used · resets 5:40pm (Asia/Calcutta)".
+USAGE_LINE = re.compile(r"^(?:Current )?([^:]+):\s*(\d+(?:\.\d+)?)% used(?:\s*·\s*resets (.+?)(?:\s*\(([^)]+)\))?)?\s*$",
+                        re.IGNORECASE)
 _cache: dict[str, dict[str, Any]] = {}  # each plan's last good answer, with `checked_at` (unix time)
 _asking: dict[str, asyncio.Task] = {}
 
@@ -49,8 +51,8 @@ def _ask(name: str) -> asyncio.Task:
         try:
             found = await asyncio.wait_for((_claude if name == "claude" else _codex)(), 60)
         except Exception as e:
-            return _cache.get(name) or {"available": False, "error": str(e) or type(e).__name__, "plan": None,
-                                        "windows": [], "checked_at": time.time()}
+            return _cache.get(name) or {"available": False, "error": str(e) or type(e).__name__, "windows": [],
+                                        "notes": [], "checked_at": time.time()}
         finally:
             _asking.pop(name, None)
         _cache[name] = found | {"checked_at": time.time()}
@@ -72,11 +74,16 @@ async def _claude() -> dict[str, Any]:
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, stdin=asyncio.subprocess.DEVNULL, env=env,
         cwd=tempfile.gettempdir())
     out, _ = await process.communicate()
-    return {"available": True, "error": None, "plan": "subscription", "windows": parse_claude_usage(out.decode())}
+    text = out.decode()
+    windows = parse_claude_usage(text)
+    # Without limits to show (an API key, say), its first line says why.
+    note = next((line.strip() for line in text.splitlines() if line.strip()), None) if not windows else None
+    return {"available": True, "error": None, "windows": windows, "notes": [note] if note else []}
 
 
 def parse_claude_usage(text: str, now: datetime | None = None) -> list[dict[str, Any]]:
-    """`Current session: 5% used · resets Oct 26 at 5:40pm (Asia/Calcutta)` → {name: "Session", used_percent: 5, ...}."""
+    """Each limit line, in Claude Code's own words: `Current week (Fable): 5% used · resets Oct 28 at 11:30pm
+    (Asia/Calcutta)` → {name: "Week · Fable", used_percent: 5, resets_at: ...}."""
     windows = []
     for line in text.splitlines():
         match = USAGE_LINE.match(line.strip())
@@ -89,12 +96,10 @@ def parse_claude_usage(text: str, now: datetime | None = None) -> list[dict[str,
 
 
 def _window_name(name: str) -> str:
-    if name.strip().lower() == "session":
-        return "5-hour session"
-    week = re.match(r"week(?:\s*\((.+)\))?", name.strip(), re.IGNORECASE)
-    if week:
-        return f"Weekly · {week.group(1)}" if week.group(1) and week.group(1).lower() != "all models" else "Weekly"
-    return name.strip().capitalize()
+    """"session" → "Session", "week (Fable)" → "Week · Fable"."""
+    named = re.match(r"(.+?)\s*\((.+)\)$", name.strip())
+    base, detail = (named.group(1), named.group(2)) if named else (name.strip(), None)
+    return base[:1].upper() + base[1:] + (f" · {detail}" if detail else "")
 
 
 def _claude_reset(text: str, zone: str | None, now: datetime | None) -> int | None:
@@ -102,7 +107,7 @@ def _claude_reset(text: str, zone: str | None, now: datetime | None) -> int | No
     now = now or datetime.now(tz)
     for fmt in ("%b %d at %I:%M%p", "%b %d at %I%p", "%I:%M%p", "%I%p"):
         try:
-            parsed = datetime.strptime(text.strip().replace(" ", " "), fmt)
+            parsed = datetime.strptime(text.strip().replace("\u202f", " "), fmt)
         except ValueError:
             continue
         if "%b" in fmt:
@@ -147,12 +152,41 @@ async def _codex() -> dict[str, Any]:
         with contextlib.suppress(ProcessLookupError):
             os.killpg(process.pid, signal.SIGKILL)
         await process.wait()
-    snapshot = limits.get("rateLimits") or {}
+    return {"available": True, "error": None, **parse_codex_limits(limits)}
+
+
+def parse_codex_limits(limits: dict[str, Any]) -> dict[str, Any]:
+    """`account/rateLimits/read`'s answer → windows and notes. An account can have more than one metered bucket (each
+    named by `limitName`), each with up to two windows, plus credits and free resets."""
+    buckets = list((limits.get("rateLimitsByLimitId") or {}).values()) or [limits.get("rateLimits") or {}]
     windows = []
-    for key in ("primary", "secondary"):
-        w = snapshot.get(key)
-        if w and w.get("usedPercent") is not None:
-            minutes = w.get("windowDurationMins") or 0
-            name = (f"{minutes // 60}-hour" if minutes < 1440 else "Weekly" if minutes == 10080 else f"{minutes // 1440}-day")
-            windows.append({"name": name, "used_percent": float(w["usedPercent"]), "resets_at": w.get("resetsAt")})
-    return {"available": True, "error": None, "plan": snapshot.get("planType"), "windows": windows}
+    for bucket in buckets:
+        for key in ("primary", "secondary"):
+            w = bucket.get(key)
+            if w and w.get("usedPercent") is not None:
+                name = _span(w.get("windowDurationMins"))
+                if bucket.get("limitName"):
+                    name += f" · {bucket['limitName']}"
+                windows.append({"name": name, "used_percent": float(w["usedPercent"]), "resets_at": w.get("resetsAt")})
+    notes = []
+    credits = next((b["credits"] for b in buckets if b.get("credits")), None) or {}
+    if credits.get("unlimited"):
+        notes.append("Unlimited credits")
+    elif credits.get("hasCredits") and credits.get("balance"):
+        with contextlib.suppress(ValueError):
+            notes.append(f"{float(credits['balance']):,.0f} credits")
+    resets = (limits.get("rateLimitResetCredits") or {}).get("availableCount") or 0
+    if resets:
+        notes.append(f"{resets} free limit reset{'s' if resets != 1 else ''} to use")
+    return {"windows": windows, "notes": notes}
+
+
+def _span(minutes: int | None) -> str:
+    """A window's length as a name: 300 → "5 hours", 10080 → "Week"."""
+    if not minutes:
+        return "Limit"
+    for unit, size in (("week", 10080), ("day", 1440), ("hour", 60), ("minute", 1)):
+        if minutes % size == 0:
+            n = minutes // size
+            return unit.capitalize() if n == 1 else f"{n} {unit}s"
+    return f"{minutes} minutes"

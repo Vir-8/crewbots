@@ -11,57 +11,29 @@ import type { Budget, Plans, UsageSummary } from "../types";
 // activity grid's magnitude is a separate one-hue blue ramp, so neither reads as one plan's. Both are set in styles.css.
 const PLAN_COLOR: Record<string, string> = { claude: "var(--plan-claude)", codex: "var(--plan-codex)" };
 const RAMP = [1, 2, 3, 4, 5];
-const PLAN_NAME: Record<string, string> = { prolite: "Pro Lite", plus: "Plus", pro: "Pro", team: "Team", business: "Business", enterprise: "Enterprise", edu: "Edu", free: "Free" };
 const EFFORT_LABEL: Record<string, string> = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max", ultra: "Ultra", default: "Default" };
 const STALE_S = 120; // the daemon refreshes a plan's answer once it's this old
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-type Range = "week" | "month" | "quarter" | "year";
-const RANGES: { key: Range; label: string; days: number; span: string }[] = [
-  { key: "week", label: "Week", days: 7, span: "the last 7 days" },
-  { key: "month", label: "Month", days: 30, span: "the last 30 days" },
-  { key: "quarter", label: "3 months", days: 91, span: "the last 3 months" },
-  { key: "year", label: "Year", days: 365, span: "the last year" },
-];
+const DAYS = 365;
 
 // Kept between visits, so coming back shows the last numbers at once while new ones load.
-const kept = new Map<number, UsageSummary>();
+let keptData: UsageSummary | null = null;
 let keptPlans: Plans | null = null;
 
-function rememberedRange(): Range {
-  try {
-    const saved = localStorage.getItem("crewbots.analytics-range");
-    return RANGES.some((r) => r.key === saved) ? (saved as Range) : "month";
-  } catch {
-    return "month";
-  }
-}
-
-/** What the crew has used, and what's left on your plans. */
+/** What the crew has used over the last year, and what's left on your plans. */
 export function Analytics({ crew }: { crew: Crew }) {
-  const [range, setRange] = useState<Range>(rememberedRange);
-  const { days, span } = RANGES.find((r) => r.key === range)!;
-  const [data, setData] = useState<UsageSummary | null>(kept.get(days) ?? null);
+  const [data, setData] = useState<UsageSummary | null>(keptData);
   const [plans, setPlans] = useState<Plans | null>(keptPlans);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [asking, setAsking] = useState(false);
 
-  const choose = (next: Range) => {
-    setRange(next);
-    try {
-      localStorage.setItem("crewbots.analytics-range", next);
-    } catch {
-      // not remembered, but still shown
-    }
-  };
-
-  // The crew's own numbers are quick; until the new range's arrive, the last ones stay up.
+  // The crew's own numbers are quick; the last ones stay up until new ones arrive.
   useEffect(() => {
     let live = true;
-    if (kept.has(days)) setData(kept.get(days)!);
-    api.usageSummary(days).then(
+    api.usageSummary(DAYS).then(
       (summary) => {
-        kept.set(days, summary);
+        keptData = summary;
         if (live) setData(summary);
       },
       () => {},
@@ -69,7 +41,7 @@ export function Analytics({ crew }: { crew: Crew }) {
     return () => {
       live = false;
     };
-  }, [days, crew.running.length]);
+  }, [crew.running.length]);
 
   // The plans take the CLIs seconds to answer, so the daemon keeps their last answer: show it, and if it's old, ask
   // again behind it.
@@ -115,15 +87,11 @@ export function Analytics({ crew }: { crew: Crew }) {
       </section>
 
       <section className="page-section">
-        <div className="section-head">
-          <h2>The crew's use</h2>
-          <span className="grow" />
-          <Segmented value={range} options={RANGES.map((r) => [r.key, r.label] as [Range, string])} onChange={choose} />
-        </div>
+        <h2>The crew's use, over the last year</h2>
         {data ? (
           <>
             <div className="stat-strip">
-              <Stat value={compact(data.totals.claude + data.totals.codex)} label="Tokens used" title={`In ${span}`} />
+              <Stat value={compact(data.totals.claude + data.totals.codex)} label="Tokens used" />
               <Stat value={data.peak ? compact(data.peak.tokens) : "–"} label={data.peak ? `Peak day, ${short(data.peak.date)}` : "Peak day"} />
               <Stat value={data.longest_turn ? duration(data.longest_turn.seconds) : "–"} label="Longest turn" title={data.longest_turn?.title} />
               <Stat value={plural(data.streak.longest, "day")} label="Longest streak" />
@@ -138,7 +106,7 @@ export function Analytics({ crew }: { crew: Crew }) {
 
       {data && (
         <>
-          <Activity data={data} range={range} />
+          <Activity data={data} />
 
           <section className="page-section">
             <h2>Claude and Codex</h2>
@@ -208,7 +176,6 @@ function PlanCard({ name, plan, color }: { name: string; plan: Plans["claude"] |
       <div className="plan-card-head">
         <span className="key" style={{ background: color }} />
         <span className="plan-card-name">{name}</span>
-        {plan?.plan && plan.plan !== "subscription" && <span className="faint small">{PLAN_NAME[plan.plan] ?? plan.plan[0].toUpperCase() + plan.plan.slice(1)}</span>}
       </div>
       {!plan && <p className="faint small">Asking…</p>}
       {plan && !plan.available && <p className="error-text small">{plan.error}</p>}
@@ -231,6 +198,7 @@ function PlanCard({ name, plan, color }: { name: string; plan: Plans["claude"] |
           </div>
         );
       })}
+      {plan?.notes.length ? <p className="faint small plan-notes">{plan.notes.join(" · ")}</p> : null}
     </div>
   );
 }
@@ -246,9 +214,8 @@ function Stat({ value, label, title }: { value: string; label: string; title?: s
 
 type Day = { date: string; tokens: number; split?: string };
 
-/** The range's days, shaded by how much each used: a week as a row, a month as a calendar, and longer as a column a
- * week. */
-function Activity({ data, range }: { data: UsageSummary; range: Range }) {
+/** The year's days, a column a week, shaded by how much each used. */
+function Activity({ data }: { data: UsageSummary }) {
   const [plan, setPlan] = useState<"all" | "claude" | "codex">("all");
   const [hover, setHover] = useState<Day | null>(null);
   const days: Day[] = useMemo(
@@ -281,17 +248,7 @@ function Activity({ data, range }: { data: UsageSummary; range: Range }) {
         <Segmented value={plan} options={[["all", "All"], ["claude", "Claude"], ["codex", "Codex"]]} onChange={setPlan} />
       </div>
       <div onMouseLeave={() => setHover(null)}>
-        {range === "week" ? (
-          <div className="heat-days">
-            {days.map((d) => (
-              <DayCell key={d.date} day={d} label={`${WEEKDAYS[dateOf(d.date).getDay()]} ${dateOf(d.date).getDate()}`} {...cell(d)} />
-            ))}
-          </div>
-        ) : range === "month" ? (
-          <Calendar days={days} cell={cell} />
-        ) : (
-          <Weeks days={days} cell={cell} max={range === "quarter" ? 44 : 18} />
-        )}
+        <Weeks days={days} cell={cell} max={18} />
       </div>
       <div className="heat-foot">
         <span className="faint small">
@@ -313,38 +270,7 @@ function Activity({ data, range }: { data: UsageSummary; range: Range }) {
 
 type CellProps = { className: string; "aria-label": string; onMouseEnter: () => void };
 
-function DayCell({ day, label, className, ...rest }: { day: Day; label: string } & CellProps) {
-  return (
-    <span className={`day-cell ${className}`} {...rest}>
-      <span className="day-label">{label}</span>
-      {day.tokens > 0 && <span className="day-tokens">{compact(day.tokens)}</span>}
-    </span>
-  );
-}
-
-/** A month as a calendar: a row a week, under the days' names. */
-function Calendar({ days, cell }: { days: Day[]; cell: (d: Day) => CellProps }) {
-  const pad = dateOf(days[0].date).getDay();
-  const slots: (Day | null)[] = [...Array(pad).fill(null), ...days];
-  while (slots.length % 7) slots.push(null);
-  return (
-    <div className="heat-calendar">
-      {WEEKDAYS.map((w) => (
-        <span key={w} className="heat-weekday">
-          {w}
-        </span>
-      ))}
-      {slots.map((d, i) => {
-        if (!d) return <span key={`blank-${i}`} />;
-        const date = dateOf(d.date);
-        const label = date.getDate() === 1 || d === days[0] ? date.toLocaleDateString(undefined, { month: "short", day: "numeric" }) : String(date.getDate());
-        return <DayCell key={d.date} day={d} label={label} {...cell(d)} />;
-      })}
-    </div>
-  );
-}
-
-/** Months to a year: a column a week, sized to fill the width up to `max` a square. */
+/** A column a week, sized to fill the width up to `max` a square. */
 function Weeks({ days, cell, max }: { days: Day[]; cell: (d: Day) => CellProps; max: number }) {
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);

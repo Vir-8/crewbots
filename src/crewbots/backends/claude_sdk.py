@@ -35,7 +35,7 @@ from claude_agent_sdk import (
     tool,
 )
 
-from crewbots.backends.base import Access, RunSpec
+from crewbots.backends.base import Access, RunSpec, claude_retry
 from crewbots.backends.claude_cli import READ_ONLY_TOOLS, _stringify, rate_limit
 from crewbots.backends.credentials import without_credentials
 from crewbots.backends.policy import Policy
@@ -152,7 +152,7 @@ class ClaudeAgentSession:
             await self.client.query(prompt)
         except Exception as e:
             self._broken = True
-            yield Done(final_text="", is_error=True, error=f"claude: {e}")
+            yield Done(final_text="", is_error=True, error=f"claude: {e}", retry="transient")
             return
         reader = asyncio.create_task(pump())
         loop = asyncio.get_running_loop()
@@ -177,11 +177,13 @@ class ClaudeAgentSession:
                     if not mapper.done:
                         self._broken = True
                         detail = " ".join(self.stderr_lines[-5:]) or "the CLI stopped"
-                        yield Done(final_text=mapper.final_text, is_error=True, error=f"claude: {detail}")
+                        yield Done(final_text=mapper.final_text, is_error=True, error=f"claude: {detail}",
+                                   retry="transient")
                     return
                 if isinstance(message, Exception):
                     self._broken = True
-                    yield Done(final_text=mapper.final_text, is_error=True, error=f"claude: {message}")
+                    yield Done(final_text=mapper.final_text, is_error=True, error=f"claude: {message}",
+                               retry="transient")
                     settled = True
                     return
                 for event in mapper.feed(message, timed_out=timed_out, timeout_s=self.timeout_s):
@@ -242,6 +244,7 @@ class SdkMapper:
     def __init__(self) -> None:
         self.final_text = ""
         self.done = False
+        self.api_error: str | None = None  # the kind of the last API error Claude Code gave up on, if any
 
     def feed(self, message: Any, timed_out: bool = False, timeout_s: float | None = None) -> list[Event]:
         if getattr(message, "parent_tool_use_id", None):
@@ -253,6 +256,7 @@ class SdkMapper:
                 return [rate_limit(info.raw or {"status": info.status, "resetsAt": info.resets_at,
                                                 "rateLimitType": info.rate_limit_type, "utilization": info.utilization})]
             case AssistantMessage(content=blocks):
+                self.api_error = message.error or self.api_error
                 events: list[Event] = []
                 for block in blocks:
                     if isinstance(block, TextBlock) and block.text:
@@ -277,10 +281,11 @@ class SdkMapper:
                 if timed_out:
                     return [usage, Done(final_text=text, is_error=True, error=f"timed out after {timeout_s:g}s")]
                 failed = message.is_error or message.subtype != "success"
-                error = None
+                error = retry = None
                 if failed:
                     error = "; ".join(message.errors or []) or message.result or message.subtype or "failed"
-                return [usage, Done(final_text=text, is_error=failed, error=error)]
+                    retry = claude_retry(message.api_error_status, self.api_error)
+                return [usage, Done(final_text=text, is_error=failed, error=error, retry=retry)]
         return []
 
 

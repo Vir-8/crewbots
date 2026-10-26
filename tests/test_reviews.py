@@ -9,7 +9,9 @@ import pytest
 from fakes import FakeBackend, bot, git_repo, make_crew
 from fastapi.testclient import TestClient
 
+from crewbots import github
 from crewbots.api import create_app
+from crewbots.github import GitHubError
 from crewbots.reviews import ReviewError, Reviews
 from crewbots.runner import Runner
 from crewbots.store import Store
@@ -82,7 +84,7 @@ def test_the_inbox_and_a_pull_request_come_from_gh_and_are_cached(tmp_path):
     assert [p["number"] for p in inbox["direct"]] == [7] and inbox["direct"][0]["checks"] == "SUCCESS"
     assert [p["number"] for p in inbox["assigned"]] == [7]
     reviews.inbox()
-    assert len(gh.calls) == 1  # cached
+    assert len(gh.calls) == 4  # one a list, then cached
     pull = reviews.pull("vir/app", 7)
     assert pull["checks"] == {"total": 3, "passed": 1, "failed": 1} and pull["checkout"] is None
     assert pull["failing"] == ["tests"] and pull["issues"] == [5]
@@ -206,3 +208,52 @@ async def test_a_reviewer_gets_its_tools_on_either_backend_but_not_with_a_local_
     await runner.shutdown()
     store.close()
 
+
+
+# When GitHub fails
+
+
+def gh_answering(monkeypatch, *outputs):
+    """gh that answers with `outputs` in turn, each (exit code, stderr), with "ok" on stdout when it succeeds."""
+    monkeypatch.setattr(github, "GH_WAITS_S", (0.0, 0.0))
+    calls = []
+
+    def run(argv, **kw):
+        calls.append(argv)
+        code, err = outputs[len(calls) - 1]
+        return subprocess.CompletedProcess(argv, code, "ok" if code == 0 else "", err)
+
+    monkeypatch.setattr(github.subprocess, "run", run)
+    return calls
+
+
+def test_gh_tries_again_when_github_fails_for_a_passing_reason(monkeypatch):
+    calls = gh_answering(monkeypatch, (1, "gh: HTTP 504"), (1, "Post https://api.github.com/graphql: EOF"), (0, ""))
+
+    assert github._gh(["api", "graphql"]) == "ok" and len(calls) == 3
+
+
+def test_gh_gives_up_after_its_tries_and_never_retries_what_would_fail_again(monkeypatch):
+    calls = gh_answering(monkeypatch, *[(1, "gh: HTTP 502: Server Error")] * 3)
+    with pytest.raises(GitHubError, match="502") as failed:
+        github._gh(["api", "graphql"])
+    assert len(calls) == 3 and failed.value.passing
+
+    calls = gh_answering(monkeypatch, (1, "GraphQL: Could not resolve to a Repository with the name 'vir/nope'."))
+    with pytest.raises(GitHubError) as failed:
+        github._gh(["api", "graphql"])
+    assert len(calls) == 1 and not failed.value.passing
+
+
+def test_the_inbox_asks_each_list_on_its_own(tmp_path):
+    asked = []
+
+    def gh(args):
+        searches = [line.split(":")[0].strip() for line in args[-1].splitlines() if "search(" in line]
+        asked.append(searches)
+        return json.dumps({"data": {searches[0]: {"nodes": [NODE] if searches[0] == "direct" else []}}})
+
+    inbox = Reviews(tmp_path, gh=gh).inbox()
+
+    assert sorted(asked) == [["assigned"], ["direct"], ["mine"], ["team"]]
+    assert [p["number"] for p in inbox["direct"]] == [7] and inbox["assigned"] == []

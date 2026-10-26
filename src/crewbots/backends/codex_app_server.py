@@ -22,7 +22,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from crewbots.backends.base import Access, RunSpec, session_temp_dir
+from crewbots.backends.base import Access, RunSpec, codex_retry, session_temp_dir
 from crewbots.backends.codex_cli import network_overrides
 from crewbots.backends.credentials import without_credentials
 from crewbots.backends.policy import NO_NETWORK, STAY_IN_SANDBOX, Policy
@@ -127,7 +127,8 @@ class CodexSession:
                     yield Done(final_text=parser.final_text(), is_error=True, error=f"timed out after {self.timeout_s:g}s")
                     return
                 if message is None:
-                    yield Done(final_text=parser.final_text(), is_error=True, error=self.process.exit_detail())
+                    yield Done(final_text=parser.final_text(), is_error=True, error=self.process.exit_detail(),
+                               retry="transient")
                     return
                 params = message.get("params") or {}
                 if params.get("turnId", turn_id) != turn_id and message.get("method") != "turn/completed":
@@ -141,7 +142,7 @@ class CodexSession:
                         finished = True
                         return
         except (AppServerError, BrokenPipeError, ConnectionResetError) as e:
-            yield Done(final_text=parser.final_text(), is_error=True, error=f"codex app-server: {e}")
+            yield Done(final_text=parser.final_text(), is_error=True, error=f"codex app-server: {e}", retry="transient")
         finally:
             if not finished:
                 self._broken = True
@@ -310,8 +311,10 @@ class AppServerParser:
                 if status == "completed":
                     events.append(Done(final_text=self._last_text))
                 else:
-                    message = (turn.get("error") or {}).get("message") or f"turn {status}"
-                    events.append(Done(final_text=self._last_text, is_error=True, error=message))
+                    error = turn.get("error") or {}
+                    events.append(Done(final_text=self._last_text, is_error=True,
+                                       error=error.get("message") or f"turn {status}",
+                                       retry=codex_retry(error.get("codexErrorInfo"))))
                 return events
             case _:
                 return []

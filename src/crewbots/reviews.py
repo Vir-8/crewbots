@@ -20,6 +20,7 @@ import json
 import re
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -67,22 +68,29 @@ VIEW_DIFF_CHARS = 800_000
 BODY_CHARS = 6_000
 REPO = re.compile(r"[\w.-]+/[\w.-]+")
 
-QUERY = """
-query {
-  assigned: search(query: "is:pr is:open archived:false assignee:@me -author:@me", type: ISSUE, first: 50) {
-    nodes { ...pr } }
-  direct: search(query: "is:pr is:open archived:false user-review-requested:@me -author:@me", type: ISSUE, first: 50) {
-    nodes { ...pr } }
-  team: search(query: "is:pr is:open archived:false review-requested:@me -user-review-requested:@me -author:@me",
-               type: ISSUE, first: 50) { nodes { ...pr } }
-  mine: search(query: "is:pr is:open archived:false author:@me", type: ISSUE, first: 50) { nodes { ...pr } }
+# What's waiting on you, one search a list, each asked on its own and all at once: together in one query they took
+# GitHub 7 to 8 seconds for a busy account, close to its GraphQL time limit (a 504), and in parallel the slowest
+# takes about half that.
+SEARCHES = {
+    "assigned": "is:pr is:open archived:false assignee:@me -author:@me",
+    "direct": "is:pr is:open archived:false user-review-requested:@me -author:@me",
+    "team": "is:pr is:open archived:false review-requested:@me -user-review-requested:@me -author:@me",
+    "mine": "is:pr is:open archived:false author:@me",
 }
+PR_FIELDS = """
 fragment pr on PullRequest {
   number title url isDraft createdAt updatedAt additions deletions changedFiles reviewDecision headRefName baseRefName
   author { login avatarUrl } repository { nameWithOwner }
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
 }
 """
+
+
+def inbox_query(keys) -> str:
+    searches = "\n".join(f'  {k}: search(query: "{SEARCHES[k]}", type: ISSUE, first: 50) {{ nodes {{ ...pr }} }}'
+                          for k in keys)
+    return f"query {{\n{searches}\n}}\n{PR_FIELDS}"
+
 DETAIL_FIELDS = ("number,title,body,url,state,isDraft,author,headRefName,baseRefName,headRefOid,additions,deletions,"
                  "changedFiles,files,reviewDecision,createdAt,updatedAt,statusCheckRollup,labels,reviews,comments,"
                  "closingIssuesReferences")
@@ -110,10 +118,13 @@ class Reviews:
     # What's waiting.
 
     def inbox(self, fresh: bool = False) -> dict[str, Any]:
+        def ask(key: str) -> list[dict[str, Any]]:
+            data = json.loads(self.gh(["api", "graphql", "-f", f"query={inbox_query([key])}"])).get("data") or {}
+            return [_summary(n) for n in (data.get(key) or {}).get("nodes") or [] if n and "number" in n]
+
         def load() -> dict[str, Any]:
-            data = (json.loads(self.gh(["api", "graphql", "-f", f"query={QUERY}"])).get("data") or {})
-            return {key: [_summary(n) for n in (data.get(key) or {}).get("nodes") or [] if n and "number" in n]
-                    for key in ("assigned", "direct", "team", "mine")}
+            with ThreadPoolExecutor(len(SEARCHES)) as pool:
+                return dict(zip(SEARCHES, pool.map(ask, SEARCHES), strict=True))
         return self._cached("inbox", INBOX_TTL_S, load, fresh)
 
     def pull(self, repo: str, number: int) -> dict[str, Any]:

@@ -236,7 +236,7 @@ class RepoFolder(BaseModel):
 
 
 class PlanWindow(BaseModel):
-    name: str  # "5-hour session", "Weekly · Fable", ...
+    name: str  # in the CLI's own terms: "Session", "Week · Fable", "5 hours", "Week"
     used_percent: float
     resets_at: int | None  # unix time
 
@@ -244,8 +244,8 @@ class PlanWindow(BaseModel):
 class PlanOut(BaseModel):
     available: bool
     error: str | None
-    plan: str | None
     windows: list[PlanWindow]
+    notes: list[str]  # anything else the CLI says about the plan: credits left, free resets, why there are no limits
     checked_at: float  # unix time; older than a couple of minutes means a fresh answer is on its way
 
 

@@ -43,7 +43,7 @@ from crewbots.backends import BACKENDS, Access, Backend, McpServer, RunSpec
 from crewbots.backends.base import Session
 from crewbots.crew import CHAT_SETTING, NO_REPLY, SEAT_SETTING, Bot, Crew
 from crewbots.crew_tools import CrewTools
-from crewbots.events import Done, Event, RateLimit, SessionStarted, Usage
+from crewbots.events import Done, Event, Notice, RateLimit, SessionStarted, Usage
 from crewbots.memory import CREW_SCOPE, Note
 from crewbots.reviews import reviewer_bot
 from crewbots.store import Handoff, Review, Status, Store, Task, Verdict
@@ -68,6 +68,15 @@ MAX_ROOM_DEPTH = 4  # bot replies in a row in a room, after the user's message, 
 CREW_ROOM = "Crew"  # the group chat every bot is in, made when the crew first needs one
 MENTION = re.compile(r"@([\w-]+)")
 HOLD_RECHECK_S = 60.0  # a held task looks again this often: budgets free up as old usage ages out of their window
+# A turn that failed for a passing reason (the backend says which) is tried again after each of these waits, then
+# left failed. The CLIs have already retried the API call itself a few times by then, so these are longer.
+RETRY_WAITS_S = (30.0, 120.0, 300.0)
+STALL_S = 1200.0  # no event at all from a turn for this long: it's stuck, so it's stopped and tried again
+RETRY_PROMPT = (
+    "Your last turn stopped before it finished, because of an error on the way to the model: {error}. Carry on "
+    "from where you were. Check what you'd already done first, so nothing is done twice; if you had finished, give "
+    "your answer again."
+)
 MCP_SERVER_NAME = "crewbots"
 MCP_COMMAND = (sys.executable, "-m", "crewbots.mcp_server")
 
@@ -175,6 +184,8 @@ class Runner:
         max_sessions: int = MAX_SESSIONS,
         keep_awake: tuple[str, ...] | None = None,  # a command that stops the Mac sleeping while it runs
         rollover_percent: float | None = ROLLOVER_PERCENT,
+        retry_waits_s: tuple[float, ...] | None = None,
+        stall_s: float | None = None,
     ):
         self.store = store
         self.crew = crew
@@ -196,6 +207,8 @@ class Runner:
         self._reaper: asyncio.Task[None] | None = None
         self.keep_awake = keep_awake
         self.rollover_percent = rollover_percent
+        self.retry_waits_s = RETRY_WAITS_S if retry_waits_s is None else retry_waits_s
+        self.stall_s = STALL_S if stall_s is None else stall_s
         self._awake: subprocess.Popen[bytes] | None = None
         self._resumed = asyncio.Event()  # cleared while the crew is paused: no new turn starts
         self._resumed.set()
@@ -670,7 +683,7 @@ class Runner:
     async def _turns(self, task_id: str, prompt: str | None) -> None:
         try:
             while prompt is not None:
-                await self._run(task_id, prompt)
+                await self._tries(task_id, prompt)
                 waiting = self._waiting.pop(task_id, None)
                 prompt = "\n\n".join(waiting) if waiting else None
         finally:
@@ -678,7 +691,30 @@ class Runner:
             self._stay_awake()
         self._report_up(task_id)
 
-    async def _run(self, task_id: str, prompt: str) -> None:
+    async def _tries(self, task_id: str, prompt: str) -> None:
+        """Runs a turn, and again when it failed for a passing reason: after a wait, or for a plan's limit, once the
+        limit resets (the hold sees to that). A turn that had started a session picks up where it stopped."""
+        for attempt in range(len(self.retry_waits_s) + 1):
+            done = await self._run(task_id, prompt)
+            if done is None:
+                return  # settled: finished, or failed for good
+            task = self.store.get_task(task_id)
+            if not done.retry or attempt == len(self.retry_waits_s):
+                self._set(task_id, status=Status.FAILED, result=done.final_text or None, error=done.error)
+                return
+            held = done.retry == "limit" and self.hold_reason(task)
+            wait = 0.0 if held else self.retry_waits_s[attempt]
+            then = "when the limit resets" if held else f"in {_duration(wait)}"
+            # Shown right under the failed turn's own "Stopped: <error>".
+            self._record(task_id, Notice(message=f"Trying again {then} (try {attempt + 2} of "
+                                                 f"{len(self.retry_waits_s) + 1})."))
+            self._set(task_id, status=Status.QUEUED)
+            await asyncio.sleep(wait)
+            if task.session_id:
+                prompt = RETRY_PROMPT.format(error=done.error)
+
+    async def _run(self, task_id: str, prompt: str) -> Done | None:
+        """One turn. Returns its Done if it failed, for `_tries` to settle; None once the task is settled."""
         await self._resumed.wait()
         await self._within_budget(task_id)
         async with self._slots:
@@ -691,19 +727,31 @@ class Runner:
             except Exception as e:  # a bot removed from the crew, a missing workspace, a git failure
                 self._record(task_id, Done(final_text="", is_error=True, error=f"crewbots: {e}"))
                 self._set(task_id, status=Status.FAILED, error=str(e))
-                return
+                return None
             backend = self.backends[bot.backend]
             open_session = await self._session_for(task, bot, cwd, backend)
             token = open_session.token if open_session else secrets.token_urlsafe(32)
             self._tokens[token] = task_id
             done: Done | None = None
+            stalled = False
             try:
                 if open_session:
                     stream = open_session.session.turn(prompt)
                 else:
                     stream = backend.run(self._spec(task, bot, cwd, token, prompt, backend))
                 async with aclosing(stream) as stream:
-                    async for event in stream:
+                    while True:
+                        try:
+                            async with asyncio.timeout(self.stall_s):
+                                event = await anext(stream)
+                        except StopAsyncIteration:
+                            break
+                        except TimeoutError:
+                            stalled = True
+                            done = Done(final_text="", is_error=True, retry="transient",
+                                        error=f"nothing came back from {bot.backend} for {_duration(self.stall_s)}")
+                            self._record(task_id, done)
+                            break
                         if isinstance(event, RateLimit):
                             self._note_limit(task_id, event)
                             continue
@@ -721,20 +769,20 @@ class Runner:
             except asyncio.CancelledError:
                 self._set(task_id, status=Status.CANCELLED)
                 raise
-            except Exception as e:
-                done = Done(final_text="", is_error=True, error=f"crewbots: {e}")
+            except Exception as e:  # the backend broke: its CLI wouldn't start, or its protocol did
+                done = Done(final_text="", is_error=True, error=f"crewbots: {e}", retry="transient")
                 self._record(task_id, done)
             finally:
                 if open_session is None:
                     self._tokens.pop(token, None)
-                elif open_session.session.alive:
+                elif open_session.session.alive and not stalled:
                     open_session.last_used = asyncio.get_running_loop().time()
                 else:
-                    await self._close_session(task_id)  # it died, or was stopped mid-turn: the next turn resumes
+                    await self._close_session(task_id)  # it died, stalled, or was stopped mid-turn: the next turn resumes
             if done is None or done.is_error:
                 self._escalated.discard(task_id)
-                self._set(task_id, status=Status.FAILED, result=done.final_text if done else None,
-                          error=done.error if done else "the run ended without a result")
+                return done or Done(final_text="", is_error=True, error="the run ended without a result",
+                                    retry="transient")
             elif task_id in self._escalated:
                 self._escalated.discard(task_id)
                 self._set(task_id, status=Status.NEEDS_INPUT, result=done.final_text, turns=task.turns + 1)
@@ -1013,6 +1061,10 @@ def _usage_data(usage: Usage, bot: Bot) -> dict[str, Any]:
 def _plan(backend: str) -> str:
     """The subscription a backend runs on: both Claude backends share Claude's limits, both Codex ones Codex's."""
     return backend.split("-")[0]
+
+
+def _duration(seconds: float) -> str:
+    return f"{seconds:g}s" if seconds < 60 else f"{seconds / 60:g} min" if seconds < 3600 else f"{seconds / 3600:g} h"
 
 
 def _iso(t: datetime) -> str:

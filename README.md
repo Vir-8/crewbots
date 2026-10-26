@@ -189,10 +189,10 @@ The app works like a messaging app:
     crew uses it from the next turn. New bots start here too.
   - **Routines:** turn them on and off, run them, edit when and what (schedules as "weekdays at 9:00", or cron),
     and add new ones or the starters.
-  - **Analytics:** how much of each plan is left (Claude's 5-hour session and weeks, Codex's windows) and when each
-    resets. Then the crew's own use over a week, a month, three months or a year: its tokens by day, as a row, a
-    calendar or a column a week, for Claude, Codex or both; totals, the peak day, the longest turn and streaks;
-    Claude against Codex; the top models and bots; and each bot against its budget.
+  - **Analytics:** how much of each limit is left, in the CLIs' own terms (Claude's session and weeks, Codex's windows
+    and any credits) and when each resets. Then the crew's own use over the last year: its tokens by day, a column a
+    week, for Claude, Codex or both; totals, the peak day, the longest turn and streaks; Claude against Codex; the
+    top models and bots; and each bot against its budget.
   - **Settings:** start at login, the crew's folder, pausing, GitHub, and code review's local copies.
 - **Menu bar and notifications:** a bot's reply or a message in a group chat notifies you when the window isn't in
   front, and so do merges to approve, questions and holds.

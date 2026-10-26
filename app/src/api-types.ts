@@ -323,8 +323,8 @@ export interface PlanLimitOut {
 export interface PlanOut {
   available: boolean;
   error: string | null;
-  plan: string | null;
   windows: PlanWindow[];
+  notes: string[];
   checked_at: number;
 }
 
