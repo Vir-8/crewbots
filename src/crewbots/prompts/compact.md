@@ -1,0 +1,1 @@
+Keep every id exactly: pull requests, commits, branches, task ids, file paths. Give the most weight to what the user decided or corrected, in their words where it matters. Keep the latest turns word for word. Keep what's open and what comes next.

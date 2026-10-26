@@ -8,7 +8,7 @@ from typing import Any
 
 from crewbots.backends.base import CLAUDE_BOT_ENV, Access, RunSpec, claude_retry, mcp_servers_json
 from crewbots.backends.process import JsonlProcess, stream_jsonl
-from crewbots.events import Done, Event, Notice, RateLimit, SessionStarted, Text, ToolCall, ToolResult, Usage
+from crewbots.events import Compacted, Done, Event, Notice, RateLimit, SessionStarted, Text, ToolCall, ToolResult, Usage
 
 READ_ONLY_TOOLS = "Read,Glob,Grep"
 WEB_TOOLS = "WebFetch,WebSearch"  # with network on; this backend can't check a fetch's host, so a host list is off
@@ -131,6 +131,12 @@ class ClaudeSession:
 CLAUDE_LIMIT_STATUS = {"allowed": "ok", "allowed_warning": "warning", "rejected": "limited"}
 
 
+def compacted(data: dict[str, Any]) -> Compacted:
+    """Claude Code's `compact_boundary`, as a crewbots event."""
+    meta = data.get("compact_metadata") or {}
+    return Compacted(trigger=meta.get("trigger") or "auto", before=meta.get("pre_tokens"), after=meta.get("post_tokens"))
+
+
 def rate_limit(info: dict[str, Any]) -> RateLimit:
     """Claude's rate_limit_info, which it sends whenever the plan's limit status changes."""
     used = info.get("utilization")
@@ -154,6 +160,8 @@ class ClaudeParser:
         match obj.get("type"):
             case "system" if obj.get("subtype") == "init":
                 return [SessionStarted(session_id=obj["session_id"])]
+            case "system" if obj.get("subtype") == "compact_boundary":
+                return [compacted(obj)]
             case "assistant":
                 self._api_error = obj.get("error") or self._api_error
                 return self._assistant(obj["message"].get("content") or [])

@@ -27,7 +27,18 @@ from crewbots.backends.codex_cli import network_overrides
 from crewbots.backends.credentials import without_credentials
 from crewbots.backends.policy import NO_NETWORK, STAY_IN_SANDBOX, Policy
 from crewbots.backends.process import JsonlProcess
-from crewbots.events import Done, Event, Notice, RateLimit, SessionStarted, Text, ToolCall, ToolResult, Usage
+from crewbots.events import (
+    Compacted,
+    Done,
+    Event,
+    Notice,
+    RateLimit,
+    SessionStarted,
+    Text,
+    ToolCall,
+    ToolResult,
+    Usage,
+)
 
 if TYPE_CHECKING:
     from crewbots.backends.codex_cli import CodexCLI
@@ -148,6 +159,30 @@ class CodexSession:
             if not finished:
                 self._broken = True
                 await self.process.stop()
+
+    async def compact(self, instructions: str) -> AsyncIterator[Event]:
+        """Compacts the thread in place. Codex compacts on its server with its own instructions, so `instructions`
+        can't be passed on; it keeps the user's messages word for word."""
+        parser = AppServerParser(compaction="manual")
+        try:
+            await self._request("thread/compact/start", {"threadId": self.session_id})
+        except AppServerError as e:
+            yield Done(final_text="", is_error=True, error=f"codex: {e}")
+            return
+        while True:
+            try:
+                message = await self._next(self.timeout_s or None)
+            except TimeoutError:
+                yield Done(final_text="", is_error=True, error=f"compacting timed out after {self.timeout_s:g}s")
+                return
+            if message is None:
+                self._broken = True
+                yield Done(final_text="", is_error=True, error=self.process.exit_detail())
+                return
+            for event in parser.feed(message.get("method", ""), message.get("params") or {}):
+                yield event
+                if isinstance(event, Done):
+                    return
 
     async def context_percent(self) -> float | None:
         if not self._context:
@@ -270,10 +305,11 @@ def rate_limits(snapshot: dict[str, Any]) -> list[RateLimit]:
 class AppServerParser:
     """App-server notifications to crewbots events, the same events the one-shot backend gives."""
 
-    def __init__(self) -> None:
+    def __init__(self, compaction: str = "auto") -> None:
         self._last_text = ""
         self._started: set[str] = set()
         self._usage: dict[str, Any] | None = None
+        self.compaction = compaction  # what a compaction in these notifications was: `auto`, or `manual` if asked for
 
     def final_text(self) -> str:
         return self._last_text
@@ -321,6 +357,8 @@ class AppServerParser:
                 return []
 
     def _completed(self, item: dict[str, Any]) -> list[Event]:
+        if item.get("type") == "contextCompaction":  # Codex's server compacted the thread
+            return [Compacted(trigger=self.compaction)]
         if item.get("type") == "agentMessage":
             self._last_text = item.get("text", "")
             return [Text(text=self._last_text)] if self._last_text else []

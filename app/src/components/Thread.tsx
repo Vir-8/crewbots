@@ -6,7 +6,7 @@ import { ACTIVE } from "../types";
 import { MessageFiles } from "./Attachments";
 import { labelOf } from "./Avatar";
 import { Boundary } from "./Boundary";
-import { Markdown } from "./bits";
+import { Markdown, tokens } from "./bits";
 import { Icon } from "./Icon";
 import { WorkCard } from "./WorkCard";
 import "../styles/chat.css";
@@ -174,6 +174,18 @@ function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>
       case "rollover":
         flush();
         out.push({ kind: "line", id: e.id, text: `Continued in a fresh session from a briefing (the conversation had used ${d.percent}% of its context)` });
+        break;
+      case "flushed":
+        flush();
+        out.push({ kind: "line", id: e.id, text: d.logged ? `Set down where things stand, and ${d.logged} line${d.logged === 1 ? "" : "s"} in today's log` : "Set down where things stand" });
+        break;
+      case "compacted":
+        flush();
+        out.push({ kind: "line", id: e.id, text: `${d.trigger === "auto" ? "The CLI compacted" : "Compacted"} the conversation${d.before && d.after ? ` (${tokens(d.before)} → ${tokens(d.after)} tokens)` : ""}` });
+        break;
+      case "fresh_session":
+        flush();
+        out.push({ kind: "line", id: e.id, text: d.why === "idle" ? "Carried on in a fresh session from memory, since the conversation sat idle past its cache" : "Carried on in a fresh session from memory, since the conversation couldn't be compacted" });
         break;
       case "merged":
         flush();

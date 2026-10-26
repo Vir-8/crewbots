@@ -299,7 +299,8 @@ async def test_a_long_conversation_continues_in_a_fresh_session_from_a_briefing(
     first = backend.opened[0]
     assert first.turns == ["first", BRIEFING] and first.closed
     task = store.get_task(task.id)
-    assert task.briefing == "Goal: X. Decided: Y. Next: Z." and task.session_id is None
+    assert task.briefing.startswith("This task's conversation grew long") and task.session_id is None
+    assert task.briefing.rstrip().endswith("Goal: X. Decided: Y. Next: Z.")
     assert task.result == "did: first"  # the briefing turn never replaces the reply
     assert [e.data["percent"] for e in store.events(task.id) if e.kind == "rollover"] == [82.0]
 

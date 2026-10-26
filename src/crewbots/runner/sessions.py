@@ -1,24 +1,33 @@
-"""Long-lived sessions: one per active task, opened when needed, reused across turns, closed when idle, and rolled over
-into a fresh one from a briefing when the conversation grows long."""
+"""Long-lived sessions: one per active task, opened when needed, reused across turns, closed when idle; told what
+changed in their instructions; and, as a conversation grows long, flushed to memory and compacted in place (or, when
+it sat idle past its cache, carried on in a fresh session from memory)."""
 
 import asyncio
 import contextlib
 import hashlib
 import secrets
+import time
+from collections.abc import AsyncIterator
 from contextlib import aclosing
 from pathlib import Path
 from typing import Any
 
 from crewbots import prompts
 from crewbots.backends import Backend
-from crewbots.crew import Bot
-from crewbots.events import Done, Usage
+from crewbots.crew import NO_REPLY, Bot
+from crewbots.events import Compacted, Done, Event, Usage
 from crewbots.runner.common import OpenSession, _plan, _usage_data
-from crewbots.store import Task
+from crewbots.store import Status, Task
+
+MIN_KEPT = 500  # tokens: a compaction that leaves fewer kept nothing worth carrying on from
+COLD_PERCENT = 30.0  # of its window: an idle conversation this full starts afresh once its cache has gone
+FLUSH_LINES = 12  # a flush's lines for the daily log, at most
+FRESH_MESSAGES = 8  # of the conversation a fresh session starts with
+MESSAGE_CHARS = 1500  # of each
 
 
 class Sessions:
-    """The part of Runner that keeps sessions open, reuses them, and rolls a long one over."""
+    """The part of Runner that keeps sessions open, reuses them, and keeps a long one in shape."""
 
     def open_sessions(self) -> list[str]:
         return list(self._sessions)
@@ -85,12 +94,16 @@ class Sessions:
             return prompt, None
         updates = "\n\n".join(f"## {living[key][0]}\n\n{living[key][1]}" if key in living else f"## {key}\n\n(removed)"
                                 for key in changed)
+        if not seen and (state := self.crew.memory.state(bot.name, task.id)):  # just compacted: all of it, again
+            updates += f"\n\n## Where this task stands\n\n{state}"
         return prompts.text("crew-updates", self.crew.home, updates=updates, message=prompt), now
 
-    async def _maybe_roll_over(self, task_id: str, opened: OpenSession) -> None:
-        """A conversation past `rollover_percent` of its context gets a briefing, written by its own bot, and the next
-        turn starts a fresh session from it, instead of the CLI compacting it over and over."""
-        measure = getattr(opened.session, "context_percent", None)
+    async def _maybe_compact(self, task_id: str, opened: OpenSession | None, bot: Bot) -> None:
+        """A conversation past `rollover_percent` of its context window is compacted at the end of a turn, while its
+        cache is warm: its bot first sets down where things stand (`_flush`), then the CLI compacts it in place with
+        the crew's instructions. If that fails twice, it carries on in a fresh session from its notes, logs and state.
+        A session that can't compact on request rolls over to a fresh one from a briefing instead (`_roll_over`)."""
+        measure = getattr(opened.session, "context_percent", None) if opened and opened.session.alive else None
         if not self.rollover_percent or measure is None:
             return
         percent = await measure()
@@ -98,29 +111,116 @@ class Sessions:
             self._context_seen[task_id] = percent
         if percent is None or percent < self.rollover_percent:
             return
-        briefing, usage = "", None
-        try:
-            async with aclosing(opened.session.turn(prompts.text("briefing", self.crew.home))) as stream:
-                async for event in stream:
-                    if isinstance(event, Usage):
-                        usage = event
-                    elif isinstance(event, Done) and not event.is_error:
-                        briefing = event.final_text
-        except Exception:
-            briefing = ""
-        if usage:  # it counts toward budgets like any turn
-            bot = self.bot_for(self.store.get_task(task_id).bot)
-            if bot:
-                self.store.append_event(task_id, kind="usage", data=_usage_data(usage, bot))
-            else:
-                self.store.append_event(task_id, usage)
-            self.store.add_usage(task_id, usage.input_tokens, usage.output_tokens, usage.cost_usd)
+        compact = getattr(opened.session, "compact", None)
+        if compact is None:
+            await self._roll_over(task_id, opened, bot, percent)
+            return
+        await self._flush(task_id, opened, bot)
+        if ((await measure()) or 0) < self.rollover_percent:
+            return  # the CLI compacted it itself, as the flush began
+        for _ in range(2):
+            done, events = await self._hidden(task_id, compact(prompts.text("compact", self.crew.home)), bot)
+            compaction = next((e for e in events if isinstance(e, Compacted)), None)
+            if compaction and done and not done.is_error and (compaction.after is None or compaction.after >= MIN_KEPT):
+                self._record(task_id, compaction)
+                self.store.set_primed(task_id, {})  # its next turn is told its instructions and its state again
+                self._context_seen[task_id] = (await measure()) or 0.0
+                return
+            if not opened.session.alive:
+                break
+        await self._fresh_start(task_id, "uncompacted")
+
+    async def _flush(self, task_id: str, opened: OpenSession, bot: Bot) -> None:
+        """Before compacting, or about 50 minutes into idleness while the cache is warm: the bot sets down where the
+        task stands (`update_state`) and what's worth keeping from it in today's log. Nobody sees the turn; a quiet
+        line in the thread says it happened."""
+        done, _ = await self._hidden(task_id, opened.session.turn(prompts.text("flush", self.crew.home,
+                                                                                 no_reply=NO_REPLY)), bot)
+        text = (done.final_text if done and not done.is_error else "").strip()
+        lines = [] if text.strip("`*_. ") == NO_REPLY else [ln.strip(" -*") for ln in text.splitlines() if ln.strip(" -*")]
+        for line in lines[:FLUSH_LINES]:
+            self.crew.memory.log(bot.name, f"{task_id} {line}")
+        self._flushed.add(task_id)
+        self._record(task_id, kind="flushed", data={"logged": min(len(lines), FLUSH_LINES)})
+
+    async def _roll_over(self, task_id: str, opened: OpenSession, bot: Bot, percent: float) -> None:
+        """For a session that can't compact on request: a briefing, written by its own bot, and the next turn starts
+        a fresh session from it, instead of the CLI compacting it over and over."""
+        done, _ = await self._hidden(task_id, opened.session.turn(prompts.text("briefing", self.crew.home)), bot)
+        briefing = done.final_text if done and not done.is_error else ""
         if not briefing.strip():
             return  # no briefing, no rollover: the CLI's own compaction carries on
         await self._close_session(task_id)
         self._context_seen.pop(task_id, None)  # the fresh session starts from the briefing
-        self.store.update_task(task_id, briefing=briefing, session_id=None)
+        self.store.update_task(task_id, briefing=prompts.text("rolled-over", self.crew.home, briefing=briefing),
+                               session_id=None)
         self._record(task_id, kind="rollover", data={"percent": round(percent, 1), "briefing": briefing})
+
+    async def _fresh_start(self, task_id: str, why: str) -> None:
+        """The task carries on in a fresh session, which starts from its bot's notes, logs and the task's state, and
+        the conversation's last few messages: when it sat idle past its cache (`idle`), or couldn't be compacted."""
+        await self._close_session(task_id)
+        self._context_seen.pop(task_id, None)
+        said = [f"[{e.data.get('from', 'user') if e.kind == 'message' else self.store.get_task(task_id).bot}]: "
+                f"{_short(e.data.get('text', ''), MESSAGE_CHARS)}"
+                for e in self.store.last_events(task_id, ("message", "text"), FRESH_MESSAGES)]
+        self.store.update_task(task_id, session_id=None, briefing=prompts.text(
+            f"fresh-{why}", self.crew.home, messages="\n\n".join(said) or "(none)"))
+        self._record(task_id, kind="fresh_session", data={"why": why})
+
+    def _gone_cold(self, task: Task) -> bool:
+        """Whether resuming the task's session would mean reading a big conversation back in after the prompt cache
+        dropped it (an hour after its last turn): a fresh session from notes, logs and state is far cheaper then."""
+        ended = self._turn_ended.get(task.id)
+        return (bool(task.session_id) and task.kind in ("chat", "thread", "seat") and ended is not None
+                and time.time() - ended >= self.cold_s and (self._context_seen.get(task.id) or 0) >= COLD_PERCENT)
+
+    async def _flush_idle(self) -> None:
+        """About 50 minutes after a big conversation's last turn, while the cache still has it, its bot sets down where
+        things stand, so a fresh session after the cache has gone (`_gone_cold`) loses nothing."""
+        now = time.time()
+        for task_id, ended in list(self._turn_ended.items()):
+            if (task_id in self._flushed or task_id in self._runs or not self.flush_idle_s <= now - ended < self.cold_s
+                    or (self._context_seen.get(task_id) or 0) < COLD_PERCENT):
+                continue
+            self._flushed.add(task_id)
+            self._runs[task_id] = asyncio.create_task(self._idle_flush(task_id), name=f"flush {task_id}")
+
+    async def _idle_flush(self, task_id: str) -> None:
+        try:
+            async with self._turn_slot(task_id):
+                task = self.store.get_task(task_id)
+                bot = self.bot_for(task.bot)
+                if bot and task.status is Status.IDLE and task.session_id:
+                    backend = self.backends[bot.backend]
+                    opened = await self._session_for(task, bot, self._cwd(task, bot), backend)
+                    if opened:
+                        await self._flush(task_id, opened, bot)
+        except Exception as e:  # nothing was lost: the log and state just aren't fresher
+            self._record(task_id, kind="notice", data={"message": f"couldn't set down where things stand: {e}"})
+        finally:
+            self._runs.pop(task_id, None)
+            if waiting := self._waiting.pop(task_id, None):  # messages that came in meanwhile
+                self._start(task_id, "\n\n".join(waiting))
+            self._stay_awake()
+
+    async def _hidden(self, task_id: str, stream: AsyncIterator[Event], bot: Bot) -> tuple[Done | None, list[Event]]:
+        """A turn crewbots runs for itself (a flush, a compaction, a briefing): nothing of it reaches the thread, but
+        what it costs counts like any turn's."""
+        events: list[Event] = []
+        try:
+            async with aclosing(stream) as turn:
+                async for event in turn:
+                    events.append(event)
+        except Exception as e:
+            events.append(Done(final_text="", is_error=True, error=str(e)))
+        for usage in (e for e in events if isinstance(e, Usage)):
+            self.store.append_event(task_id, kind="usage", data=_usage_data(usage, bot))
+            self.store.add_usage(task_id, usage.input_tokens, usage.output_tokens, usage.cost_usd)
+        for compaction in (e for e in events if isinstance(e, Compacted) and e.trigger == "auto"):
+            self._record(task_id, compaction)  # the CLI compacted it on its own, as this turn began
+            self.store.set_primed(task_id, {})
+        return next((e for e in reversed(events) if isinstance(e, Done)), None), events
 
     async def _close_session(self, task_id: str) -> None:
         opened = self._sessions.pop(task_id, None)
@@ -142,3 +242,8 @@ class Sessions:
             for task_id, opened in list(self._sessions.items()):
                 if task_id not in self._runs and now - opened.last_used >= self.idle_timeout_s:
                     await self._close_session(task_id)
+            await self._flush_idle()
+
+
+def _short(text: str, chars: int) -> str:
+    return text if len(text) <= chars else text[:chars - 1] + "…"

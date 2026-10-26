@@ -37,7 +37,7 @@ from claude_agent_sdk import (
 )
 
 from crewbots.backends.base import CLAUDE_BOT_ENV, Access, RunSpec, claude_retry
-from crewbots.backends.claude_cli import READ_ONLY_TOOLS, _stringify, rate_limit
+from crewbots.backends.claude_cli import READ_ONLY_TOOLS, _stringify, compacted, rate_limit
 from crewbots.backends.credentials import without_credentials
 from crewbots.backends.policy import WEB_TOOLS, Policy
 from crewbots.crew_tools import CrewTools, ToolRefused
@@ -210,6 +210,10 @@ class ClaudeAgentSession:
             if self._broken:
                 await self.close()
 
+    def compact(self, instructions: str) -> AsyncIterator[Event]:
+        """Compacts the conversation in place, the way /compact does, with `instructions` for what to keep."""
+        return self.turn(f"/compact {instructions}")
+
     async def context_percent(self) -> float | None:
         """How full the conversation's context window is, as Claude Code's /context counts it."""
         if not self.client:
@@ -276,6 +280,8 @@ class SdkMapper:
                 return [_usage(message)]  # it spent tokens all the same
             case SystemMessage(subtype="init", data=data):
                 return [SessionStarted(session_id=data.get("session_id", ""))]
+            case SystemMessage(subtype="compact_boundary", data=data):
+                return [compacted(data)]
             case RateLimitEvent(rate_limit_info=info):
                 return [rate_limit(info.raw or {"status": info.status, "resetsAt": info.resets_at,
                                                 "rateLimitType": info.rate_limit_type, "utilization": info.utilization})]

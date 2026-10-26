@@ -180,9 +180,8 @@ class Crew:
             parts.append(f"# This review\n\n{reviewing}")
         if state:
             parts.append(f"# Where this task stands\n\nThe state you keep for it with `update_state`:\n\n{state}")
-        if briefing:
-            parts.append("# Where things stand\n\nThis task's conversation grew long, so it continues in a fresh session. "
-                         f"This is the briefing you wrote for it:\n\n{briefing}")
+        if briefing:  # a fresh session's start: a briefing the bot wrote, or the conversation's last messages
+            parts.append(f"# Where things stand\n\n{briefing}")
         return "\n\n".join(parts)
 
 

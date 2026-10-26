@@ -141,6 +141,13 @@ class Events:
     def latest_event_id(self) -> int:
         return self.db.execute("select coalesce(max(id), 0) from events").fetchone()[0]
 
+    def last_events(self, task_id: str, kinds: tuple[str, ...], limit: int) -> list[StoredEvent]:
+        """A task's last `limit` events of these kinds, oldest first."""
+        rows = self.db.execute(f"select * from events where task_id = ? and kind in ({','.join('?' * len(kinds))}) "
+                               "order by id desc limit ?", (task_id, *kinds, limit)).fetchall()
+        return [StoredEvent(id=r["id"], task_id=r["task_id"], kind=r["kind"], data=json.loads(r["data"]), at=r["at"])
+                for r in reversed(rows)]
+
     def events(self, task_id: str | None = None, after: int = 0, limit: int = 1000) -> list[StoredEvent]:
         if task_id:
             sql, args = "select * from events where task_id = ? and id > ? order by id limit ?", (task_id, after, limit)

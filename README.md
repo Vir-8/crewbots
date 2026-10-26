@@ -11,7 +11,7 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
   - The frontmatter is what the harness enforces: backend, model, access level, workspace, and the bot's own MCP servers.
   - The body is the card itself: its mission, what it owns, what it does *not* own, and what done means.
   - See [docs/examples/video-editor.md](docs/examples/video-editor.md).
-- **Chats.** Each bot has one ongoing chat with you. It never resets: the bot's notes, and a briefing when it grows long, carry it from day to day. A scheduled routine posts into its bot's chat too, as a message from the routine.
+- **Chats.** Each bot has one ongoing chat with you. It never resets: the bot's memory carries it from day to day, and a long one is compacted in place. A scheduled routine posts into its bot's chat too, as a message from the routine.
 - **Threads.** For real work, a bot opens a thread (`start_thread`) beside the chat it's in, works it in parallel, and the result comes back to the chat. Any bot can also hand a thread to another (`delegate`). Threads are where worktrees, reviews and merges happen.
 - **Group chats.** You and some bots, with one bot as the lead. A message that mentions no one goes to the lead, who answers it, hands it to the teammate best placed for it, or leaves it to whoever already has it. An @mention brings that bot in and always gets its reply, and `@everyone` brings them all in. Bots @mention each other the same way, up to four replies in a row (each group chat can set its own limit); then the chat says the bots stopped, and **Continue** lets them carry on. A group chat's panel renames it, changes who's in it and who leads, sets its reply limit, mutes it, and archives it (kept, folded away at the foot of the list, until you say something there) or deletes it (the work it handed out stays, reporting to each bot's own chat). The crew's own group chat can't be archived or deleted, and bots new to the crew join it. Every crew has a "Crew" group chat with all its bots, and a bot can speak there from anywhere with `post`. A bot can open a group chat of its own with `open_group` (up to six bots) and bring a teammate into one it's in with `add_to_group`; it shows in the app at once.
 - **A task** is the unit underneath: a chat, a bot's seat in a group chat, or a thread.
@@ -52,10 +52,12 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
   - Notes are files in `crew/memory/<bot>/notes/`, listed in each bot's instructions, so you can read, edit or delete them.
   - Around them: a short `CORE.md` pinned in every session, a daily log (a line for each finished task; a new session starts with the last two days), and each task's state, which the bot keeps with `update_state` and a fresh session of the task starts from. `recall` searches the logs and notes too.
   - `recall` searches the whole record with SQLite FTS5, and so does `GET /v1/search?q=`.
-  - A conversation that fills 70% of its context window continues in a fresh session, from a briefing the bot
-    writes. The window is the role card's `context_window` (200K tokens unless it says otherwise, up to `1m`, or
-    `auto` for the model's whole window): the CLI compacts within it, so a 1M-token model doesn't carry 700K
-    tokens before rolling over. `/status` shows how full it is.
+  - A conversation that fills 65% of its context window is kept in shape at the end of a turn: the bot sets down the
+    task's state and a few lines for today's log, then the CLI compacts the conversation in place, and the next turn
+    is told its instructions and state again. One that sat idle over an hour, past the prompt cache, carries on in a
+    fresh session from memory instead (flushed ahead of time while the cache was warm), as does one that couldn't
+    be compacted. The window is the role card's `context_window` (200K tokens unless it says otherwise, up to `1m`,
+    or `auto` for the model's whole window): the CLI compacts within it too. `/status` shows how full it is.
   - Bots never use the CLIs' own memory: Claude Code's auto memory and Codex's memories are off for every bot, so
     nothing a bot learns lands beside your own Claude or Codex memory.
 - **Routines** are work the crew starts on its own: Markdown files in `routines/`, each naming a bot, a goal, and when.

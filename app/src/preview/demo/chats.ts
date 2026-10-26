@@ -17,6 +17,8 @@ for (const b of bots) {
   message(chief, "user", "Also: translate the onboarding docs into Spanish, fix the flaky login test, and look at upgrading to React 19.");
   for (const id of opened.slice(1, 4)) tool(chief, "mcp__crewbots__start_thread", { title: tasks.get(id)!.title, goal: "…" }, "Opened thread");
   say(chief, "Three threads, one each. React 19 will need a call from you on the charts library.");
+  emit(chief, "flushed", { logged: 3 }); // a long chat, kept in shape: set down, then compacted
+  emit(chief, "compacted", { trigger: "manual", before: 131_000, after: 8_400 });
   message(chief, "routine:standup", "[routine: standup]\n\nWrite the standup for what the crew did since Fri 23 Oct 09:00.");
   say(chief, "**Morning. Two things need you**\n- **React 19**: replace legacy-charts with recharts, or stay on React 18?\n- **Flaky login test**: reviewed and ready to merge.\n\n**Done**: `truncate`, merged after review.\n\n**Waiting**: the Spanish docs, until the Claude plan's limit resets.");
   message(chief, "user", "Merge the login fix. Then add CSV export to the reports page; exports should respect the filters.");

@@ -274,6 +274,6 @@ async def test_status_says_how_full_a_chats_context_is(store, tmp_path):
     assert backend.opened[0].spec.context_window == 200_000  # the session compacts within the bot's window
     assert status["context_window"] == 200_000
     assert status["open"] and status["session_id"] == "s-0" and status["context_percent"] == 41.3
-    assert status["rollover_percent"] == 70.0 and status["plan"] == "fake" and status["turns"] == 1
+    assert status["rollover_percent"] == 65.0 and status["plan"] == "fake" and status["turns"] == 1
     await runner.shutdown()
     assert (await runner.status(task.id))["context_percent"] == 41.3  # as last measured, once it's closed

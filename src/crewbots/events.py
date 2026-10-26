@@ -65,6 +65,17 @@ class RateLimit:
 
 
 @dataclass(frozen=True)
+class Compacted:
+    """The CLI compacted the conversation: on its own (`auto`), or because crewbots asked (`manual`). The token counts
+    are the backend's, where it gives them."""
+
+    trigger: str
+    before: int | None = None
+    after: int | None = None
+    kind: str = field(default="compacted", init=False)
+
+
+@dataclass(frozen=True)
 class Done:
     """Always the last event of a run, exactly once. A failure the backend knows is passing says so in `retry`:
     `transient` (the service was down or overloaded, the connection dropped, the CLI died) or `limit` (a rate or plan
@@ -77,11 +88,11 @@ class Done:
     kind: str = field(default="done", init=False)
 
 
-Event = SessionStarted | Text | ToolCall | ToolResult | Usage | RateLimit | Notice | Done
+Event = SessionStarted | Text | ToolCall | ToolResult | Usage | RateLimit | Notice | Compacted | Done
 
 BY_KIND: dict[str, type[Event]] = {
     cls.__dataclass_fields__["kind"].default: cls
-    for cls in (SessionStarted, Text, ToolCall, ToolResult, Usage, RateLimit, Notice, Done)
+    for cls in (SessionStarted, Text, ToolCall, ToolResult, Usage, RateLimit, Notice, Compacted, Done)
 }
 
 

@@ -61,7 +61,7 @@ export function StatusPanel({ taskId, onClose }: { taskId: string; onClose: () =
                 <span>
                   <strong>{Math.round(100 - used)}%</strong> left of {status.context_window ? tokens(status.context_window) : "the model's window"}
                 </span>
-                {status.rollover_percent && <span className="faint">· a fresh session from a briefing at {status.rollover_percent}%</span>}
+                {status.rollover_percent && <span className="faint">· compacted at {status.rollover_percent}%</span>}
               </span>
             )}
           </dd>

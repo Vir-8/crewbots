@@ -27,6 +27,7 @@ import contextlib
 import os
 import secrets
 import subprocess
+import time
 from collections.abc import Callable, Mapping
 from contextlib import aclosing
 from dataclasses import asdict
@@ -38,7 +39,7 @@ from crewbots import prompts, worktree
 from crewbots.backends import BACKENDS, Access, Backend, McpServer, RunSpec
 from crewbots.crew import NO_REPLY, Bot, Crew
 from crewbots.crew_tools import CrewTools
-from crewbots.events import Done, Event, Notice, RateLimit, SessionStarted, Usage
+from crewbots.events import Compacted, Done, Event, Notice, RateLimit, SessionStarted, Usage
 from crewbots.reviews import review_prompt, reviewer_bot
 from crewbots.runner.common import (
     MCP_COMMAND,
@@ -60,7 +61,9 @@ from crewbots.store import Status, Store, Task
 
 IDLE_TIMEOUT_S = 600.0  # an idle session is closed after this; its next message resumes it from the stored id
 MAX_SESSIONS = 8  # open sessions at once; past this the least recently used idle one is closed
-ROLLOVER_PERCENT = 70.0  # past this much of its context window, a conversation continues in a fresh session
+ROLLOVER_PERCENT = 65.0  # past this much of its context window, a conversation is flushed to memory and compacted
+COLD_S = 3600.0  # the prompt cache's life: a conversation idle this long reads back in at full price
+FLUSH_IDLE_S = 3000.0  # 50 minutes into idleness, while the cache is warm, a big conversation sets down its state
 # A turn that failed for a passing reason (the backend says which) is tried again after each of these waits, then
 # left failed. The CLIs have already retried the API call itself a few times by then, so these are longer.
 RETRY_WAITS_S = (30.0, 120.0, 300.0)
@@ -90,6 +93,8 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds):
         max_sessions: int = MAX_SESSIONS,
         keep_awake: tuple[str, ...] | None = None,  # a command that stops the Mac sleeping while it runs
         rollover_percent: float | None = ROLLOVER_PERCENT,
+        cold_s: float = COLD_S,
+        flush_idle_s: float = FLUSH_IDLE_S,
         retry_waits_s: tuple[float, ...] | None = None,
         stall_s: float | None = None,
     ):
@@ -116,6 +121,10 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds):
         self._reaper: asyncio.Task[None] | None = None
         self.keep_awake = keep_awake
         self.rollover_percent = rollover_percent
+        self.cold_s = cold_s
+        self.flush_idle_s = flush_idle_s
+        self._turn_ended: dict[str, float] = {}  # task id → when its last turn ended (time.time())
+        self._flushed: set[str] = set()  # tasks whose bot set down where things stand since their last turn
         self.retry_waits_s = RETRY_WAITS_S if retry_waits_s is None else retry_waits_s
         self.stall_s = STALL_S if stall_s is None else stall_s
         self._awake: subprocess.Popen[bytes] | None = None
@@ -352,8 +361,12 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds):
                 self._set(task_id, status=Status.FAILED, error=str(e))
                 return None
             backend = self.backends[bot.backend]
+            if self._gone_cold(task):
+                await self._fresh_start(task_id, "idle")
+                task = self.store.get_task(task_id)
             open_session = await self._session_for(task, bot, cwd, backend)
             prompt, primed = self._with_updates(task, bot, prompt)
+            compacted = False
             token = open_session.token if open_session else secrets.token_urlsafe(32)
             self._tokens[token] = task_id
             done: Done | None = None
@@ -388,6 +401,8 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds):
                                 self.store.update_task(task_id, session_id=sid)
                             case Usage():
                                 self.store.add_usage(task_id, event.input_tokens, event.output_tokens, event.cost_usd)
+                            case Compacted():  # the CLI compacted it on its own, mid-turn
+                                compacted = True
                             case Done():
                                 done = event
             except asyncio.CancelledError:
@@ -407,16 +422,19 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds):
                 self._escalated.discard(task_id)
                 return done or Done(final_text="", is_error=True, error="the run ended without a result",
                                     retry="transient")
-            if primed:  # it has these now; a turn that failed hears them again
+            if compacted:  # its next turn is told its instructions and its state again
+                self.store.set_primed(task_id, {})
+            elif primed:  # it has these now; a turn that failed hears them again
                 self.store.set_primed(task_id, primed)
+            self._turn_ended[task_id] = time.time()
+            self._flushed.discard(task_id)
             if task_id in self._escalated:
                 self._escalated.discard(task_id)
                 self._set(task_id, status=Status.NEEDS_INPUT, result=done.final_text, turns=task.turns + 1)
             else:
                 if task.kind == "seat" and task.room_id:
                     self._seat_replied(task, done.final_text)
-                if open_session and open_session.session.alive:
-                    await self._maybe_roll_over(task_id, open_session)
+                await self._maybe_compact(task_id, open_session, bot)
                 # Not idle yet if messages are waiting: the next turn starts right away, and watchers should not stop.
                 next_status = Status.QUEUED if self._waiting.get(task_id) else Status.IDLE
                 self._set(task_id, status=next_status, result=done.final_text, turns=task.turns + 1)
