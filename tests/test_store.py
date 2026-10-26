@@ -87,3 +87,31 @@ def test_a_missing_task_is_a_key_error(store):
         store.get_task("t_nope")
     with pytest.raises(KeyError):
         store.update_task("t_nope", status=Status.IDLE)
+
+
+def test_threads_can_use_the_store_at_once(tmp_path):
+    # Some routes read the store from worker threads while the event loop writes to it. Sharing one connection's
+    # statements across threads used to fail with "bad parameter or other API misuse".
+    import threading
+
+    store = Store(tmp_path / "crew.db")
+    task = store.create_task("worker", "busy")
+    errors = []
+
+    def hammer(n):
+        try:
+            for i in range(300):
+                store.append_event(task.id, kind="text", data={"text": f"{n}-{i}"})
+                store.events(task.id, limit=50)
+                store.get_task(task.id)
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+
+    threads = [threading.Thread(target=hammer, args=(n,)) for n in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errors == [] and len(store.events(task.id, limit=5000)) == 1800
+    store.close()

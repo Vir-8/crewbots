@@ -1,6 +1,5 @@
 """Memory: notes a bot keeps across tasks, recall over the crew's record, and rolling long conversations over."""
 
-import sqlite3
 
 import pytest
 from fakes import ScriptedCrew, bot, make_crew, wait_until
@@ -265,4 +264,3 @@ def test_the_search_index_is_a_real_fts5_table(store):
     kind = store.db.execute("select sql from sqlite_master where name = 'search'").fetchone()[0]
 
     assert "fts5" in kind.lower()
-    assert isinstance(store.db, sqlite3.Connection)

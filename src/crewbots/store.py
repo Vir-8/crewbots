@@ -14,6 +14,7 @@ A room is a group chat: the user and some bots, with one of them the lead. Its m
 import json
 import re
 import sqlite3
+import threading
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -284,10 +285,56 @@ class StoredEvent:
         return asdict(self)
 
 
+class Connection:
+    """The store's one SQLite connection, shared by the event loop and the threads some routes read from (analytics,
+    code review, the scheduler). One statement at a time, each read to the end before the next: Python's sqlite3
+    shares prepared statements between cursors, so two threads stepping at once fail with "bad parameter or other API
+    misuse"."""
+
+    def __init__(self, path: Path | str):
+        self._conn = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
+        self._conn.row_factory = sqlite3.Row
+        self._lock = threading.RLock()
+
+    def execute(self, sql: str, args: tuple[Any, ...] | list[Any] = ()) -> "Rows":
+        with self._lock:
+            cursor = self._conn.execute(sql, args)
+            return Rows(cursor.fetchall(), cursor.lastrowid, cursor.rowcount)
+
+    def executemany(self, sql: str, rows: list[Any] | Any) -> None:
+        with self._lock:
+            self._conn.executemany(sql, rows)
+
+    def executescript(self, script: str) -> None:
+        with self._lock:
+            self._conn.executescript(script)
+
+    def close(self) -> None:
+        with self._lock:
+            self._conn.close()
+
+
+@dataclass
+class Rows:
+    """A statement's result, read in full: its rows, and what an insert or update reports."""
+
+    rows: list[sqlite3.Row]
+    lastrowid: int | None
+    rowcount: int
+
+    def fetchall(self) -> list[sqlite3.Row]:
+        return self.rows
+
+    def fetchone(self) -> sqlite3.Row | None:
+        return self.rows[0] if self.rows else None
+
+    def __iter__(self):
+        return iter(self.rows)
+
+
 class Store:
     def __init__(self, path: Path | str):
-        self.db = sqlite3.connect(path, check_same_thread=False, isolation_level=None)
-        self.db.row_factory = sqlite3.Row
+        self.db = Connection(path)
         self.db.execute("pragma journal_mode=wal")
         self.db.execute("pragma foreign_keys=on")
         self.db.executescript(SCHEMA)
