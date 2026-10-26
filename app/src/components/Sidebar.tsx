@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { Crew, InboxItem } from "../state";
-import { orderChats } from "../sidebar";
+import { archivedApart, orderChats } from "../sidebar";
 import { oneLine } from "../state";
 import type { Chat } from "../types";
 import { Avatar, GroupAvatar, labelOf } from "./Avatar";
@@ -56,7 +56,8 @@ export function Sidebar(props: {
     setSearching(false);
   }, [props.rail, searching]);
   const q = query.trim().toLowerCase();
-  const chats = orderChats(crew.chats, query, props.rail);
+  const [chats, archived] = archivedApart(orderChats(crew.chats, query, props.rail), props.rail ? "" : query);
+  const [showArchived, setShowArchived] = useState(false);
   const needs = crew.inbox.filter((item) => item.task.kind === "thread");
   const waiting = crew.reviewInbox?.assigned?.length ?? 0; // assigned to you; review requests are in the list itself
 
@@ -96,7 +97,7 @@ export function Sidebar(props: {
             </button>
           ))}
         </div>
-        <CrewMenu crew={crew} current={props.current} onPage={props.onChat} rail />
+        <CrewMenu crew={crew} current={props.current} onPage={props.onChat} onNewGroup={props.onNewGroup} rail />
       </aside>
     );
   }
@@ -144,15 +145,24 @@ export function Sidebar(props: {
           <ChatRow key={chat.key} chat={chat} on={props.current === chat.key} onClick={() => props.onChat(chat.key)} />
         ))}
         {chats.length === 0 && <p className="side-empty">{q ? "Nothing matches." : "Connecting to your crew…"}</p>}
+        {archived.length > 0 && (
+          <button className="archived-toggle" onClick={() => setShowArchived(!showArchived)} aria-expanded={showArchived}>
+            <Icon name="archive" size={14} />
+            Archived
+            <span className="faint">{archived.length}</span>
+            <Icon name="chevronDown" size={12} className={showArchived ? "flip" : ""} />
+          </button>
+        )}
+        {showArchived && archived.map((chat) => <ChatRow key={chat.key} chat={chat} on={props.current === chat.key} onClick={() => props.onChat(chat.key)} />)}
       </div>
 
-      <CrewMenu crew={crew} current={props.current} onPage={props.onChat} />
+      <CrewMenu crew={crew} current={props.current} onPage={props.onChat} onNewGroup={props.onNewGroup} />
     </aside>
   );
 }
 
 /** The crew's own places: who's in it, what runs on its own, what it has used, and how crewbots is set up. */
-function CrewMenu({ crew, current, onPage, rail }: { crew: Crew; current: string | null; onPage: (page: string) => void; rail?: boolean }) {
+function CrewMenu({ crew, current, onPage, onNewGroup, rail }: { crew: Crew; current: string | null; onPage: (page: string) => void; onNewGroup: () => void; rail?: boolean }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -169,6 +179,18 @@ function CrewMenu({ crew, current, onPage, rail }: { crew: Crew; current: string
     <div className="crew-menu" ref={box}>
       {open && (
         <div className="menu" role="menu">
+          <button
+            role="menuitem"
+            className="menu-item"
+            onClick={() => {
+              onNewGroup();
+              setOpen(false);
+            }}
+          >
+            <Icon name="compose" size={15} />
+            New group chat
+          </button>
+          <div className="menu-sep" />
           {PAGES.map(([key, label, icon]) => (
             <button
               key={key}
@@ -224,11 +246,12 @@ function ChatRow({ chat, on, onClick }: { chat: Chat; on: boolean; onClick: () =
       <span className="chat-row-text">
         <span className="chat-row-top">
           <span className="chat-row-title">{chat.kind === "group" ? chat.title : labelOf(chat.bot!)}</span>
+          {chat.room?.muted && <Icon name="bellOff" size={12} className="chat-row-muted" />}
           {chat.last && <span className="chat-row-time">{ago(chat.last.at, true)}</span>}
         </span>
         <span className="chat-row-bottom">
           <span className={`chat-row-preview ${chat.working ? "working" : ""}`}>{chat.working && !chat.unread ? "Working…" : preview}</span>
-          {chat.unread > 0 && !on && <span className="unread-dot" />}
+          {chat.unread > 0 && !on && <span className={`unread-dot ${chat.room?.muted ? "muted" : ""}`} />}
         </span>
       </span>
     </button>

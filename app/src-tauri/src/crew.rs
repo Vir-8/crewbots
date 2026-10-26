@@ -278,11 +278,13 @@ impl Crew {
     async fn load_view(&self, app: &AppHandle) {
         let tasks = self.request("GET", "/tasks?limit=1000", None).await;
         let crew = self.request("GET", "/crew", None).await;
+        let rooms = self.request("GET", "/rooms", None).await;
         let list = tasks["data"].as_array().cloned().unwrap_or_default();
         let paused = crew["data"]["paused"].as_bool().unwrap_or(false);
         let summary = {
             let mut view = self.view.lock().await;
             view.load(&list, paused);
+            view.set_rooms(rooms["data"].as_array().map(Vec::as_slice).unwrap_or_default());
             view.summary()
         };
         crate::show_summary(app, &summary);
@@ -296,6 +298,7 @@ impl Crew {
             match message["type"].as_str() {
                 Some("task") => alerts.extend(view.update(&message["task"])),
                 Some("room_message") => alerts.extend(view.said(&message["message"])),
+                Some("room") => view.set_rooms(std::slice::from_ref(&message["room"])),
                 Some("crew") => view.set_paused(message["crew"]["paused"].as_bool().unwrap_or(false)),
                 _ => {}
             }

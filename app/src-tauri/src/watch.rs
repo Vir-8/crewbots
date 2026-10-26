@@ -1,7 +1,7 @@
 //! What the menu bar and notifications know about the crew: every task's status, kept current from /v1/live, and the
 //! transitions worth interrupting you for.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
 
@@ -114,6 +114,7 @@ impl Summary {
 pub struct CrewView {
     tasks: HashMap<String, TaskLite>,
     paused: bool,
+    muted: HashSet<String>, // group chats you muted: what's said there isn't announced
 }
 
 impl CrewView {
@@ -124,6 +125,18 @@ impl CrewView {
 
     pub fn set_paused(&mut self, paused: bool) {
         self.paused = paused;
+    }
+
+    /// Takes in group chats, all of them or one that changed, and remembers which are muted.
+    pub fn set_rooms(&mut self, rooms: &[Value]) {
+        for room in rooms {
+            let Some(id) = room["id"].as_str() else { continue };
+            if room["muted"].as_bool().unwrap_or(false) {
+                self.muted.insert(id.to_string());
+            } else {
+                self.muted.remove(id);
+            }
+        }
     }
 
     /// Takes in one task update and says whether it's worth a notification.
@@ -157,10 +170,10 @@ impl CrewView {
         }
     }
 
-    /// A message in a group chat: one from a bot is worth a notification.
+    /// A message in a group chat: one from a bot is worth a notification, unless you muted the chat.
     pub fn said(&self, message: &Value) -> Option<Alert> {
         let author = message["author"].as_str()?;
-        if author == "user" {
+        if author == "user" || message["room_id"].as_str().is_some_and(|room| self.muted.contains(room)) {
             return None;
         }
         Some(Alert::Said { author: author.to_string(), text: message["text"].as_str().unwrap_or_default().to_string() })
@@ -239,6 +252,17 @@ mod tests {
         let view = CrewView::default();
         assert!(matches!(view.said(&json!({"author": "engineer", "text": "done"})), Some(Alert::Said { .. })));
         assert_eq!(view.said(&json!({"author": "user", "text": "hi"})), None);
+    }
+
+    #[test]
+    fn a_muted_group_chat_is_not_announced_until_unmuted() {
+        let mut view = CrewView::default();
+        let said = json!({"room_id": "r1", "author": "engineer", "text": "done"});
+        view.set_rooms(&[json!({"id": "r1", "muted": true}), json!({"id": "r2", "muted": false})]);
+        assert_eq!(view.said(&said), None);
+        assert!(view.said(&json!({"room_id": "r2", "author": "engineer", "text": "done"})).is_some());
+        view.set_rooms(&[json!({"id": "r1", "muted": false})]);
+        assert!(view.said(&said).is_some());
     }
 
     #[test]

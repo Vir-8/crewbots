@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { orderChats } from "./sidebar";
+import { archivedApart, latestChat, orderChats } from "./sidebar";
 import type { Chat } from "./types";
 
 const chat = (key: string, updated: string, fields: Partial<Chat> = {}): Chat => ({
@@ -35,5 +35,26 @@ describe("the sidebar's chats", () => {
     const before = chats.map((c) => c.key);
     orderChats(chats, "");
     expect(chats.map((c) => c.key)).toEqual(before);
+  });
+});
+
+describe("archived group chats", () => {
+  const room = (id: string, archived_at: string | null) =>
+    chat(`room:${id}`, "2026-10-26T10:00:00Z", { kind: "group", title: id, bot: null, room: { id, title: id, lead: "chief", members: ["chief"], created_at: "", updated_at: "", archived_at } });
+  const chats = [chat("chief", "2026-10-26T09:00:00Z"), room("live", null), room("old", "2026-10-25T10:00:00Z")];
+
+  it("are kept apart from the list", () => {
+    const [listed, archived] = archivedApart(chats, "");
+    expect(listed.map((c) => c.key)).toEqual(["chief", "room:live"]);
+    expect(archived.map((c) => c.key)).toEqual(["room:old"]);
+  });
+
+  it("are in the list when a search finds them", () => {
+    expect(archivedApart(chats, "old")[0]).toHaveLength(3);
+  });
+
+  it("aren't opened when no conversation is", () => {
+    expect(latestChat([chat("chief", "2026-10-26T09:00:00Z"), room("old", "2026-10-26T12:00:00Z")])).toBe("chief");
+    expect(latestChat([])).toBeNull();
   });
 });

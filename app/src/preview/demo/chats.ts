@@ -1,6 +1,7 @@
 // Chats: one ongoing chat with each bot. The chief's opened the work above as threads, so they hang from it.
 
 import { bots, done, emit, message, say, task, tasks, tick, tool } from "./make";
+import type { Room } from "../../types";
 
 export const chatIds: Record<string, string> = {};
 for (const b of bots) {
@@ -48,12 +49,14 @@ for (const b of bots) {
 }
 
 // A group chat: the crew's own, where bots talk to each other in the open.
-// A new one nobody has written in yet. And one where the bots went back and forth until they stopped.
-type DemoRoom = { id: string; title: string; lead: string; members: string[]; created_at: string; updated_at: string; max_depth?: number | null; stopped?: { after: number; waiting: string[]; owed?: string[] } | null };
+// A new, muted one nobody has written in yet. One where the bots went back and forth until they stopped. And an
+// archived one.
+type DemoRoom = Room & { stopped?: { after: number; waiting: string[]; owed?: string[] } | null };
 export const rooms: DemoRoom[] = [
-  { id: "r_crew000001", title: "Crew", lead: "chief", members: bots.map((b) => b.name), created_at: tick(), updated_at: tick() },
-  { id: "r_review0002", title: "Review desk", lead: "reviewer", members: ["reviewer", "critic"], created_at: tick(), updated_at: tick() },
+  { id: "r_crew000001", title: "Crew", lead: "chief", members: bots.map((b) => b.name), created_at: tick(), updated_at: tick(), crew: true },
+  { id: "r_review0002", title: "Review desk", lead: "reviewer", members: ["reviewer", "critic"], created_at: tick(), updated_at: tick(), muted: true },
   { id: "r_naming0003", title: "Naming the export", lead: "engineer", members: ["engineer", "critic"], created_at: tick(), updated_at: tick(), stopped: { after: 4, waiting: ["engineer"], owed: ["engineer"] } },
+  { id: "r_launch0004", title: "Launch prep", lead: "chief", members: ["chief", "engineer"], created_at: tick(), updated_at: tick(), archived_at: tick() },
 ];
 export const roomMessages = new Map<string, { id: number; room_id: string; author: string; text: string; depth: number; at: string }[]>();
 {
@@ -75,6 +78,7 @@ export const roomMessages = new Map<string, { id: number; room_id: string; autho
     argued("engineer", "Download what, though? The format matters when there's more than one. @critic", 3),
     argued("critic", "Then \"Download CSV\", and the menu can grow later. @engineer final?", 4),
   ]);
+  roomMessages.set(rooms[3].id, [{ ...said("user", "Launch checklist, anyone?"), room_id: rooms[3].id }, { ...said("chief", "Done and shipped. Archiving this one.", 1), room_id: rooms[3].id }]);
 }
 
 // ?big=2000 makes the critic's chat that long, to see how a long chat opens.

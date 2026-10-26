@@ -70,6 +70,21 @@ async function request(method: string, path: string, body?: any) {
     return request("POST", `/tasks/${chat}/messages`, body);
   }
   if (method === "POST" && parts[0] === "chats" && parts[2] === "read") return ok({ ok: true });
+  if (method === "GET" && url.pathname === "/rooms") return ok(demo.rooms);
+  if (parts[0] === "rooms" && parts.length === 2 && (method === "PATCH" || method === "DELETE")) {
+    const at = demo.rooms.findIndex((r) => r.id === parts[1]);
+    if (at < 0) return missing("group chat");
+    if (method === "DELETE") {
+      demo.rooms.splice(at, 1);
+      demo.roomMessages.delete(parts[1]);
+      publish({ type: "room_gone", room_id: parts[1] });
+      return ok(null);
+    }
+    const { archived, ...fields } = body ?? {};
+    const room = Object.assign(demo.rooms[at], fields, archived === undefined ? {} : { archived_at: archived ? new Date().toISOString() : null });
+    publish({ type: "room", room });
+    return ok(room);
+  }
   if (method === "POST" && parts[0] === "rooms" && parts[2] === "continue") {
     const room = demo.rooms.find((r) => r.id === parts[1])!;
     const waiting = room.stopped?.waiting ?? [];

@@ -171,6 +171,10 @@ class Tasks:
                               (bot,)).fetchone()
         return _task(row) if row else None
 
+    def seats_in(self, room_id: str) -> list[Task]:
+        rows = self.db.execute("select * from tasks where kind = 'seat' and room_id = ?", (room_id,)).fetchall()
+        return [_task(r) for r in rows]
+
     def seat_of(self, room_id: str, bot: str) -> Task | None:
         row = self.db.execute("select * from tasks where kind = 'seat' and room_id = ? and bot = ?",
                               (room_id, bot)).fetchone()

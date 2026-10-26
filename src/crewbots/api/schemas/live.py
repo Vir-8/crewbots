@@ -17,6 +17,10 @@ class LiveRoom(BaseModel):
     type: Literal["room"]
     room: RoomOut
 
+class LiveRoomGone(BaseModel):
+    type: Literal["room_gone"]
+    room_id: str
+
 class LiveRoomMessage(BaseModel):
     type: Literal["room_message"]
     message: RoomMessageOut
@@ -29,4 +33,5 @@ class LiveEvent(BaseModel):
     type: Literal["event"]
     event: EventOut
 
-LiveMessage = Annotated[LiveTask | LiveEvent | LiveCrew | LiveRoom | LiveRoomMessage, Field(discriminator="type")]
+LiveMessage = Annotated[LiveTask | LiveEvent | LiveCrew | LiveRoom | LiveRoomGone | LiveRoomMessage,
+                        Field(discriminator="type")]

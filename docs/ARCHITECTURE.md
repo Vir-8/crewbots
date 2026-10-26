@@ -245,7 +245,14 @@ Each step leaves the system working.
   can't talk forever. A reply cut off there records `stopped` on the room (who was waiting); the app shows "The bots
   stopped after N replies" with Continue (`POST /rooms/{id}/continue`, waking them with a fresh count), and the
   user's next message clears it. A bot @mentioned by name owes a reply: a `NO_REPLY` from it gets one nudge
-  (`mentioned.md`), and a second is accepted. Checked live: asked to
+  (`mentioned.md`), and a second is accepted. The user manages a room with `PATCH /rooms/{id}` (title, lead, members,
+  `max_depth`, muted, archived): a change to its title, lead or members closes its seats' idle sessions, so each
+  bot's next turn starts from the room as it is (resuming its session with the new setting). Muted rooms aren't
+  notified (the app's `CrewView` keeps them from `/rooms` and `room` messages). Archived ones wake no one; bots can't
+  post there, and the user's next message brings them back. `DELETE /rooms/{id}` removes the room and its messages
+  but keeps its seats, as the record of what they cost, and moves the work they handed out to each bot's chat;
+  the app hears `room_gone`. The crew's own room is marked `crew` (migration 3 marks the oldest called "Crew"), so
+  renaming it is safe; it can't be archived or deleted, and bots new to the crew join it. Checked live: asked to
   introduce themselves, the reviewer brought in the critic with a question, the critic answered, the reviewer
   replied, and it stopped. The user makes a room in the app; a bot makes one with `open_group`, holding at most
   `MAX_ROOM_BOTS` (6) bots, and any member can bring in another with `add_to_group`. Either way the app hears a

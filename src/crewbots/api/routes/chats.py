@@ -86,12 +86,23 @@ def routes(c: Context) -> APIRouter:
         room_or_404(room_id)
         return runner.post(room_id, "user", body.text, attachments=attached(body))
 
+    @v1.get("/rooms", response_model=list[RoomOut])
+    async def rooms():
+        return store.rooms()
+
     @v1.patch("/rooms/{room_id}", response_model=RoomOut)
     async def change_room(room_id: str, body: RoomChange):
         room = room_or_404(room_id)
         if "max_depth" in body.model_fields_set:
             room = runner.set_room_limit(room_id, body.max_depth)
+        if body.model_fields_set - {"max_depth"}:
+            room = await runner.change_room(room_id, body.title, body.lead, body.members, body.muted, body.archived)
         return room
+
+    @v1.delete("/rooms/{room_id}", status_code=204)
+    async def delete_room(room_id: str):
+        room_or_404(room_id)
+        await runner.delete_room(room_id)
 
     @v1.post("/rooms/{room_id}/continue", response_model=RoomOut)
     async def carry_on(room_id: str):

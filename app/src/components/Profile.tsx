@@ -2,11 +2,12 @@ import { type ReactNode, useEffect, useState } from "react";
 import { api } from "../api";
 import type { Crew } from "../state";
 import { oneLine } from "../state";
-import type { Profile as ProfileData, Room } from "../types";
+import type { Profile as ProfileData, Room, RoomChange } from "../types";
 import { ACTIVE } from "../types";
 import { Avatar, GroupAvatar, labelOf } from "./Avatar";
 import { ago } from "./bits";
 import { Icon } from "./Icon";
+import { Switch } from "./ui";
 import "../styles/panels.css";
 
 const ACCESS: Record<string, string> = { read_only: "Reads only", workspace_write: "Writes in its task's folder", full: "Full access" };
@@ -142,17 +143,30 @@ function when(iso: string): string {
   return days === 0 ? time : days === 1 ? `Tomorrow ${time}` : `${d.toLocaleDateString(undefined, { weekday: "short" })} ${time}`;
 }
 
-/** A group chat, beside it: who's in it and what each is doing, who leads, and the threads opened from it. */
-export function RoomProfile(props: { crew: Crew; room: Room; onOpen: (id: string) => void; onChat: (bot: string) => void; onClose: () => void; edge?: ReactNode }) {
+/** A group chat, beside it: who's in it and what each is doing, who leads, the threads opened from it, and its
+ * settings: its name, its bots and lead, how long bots reply to each other, muting, archiving and deleting it. */
+export function RoomProfile(props: { crew: Crew; room: Room; onOpen: (id: string) => void; onChat: (bot: string) => void; onClose: () => void; onGone: () => void; edge?: ReactNode }) {
   const { crew, room } = props;
   const [all, setAll] = useState(false);
-  useEffect(() => setAll(false), [room.id]);
+  const [naming, setNaming] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  useEffect(() => {
+    setAll(false);
+    setNaming(null);
+    setDeleting(false);
+  }, [room.id]);
   const seats = [...crew.tasks.values()].filter((t) => t.kind === "seat" && t.room_id === room.id);
   const threads = seats
     .flatMap((seat) => crew.family(seat.id))
     .filter((t) => t.kind === "thread")
     .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   const members = [room.lead, ...room.members.filter((m) => m !== room.lead)];
+  const others = crew.bots.filter((b) => !room.members.includes(b.name));
+  const change = (fields: RoomChange) => crew.changeRoom(room.id, fields).catch(() => undefined);
+  const rename = () => {
+    if (naming?.trim() && naming.trim() !== room.title) change({ title: naming.trim() });
+    setNaming(null);
+  };
 
   return (
     <aside className="panel profile">
@@ -166,9 +180,26 @@ export function RoomProfile(props: { crew: Crew; room: Room; onOpen: (id: string
       <div className="profile-body">
         <div className="profile-head">
           <GroupAvatar members={room.members} size={64} />
-          <div className="profile-name">{room.title}</div>
+          {naming === null ? (
+            <button className="profile-name room-name" onClick={() => setNaming(room.title)} title="Rename the group">
+              {room.title}
+            </button>
+          ) : (
+            <input
+              className="room-name-input"
+              autoFocus
+              value={naming}
+              onChange={(e) => setNaming(e.target.value)}
+              onBlur={rename}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") rename();
+                if (e.key === "Escape") setNaming(null);
+              }}
+            />
+          )}
           <div className="faint">
-            {room.members.length} bots · {labelOf(room.lead)} leads
+            {room.members.length} bots · {labelOf(room.lead)} leads{room.muted ? " · Muted" : ""}
+            {room.archived_at ? " · Archived" : ""}
           </div>
           <p className="profile-desc">
             {labelOf(room.lead)} answers what you say here or hands it on, and anyone you @mention joins in. Bots bring each other in the same way.
@@ -182,16 +213,38 @@ export function RoomProfile(props: { crew: Crew; room: Room; onOpen: (id: string
             const seat = seats.find((s) => s.bot === name);
             const replying = seat && ACTIVE.includes(seat.status);
             return (
-              <button key={name} className="profile-item link member" onClick={() => props.onChat(name)} title={`Chat with ${labelOf(name)}`}>
-                <Avatar name={name} size={26} working={Boolean(replying)} />
-                <span className="profile-item-text">
-                  <span className="member-name">{labelOf(name)}</span>
-                  {bot?.display_name && <span className="faint small">{bot.title}</span>}
-                </span>
-                {replying ? <span className="faint small">Replying…</span> : name === room.lead ? <span className="lead-tag">Lead</span> : null}
-              </button>
+              <div key={name} className="member-row">
+                <button className="profile-item link member" onClick={() => props.onChat(name)} title={`Chat with ${labelOf(name)}`}>
+                  <Avatar name={name} size={26} working={Boolean(replying)} />
+                  <span className="profile-item-text">
+                    <span className="member-name">{labelOf(name)}</span>
+                    {bot?.display_name && <span className="faint small">{bot.title}</span>}
+                  </span>
+                  {replying ? <span className="faint small">Replying…</span> : name === room.lead ? <span className="lead-tag">Lead</span> : null}
+                </button>
+                {name !== room.lead && !replying && (
+                  <span className="member-actions">
+                    <button className="text-button" onClick={() => change({ lead: name })}>
+                      Make lead
+                    </button>
+                    <button className="icon-button" onClick={() => change({ members: room.members.filter((m) => m !== name) })} title={`Take ${labelOf(name)} out of the group`}>
+                      <Icon name="x" size={13} />
+                    </button>
+                  </span>
+                )}
+              </div>
             );
           })}
+          {others.length > 0 && (
+            <select className="member-add" value="" onChange={(e) => e.target.value && change({ members: [...room.members, e.target.value] })}>
+              <option value="">Add a bot…</option>
+              {others.map((b) => (
+                <option key={b.name} value={b.name}>
+                  {labelOf(b.name)}
+                </option>
+              ))}
+            </select>
+          )}
         </section>
 
         <section>
@@ -208,6 +261,48 @@ export function RoomProfile(props: { crew: Crew; room: Room; onOpen: (id: string
             <button className="text-button show-more" onClick={() => setAll(true)}>
               Show {threads.length - SHOWN} more
             </button>
+          )}
+        </section>
+
+        <section>
+          <h3>Settings</h3>
+          <label className="room-setting">
+            <span className="room-setting-label">Bots reply to each other</span>
+            <select value={room.max_depth ?? ""} onChange={(e) => change({ max_depth: e.target.value ? Number(e.target.value) : null })}>
+              <option value="">4 times (default)</option>
+              {[1, 2, 3, 6, 8, 12].map((n) => (
+                <option key={n} value={n}>
+                  {n === 1 ? "Once" : `${n} times`}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="room-setting">
+            <span className="room-setting-label">Mute notifications</span>
+            <Switch on={Boolean(room.muted)} onChange={(muted) => change({ muted })} label="Mute notifications" />
+          </div>
+          {!room.crew && (
+            <div className="room-actions">
+              <button className="button small" onClick={() => change({ archived: !room.archived_at })}>
+                <Icon name="archive" size={14} />
+                {room.archived_at ? "Unarchive" : "Archive"}
+              </button>
+              {deleting ? (
+                <span className="room-delete">
+                  Delete it and its messages? Work it handed out stays.
+                  <button className="button small" onClick={() => setDeleting(false)}>
+                    Cancel
+                  </button>
+                  <button className="button small danger" onClick={() => crew.deleteRoom(room.id).then(props.onGone, () => undefined)}>
+                    Delete
+                  </button>
+                </span>
+              ) : (
+                <button className="button small danger-text" onClick={() => setDeleting(true)}>
+                  Delete…
+                </button>
+              )}
+            </div>
           )}
         </section>
       </div>

@@ -78,7 +78,10 @@ create table if not exists rooms (
     created_at text not null,
     updated_at text not null,
     max_depth  integer,        -- bot replies in a row before the bots stop; null for MAX_ROOM_DEPTH
-    stopped    text            -- JSON {after, waiting, owed} once the bots stopped there, until someone carries on
+    stopped    text,           -- JSON {after, waiting, owed} once the bots stopped there, until someone carries on
+    muted      integer not null default 0,  -- no notifications from it
+    archived_at text,                       -- while it's archived: kept, out of the way, and its bots quiet
+    crew       integer not null default 0   -- the crew's own group chat, with every bot
 );
 create table if not exists room_messages (
     id      integer primary key autoincrement,
@@ -232,13 +235,17 @@ def _catch_up(db: Connection, index_history: Callable[[], None]) -> None:
         index_history()
 
 
-def _add_columns(table: str, columns: dict[str, str]) -> Callable[[Connection, Callable[[], None]], None]:
-    """A step that adds columns to a table, each unless it's there already (a table step 1 made has today's)."""
+def _add_columns(table: str, columns: dict[str, str],
+                 then: str | None = None) -> Callable[[Connection, Callable[[], None]], None]:
+    """A step that adds columns to a table, each unless it's there already (a table step 1 made has today's), and then
+    runs `then`, to fill them in."""
     def step(db: Connection, _: Callable[[], None]) -> None:
         have = {r["name"] for r in db.execute(f"pragma table_info({table})")}
         for column, sql in columns.items():
             if column not in have:
                 db.execute(f"alter table {table} add column {column} {sql}")
+        if then:
+            db.execute(then)
     return step
 
 
@@ -247,6 +254,9 @@ MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] =
     ("everything up to 26 October 2026", _catch_up),
     ("a group chat's own reply limit, and where its bots stopped", _add_columns("rooms", {
         "max_depth": "integer", "stopped": "text"})),
+    ("muting and archiving group chats, and marking the crew's own", _add_columns("rooms", {
+        "muted": "integer not null default 0", "archived_at": "text", "crew": "integer not null default 0"},
+        then="update rooms set crew = 1 where id = (select id from rooms where title = 'Crew' order by created_at)")),
 ]
 
 

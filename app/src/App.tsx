@@ -13,6 +13,7 @@ import { Routines } from "./pages/Routines";
 import { Settings } from "./pages/Settings";
 import { Analytics } from "./pages/Analytics";
 import { Tools } from "./pages/Tools";
+import { latestChat } from "./sidebar";
 import type { Crew } from "./state";
 import { useCrew } from "./state";
 import { settle } from "./components/ui";
@@ -83,7 +84,7 @@ export function App() {
   useEffect(() => {
     if (current || crew.chats.length === 0) return;
     if (initial && crew.tasks.has(initial)) openTask(initial);
-    else setCurrent([...crew.chats].sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0].key);
+    else setCurrent(latestChat(crew.chats));
   }, [crew.chats.length, crew.tasks.size]);
 
   if (crew.status.state !== "connected" && !crew.connectedOnce) return <Connecting status={crew.status} />;
@@ -180,6 +181,7 @@ export function App() {
           onOpen={openTask}
           onChat={(bot) => setCurrent(`bot:${bot}`)}
           onClose={() => setProfileOn(false)}
+          onGone={() => setCurrent(latestChat(crew.chats.filter((c) => c.key !== current)))}
           edge={<Resizer label="Resize the group's panel" edge="left" width={profileWidth} min={260} max={560} cssVar="--profile-user" host={host} pane={part(".panel")} flexible={part(".main")} onChange={setProfileWidth} />}
         />
         </Boundary>

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, bridge } from "./api";
 import { askPlans } from "./plans";
 import { setCrew } from "./components/Avatar";
-import type { Bot, Chat, ConnectionStatus, CrewState, Live, Models, ReviewInbox, RoomMessage, Routines, StoredEvent, Task } from "./types";
+import type { Bot, Chat, ConnectionStatus, CrewState, Live, Models, ReviewInbox, RoomChange, RoomMessage, Routines, StoredEvent, Task } from "./types";
 import { ACTIVE } from "./types";
 
 const RECENT = 400;
@@ -73,6 +73,15 @@ export function useCrew() {
           return;
         }
         if (message.type === "room") {
+          reloadChats();
+          return;
+        }
+        if (message.type === "room_gone") {
+          setRoomMessages((current) => {
+            const next = new Map(current);
+            next.delete(message.room_id);
+            return next;
+          });
           reloadChats();
           return;
         }
@@ -160,6 +169,8 @@ export function useCrew() {
     post: (roomId: string, text: string, attachments: string[] = []) => act(api.post(roomId, text, attachments)),
     read: (key: string) => api.read(key).then(reloadChats, () => undefined),
     carryOn: (roomId: string) => act(api.carryOn(roomId)),
+    changeRoom: (roomId: string, change: RoomChange) => act(api.changeRoom(roomId, change)),
+    deleteRoom: (roomId: string) => act(api.deleteRoom(roomId)),
     newRoom: async (title: string, members: string[], lead?: string) => {
       const room = await act(api.newRoom(title, members, lead));
       loadChats();

@@ -44,7 +44,15 @@ from crewbots.api.schemas.chats import (
     RoomStop,
 )
 from crewbots.api.schemas.crew import ClientError, CrewState, PlanLimitOut, RestartBody, VersionOut
-from crewbots.api.schemas.live import LiveCrew, LiveEvent, LiveMessage, LiveRoom, LiveRoomMessage, LiveTask
+from crewbots.api.schemas.live import (
+    LiveCrew,
+    LiveEvent,
+    LiveMessage,
+    LiveRoom,
+    LiveRoomGone,
+    LiveRoomMessage,
+    LiveTask,
+)
 from crewbots.api.schemas.mcp import (
     ImportBody,
     InstalledServer,
@@ -151,6 +159,7 @@ __all__ = [
     "LiveEvent",
     "LiveMessage",
     "LiveRoom",
+    "LiveRoomGone",
     "LiveRoomMessage",
     "LiveTask",
     "LongestTurn",

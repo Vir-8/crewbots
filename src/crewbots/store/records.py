@@ -129,6 +129,7 @@ def _room(row: sqlite3.Row) -> dict[str, Any]:
     room = dict(row)
     room["members"] = json.loads(room["members"])
     room["stopped"] = room["stopped"] and json.loads(room["stopped"])
+    room["muted"], room["crew"] = bool(room["muted"]), bool(room["crew"])
     return room
 
 

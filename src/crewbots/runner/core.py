@@ -255,8 +255,11 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds):
                 "limits": [{k: v for k, v in x.items() if k != "kind"} for x in limits]}
 
     def reload(self, crew: Crew) -> None:
-        """Takes up edited role cards (and their budgets). Running turns carry on as they started."""
+        """Takes up edited role cards (and their budgets). Running turns carry on as they started. Bots new to the crew
+        join its own group chat."""
+        added = set(crew.bots) - set(self.crew.bots)
         self.crew = crew
+        self._join_crew_room(added)
         self._wake_held()
         self.bus.publish({"type": "crew", "crew": self.state()})
 

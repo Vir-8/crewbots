@@ -6,18 +6,18 @@ from typing import Any
 
 from crewbots.store.records import _now, _room, _room_message
 
-ROOM_SETTINGS = {"title", "lead", "members", "max_depth", "stopped"}
+ROOM_SETTINGS = {"title", "lead", "members", "max_depth", "stopped", "muted", "archived_at"}
 JSON_COLUMNS = {"members", "stopped"}
 
 
 class Rooms:
     """The part of Store for group chats, and how far each conversation has been seen."""
 
-    def create_room(self, title: str, lead: str, members: list[str]) -> dict[str, Any]:
+    def create_room(self, title: str, lead: str, members: list[str], crew: bool = False) -> dict[str, Any]:
         room_id = f"r_{uuid.uuid4().hex[:10]}"
         now = _now()
-        self.db.execute("insert into rooms (id, title, lead, members, created_at, updated_at) values (?, ?, ?, ?, ?, ?)",
-                        (room_id, title, lead, json.dumps(members), now, now))
+        self.db.execute("insert into rooms (id, title, lead, members, created_at, updated_at, crew) "
+                        "values (?, ?, ?, ?, ?, ?, ?)", (room_id, title, lead, json.dumps(members), now, now, int(crew)))
         return self.room(room_id)
 
     def room(self, room_id: str) -> dict[str, Any]:
@@ -27,12 +27,20 @@ class Rooms:
         return _room(row)
 
     def update_room(self, room_id: str, **changes: Any) -> dict[str, Any]:
-        """Changes a room's settings (title, lead, members, max_depth, stopped), not when it was last talked in."""
+        """Changes a room's settings (see ROOM_SETTINGS), not when it was last talked in."""
         if unknown := changes.keys() - ROOM_SETTINGS:
             raise ValueError(f"not a room setting: {sorted(unknown)}")
         values = [json.dumps(v) if k in JSON_COLUMNS and v is not None else v for k, v in changes.items()]
         self.db.execute(f"update rooms set {', '.join(f'{k} = ?' for k in changes)} where id = ?", (*values, room_id))
         return self.room(room_id)
+
+    def delete_room(self, room_id: str) -> None:
+        """Deletes a room and what was said in it. Its seats stay, as the record of what their turns cost."""
+        seats = [r["id"] for r in self.db.execute("select id from tasks where kind = 'seat' and room_id = ?", (room_id,))]
+        self.db.execute("delete from reads where key = ? or key in (select 'seat:' || value from json_each(?))",
+                        (f"room:{room_id}", json.dumps(seats)))
+        self.db.execute("delete from room_messages where room_id = ?", (room_id,))
+        self.db.execute("delete from rooms where id = ?", (room_id,))
 
     def rooms(self) -> list[dict[str, Any]]:
         rows = self.db.execute("select * from rooms order by created_at").fetchall()

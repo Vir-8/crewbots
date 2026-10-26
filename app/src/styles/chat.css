@@ -624,6 +624,17 @@ button.chat-head-who:hover {
   font-weight: 550;
 }
 
+/* Above the composer of an archived group chat */
+.room-archived {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: var(--soft);
+}
+
 /* Where the bots stopped replying to each other, and the user's "Continue" */
 .room-stopped {
   display: flex;

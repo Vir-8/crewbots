@@ -174,6 +174,15 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
         </div>
       )}
       <div className="dock">
+        {room.archived_at && (
+          <div className="room-archived">
+            <Icon name="archive" size={14} />
+            Archived. Saying something here brings it back.
+            <button className="button small" onClick={() => crew.changeRoom(room.id, { archived: false })}>
+              Unarchive
+            </button>
+          </div>
+        )}
         <Composer key={chat.key} placeholder={`Message ${room.title}`} mentions={[...room.members, "everyone"]} onSend={(text, files) => crew.post(room.id, text, files)} draft={chat.key} autoFocus />
       </div>
     </>
