@@ -47,6 +47,9 @@ for (const b of bots) {
   done(chatIds.engineer);
   emit(chatIds.reviewer, "text", { text: "PR acme/web#409 has waited on you since Friday; it's approved and its checks pass.", checkin: true, urgency: "normal" });
   message(chatIds.reviewer, "user", "What do you look for first?");
+  const own = task("t_own0000001", "engineer", "Fuzz the CSV export's filters", { parent_id: chatIds.engineer, created_by: "crewbots", status: "running", reported: false });
+  emit(own.id, "started_on_own", { why: "The export shipped without fuzz tests for unusual filters." });
+  emit(own.id, "message", { from: "crewbots", text: "Write fuzz tests for the CSV export's filters, on a branch in your own worktree." });
   say(chatIds.reviewer, "That the change does what the task asked, with a test for each edge case. Then `team/standards.md`.");
   done(chatIds.reviewer);
 }

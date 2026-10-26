@@ -18,7 +18,7 @@ from crewbots.crew import CrewError, _context_window, parse_card
 
 HANDLE = re.compile(r"[a-z][a-z0-9-]{0,30}")
 BOT_FIELDS = ("display_name", "title", "description", "backend", "model", "effort", "context_window", "access", "network",
-              "avatar", "budget", "mcp", "skills", "can_delegate")
+              "avatar", "budget", "mcp", "skills", "can_delegate", "proactive")
 ROUTINE_FIELDS = ("description", "bot", "schedule", "on", "repo", "workspace", "budget", "enabled")
 
 
@@ -59,7 +59,7 @@ def save_card(home: Path, name: str, fields: dict[str, Any], instructions: str |
     for key in BOT_FIELDS:
         if key in fields:
             value = fields[key]
-            if value in (None, "", [], {}) or (key == "network" and value is False):
+            if value in (None, "", [], {}) or (key == "network" and value is False) or (key == "proactive" and value is True):
                 meta.pop(key, None)
             else:
                 meta[key] = value

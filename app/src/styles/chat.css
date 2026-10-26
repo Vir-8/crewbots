@@ -356,6 +356,11 @@
   color: var(--soft);
 }
 
+.work-stop {
+  height: 22px;
+  margin-right: 8px;
+}
+
 .work-status {
   display: inline-flex;
   align-items: center;

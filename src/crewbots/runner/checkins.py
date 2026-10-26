@@ -4,17 +4,18 @@ context, and says something in its chat only when there's something worth the us
 import asyncio
 import json
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from crewbots import prompts
 from crewbots.backends import Access, RunSpec
 from crewbots.checkins import Item
 from crewbots.events import Done, Usage
-from crewbots.runner.common import UnknownBot, _usage_data
+from crewbots.runner.common import UnknownBot, _plan, _usage_data
 from crewbots.store import Status, Task
 
 URGENCIES = ("low", "normal", "high")
+DAILY_STARTS = 3  # threads a bot may start on its own in a day
 
 
 class Checkins:
@@ -32,6 +33,25 @@ class Checkins:
         task = self._checkin_task(bot)
         self._set(task.id, status=Status.QUEUED)
         self._runs[task.id] = asyncio.create_task(self._check_in(task, items, changes), name=f"check-in {bot}")
+        return task
+
+    def start_on_own(self, bot: str, start: dict[str, Any], why: str) -> Task | None:
+        """A check-in's low-risk work, started as a thread of the bot's own under its chat, so its result comes back
+        there and anything that needs the user shows as usual. Not for a bot whose card says `proactive: false`, past
+        DAILY_STARTS a day, or without spare capacity; it can't merge, push, post, submit or spend, like any bot."""
+        card = self.crew.bots[bot]
+        chat = self.chat(bot)
+        midnight = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+        today = self.store.started_on_own(bot, chat.id, midnight.astimezone(UTC).isoformat())
+        reason = ("its card says not to (proactive: false)" if not card.proactive else
+                  f"it already started {today} today, the most a day" if today >= DAILY_STARTS else
+                  None if (verdict := self.capacity.verdict(_plan(card.backend))).go else verdict.reason)
+        if reason:
+            self._record(chat.id, kind="notice", data={"message": f"Didn't start {start.get('title')!r} on its own: {reason}"})
+            return None
+        task = self.submit(bot, str(start["goal"]), created_by="crewbots", parent_id=chat.id, workspace=card.workspace and
+                           str(card.workspace), title=str(start.get("title") or start["goal"]))
+        self._record(task.id, kind="started_on_own", data={"why": why})
         return task
 
     def _checkin_task(self, bot: str) -> Task:
@@ -70,6 +90,10 @@ class Checkins:
                 chat = self.chat(task.bot)
                 self._record(chat.id, kind="text", data={"text": report["text"], "checkin": True,
                                                           "urgency": report["urgency"]})
+            if report["start_thread"]:
+                started = self.start_on_own(task.bot, report["start_thread"], report["text"])
+                self._record(task.id, kind="notice", data={"message": f"Started {started.id} on its own" if started
+                                                           else "Would have started work, but didn't (see why above)"})
             self._set(task.id, status=Status.IDLE, result=report["text"] if report["notify"] else "Nothing to report.")
         except Exception as e:  # nothing reached the user; the items stay due, for the next tick
             self._set(task.id, status=Status.FAILED, error=f"crewbots: {e}")

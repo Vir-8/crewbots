@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "6a7095478d20";
+export const API_SCHEMA = "120624e74d75";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -75,6 +75,7 @@ export interface BotOut {
   effort: string | null;
   avatar: Record<string, string> | null;
   context_window: number | null;
+  proactive?: boolean;
 }
 
 export interface BotUse {
@@ -118,6 +119,7 @@ export interface CardBody {
   avatar?: Avatar | null;
   budget?: Budget | null;
   mcp?: string[] | null;
+  proactive?: boolean | null;
   instructions?: string | null;
 }
 
@@ -134,6 +136,7 @@ export interface CardOut {
   avatar?: Avatar | null;
   budget?: Budget | null;
   mcp?: string[] | null;
+  proactive?: boolean | null;
   instructions?: string | null;
   name: string;
 }
@@ -476,6 +479,7 @@ export interface NewBot {
   avatar?: Avatar | null;
   budget?: Budget | null;
   mcp?: string[] | null;
+  proactive?: boolean | null;
   instructions?: string | null;
   name: string;
 }

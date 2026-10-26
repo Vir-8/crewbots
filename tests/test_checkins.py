@@ -2,6 +2,7 @@
 only when there's something worth the user's attention."""
 
 import asyncio
+import dataclasses
 import json
 from datetime import datetime, timedelta
 
@@ -123,3 +124,35 @@ def test_the_app_or_cli_checks_a_bot_in_now(store, tmp_path):
         assert client.post("/checkins/engineer", headers=auth).status_code == 201
         assert client.post("/checkins/critic", headers=auth).status_code == 422  # it has no checklist
         assert client.post("/checkins/ghost", headers=auth).status_code == 404
+
+
+async def test_a_check_in_may_start_low_risk_work_of_its_own_within_a_daily_cap(store, tmp_path):
+    start = {"title": "Fuzz the export's filters", "goal": "Write fuzz tests for the export's filters."}
+    reports = {"notify": False, "text": "The export has no fuzz tests.", "start_thread": start}
+    runner, scheduler, backend = crew_with(store, tmp_path, lambda spec: (
+        [Done(final_text=json.dumps(reports))] if "in the background" in spec.system_prompt else [Done(final_text="done")]))
+    chat = runner.chat("engineer")
+    for _ in range(4):  # the fourth is past the day's cap
+        task = scheduler.check_in("engineer")
+        await wait_until(lambda: not runner.running())
+
+    started = [t for t in store.children(chat.id) if t.created_by == "crewbots"]
+    assert len(started) == 3 and started[0].title == "Fuzz the export's filters"
+    assert [e.data["why"] for e in store.events(started[0].id) if e.kind == "started_on_own"] == [reports["text"]]
+    own = next(s for s in backend.specs if s.prompt == start["goal"])
+    assert "You started this yourself" in own.system_prompt and "Never merge, push, post" in own.system_prompt
+    refused = [e.data["message"] for e in store.events(chat.id) if e.kind == "notice"]
+    assert refused == ["Didn't start \"Fuzz the export's filters\" on its own: it already started 3 today, the most a day"]
+    reported = [e.data["text"] for e in store.events(chat.id) if e.kind == "message" and e.data["from"] == "crewbots"]
+    assert reported and started[0].id in reported[0]  # its result came back to the chat, the usual way
+    assert not runner.user_busy() and store.get_task(task.id).status is Status.IDLE
+
+
+async def test_a_bot_whose_card_says_so_never_starts_work_on_its_own(store, tmp_path):
+    runner, scheduler, _ = crew_with(store, tmp_path, says(
+        {"notify": False, "text": "x", "start_thread": {"title": "t", "goal": "g"}}))
+    runner.crew.bots["engineer"] = dataclasses.replace(runner.crew.bots["engineer"], proactive=False)
+    scheduler.check_in("engineer")
+    await wait_until(lambda: not runner.running())
+    assert store.children(runner.chat("engineer").id) == []
+    assert "its card says not to" in [e.data for e in store.events(runner.chat("engineer").id)][-1]["message"]

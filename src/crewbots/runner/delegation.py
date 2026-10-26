@@ -248,7 +248,7 @@ def _report_section(task: Task, handoff: Handoff | None, review: Review | None =
 
 def _delegated(task: Task) -> bool:
     """Whether a bot handed this task to another (rather than the user starting it, or a bot opening it for itself)."""
-    return bool(task.parent_id) and task.created_by not in ("user", task.bot) and not task.created_by.startswith(
+    return bool(task.parent_id) and task.created_by not in ("user", "crewbots", task.bot) and not task.created_by.startswith(
         "routine")
 
 

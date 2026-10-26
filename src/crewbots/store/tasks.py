@@ -179,6 +179,11 @@ class Tasks:
                               (bot,)).fetchone()
         return _task(row) if row else None
 
+    def started_on_own(self, bot: str, chat_id: str, since: str) -> int:
+        """How many threads `bot` started on its own (from a check-in, under its chat) since `since`."""
+        return self.db.execute("select count(*) from tasks where bot = ? and parent_id = ? and created_by = 'crewbots'"
+                               " and created_at >= ?", (bot, chat_id, since)).fetchone()[0]
+
     def seats_in(self, room_id: str) -> list[Task]:
         rows = self.db.execute("select * from tasks where kind = 'seat' and room_id = ?", (room_id,)).fetchall()
         return [_task(r) for r in rows]

@@ -33,9 +33,21 @@ export function WorkCard({ crew, task, onOpen }: { crew: Crew; task: Task; onOpe
       <div className="work-head">
         <span className="work-bot">
           <Icon name="message" size={13} />
-          {task.bot === crew.tasks.get(task.parent_id ?? "")?.bot ? "Thread" : `Thread · ${task.bot}`}
+          {task.created_by === "crewbots" ? "Started on its own" : task.bot === crew.tasks.get(task.parent_id ?? "")?.bot ? "Thread" : `Thread · ${task.bot}`}
         </span>
         <span className="grow" />
+        {task.created_by === "crewbots" && active && (
+          <button
+            className="button small work-stop"
+            onClick={(e) => {
+              e.stopPropagation();
+              crew.cancel(task.id).catch(() => undefined);
+            }}
+            title="Stop the work it started on its own"
+          >
+            Stop
+          </button>
+        )}
         <span className={`work-status ${status}`}>
           {active && <span className="working-dot small" />}
           {STATUS[status]}

@@ -4,7 +4,7 @@ import { Avatar, COLORS, COLOR_NAMES, SHAPE_NAMES, face, labelOf } from "../comp
 import { Icon } from "../components/Icon";
 import { ModelPicker } from "../components/ModelPicker";
 import { tokens } from "../components/StatusPanel";
-import { Field, Page, Segmented, Sheet } from "../components/ui";
+import { Field, Page, Segmented, Sheet, Switch } from "../components/ui";
 import type { Crew } from "../state";
 import type { Bot, Card, McpServerInfo } from "../types";
 import "../styles/crew.css";
@@ -130,6 +130,7 @@ export function BotEditor({ crew, name, onClose }: { crew: Crew; name: string | 
       avatar: draft.avatar ?? null,
       budget: draft.budgetOn && draft.budget?.tokens ? draft.budget : null,
       mcp: draft.mcp ?? [],
+      proactive: draft.proactive !== false, // on unless turned off; on stays off the card
       instructions: draft.instructions,
     };
     try {
@@ -266,6 +267,9 @@ export function BotEditor({ crew, name, onClose }: { crew: Crew; name: string | 
             </>
           )}
         </span>
+      </Field>
+      <Field label="Starts work on its own" hint="From a check-in, it may open a thread for low-risk work: a draft, some research, a branch in its own worktree. Up to three a day, only with spare capacity, and it never merges, pushes, posts or spends.">
+        <Switch on={draft.proactive !== false} onChange={(on) => set({ proactive: on })} label="Starts work on its own" />
       </Field>
       <Field label="Role card" hint="Its mission, what it owns and doesn't, and what done means. Every turn, it reads this.">
         <textarea className="mono-area" rows={14} value={draft.instructions ?? ""} onChange={(e) => set({ instructions: e.target.value })} />

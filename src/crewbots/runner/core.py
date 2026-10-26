@@ -505,6 +505,8 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds, Dreams, Checki
     def _setting(self, task: Task) -> str | None:
         if task.kind == "chat":
             return prompts.text("chat-setting", self.crew.home)
+        if task.created_by == "crewbots" and task.parent_id:  # work it started on its own, from a check-in
+            return prompts.text("own-setting", self.crew.home)
         if task.kind == "ask":
             return prompts.text("ask-setting", self.crew.home, asker=task.created_by)
         if task.kind == "seat" and task.room_id:

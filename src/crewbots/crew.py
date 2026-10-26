@@ -22,7 +22,7 @@ from crewbots.memory import CREW_SCOPE, Memory
 
 CARD_FIELDS = {
     "name", "title", "description", "backend", "model", "access", "workspace", "worktree", "timeout", "mcp",
-    "can_delegate", "skills", "budget", "network", "display_name", "avatar", "effort", "context_window",
+    "can_delegate", "skills", "budget", "network", "display_name", "avatar", "effort", "context_window", "proactive",
 }
 # How much conversation a bot's session holds before the CLI compacts it, and what the rollover is measured against.
 # Without it, the model's whole window counts: on a 1M model the rollover would wait for 700K tokens.
@@ -72,6 +72,7 @@ class Bot:
     avatar: dict[str, str] | None = None  # {color, shape}, from AVATAR_COLORS and AVATAR_SHAPES
     effort: str | None = None  # reasoning effort for every turn it takes, its threads' too; None: the CLI's default
     context_window: int | None = None  # tokens its sessions hold before compacting; None: the model's whole window
+    proactive: bool = True  # whether a check-in of its may start low-risk work on its own
 
     @property
     def label(self) -> str:
@@ -331,6 +332,7 @@ def parse_card(text: str, default_name: str, source: Path | str = "<card>") -> B
         mcp=_mcp(meta.get("mcp") if isinstance(meta.get("mcp"), dict) else {}, source),
         mcp_names=_mcp_names(meta.get("mcp"), source),
         can_delegate=bool(meta.get("can_delegate", False)),
+        proactive=bool(meta.get("proactive", True)),
         skills=_skill_names(meta.get("skills"), source),
         budget=_budget(meta.get("budget"), source),
         network=_network(meta.get("network", False), access, backend, source),

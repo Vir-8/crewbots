@@ -24,6 +24,7 @@ class BotOut(BaseModel):
     effort: str | None  # reasoning effort; none: the CLI's default
     avatar: dict[str, str] | None  # {color, shape}; none: picked from its name
     context_window: int | None  # tokens its sessions hold before compacting; none: the model's whole window
+    proactive: bool = True  # a check-in of its may start low-risk work on its own
 
 class Avatar(BaseModel):
     color: str | None = None
@@ -48,6 +49,7 @@ class CardBody(BaseModel):
     avatar: Avatar | None = None
     budget: Budget | None = None
     mcp: list[str] | None = None  # the crew's MCP servers (mcp.json) it may use
+    proactive: bool | None = None  # whether a check-in may start low-risk work on its own
     instructions: str | None = None  # the card's body: mission, what it owns, what done means
 
 class NewBot(CardBody):
