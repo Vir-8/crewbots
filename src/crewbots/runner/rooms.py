@@ -12,6 +12,7 @@ from crewbots.store import Status, Task
 MAX_ROOM_DEPTH = 4  # bot replies in a row in a room, after the user's message, before the bots stop waking each other
 CREW_ROOM = "Crew"  # the group chat every bot is in, made when the crew first needs one
 MENTION = re.compile(r"@([\w-]+)")
+MAX_ROOM_BOTS = 6  # bots in one group chat: more and they talk past each other
 
 
 class Rooms:
@@ -35,6 +36,41 @@ class Rooms:
         if lead not in members:
             raise UnknownBot(f"the lead, {lead}, isn't in the group chat")
         room = self.store.create_room(title.strip() or ", ".join(members), lead, members)
+        self.bus.publish({"type": "room", "room": room})
+        return room
+
+    def open_group(self, task_id: str, title: str, members: list[str], lead: str | None = None) -> dict[str, Any]:
+        """The `open_group` tool: a bot opens a group chat with teammates. It's in it, and leads it unless it names
+        another lead. The app shows it at once."""
+        task = self.store.get_task(task_id)
+        if task.kind == "ask":
+            raise NotAllowed("you're answering a teammate's question: answer it, rather than starting more")
+        members = list(dict.fromkeys([task.bot, *members]))
+        if len(members) < 2:
+            raise NotAllowed("a group chat needs at least one teammate besides you")
+        if len(members) > MAX_ROOM_BOTS:
+            raise NotAllowed(f"a group chat holds at most {MAX_ROOM_BOTS} bots, so they don't talk past each other")
+        return self.create_room(title, members, lead or task.bot)
+
+    def add_to_group(self, task_id: str, bot: str, room_id: str | None = None) -> dict[str, Any]:
+        """The `add_to_group` tool: a bot in a group chat brings a teammate in (by default into the one it's in)."""
+        task = self.store.get_task(task_id)
+        room_id = room_id or (task.room_id if task.kind == "seat" else None)
+        if not room_id:
+            raise NotAllowed("say which group chat (room): you're not talking in one")
+        try:
+            room = self.store.room(room_id)
+        except KeyError:
+            raise NotAllowed(f"no group chat {room_id}") from None
+        if task.bot not in room["members"]:
+            raise NotAllowed(f"only someone in the group chat {room['title']!r} can bring others in")
+        if bot not in self.crew.bots:
+            raise UnknownBot(f"no bot named {bot!r}; the crew is {sorted(self.crew.bots)}")
+        if bot in room["members"]:
+            return room
+        if len(room["members"]) >= MAX_ROOM_BOTS:
+            raise NotAllowed(f"{room['title']!r} already has {MAX_ROOM_BOTS} bots, the most a group chat holds")
+        room = self.store.set_room_members(room_id, [*room["members"], bot])
         self.bus.publish({"type": "room", "room": room})
         return room
 

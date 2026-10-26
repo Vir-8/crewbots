@@ -7,8 +7,10 @@ from crewbots.api.schemas.bot import (
     Escalation,
     Finding,
     Forget,
+    GroupMember,
     HandoffBody,
     MergeProposal,
+    OpenGroup,
     PostBody,
     Recall,
     Remember,
@@ -104,6 +106,8 @@ from crewbots.api.schemas.usage import (
 
 __all__ = [
     "AskBody",
+    "GroupMember",
+    "OpenGroup",
     "AttachmentCopy",
     "AttachmentData",
     "AttachmentOut",

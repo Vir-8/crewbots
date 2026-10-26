@@ -119,6 +119,40 @@ async def test_a_bot_posts_to_the_crews_room_from_its_own_chat(crew, store):
         crew.runner.post_from(chat.id, "hi", other["id"])
 
 
+async def test_a_bot_opens_a_group_chat_and_brings_a_teammate_in(crew, store):
+    chat = crew.runner.chat("engineer")
+    tools = CrewTools(crew.runner, chat.id, can_delegate=False)
+    with crew.runner.bus.subscribe() as queue:
+        said = await tools.call("open_group", {"title": "CSV export", "members": ["reviewer"]})
+        room = queue.get_nowait()["room"]  # the app shows it at once
+    assert room["members"] == ["engineer", "reviewer"] and room["lead"] == "engineer" and room["id"] in said
+
+    replies(crew, {"reviewer": "Pulling chief in. @chief does this need sign-off?", "chief": "No, ship it."})
+    seat = store.create_task("reviewer", "CSV export (reviewer)", kind="seat", room_id=room["id"], status=Status.IDLE)
+    assert "chief is in" in await CrewTools(crew.runner, seat.id, can_delegate=False).call("add_to_group", {"bot": "chief"})
+    assert store.room(room["id"])["members"] == ["engineer", "reviewer", "chief"]
+
+    crew.runner.post(room["id"], "user", "@reviewer is this good to go?")
+    await wait_until(idle(crew))
+    assert [m["author"] for m in store.room_messages(room["id"])] == ["user", "reviewer", "chief"]
+
+
+def test_group_chats_bots_open_stay_small_and_only_members_bring_others_in(crew, store):
+    chief = crew.runner.chat("chief").id
+    room = crew.runner.open_group(chief, "Plan", ["engineer"], lead="engineer")
+    assert room["lead"] == "engineer"
+    with pytest.raises(NotAllowed, match="besides you"):
+        crew.runner.open_group(chief, "Alone", ["chief"])
+    with pytest.raises(NotAllowed, match="only someone in the group chat"):
+        crew.runner.add_to_group(crew.runner.chat("reviewer").id, "reviewer", room["id"])
+    with pytest.raises(NotAllowed, match="say which group chat"):
+        crew.runner.add_to_group(chief, "reviewer")
+    with pytest.raises(NotAllowed, match="answering a teammate's question"):
+        crew.runner.open_group(store.create_task("engineer", "Q", kind="ask").id, "Side", ["reviewer"])
+    with pytest.raises(NotAllowed, match="at most"):
+        crew.runner.open_group(chief, "Everyone", [f"bot{i}" for i in range(6)])
+
+
 # Over the API.
 
 

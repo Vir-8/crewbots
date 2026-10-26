@@ -53,6 +53,8 @@ SPECS: dict[str, Spec] = {
     "start_thread": Spec(_object({"title": STRING, "goal": STRING}, ["title", "goal"])),
     "post": Spec(_object({"text": STRING, "room": STRING}, ["text"])),
     "ask": Spec(_object({"bot": STRING, "question": STRING}, ["bot", "question"])),
+    "open_group": Spec(_object({"title": STRING, "members": STRINGS, "lead": STRING}, ["title", "members"])),
+    "add_to_group": Spec(_object({"bot": STRING, "room": STRING}, ["bot"])),
     "add_bot": Spec(_object(
         {"name": STRING, "title": STRING, "description": STRING, "instructions": STRING, "display_name": STRING,
          "backend": {"type": "string", "enum": ["claude", "codex"]}, "model": STRING, "effort": STRING,
@@ -154,6 +156,13 @@ class CrewTools:
                 case "ask":
                     asked = r.ask(me, args["bot"], args["question"])
                     return f"Asked {asked.bot} ({asked.id}). End your turn: the answer arrives as your next message."
+                case "open_group":
+                    room = r.open_group(me, args["title"], list(args["members"]), args.get("lead") or None)
+                    return (f"Opened the group chat {room['title']!r} ({room['id']}) with {', '.join(room['members'])}, "
+                            f"led by {room['lead']}. Say something there with post(text, room={room['id']!r}).")
+                case "add_to_group":
+                    room = r.add_to_group(me, args["bot"], args.get("room") or None)
+                    return f"{args['bot']} is in {room['title']!r} now: @mention them there to bring them in."
                 case "post":
                     message = r.post_from(me, args["text"], args.get("room") or None)
                     return f"Posted in the group chat ({message['room_id']})."

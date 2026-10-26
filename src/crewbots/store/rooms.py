@@ -23,6 +23,10 @@ class Rooms:
             raise KeyError(room_id)
         return {**dict(row), "members": json.loads(row["members"])}
 
+    def set_room_members(self, room_id: str, members: list[str]) -> dict[str, Any]:
+        self.db.execute("update rooms set members = ? where id = ?", (json.dumps(members), room_id))
+        return self.room(room_id)
+
     def rooms(self) -> list[dict[str, Any]]:
         rows = self.db.execute("select * from rooms order by created_at").fetchall()
         return [{**dict(r), "members": json.loads(r["members"])} for r in rows]

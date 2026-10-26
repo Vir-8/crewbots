@@ -17,6 +17,17 @@ class AskBody(BaseModel):
     question: str
 
 
+class OpenGroup(BaseModel):
+    title: str
+    members: list[str]
+    lead: str | None = None
+
+
+class GroupMember(BaseModel):
+    bot: str
+    room: str | None = None  # the group chat the bot is talking in, if left out
+
+
 class ChildMessage(BaseModel):
     task_id: str
     text: str

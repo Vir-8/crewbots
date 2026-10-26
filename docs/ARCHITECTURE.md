@@ -234,7 +234,7 @@ Each step leaves the system working.
 
 - **A chat** is a bot's one ongoing conversation with the user: a task of kind `chat`, made the first time it's
   needed, that never ends. Its length is handled by the memory work: notes, and a rollover briefing at 70%.
-- **A thread** is work, opened with `start_thread` by any bot (or `delegate` by a coordinator) under the chat, seat
+- **A thread** is work, opened with `start_thread` by any bot (or `delegate`, for a teammate) under the chat, seat
   or thread it's in. Results come back up as before. Budgets and "Go ahead anyway" apply per thread, the outermost
   thread above a task, never to a whole chat.
 - **A room** is a group chat with a lead. Each bot in it has a **seat**, its own session for that room, fed the
@@ -242,7 +242,9 @@ Each step leaves the system working.
   `NO_REPLY`. The user's message wakes whoever it mentions, or the lead; a bot's reply wakes whoever it mentions, up
   to `MAX_ROOM_DEPTH` (4) replies from the user's message, so bots can't talk forever. Checked live: asked to
   introduce themselves, the reviewer brought in the critic with a question, the critic answered, the reviewer
-  replied, and it stopped.
+  replied, and it stopped. The user makes a room in the app; a bot makes one with `open_group`, holding at most
+  `MAX_ROOM_BOTS` (6) bots, and any member can bring in another with `add_to_group`. Either way the app hears a
+  `room` message and shows it at once.
 - **Routines:** a scheduled one is a message in its bot's chat, from the routine; a trigger opens a thread under the
   bot's chat, with its per-run budget, and the chat hears how it went.
 - **Unread** is kept in the daemon (`reads`), so the app and the menu bar agree.

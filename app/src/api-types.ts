@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "160e40b0620c";
+export const API_SCHEMA = "db371dbe072a";
 
 export interface AskBody {
   bot: string;
@@ -243,6 +243,11 @@ export interface Forget {
   shared?: boolean;
 }
 
+export interface GroupMember {
+  bot: string;
+  room?: string | null;
+}
+
 export interface HTTPValidationError {
   detail?: ValidationError[];
 }
@@ -439,6 +444,12 @@ export interface NewTask {
   bot: string;
   goal: string;
   workspace?: string | null;
+}
+
+export interface OpenGroup {
+  title: string;
+  members: string[];
+  lead?: string | null;
 }
 
 export interface OutputOut {

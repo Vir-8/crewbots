@@ -11,12 +11,15 @@ from crewbots.api.schemas import (
     Delegation,
     Escalation,
     Forget,
+    GroupMember,
     HandoffBody,
     MergeProposal,
+    OpenGroup,
     PostBody,
     Recall,
     Remember,
     ReviewBody,
+    RoomOut,
     SearchHit,
     ThreadBody,
 )
@@ -32,6 +35,14 @@ def routes(c: Context) -> APIRouter:
         child = runner.delegate(request.state.task.id, body.bot, body.goal, workspace=body.workspace,
                                 review_of=body.review_of)
         return {"id": child.id, "bot": child.bot, "title": child.title, "status": child.status}
+
+    @v1.post("/bot/open_group", status_code=201, response_model=RoomOut)
+    async def bot_open_group(request: Request, body: OpenGroup):
+        return runner.open_group(request.state.task.id, body.title, body.members, body.lead)
+
+    @v1.post("/bot/add_to_group", response_model=RoomOut)
+    async def bot_add_to_group(request: Request, body: GroupMember):
+        return runner.add_to_group(request.state.task.id, body.bot, body.room)
 
     @v1.post("/bot/ask", status_code=201)
     async def bot_ask(request: Request, body: AskBody):

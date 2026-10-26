@@ -1,0 +1,1 @@
+Open a group chat with teammates, for something that needs several of you talking it through together. title: a few words. members: the teammates' names (you're in it anyway). lead: who answers a message that mentions no one; you, unless you name another. It shows in the app at once. Then say something there with post(text, room=<its id>), @mentioning who should answer.

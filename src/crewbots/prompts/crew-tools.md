@@ -14,3 +14,5 @@ You have crewbots tools, from the MCP server named crewbots:
   and can read, and the answer arrives as your next message, so end your turn after asking.
 - `post(text, room?)`: say something in a group chat, by default the crew's own. @mention a teammate by name to bring
   them in.
+- `open_group(title, members, lead?)` and `add_to_group(bot, room?)`: open a group chat with teammates, or bring one
+  into a group chat you're in, when something needs several of you at once.

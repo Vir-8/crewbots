@@ -76,6 +76,17 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
         message = call("POST", "/bot/post", {"text": text, "room": room})
         return f"Posted in the group chat ({message['room_id']})."
 
+    @server.tool(description=describe("open_group"))
+    def open_group(title: str, members: list[str], lead: str | None = None) -> str:
+        room = call("POST", "/bot/open_group", {"title": title, "members": members, "lead": lead})
+        return (f"Opened the group chat {room['title']!r} ({room['id']}) with {', '.join(room['members'])}, led by "
+                f"{room['lead']}. Say something there with post(text, room={room['id']!r}).")
+
+    @server.tool(description=describe("add_to_group"))
+    def add_to_group(bot: str, room: str | None = None) -> str:
+        found = call("POST", "/bot/add_to_group", {"bot": bot, "room": room})
+        return f"{bot} is in {found['title']!r} now: @mention them there to bring them in."
+
     @server.tool(description=describe("ask"))
     def ask(bot: str, question: str) -> str:
         asked = call("POST", "/bot/ask", {"bot": bot, "question": question})
