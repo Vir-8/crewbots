@@ -28,7 +28,7 @@ class Dreams:
     """The part of Runner that consolidates bots' memory."""
 
     def dream_due(self, bot: str, now: datetime) -> bool:
-        """Whether `bot`'s memory is due: once a night (counted from DREAM_HOUR), with something new since, in the early
+        """Whether `bot`'s memory is due: once a night (noon to noon), with something new since, in the early
         hours or after an hour of quiet, when there's spare capacity (`capacity.py`: never beside the user's work)."""
         if self._dreaming:
             return False  # one bot at a time
@@ -36,7 +36,8 @@ class Dreams:
         if not (DREAM_HOUR <= now.hour < DREAM_UNTIL or quiet):
             return False
         last = (self.store.routine_state(f"memory:{bot}") or {}).get("last_run_at")
-        night = lambda t: (t - timedelta(hours=DREAM_HOUR)).date()  # noqa: E731
+        # A night runs noon to noon, so one consolidated in a quiet evening isn't consolidated again in the early hours.
+        night = lambda t: (t - timedelta(hours=12)).date()  # noqa: E731
         if last and night(datetime.fromisoformat(last)) >= night(now):
             return False
         since = (last or "0000-00-00")[:10]

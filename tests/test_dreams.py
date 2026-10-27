@@ -131,8 +131,10 @@ async def test_it_runs_once_a_night_for_a_bot_with_something_new_when_the_crew_i
     task = runner.dream("engineer", weekly=False)
     assert not runner.dream_due("critic", night)  # one bot at a time
     await wait_until(lambda: task.id not in runner.running())
-    assert not runner.dream_due("engineer", datetime.now().astimezone() + timedelta(hours=1))  # done this night
-    assert runner.dream_due("engineer", datetime.now().astimezone() + timedelta(days=1, hours=1))
+    assert store.routine_state("memory:engineer")["last_run_at"]
+    store.routine_ran("memory:engineer", datetime(2026, 10, 26, 23, 30).astimezone().isoformat(), task.id)  # in a quiet evening
+    assert not runner.dream_due("engineer", night)  # done this night, early hours and all
+    assert runner.dream_due("engineer", night + timedelta(days=1))
 
 
 def test_the_app_or_the_cli_can_ask_for_it_now(store, tmp_path, memory):
