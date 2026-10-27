@@ -233,6 +233,9 @@ The app works like a messaging app:
 - **Commands:** typing / in any message box offers the app's own commands; Tab or Enter runs one without sending
   anything. `/usage` shows what's left on your Claude and Codex plans, above the box. `/status` shows the chat's model
   and effort, its session, how full its context is, and its plan's limits.
+- **⌘K** goes anywhere: type a few letters of any chat, group, bot, thread, pull request or page, or run a command
+  (a new group chat, pause or resume the crew, usage, status, a bot's card, the sidebar). What you picked lately comes
+  first.
 - **Find:** ⌘F finds in the chat or group chat you're in, or in the thread beside it after a click there; ↩ and ⌘G
   step through the matches, ⇧ steps back. It counts what the messages say, not what's drawn, so a long chat's
   older messages are found too.

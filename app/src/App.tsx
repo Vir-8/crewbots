@@ -4,6 +4,9 @@ import { Boundary } from "./components/Boundary";
 import { CrewBanner } from "./components/CrewBanner";
 import { Icon } from "./components/Icon";
 import { Panel } from "./components/Panel";
+import { Palette } from "./components/Palette";
+import { paletteItems } from "./components/paletteItems";
+import { showPanel } from "./components/Composer";
 import { Profile, RoomProfile } from "./components/Profile";
 import { RailEdge, Resizer, useWidth } from "./components/Resizer";
 import { Sidebar } from "./components/Sidebar";
@@ -52,6 +55,8 @@ export function App() {
   // you go in between.
   const [profileOn, setProfileOn] = useRemembered("crewbots.profile", true);
   const [newGroup, setNewGroup] = useState(false);
+  const [palette, setPalette] = useState(false);
+  const [pull, setPull] = useState<{ repo: string; number: number } | null>(null); // one the palette went to
   const [sideOff, setSideOff] = useRemembered("crewbots.sidebar-hidden", false);
   // Code review needs the room: in a smaller window, the sidebar steps aside while you're there, without changing
   // your own choice for everywhere else.
@@ -79,6 +84,33 @@ export function App() {
     if (root.kind === "chat") setCurrent(`bot:${root.bot}`);
     else if (root.kind === "seat" && root.room_id) setCurrent(`room:${root.room_id}`);
     setThread(task.kind === "thread" || task.kind === "ask" ? id : null);
+  };
+
+  // ⌘K: the command palette, from anywhere.
+  useEffect(() => {
+    const keys = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPalette((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", keys);
+    return () => window.removeEventListener("keydown", keys);
+  }, []);
+  const go = {
+    chat: (key: string) => {
+      setCurrent(key);
+      setThread(null);
+    },
+    task: (id: string) => openTask(id),
+    pull: (repo: string, number: number) => {
+      setPull({ repo, number });
+      setCurrent("review");
+    },
+    newGroup: () => setNewGroup(true),
+    editBot: (name: string) => setEditing(name),
+    panel: (name: string) => setTimeout(() => showPanel(name), 0), // once the palette has closed and focus is back
+    sidebar: () => setSideHidden(!sideHidden),
   };
 
   // Open on the most recent conversation, or the task asked for in the URL.
@@ -143,7 +175,7 @@ export function App() {
         ) : current === "page:settings" ? (
           <Settings crew={crew} />
         ) : current === "review" ? (
-          <CodeReview crew={crew} onSettings={() => setCurrent("page:settings")} />
+          <CodeReview crew={crew} onSettings={() => setCurrent("page:settings")} pick={pull} />
         ) : chat?.kind === "direct" ? (
           <DirectChat crew={crew} chat={chat} onOpen={openTask} profileOpen={Boolean(profile)} onProfile={() => setProfileOn(!profileOn)} />
         ) : chat?.kind === "group" ? (
@@ -201,6 +233,7 @@ export function App() {
           }}
         />
       )}
+      {palette && <Palette items={paletteItems(crew, current, go)} onClose={() => setPalette(false)} />}
       <CrewBanner crew={crew} />
       {crew.error && (
         <div className="toast" onClick={crew.clearError}>

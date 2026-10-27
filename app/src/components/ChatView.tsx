@@ -75,6 +75,7 @@ export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string)
           task={task?.id}
           draft={chat.key}
           autoFocus
+          main
         />
       </div>
     </>
@@ -205,7 +206,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
             </button>
           </div>
         )}
-        <Composer key={chat.key} placeholder={`Message ${room.title}`} mentions={[...room.members, "everyone"]} onSend={(text, files) => crew.post(room.id, text, files)} draft={chat.key} autoFocus />
+        <Composer key={chat.key} placeholder={`Message ${room.title}`} mentions={[...room.members, "everyone"]} onSend={(text, files) => crew.post(room.id, text, files)} draft={chat.key} autoFocus main />
       </div>
     </>
   );

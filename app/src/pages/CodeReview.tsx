@@ -14,8 +14,9 @@ let keptTeam: PullSummary[] | null = null;
 
 /** Pull requests waiting on you, read through your gh login, and private reviews of them. The reviewers aren't your
  * bots: each is its own agent on a model you choose, and the first leads. Only you submit anything to GitHub. */
-export function CodeReview({ crew, onSettings }: { crew: Crew; onSettings: () => void }) {
-  const [selected, setSelected] = useState<Selected | null>(null);
+export function CodeReview({ crew, onSettings, pick }: { crew: Crew; onSettings: () => void; pick?: Selected | null }) {
+  const [selected, setSelected] = useState<Selected | null>(pick ?? null);
+  useEffect(() => void (pick && setSelected(pick)), [pick]); // one the command palette went to
   const [refreshing, setRefreshing] = useState(false);
   const inbox = crew.reviewInbox;
   // The kept lists show at once; opening code review asks GitHub for new ones behind them.

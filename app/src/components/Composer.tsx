@@ -12,6 +12,10 @@ import "../styles/composer.css";
 
 /** The one place you type, or talk: the mic dictates into it. In a group chat, typing @ suggests who to mention, and
  * anywhere, typing / offers the app's own commands. */
+/** Asks the open chat's message box to show one of its panels, as typing its command there would. */
+export const PANEL_EVENT = "crewbots:panel";
+export const showPanel = (name: string) => window.dispatchEvent(new CustomEvent(PANEL_EVENT, { detail: name }));
+
 export function Composer(props: {
   placeholder: string;
   onSend: (text: string, attachments: string[]) => Promise<unknown>;
@@ -25,6 +29,7 @@ export function Composer(props: {
   onWorkspace?: (path: string) => void;
   task?: string; // the chat or thread this box talks to, for /status
   draft?: string; // where what's typed but not sent is kept, so a reload or relaunch loses nothing
+  main?: boolean; // the open chat's box: it shows what the command palette asks for (Usage, Status)
 }) {
   const kept = useState(() => readDraft<Draft>(props.draft))[0];
   const [text, setText] = useState(kept?.text ?? "");
@@ -70,6 +75,12 @@ export function Composer(props: {
     setPanel(name);
     area.current?.focus();
   };
+  useEffect(() => {
+    if (!props.main) return;
+    const asked = (e: Event) => setPanel((e as CustomEvent<string>).detail);
+    window.addEventListener(PANEL_EVENT, asked);
+    return () => window.removeEventListener(PANEL_EVENT, asked);
+  }, [props.main]);
 
   const [micError, setMicError] = useState<string | null>(null);
   useEffect(() => {
