@@ -58,6 +58,11 @@ def test_what_an_update_brings_and_when_there_is_none(checkout):
     held = Updates(project, built).check(built)
     assert not held["available"] and "changes in progress" in held["note"]
 
+    run(project, "checkout", "-q", "notes.txt")
+    behind = Updates(project, newer).check(built)  # the daemon restarted onto it, the app didn't: the app updates
+    assert behind["available"] and [c["subject"] for c in behind["commits"]] == ["Show files in chats"]
+    (project / "notes.txt").write_text("half done")
+
     gone = Updates(project, "0123456789ab").check("0123456789ab")  # built from a commit this checkout doesn't have
     assert gone["commits"] == []
 

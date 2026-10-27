@@ -62,16 +62,20 @@ class Updates:
         out["pull"] = behind > 0 and ahead == 0  # it comes in as a fast-forward
         target = "@{u}" if out["pull"] else "HEAD"
         known = [c for c in (app, self.running) if c and self._git("cat-file", "-e", f"{c}^{{commit}}") is not None]
-        if known:
-            listed = self._git("log", f"--max-count={MAX_COMMITS}", "--format=%h%x09%cI%x09%s", target, "--not", *known)
-            out["commits"] = [dict(zip(("sha", "at", "subject"), line.split("\t", 2), strict=True))
-                              for line in (listed or "").splitlines() if line.count("\t") >= 2]
+        if known:  # what the one further behind (the app or the daemon) doesn't have
+            missing = [self._commits(target, base) for base in known]
+            out["commits"] = max(missing, key=len)
             out["available"] = bool(out["commits"])
         else:  # built from a commit this checkout doesn't have: anything else is newer
             out["available"] = bool(head) and head not in (app, self.running)
         if self._fetch_error and not out["available"]:
             out["note"] = self._fetch_error
         return out
+
+    def _commits(self, target: str, base: str) -> list[dict[str, str]]:
+        listed = self._git("log", f"--max-count={MAX_COMMITS}", "--format=%h%x09%cI%x09%s", target, "--not", base)
+        return [dict(zip(("sha", "at", "subject"), line.split("\t", 2), strict=True))
+                for line in (listed or "").splitlines() if line.count("\t") >= 2]
 
     def start(self, app: str | None = None) -> dict[str, Any]:
         """Starts the release, after bringing in what GitHub has if that's a fast-forward."""
