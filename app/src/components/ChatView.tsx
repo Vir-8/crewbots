@@ -6,7 +6,7 @@ import { ACTIVE } from "../types";
 import { Files } from "./Attachments";
 import { Avatar, GroupAvatar, labelOf } from "./Avatar";
 import { Boundary } from "./Boundary";
-import { Markdown, MessageMeta, PageOpener, TimeBreak, ago, fullDate, timeBreaks } from "./bits";
+import { Markdown, MessageMeta, PageOpener, TimeBreak, ago, fullDate, timeBreaks, useHoveredMessage } from "./bits";
 import { crewCommands } from "./CommandPreview";
 import { Composer } from "./Composer";
 import { FindBar, Finding, Marked, count, shown, useCurrentHit, useFind } from "./Find";
@@ -112,6 +112,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
   const breaks = useMemo(() => new Set([...timeBreaks(messages ?? [])].map((i) => messages![i].id)), [messages]);
   const groups = useMemo(() => byAuthor(messages ?? [], breaks), [messages, breaks]);
   const find = useFind();
+  const hovered = useHoveredMessage();
   const hits = useMemo(() => {
     const out: { el: () => Element | null | undefined; nth: number }[] = [];
     for (const m of find.lookFor ? messages ?? [] : []) {
@@ -151,7 +152,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
       {messages?.length === 0 ? (
         <GroupWelcome crew={crew} room={room} onSay={(text) => crew.post(room.id, text)} />
       ) : (
-        <div className="thread" ref={box}>
+        <div className="thread" ref={box} onMouseMove={hovered.onMouseMove} onMouseLeave={hovered.onMouseLeave} onScroll={hovered.clear}>
           <Finding.Provider value={find.lookFor}>
           <div className="thread-col chat room">
             {groups.map((group) =>

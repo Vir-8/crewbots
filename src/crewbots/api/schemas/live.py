@@ -34,6 +34,9 @@ class LivePage(BaseModel):
     bot: str
     page: str  # its name: written by the bot, or by the user from the app
 
+class LiveBots(BaseModel):
+    type: Literal["bots"]  # the crew's role cards changed (a bot named in its chat, one added, a card edited): read them again
+
 class LiveTask(BaseModel):
     type: Literal["task"]
     task: TaskOut
@@ -42,5 +45,5 @@ class LiveEvent(BaseModel):
     type: Literal["event"]
     event: EventOut
 
-LiveMessage = Annotated[LiveTask | LiveEvent | LiveCrew | LiveRoom | LiveRoomGone | LiveRoomMessage | LivePins | LivePage,
-                        Field(discriminator="type")]
+LiveMessage = Annotated[LiveTask | LiveEvent | LiveCrew | LiveBots | LiveRoom | LiveRoomGone | LiveRoomMessage | LivePins
+                        | LivePage, Field(discriminator="type")]

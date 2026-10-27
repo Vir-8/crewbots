@@ -73,6 +73,14 @@ export function useCrew() {
           setCrewState(message.crew);
           return;
         }
+        if (message.type === "bots") {
+          api.bots().then((b) => {
+            setCrew(b);
+            setBots(b);
+            loadChats();
+          }, () => undefined);
+          return;
+        }
         if (message.type === "room") {
           reloadChats();
           return;
@@ -254,7 +262,7 @@ export interface InboxItem {
   text: string;
 }
 
-function derive(tasks: Map<string, Task>, recent: StoredEvent[]) {
+export function derive(tasks: Map<string, Task>, recent: StoredEvent[]) {
   const all = [...tasks.values()];
   const byAge = [...all].sort((a, b) => a.created_at.localeCompare(b.created_at));
   const children = new Map<string, Task[]>();
@@ -264,7 +272,8 @@ function derive(tasks: Map<string, Task>, recent: StoredEvent[]) {
   const latest = new Map<string, StoredEvent>(); // the last thing each task did, for one-line status
   const verdicts = new Map<string, StoredEvent[]>(); // review events, by the work they reviewed
   for (const e of recent) {
-    if (["text", "tool_call", "handoff", "review", "escalation", "merged", "merge_proposed"].includes(e.kind)) {
+    // A message counts too: what a bot did before it isn't what it's doing now.
+    if (["message", "text", "tool_call", "handoff", "review", "escalation", "merged", "merge_proposed"].includes(e.kind)) {
       latest.set(e.task_id, e);
     }
     if (e.kind === "review" && e.data.task_id === e.task_id) {

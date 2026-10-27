@@ -31,6 +31,7 @@ import type {
   LiveRoom,
   LiveRoomGone,
   LiveRoomMessage,
+  LiveBots,
   LivePage,
   LivePins,
   LiveTask,
@@ -51,7 +52,7 @@ export type StoredEvent = Omit<EventOut, "data"> & { data: Record<string, any> }
 export type Bot = BotOut;
 export type Finding = FindingOut;
 export type ReviewState = ReviewStateOut;
-export type Live = LiveTask | LiveCrew | LiveRoom | LiveRoomGone | LiveRoomMessage | LivePins | LivePage | (Omit<LiveEvent, "event"> & { event: StoredEvent });
+export type Live = LiveTask | LiveCrew | LiveBots | LiveRoom | LiveRoomGone | LiveRoomMessage | LivePins | LivePage | (Omit<LiveEvent, "event"> & { event: StoredEvent });
 export type Chat = ChatOut;
 export type Room = RoomOut;
 export type { RoomChange };

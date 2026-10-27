@@ -4,8 +4,9 @@ import { doing } from "../state";
 import type { Task } from "../types";
 import { ACTIVE } from "../types";
 import { Files } from "./Attachments";
+import { labelOf } from "./Avatar";
 import { Boundary } from "./Boundary";
-import { Markdown, MessageMeta, PageLinkTo, TimeBreak, timeBreaks } from "./bits";
+import { Markdown, MessageMeta, PageLinkTo, TimeBreak, timeBreaks, useHoveredMessage } from "./bits";
 import { Finding, Marked, count, useCurrentHit } from "./Find";
 import { Icon } from "./Icon";
 import { Offer } from "./Offer";
@@ -67,6 +68,7 @@ export function Thread(props: {
   const drawn = (i: number) => (i >= start ? col.current?.children[i - start + (start > 0 ? 1 : 0)] : undefined);
 
   // ⌘F: each match, found in what the blocks say (drawn or not), and which mark of its block's it is.
+  const hovered = useHoveredMessage();
   const query = props.find?.query ?? "";
   const hits = useMemo(() => {
     const out: { block: number; el: () => Element | undefined; nth: number }[] = [];
@@ -95,7 +97,10 @@ export function Thread(props: {
         const el = e.currentTarget;
         stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
         if (el.scrollTop < 600 && start > 0) earlier(start - PAGE);
+        hovered.clear();
       }}
+      onMouseMove={hovered.onMouseMove}
+      onMouseLeave={hovered.onMouseLeave}
     >
       <div className={`thread-col ${props.compact ? "compact" : ""} ${props.chat ? "chat" : ""}`} ref={col}>
         <Finding.Provider value={query}>
@@ -114,7 +119,7 @@ export function Thread(props: {
         {active && (
           <div className="working">
             <span className="working-dot" />
-            <span className="shimmer">{(props.working && task.status !== "running" ? "" : doing(crew.latest.get(task.id))) || props.working || `${task.bot} is working`}</span>
+            <span className="shimmer">{(props.working && task.status !== "running" ? "" : doing(crew.latest.get(task.id))) || props.working || `${labelOf(task.bot)} is thinking`}</span>
           </div>
         )}
       </div>

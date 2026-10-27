@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import type { Status } from "../types";
 import { Marked } from "./Find";
 import { Icon } from "./Icon";
@@ -124,8 +124,25 @@ export function fullDate(iso: string): string {
   return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
+/** Which message the pointer is on, marked `hovered` so its time and copy button show: one at a time, by following the
+ * pointer over a conversation, since the app's WebKit view can leave a :hover's reveal showing after the pointer goes. */
+export function useHoveredMessage() {
+  const current = useRef<Element | null>(null);
+  const mark = (next: Element | null) => {
+    if (next === current.current) return;
+    current.current?.classList.remove("hovered");
+    next?.classList.add("hovered");
+    current.current = next;
+  };
+  return {
+    onMouseMove: (e: MouseEvent) => mark((e.target as Element).closest(".you, .said, .room-message")),
+    onMouseLeave: () => mark(null),
+    clear: () => mark(null), // on scroll: what's under the pointer moved
+  };
+}
+
 /** Under a message: when it was sent (the whole date on hover) and a button that copies what it says. Shown while the
- * pointer is on the message. */
+ * pointer is on the message (`useHoveredMessage`). */
 export function MessageMeta({ at, text }: { at?: string; text?: string }) {
   const [copied, setCopied] = useState(false);
   if (!at) return null;

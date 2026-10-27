@@ -132,8 +132,11 @@ def test_a_bot_takes_the_name_the_user_gives_it_in_its_chat(store, tmp_path):
     runner = Runner(store, crew_module.load(home), {"fake": FakeBackend()})
     chat = runner.chat("chief")
 
-    runner.set_name(chat.id, "  Roger ")
+    with runner.bus.subscribe() as heard:
+        runner.set_name(chat.id, "  Roger ")
+        told = [heard.get_nowait()["type"] for _ in range(heard.qsize())]
 
+    assert "bots" in told  # the app reads the bots again, so the new name shows
     assert runner.crew.bots["chief"].label == "Roger" and cards.card(home, "chief")["display_name"] == "Roger"
     assert crew_module.load(home).bots["chief"].mcp == runner.crew.bots["chief"].mcp  # the rest of its card as it was
     with pytest.raises(NotAllowed):  # work isn't where it's named

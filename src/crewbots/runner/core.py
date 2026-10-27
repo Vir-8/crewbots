@@ -323,6 +323,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         self._join_crew_room(added)
         self._wake_held()
         self.bus.publish({"type": "crew", "crew": self.state()})
+        self.bus.publish({"type": "bots"})  # names and setups the app shows may have changed
 
     def changes(self, task_id: str) -> str | None:
         """The task's diff against where its worktree started, or None if it has no worktree."""
