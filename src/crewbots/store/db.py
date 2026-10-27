@@ -228,6 +228,15 @@ create table if not exists digests (
 """
 SCHEMA += PROACTIVE
 
+# The chats you pinned to the top of the sidebar, in your order: kept here so a reinstall of the app keeps them.
+PINS = """
+create table if not exists pins (
+    key      text primary key,   -- a chat's: bot:<name> or room:<id>
+    position integer not null
+);
+"""
+SCHEMA += PINS
+
 # Full-text search over what the crew said and decided: the `recall` tool. Kept in step with events as they're added.
 # `search` matches words (stemmed); `trigrams`, the same rows, matches any three or more characters, for ids, paths
 # and parts of code names (migration 6).
@@ -363,6 +372,7 @@ MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] =
     ("trigram search, and a log of recall's queries", lambda db, _: _better_recall(db)),
     ("crew events, and standing intents", lambda db, _: db.executescript(HAPPENINGS)),
     ("what the crew raised on its own, and digests", lambda db, _: db.executescript(PROACTIVE)),
+    ("chats pinned to the top of the sidebar", lambda db, _: db.executescript(PINS)),
 ]
 
 

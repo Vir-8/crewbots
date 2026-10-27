@@ -6,6 +6,10 @@ import * as demo from "./demo";
 
 export const status: ConnectionStatus = { state: "connected", home: "design preview", ownsDaemon: false };
 
+/** The chats pinned to the top, in order. */
+export let pins = ["bot:chief", "room:r_crew000001"];
+export const setPins = (keys: string[]) => (pins = keys);
+
 export function chats() {
   const direct = demo.bots.map((b) => {
     const id = demo.chatIds[b.name];
@@ -23,7 +27,7 @@ export function chats() {
     const last = demo.roomMessages.get(room.id)?.at(-1);
     return { key: `room:${room.id}`, kind: "group", title: room.title, bot: null, task_id: null, room, last: last ? { author: last.author, text: last.text, at: last.at } : null, unread: 0, working: false, updated_at: last?.at ?? room.updated_at };
   });
-  return [...direct, ...groups];
+  return [...direct, ...groups].map((c) => ({ ...c, pinned: pins.includes(c.key) ? pins.indexOf(c.key) : null }));
 }
 
 export const reviewInbox = {

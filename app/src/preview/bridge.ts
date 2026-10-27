@@ -4,7 +4,7 @@
 import { API_SCHEMA, API_VERSION } from "../api-types";
 import type { ConnectionStatus, Live, StoredEvent, Task } from "../types";
 import * as demo from "./demo";
-import { chats, crewState, mcpServers, plans, previewFiles, reviewDrafts, reviewInbox, routines, skills, status, usageSummary } from "./fixtures";
+import { chats, crewState, mcpServers, pins, plans, previewFiles, setPins, reviewDrafts, reviewInbox, routines, skills, status, usageSummary } from "./fixtures";
 
 type Listener<T> = (payload: T) => void;
 const liveListeners = new Set<Listener<Live>>();
@@ -65,6 +65,13 @@ async function request(method: string, path: string, body?: any) {
     return ok({ ...crewState });
   }
   if (method === "GET" && url.pathname === "/chats") return ok(chats());
+  if (url.pathname === "/pins") {
+    if (method === "PUT") {
+      setPins([...new Set<string>(body.pins)]);
+      setTimeout(() => publish({ type: "pins", pins }), 0);
+    }
+    return ok({ pins });
+  }
   if (method === "POST" && parts[0] === "chats" && parts[1] === "bot") {
     const chat = demo.chatIds[parts[2]];
     return request("POST", `/tasks/${chat}/messages`, body);

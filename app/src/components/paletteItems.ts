@@ -1,6 +1,7 @@
 // What the command palette offers: every chat and group, thread, pull request and page, and the app's commands.
 
 import type { Crew } from "../state";
+import { movePin, pinsOf } from "../sidebar";
 import { oneLine } from "../state";
 import type { Item } from "./Palette";
 import { labelOf } from "./Avatar";
@@ -53,6 +54,11 @@ export function paletteItems(crew: Crew, current: string | null, go: Go): Item[]
     { key: "cmd:sidebar", title: "Show or hide the sidebar", icon: "sidebar", group: "Command", run: go.sidebar },
     { key: "cmd:new-bot", title: "New bot", icon: "plus", group: "Command", run: () => go.editBot("") },
   );
+  if (chat) {
+    const pins = pinsOf(crew.chats);
+    const pinned = pins.includes(chat.key);
+    items.push({ key: "cmd:pin", title: pinned ? "Unpin this chat" : "Pin this chat to the top", icon: "plus", group: "Command", run: () => crew.setPins(movePin(pins, chat.key, pinned ? null : pins.length)) });
+  }
   if (chat?.kind === "direct") {
     items.push({ key: "cmd:status", title: "Status", sub: "This chat's model, session and context, and its plan's limits", icon: "settings", group: "Command", run: () => go.panel("status") });
   }

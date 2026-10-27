@@ -1,4 +1,4 @@
-"""Group chats, their messages, and how far each conversation has been seen."""
+"""Group chats, their messages, how far each conversation has been seen, and the chats pinned to the top."""
 
 import json
 import uuid
@@ -40,6 +40,7 @@ class Rooms:
         self.db.execute("delete from reads where key = ? or key in (select 'seat:' || value from json_each(?))",
                         (f"room:{room_id}", json.dumps(seats)))
         self.db.execute("delete from room_messages where room_id = ?", (room_id,))
+        self.db.execute("delete from pins where key = ?", (f"room:{room_id}",))
         self.db.execute("delete from rooms where id = ?", (room_id,))
 
     def rooms(self) -> list[dict[str, Any]]:
@@ -69,6 +70,15 @@ class Rooms:
     def seen(self, key: str) -> int:
         row = self.db.execute("select seen from reads where key = ?", (key,)).fetchone()
         return row["seen"] if row else 0
+
+    def pins(self) -> list[str]:
+        """The chats pinned to the top of the sidebar, in the user's order: `bot:<name>` and `room:<id>`."""
+        return [r["key"] for r in self.db.execute("select key from pins order by position")]
+
+    def set_pins(self, keys: list[str]) -> list[str]:
+        self.db.execute("delete from pins")
+        self.db.executemany("insert into pins (key, position) values (?, ?)", [(k, i) for i, k in enumerate(keys)])
+        return self.pins()
 
     def mark_seen(self, key: str, seen: int) -> None:
         self.db.execute("insert into reads (key, seen) values (?, ?) on conflict(key) do update set"

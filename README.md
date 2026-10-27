@@ -233,6 +233,9 @@ The app works like a messaging app:
 - **Commands:** typing / in any message box offers the app's own commands; Tab or Enter runs one without sending
   anything. `/usage` shows what's left on your Claude and Codex plans, above the box. `/status` shows the chat's model
   and effort, its session, how full its context is, and its plan's limits.
+- **Pinned chats** stay at the top of the sidebar in your order, above the rest by recent activity: right-click a chat
+  to pin or unpin it, drag a pinned one (or drop another among them) to move it, or ⌥↑ ⌥↓ on it. The daemon keeps the
+  order, so a reinstalled app has it too.
 - **⌘K** goes anywhere: type a few letters of any chat, group, bot, thread, pull request or page, or run a command
   (a new group chat, pause or resume the crew, usage, status, a bot's card, the sidebar). What you picked lately comes
   first.

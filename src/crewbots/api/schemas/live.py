@@ -25,6 +25,10 @@ class LiveRoomMessage(BaseModel):
     type: Literal["room_message"]
     message: RoomMessageOut
 
+class LivePins(BaseModel):
+    type: Literal["pins"]
+    pins: list[str]
+
 class LiveTask(BaseModel):
     type: Literal["task"]
     task: TaskOut
@@ -33,5 +37,5 @@ class LiveEvent(BaseModel):
     type: Literal["event"]
     event: EventOut
 
-LiveMessage = Annotated[LiveTask | LiveEvent | LiveCrew | LiveRoom | LiveRoomGone | LiveRoomMessage,
+LiveMessage = Annotated[LiveTask | LiveEvent | LiveCrew | LiveRoom | LiveRoomGone | LiveRoomMessage | LivePins,
                         Field(discriminator="type")]

@@ -654,3 +654,50 @@
   background: var(--line-soft);
   margin: 4px 6px;
 }
+
+/* Pinned chats: a label above them and the rest, a line where a dragged one would land, and a chat's own menu */
+.chat-list > .side-label {
+  padding: 8px 10px 2px;
+}
+
+.chat-row.dragging {
+  opacity: 0.45;
+}
+
+.chat-row.drop-before {
+  box-shadow: inset 0 2px 0 var(--blue);
+}
+
+.chat-row.drop-after {
+  box-shadow: inset 0 -2px 0 var(--blue);
+}
+
+.row-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 170px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.3);
+  display: flex;
+  flex-direction: column;
+}
+
+.row-menu-item {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.row-menu-item:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.row-menu-item:disabled {
+  color: var(--faint);
+}

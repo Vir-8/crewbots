@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { archivedApart, latestChat, orderChats } from "./sidebar";
+import { archivedApart, latestChat, movePin, orderChats, pinsOf } from "./sidebar";
 import type { Chat } from "./types";
 
 const chat = (key: string, updated: string, fields: Partial<Chat> = {}): Chat => ({
@@ -56,5 +56,28 @@ describe("archived group chats", () => {
   it("aren't opened when no conversation is", () => {
     expect(latestChat([chat("chief", "2026-10-26T09:00:00Z"), room("old", "2026-10-26T12:00:00Z")])).toBe("chief");
     expect(latestChat([])).toBeNull();
+  });
+});
+
+describe("pinned chats", () => {
+  const chats = [
+    chat("chief", "2026-10-26T09:00:00Z", { pinned: 1 }),
+    chat("critic", "2026-10-26T11:00:00Z"),
+    chat("engineer", "2026-10-26T08:00:00Z", { pinned: 0 }),
+    chat("reviewer", "2026-10-26T12:00:00Z"),
+  ];
+
+  it("come first in your order, the rest most recent first, and the latest chat is still the latest", () => {
+    expect(orderChats(chats, "").map((c) => c.key)).toEqual(["engineer", "chief", "reviewer", "critic"]);
+    expect(pinsOf(chats)).toEqual(["engineer", "chief"]);
+    expect(latestChat(chats)).toBe("reviewer");
+  });
+
+  it("move, pin and unpin", () => {
+    expect(movePin(["a", "b", "c"], "c", 0)).toEqual(["c", "a", "b"]);
+    expect(movePin(["a", "b", "c"], "a", 9)).toEqual(["b", "c", "a"]);
+    expect(movePin(["a", "b"], "z", 1)).toEqual(["a", "z", "b"]);
+    expect(movePin(["a", "b"], "a", null)).toEqual(["b"]);
+    expect(movePin(["a", "b"], "a", -1)).toEqual(["a", "b"]);
   });
 });

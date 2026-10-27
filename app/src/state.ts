@@ -85,6 +85,10 @@ export function useCrew() {
           reloadChats();
           return;
         }
+        if (message.type === "pins") {
+          reloadChats();
+          return;
+        }
         if (message.type === "room_message") {
           const m = message.message;
           setRoomMessages((current) => {
@@ -172,6 +176,11 @@ export function useCrew() {
     react: (id: number, reaction: "up" | "down") => act(api.react(id, reaction)),
     changeRoom: (roomId: string, change: RoomChange) => act(api.changeRoom(roomId, change)),
     deleteRoom: (roomId: string) => act(api.deleteRoom(roomId)),
+    /** Pins these chats to the top of the sidebar, in this order, at once here and then in the daemon. */
+    setPins: (keys: string[]) => {
+      setChats((current) => current.map((c) => ({ ...c, pinned: keys.includes(c.key) ? keys.indexOf(c.key) : null })));
+      return act(api.setPins(keys));
+    },
     newRoom: async (title: string, members: string[], lead?: string) => {
       const room = await act(api.newRoom(title, members, lead));
       loadChats();

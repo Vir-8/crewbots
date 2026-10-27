@@ -1,6 +1,6 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type DragEvent, type HTMLAttributes, type ReactNode, useEffect, useRef, useState } from "react";
 import type { Crew, InboxItem } from "../state";
-import { archivedApart, orderChats } from "../sidebar";
+import { archivedApart, movePin, orderChats, pinsOf } from "../sidebar";
 import { oneLine } from "../state";
 import type { Chat } from "../types";
 import { Avatar, GroupAvatar, labelOf } from "./Avatar";
@@ -60,6 +60,56 @@ export function Sidebar(props: {
   const [chats, archived] = archivedApart(orderChats(crew.chats, query, props.rail), props.rail ? "" : query);
   const [showArchived, setShowArchived] = useState(false);
   const needs = crew.inbox.filter((item) => item.task.kind === "thread");
+  // Pinned chats, at the top in your order: drag one, or ⌥↑ ⌥↓ on it, to move it; right-click a chat to pin it.
+  const pins = pinsOf(crew.chats);
+  const pin = (key: string, to: number | null) => crew.setPins(movePin(pins, key, to));
+  const [menu, setMenu] = useState<{ key: string; x: number; y: number } | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [drop, setDrop] = useState<{ key: string; after: boolean } | null>(null);
+  const rowProps = (chat: Chat): HTMLAttributes<HTMLButtonElement> & { draggable?: boolean } => {
+    const place = chat.pinned ?? null;
+    const over = (e: DragEvent<HTMLButtonElement>) => {
+      const box = e.currentTarget.getBoundingClientRect();
+      return e.clientY > box.top + box.height / 2;
+    };
+    return {
+      onContextMenu: (e) => {
+        e.preventDefault();
+        setMenu({ key: chat.key, x: e.clientX, y: e.clientY });
+      },
+      onKeyDown: (e) => {
+        if (!e.altKey || place === null || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+        e.preventDefault();
+        pin(chat.key, place + (e.key === "ArrowUp" ? -1 : 1));
+      },
+      draggable: !q,
+      onDragStart: (e) => {
+        e.dataTransfer.setData("text/plain", chat.key);
+        e.dataTransfer.effectAllowed = "move";
+        setDragging(chat.key);
+      },
+      onDragEnd: () => {
+        setDragging(null);
+        setDrop(null);
+      },
+      ...(place !== null && dragging && {
+        onDragOver: (e: DragEvent<HTMLButtonElement>) => {
+          e.preventDefault();
+          setDrop({ key: chat.key, after: over(e) });
+        },
+        onDrop: (e: DragEvent<HTMLButtonElement>) => {
+          e.preventDefault();
+          const at = place + (over(e) ? 1 : 0);
+          const from = pins.indexOf(dragging);
+          pin(dragging, from >= 0 && from < at ? at - 1 : at); // dropping a chat that isn't pinned pins it there
+          setDragging(null);
+          setDrop(null);
+        },
+      }),
+    };
+  };
+  const rowClass = (chat: Chat) =>
+    `${dragging === chat.key ? "dragging" : ""} ${drop?.key === chat.key && dragging !== chat.key ? (drop.after ? "drop-after" : "drop-before") : ""}`;
   const waiting = crew.reviewInbox?.assigned?.length ?? 0; // assigned to you; review requests are in the list itself
 
   if (props.rail) {
@@ -142,8 +192,12 @@ export function Sidebar(props: {
       )}
 
       <div className="chat-list">
-        {chats.map((chat) => (
-          <ChatRow key={chat.key} chat={chat} on={props.current === chat.key} onClick={() => props.onChat(chat.key)} />
+        {chats.map((chat, i) => (
+          <div key={chat.key} style={{ display: "contents" }}>
+            {i === 0 && chat.pinned != null && <div className="side-label">Pinned</div>}
+            {i > 0 && chat.pinned == null && chats[i - 1].pinned != null && <div className="side-label">Recent</div>}
+            <ChatRow chat={chat} on={props.current === chat.key} onClick={() => props.onChat(chat.key)} extra={rowProps(chat)} className={rowClass(chat)} />
+          </div>
         ))}
         {chats.length === 0 && <p className="side-empty">{q ? "Nothing matches." : "Connecting to your crew…"}</p>}
         {archived.length > 0 && (
@@ -158,7 +212,48 @@ export function Sidebar(props: {
       </div>
 
       <CrewMenu crew={crew} current={props.current} onPage={props.onChat} onNewGroup={props.onNewGroup} />
+      {menu && (
+        <RowMenu
+          at={menu}
+          place={pins.includes(menu.key) ? pins.indexOf(menu.key) : null}
+          last={pins.length - 1}
+          onPin={(to) => pin(menu.key, to)}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </aside>
+  );
+}
+
+/** A chat's own menu, where you right-clicked it: pin it to the top, unpin it, or move it among the pinned. */
+function RowMenu(props: { at: { x: number; y: number }; place: number | null; last: number; onPin: (to: number | null) => void; onClose: () => void }) {
+  const { place } = props;
+  useEffect(() => {
+    const close = (e: Event) => (e instanceof KeyboardEvent ? e.key === "Escape" && props.onClose() : props.onClose());
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", close);
+    window.addEventListener("blur", close);
+    return () => ["pointerdown", "keydown", "blur"].forEach((name) => window.removeEventListener(name, close));
+  }, []);
+  const item = (label: string, to: number | null, disabled = false) => (
+    <button
+      className="row-menu-item"
+      disabled={disabled}
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={() => {
+        props.onPin(to);
+        props.onClose();
+      }}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div className="row-menu" role="menu" style={{ left: props.at.x, top: props.at.y }} onPointerDown={(e) => e.stopPropagation()}>
+      {place === null ? item("Pin to the top", props.last + 1) : item("Unpin", null)}
+      {place !== null && item("Move up", place - 1, place === 0)}
+      {place !== null && item("Move down", place + 1, place === props.last)}
+    </div>
   );
 }
 
@@ -235,14 +330,14 @@ function CrewMenu({ crew, current, onPage, onNewGroup, rail }: { crew: Crew; cur
   );
 }
 
-function ChatRow({ chat, on, onClick }: { chat: Chat; on: boolean; onClick: () => void }) {
+function ChatRow({ chat, on, onClick, extra, className = "" }: { chat: Chat; on: boolean; onClick: () => void; extra?: HTMLAttributes<HTMLButtonElement>; className?: string }) {
   const preview = chat.last
     ? `${chat.kind === "group" ? `${chat.last.author === "user" ? "You" : labelOf(chat.last.author)}: ` : chat.last.author === "user" ? "You: " : ""}${oneLine(chat.last.text, 90)}`
     : chat.kind === "group"
       ? chat.room!.members.map(labelOf).join(", ")
       : "Say hello";
   return (
-    <button className={`chat-row ${on ? "on" : ""}`} onClick={onClick}>
+    <button className={`chat-row ${on ? "on" : ""} ${className}`} onClick={onClick} {...extra}>
       {chat.kind === "group" ? <GroupAvatar members={chat.room!.members} size={38} /> : <Avatar name={chat.bot!} size={38} working={chat.working} />}
       <span className="chat-row-text">
         <span className="chat-row-top">

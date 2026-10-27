@@ -1,12 +1,16 @@
 """Chats and group chats: the conversation list, reading them, and their messages."""
 
+import re
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
 from crewbots.api.context import Context
-from crewbots.api.schemas import ChatOut, Message, NewRoom, RoomChange, RoomMessageOut, RoomOut, TaskOut
+from crewbots.api.schemas import ChatOut, Message, NewRoom, Pins, RoomChange, RoomMessageOut, RoomOut, TaskOut
 from crewbots.store import Status
+
+MAX_PINS = 50
+PIN = re.compile(r"(bot|room):[\w.-]{1,64}")
 
 
 def routes(c: Context) -> APIRouter:
@@ -52,7 +56,23 @@ def routes(c: Context) -> APIRouter:
         """Every conversation: one with each bot, then the group chats (the crew's own is made the first time)."""
         if runner.crew.bots:
             runner.crew_room()
-        return [direct(b) for b in runner.crew.bots] + [group(r) for r in store.rooms()]
+        pinned = {key: n for n, key in enumerate(store.pins())}
+        listed = [direct(b) for b in runner.crew.bots] + [group(r) for r in store.rooms()]
+        return [{**c, "pinned": pinned.get(c["key"])} for c in listed]
+
+    @v1.get("/pins", response_model=Pins)
+    async def pins():
+        return {"pins": store.pins()}
+
+    @v1.put("/pins", response_model=Pins)
+    async def set_pins(body: Pins):
+        """Pins chats to the top of the sidebar, in this order; any not named are unpinned."""
+        keys = list(dict.fromkeys(body.pins))
+        if len(keys) > MAX_PINS or any(not PIN.fullmatch(k) for k in keys):
+            raise HTTPException(422, f"pins are up to {MAX_PINS} chats' keys: bot:<name> or room:<id>")
+        pins = store.set_pins(keys)
+        runner.bus.publish({"type": "pins", "pins": pins})
+        return {"pins": pins}
 
     @v1.post("/chats/bot/{bot}/messages", response_model=TaskOut)
     async def message_bot(bot: str, body: Message):

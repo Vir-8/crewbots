@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "d6c0d79bde42";
+export const API_SCHEMA = "117ba06c98c0";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -156,6 +156,7 @@ export interface ChatOut {
   unread: number;
   working: boolean;
   updated_at: string;
+  pinned?: number | null;
 }
 
 export interface Checks {
@@ -381,6 +382,11 @@ export interface LiveEvent {
   event: EventOut;
 }
 
+export interface LivePins {
+  type: "pins";
+  pins: string[];
+}
+
 export interface LiveRoom {
   type: "room";
   room: RoomOut;
@@ -525,6 +531,10 @@ export interface OutputOut {
   task_id: string;
   title: string;
   at: string;
+}
+
+export interface Pins {
+  pins: string[];
 }
 
 export interface PlanLimitOut {

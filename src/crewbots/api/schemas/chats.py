@@ -57,6 +57,12 @@ class ChatOut(BaseModel):
     unread: int
     working: bool
     updated_at: str
+    pinned: int | None = None  # its place among the chats pinned to the top of the sidebar
+
+
+class Pins(BaseModel):
+    pins: list[str]  # chats' keys, in the order they're pinned
+
 
 class AttachmentUpload(BaseModel):
     name: str
