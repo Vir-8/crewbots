@@ -128,6 +128,22 @@ describe("a bot's working, in a chat", () => {
     expect(answered).not.toContain("Don&#x27;t allow");
   });
 
+  it("marks where each message sits in a run from one side, which says where its time goes", () => {
+    const { crew, task } = chat(0);
+    const at = new Date(Date.UTC(2026, 9, 27, 7)).toISOString();
+    const later = new Date(Date.UTC(2026, 9, 27, 9)).toISOString(); // two hours on: a time break, and a new run
+    crew.events.set(task.id, [
+      { id: 1, task_id: task.id, kind: "text", data: { text: "Hey!" }, at },
+      { id: 2, task_id: task.id, kind: "text", data: { text: "Message me anytime." }, at },
+      { id: 3, task_id: task.id, kind: "text", data: { text: "Want to give me a name?" }, at },
+      { id: 4, task_id: task.id, kind: "message", data: { from: "user", text: "Roger" }, at },
+      { id: 5, task_id: task.id, kind: "message", data: { from: "user", text: "Morning" }, at: later },
+    ]);
+    const html = renderToStaticMarkup(<Thread crew={crew} task={task} onOpen={() => undefined} chat />);
+    const classes = [...html.matchAll(/class="((?:said|you)(?: [a-z-]+)*)"/g)].map((m) => m[1]);
+    expect(classes).toEqual(["said after-break continued", "said joined continued", "said joined", "you", "you after-break"]);
+  });
+
   it("says so when a bot takes the name it's given", () => {
     const { crew, task } = chat(0);
     const at = new Date(Date.UTC(2026, 9, 27, 7)).toISOString();

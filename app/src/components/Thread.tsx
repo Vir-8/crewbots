@@ -107,7 +107,7 @@ export function Thread(props: {
         )}
         {blocks.slice(start).map((block, i) => (
           <Boundary key={`${block.kind}-${block.id}`} where={`a message (${block.kind} ${block.id} in ${task.id})`}>
-            <BlockView block={block} crew={crew} lead={task.bot} onOpen={props.onOpen} afterBreak={breaks.has(start + i)} />
+            <BlockView block={block} crew={crew} lead={task.bot} onOpen={props.onOpen} afterBreak={breaks.has(start + i)} run={props.chat ? runOf(blocks, start + i, breaks) : ""} />
           </Boundary>
         ))}
         </Finding.Provider>
@@ -122,12 +122,24 @@ export function Thread(props: {
   );
 }
 
-function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id: string) => void; afterBreak: boolean }) {
+/** In a chat, where a message sits in a run of messages from one side with no time break between them, as classes:
+ * `joined` when one comes before it, `continued` when one comes after. */
+function runOf(blocks: Block[], i: number, breaks: Set<number>): string {
+  const side = (b?: Block) => (b?.kind === "you" ? "you" : b?.kind === "say" || b?.kind === "offer" ? "bot" : null);
+  const here = side(blocks[i]);
+  if (!here) return "";
+  return [side(blocks[i - 1]) === here && !breaks.has(i) ? "joined" : "", side(blocks[i + 1]) === here && !breaks.has(i + 1) ? "continued" : ""]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id: string) => void; afterBreak: boolean; run?: string }) {
+  const place = (base: string) => [base, props.afterBreak ? "after-break" : "", props.run ?? ""].filter(Boolean).join(" ");
   const { block } = props;
   switch (block.kind) {
     case "you":
       return (
-        <div className={props.afterBreak ? "you after-break" : "you"}>
+        <div className={place("you")}>
           {props.afterBreak && <TimeBreak at={block.at} />}
           <div className="message-row">
             <div className="message-body">
@@ -142,7 +154,7 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
       return <Brief from={block.from} text={block.text} at={block.at} />;
     case "say":
       return (
-        <div className={props.afterBreak ? "said after-break" : "said"}>
+        <div className={place("said")}>
           {props.afterBreak && <TimeBreak at={block.at} />}
           <div className="message-row">
             <div className="say">
@@ -167,7 +179,7 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
         </div>
       );
     case "offer":
-      return <Offer bot={props.lead} outcome={block.outcome} />;
+      return <Offer bot={props.lead} outcome={block.outcome} run={props.run} />;
     case "activity":
       return <Folded items={block.items} render={(item) => <BlockView block={item} crew={props.crew} lead={props.lead} onOpen={props.onOpen} afterBreak={false} />} />;
     case "work":

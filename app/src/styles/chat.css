@@ -405,26 +405,38 @@ button.chat-head-who:hover {
   margin-top: 0;
 }
 
-/* Messages from one side in a row, with no time between them, close up into one turn, as in Messages. */
-.thread-col.chat > .said + .said:not(.after-break),
-.thread-col.chat > .you + .you:not(.after-break) {
+/* Messages from one side in a row, with no time between them, close up into one turn, as in Messages: one that follows
+   another (.joined) sits close under it, and the corners between them tuck in. Its time and copy button go under the
+   message that ends the run, and beside one with more after it (.continued), where there's no room under it. */
+.thread-col.chat > .said.joined,
+.thread-col.chat > .you.joined {
   margin-top: -10px;
 }
 
-.thread-col.chat > .said + .said:not(.after-break) .say {
+.thread-col.chat > .said.joined .say {
   border-top-left-radius: 6px;
 }
 
-.thread-col.chat > .said:has(+ .said:not(.after-break)) .say {
+.thread-col.chat > .said.continued .say {
   border-bottom-left-radius: 6px;
 }
 
-.thread-col.chat > .you + .you:not(.after-break) .you-text {
+.thread-col.chat > .you.joined .you-text {
   border-top-right-radius: 6px;
 }
 
-.thread-col.chat > .you:has(+ .you:not(.after-break)) .you-text {
+.thread-col.chat > .you.continued .you-text {
   border-bottom-right-radius: 6px;
+}
+
+.thread-col.chat > .said:not(.continued) > .message-row {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.thread-col.chat > .you:not(.continued) > .message-row {
+  flex-direction: column;
+  align-items: flex-end;
 }
 
 .thread-col.chat > .work {
@@ -468,8 +480,13 @@ button.chat-head-who:hover {
   border-top-left-radius: 6px;
 }
 
-.room-message:has(+ .room-message) .room-bubble {
+.room-message:not(:last-child) .room-bubble {
   border-bottom-left-radius: 6px;
+}
+
+.thread-col.chat .room-message:last-child {
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .room-bubble {

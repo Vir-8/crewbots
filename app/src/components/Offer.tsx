@@ -8,13 +8,13 @@ export const Welcoming = createContext<{ customize: () => void } | null>(null);
 
 /** The chief's offer under its greeting: bring in what Claude Code and Codex already know, customize it, or not now.
  * Once answered, it says how, and stays in the chat with the rest. */
-export function Offer({ bot, outcome }: { bot: string; outcome?: Record<string, any> }) {
+export function Offer({ bot, outcome, run }: { bot: string; outcome?: Record<string, any>; run?: string }) {
   const actions = useContext(Welcoming);
   const [bringing, setBringing] = useState(false);
   const [declining, setDeclining] = useState(false);
   const name = labelOf(bot);
   return (
-    <div className="said offer">
+    <div className={["said offer", run].filter(Boolean).join(" ")}>
       <div className="say">
         To get started, I can bring in what Claude Code and Codex already know: the folders you've worked in, as projects, and what they remember
         about you and your work.

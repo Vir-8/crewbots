@@ -156,9 +156,12 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
           <div className="thread-col chat room">
             {groups.map((group) =>
               group.author === "user" ? (
-                group.messages.map((m) => (
+                group.messages.map((m, i, all) => (
                   <Boundary key={m.id} where={`a group chat message (${m.id})`}>
-                    <div className={breaks.has(m.id) ? "you after-break" : "you"} data-msg={m.id}>
+                    <div
+                      className={["you", breaks.has(m.id) ? "after-break" : i > 0 ? "joined" : "", i < all.length - 1 && !breaks.has(all[i + 1].id) ? "continued" : ""].filter(Boolean).join(" ")}
+                      data-msg={m.id}
+                    >
                       {breaks.has(m.id) && <TimeBreak at={m.at} />}
                       <div className="message-row">
                         <div className="message-body">
