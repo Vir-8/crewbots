@@ -428,7 +428,7 @@ select {
   top: 0;
   bottom: 0;
   width: 9px;
-  z-index: 20;
+  z-index: 13; /* over the panes beside it, under the edit sheet (15) and dialogs (20) that cover them */
   cursor: col-resize;
   touch-action: none;
   outline: none;
