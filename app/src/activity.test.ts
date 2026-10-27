@@ -26,6 +26,12 @@ describe("the crew's hand-offs", () => {
     expect([...tasks.values()].filter(handedOff).map((t) => t.id)).toEqual(["export", "question", "review", "earlier"]);
   });
 
+  it("leave out code review's own reviewers, which aren't the crew's bots", () => {
+    const lead = task("pr", "reviewer:claude:sonnet:high", { kind: "review" });
+    const second = task("pr2", "reviewer:codex:default:high", { kind: "review", parent_id: "pr", created_by: "reviewer:claude:sonnet:high" });
+    expect([lead, second].filter(handedOff)).toEqual([]);
+  });
+
   it("form chains from where a bot first handed work on, through the bots' own threads", () => {
     const [fromChat, ...rest] = chains(tasks);
     expect(rest).toEqual([]); // one chain for what was handed on from the chief's chat

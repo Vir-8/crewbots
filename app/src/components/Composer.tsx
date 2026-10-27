@@ -40,7 +40,7 @@ export function Composer(props: {
   const [files, setFiles] = useState<Pending[]>(kept?.files ?? []);
   useEffect(() => {
     // Only files that finished uploading are kept: they're in the crew's folder, and found again by their id.
-    const uploaded = files.filter((f) => f.id).map(({ key, name, kind, size, id }) => ({ key, name, kind, size, id }));
+    const uploaded = files.filter((f) => f.id).map(({ key, name, kind, size, id, path }) => ({ key, name, kind, size, id, path }));
     writeDraft(props.draft, { text, files: uploaded }, !text.trim() && !uploaded.length);
   }, [props.draft, text, files]);
   const [dropping, setDropping] = useState(false);

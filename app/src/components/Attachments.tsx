@@ -5,8 +5,8 @@ import type { Attachment } from "../types";
 import { Icon } from "./Icon";
 import "../styles/attachments.css";
 
-/** A file waiting in the message box: uploading, ready (with its id), or refused. */
-export type Pending = { key: string; name: string; kind: "image" | "file"; size: number; preview?: string; id?: string; error?: string };
+/** A file waiting in the message box: uploading, ready (with its id and where it's kept), or refused. */
+export type Pending = { key: string; name: string; kind: "image" | "file"; size: number; preview?: string; id?: string; path?: string; error?: string };
 
 const shown = new Map<string, string>(); // attachment id → data URL, for a picture in the message box
 
@@ -23,7 +23,7 @@ export function upload(files: File[], update: (key: string, fields: Partial<Pend
       try {
         const saved = await api.uploadAttachment(file.name || "pasted-image.png", url.slice(url.indexOf(",") + 1));
         if (kind === "image") shown.set(saved.id, url);
-        update(key, { id: saved.id });
+        update(key, { id: saved.id, path: saved.path });
       } catch (e) {
         update(key, { error: String(e).replace(/^Error: /, "") });
       }
@@ -33,19 +33,52 @@ export function upload(files: File[], update: (key: string, fields: Partial<Pend
   }
 }
 
-/** The files in the message box, above what you're typing. */
+/** The files in the message box, above what you're typing: a picture as a thumbnail you can click to see whole, any
+ * other file as a chip with its name. */
 export function PendingFiles({ items, onRemove }: { items: Pending[]; onRemove: (key: string) => void }) {
+  const [big, setBig] = useState<string | null>(null);
   return (
     <div className="pending-files" onClick={(e) => e.stopPropagation()}>
-      {items.map((p) => (
-        <span key={p.key} className={`file-chip ${p.error ? "error" : ""} ${p.id ? "" : "uploading"}`} title={p.error ?? p.name}>
-          {p.kind === "image" && (p.preview || p.id) ? <Thumb pending={p} /> : <Icon name="file" size={14} />}
-          <span className="file-chip-name">{p.error ? `${p.name}: ${p.error}` : p.name}</span>
-          <button className="file-chip-x" onClick={() => onRemove(p.key)} title="Remove">
-            <Icon name="x" size={11} />
-          </button>
-        </span>
-      ))}
+      {items.map((p) =>
+        p.kind === "image" && !p.error ? (
+          <span key={p.key} className={`pending-picture ${p.id ? "" : "uploading"}`}>
+            <button className="pending-picture-open" onClick={() => setBig(p.key)} title="See it whole">
+              <Thumb pending={p} />
+            </button>
+            <button className="pending-picture-x" onClick={() => onRemove(p.key)} title="Remove">
+              <Icon name="x" size={11} />
+            </button>
+          </span>
+        ) : (
+          <span key={p.key} className={`file-chip ${p.error ? "error" : ""} ${p.id ? "" : "uploading"}`} title={p.error ?? p.name}>
+            <Icon name="file" size={14} />
+            <span className="file-chip-name">{p.error ? `${p.name}: ${p.error}` : p.name}</span>
+            <button className="file-chip-x" onClick={() => onRemove(p.key)} title="Remove">
+              <Icon name="x" size={11} />
+            </button>
+          </span>
+        ),
+      )}
+      {big && <BigPicture pending={items.find((p) => p.key === big)} onClose={() => setBig(null)} />}
+    </div>
+  );
+}
+
+/** A picture in the message box, whole, over the window: Escape, the ×, or a click outside closes it. */
+function BigPicture({ pending, onClose }: { pending: Pending | undefined; onClose: () => void }) {
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [onClose]);
+  const src = pending?.preview ?? (pending?.id ? shown.get(pending.id) : undefined) ?? (pending?.path ? bridge.fileSrc(pending.path) : undefined);
+  if (!src) return null;
+  return (
+    <div className="lightbox" onClick={onClose} role="dialog" aria-label="The picture you're attaching">
+      <button className="icon-button lightbox-close" onClick={onClose} title="Close (Esc)">
+        <Icon name="x" size={18} />
+      </button>
+      <img className="lightbox-image" src={src} alt="" onClick={(e) => e.stopPropagation()} />
     </div>
   );
 }

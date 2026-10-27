@@ -13,9 +13,15 @@ export type Step = { task: Task; from: string; verb: Verb; depth: number };
  * everything handed on below that. */
 export type Chain = { steps: Step[]; from: Task | undefined; busy: boolean; updated_at: string };
 
-/** Whether a bot handed this task to another, rather than the user starting it or a bot opening it for itself. */
+/** Whether a bot handed this task to another, rather than the user starting it or a bot opening it for itself. Code
+ * review's own reviewers aren't the crew's bots: what they pass each other shows in Code review, not here. */
 export function handedOff(task: Task): boolean {
-  return Boolean(task.parent_id) && !["user", "crewbots", task.bot].includes(task.created_by) && !task.created_by.startsWith("routine");
+  return (
+    Boolean(task.parent_id) &&
+    task.kind !== "review" &&
+    !["user", "crewbots", task.bot].includes(task.created_by) &&
+    !task.created_by.startsWith("routine")
+  );
 }
 
 export function verbOf(task: Task): Verb {

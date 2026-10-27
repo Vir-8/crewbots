@@ -92,23 +92,27 @@ function ChainCard({ chain, where, onOpen }: { chain: Chain; where: string; onOp
   );
 }
 
+const SAID: Record<Step["verb"], string> = { asked: "asked", review: "asked for a review from", delegated: "handed work to" };
+
 function StepRow({ step, onOpen }: { step: Step; onOpen: (id: string) => void }) {
   const { task, from, verb } = step;
-  const said = verb === "asked" ? "asked" : verb === "review" ? "asked for a review from" : "handed work to";
   return (
     <button className="list-row activity-step" style={{ paddingLeft: 16 + step.depth * 24 }} onClick={() => onOpen(task.id)}>
-      <span className="activity-faces">
-        <Avatar name={from} size={22} />
-        <Avatar name={task.bot} size={22} />
+      <span className="activity-faces" aria-hidden>
+        <Avatar name={from} size={24} />
+        <Icon name="chevronRight" size={12} className="faint" />
+        <Avatar name={task.bot} size={24} />
       </span>
       <span className="list-text">
-        <span className="faint small">
-          {labelOf(from)} {said} {labelOf(task.bot)}
-        </span>
         <span className="list-title">{oneLine(task.title, 110)}</span>
+        <span className="faint small">
+          {labelOf(from)} {SAID[verb]} {labelOf(task.bot)}
+        </span>
       </span>
-      <StatusPill status={task.status} />
-      <span className="faint small activity-age">{ago(task.updated_at, true)}</span>
+      <span className="activity-state">
+        <StatusPill status={task.status} />
+        <span className="faint small">{ago(task.updated_at, true)}</span>
+      </span>
     </button>
   );
 }
