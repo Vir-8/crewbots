@@ -54,6 +54,8 @@ const tauriBridge = {
   onStatus: (callback: (status: ConnectionStatus) => void) => subscribe("crew:status", callback),
   onLive: (callback: (message: Live) => void) => subscribe("crew:live", callback),
   onResync: (callback: () => void) => subscribe<null>("crew:resync", () => callback()),
+  /** The crewbots menu in the menu bar: "check-updates" or "settings". */
+  onMenu: (callback: (item: string) => void) => subscribe<string>("app:menu", callback),
   // Dictation through macOS's on-device speech recognizer, in the shell (src-tauri/src/dictation.rs).
   dictation: {
     start: () => invoke<void>("dictation_start"),

@@ -10,7 +10,7 @@ const INSTALLED_EVERY_MS = 60_000;
 
 /** The daemon itself, when it isn't simply running: reconnecting, restarting once the crew is idle, or a different
  * version from this app. */
-export function CrewBanner({ crew }: { crew: Crew }) {
+export function CrewBanner({ crew, onUpdates }: { crew: Crew; onUpdates: () => void }) {
   const versions = useUpdate(crew);
   const ownState = useUpdates();
   const own = ownState.update; // an update to crewbots itself, from its checkout
@@ -59,7 +59,7 @@ export function CrewBanner({ crew }: { crew: Crew }) {
     ownState.error && ready(own) ? { text: `Couldn't install the update: ${ownState.error}`, bad: true, action: { label: "Try again", run: () => void install() } }
     : ready(own) ? { text: "An update to crewbots is built and ready", action: { label: "Install and restart", run: () => void install() } }
     : failed ? { text: `The update stopped at ${own!.release.step?.toLowerCase()}`, why: own!.release.log ?? undefined, bad: true, action: { label: "Try again", run: () => void start() } }
-    : own?.available ? { text: `An update to crewbots is ready: ${own.commits.length === 1 ? "1 change" : `${own.commits.length} changes`}`, why: own.commits.map((c) => `· ${c.subject}`).join("\n"), action: { label: "Update and restart", run: () => void start() } }
+    : own?.available ? { text: "A new version of crewbots is available", why: own.commits.map((c) => `· ${c.subject}`).join("\n"), action: { label: "See what's new", run: onUpdates } }
     : null);
   if (!update || dismissed === update.text) return null;
   return (
@@ -119,6 +119,5 @@ function useUpdate(crew: Crew): Update | null {
   if (daemon.api > API_VERSION)
     return { text: `This app is too old for the crew's daemon: install a new build`, why: `The app speaks API v${API_VERSION}; the daemon speaks v${daemon.api}.`, bad: true };
   if (daemon.schema_hash === API_SCHEMA) return null;
-  if (daemon.source_changed) return { text: "The crew's daemon has an update", why: `It runs ${daemon.build ?? "an older commit"}; its checkout has moved on.`, action: restartDaemon };
   return { text: "This app and the crew's daemon are different versions: install a new build of the app", why: `The app was built against API ${API_SCHEMA}; the daemon serves ${daemon.schema_hash}.` };
 }

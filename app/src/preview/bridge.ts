@@ -365,6 +365,7 @@ export const previewBridge = {
     return () => liveListeners.delete(callback);
   },
   onResync: (_callback: () => void) => () => undefined,
+  onMenu: (_callback: (item: string) => void) => () => undefined, // a browser has no app menu: ⌘K has the same
 };
 
 /** In a browser, dictation uses its own speech recognition where it has one (Chrome does). */

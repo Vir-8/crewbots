@@ -5,7 +5,6 @@ import { ModelPicker } from "../components/ModelPicker";
 import { Page, Segmented, Switch } from "../components/ui";
 import type { Crew } from "../state";
 import type { Reviewer } from "../types";
-import { check, install, ready, running, start, useUpdates } from "../updates";
 
 /** How crewbots itself is set up: starting at login, where the crew lives, GitHub, and code review's local copies. */
 export function Settings({ crew }: { crew: Crew }) {
@@ -94,19 +93,8 @@ export function Settings({ crew }: { crew: Crew }) {
             </span>
             <Switch on={Boolean(crew.crewState?.paused)} label="Pause the crew" onChange={(on) => crew.pause(on)} />
           </div>
-          <div className="list-row">
-            <span className="list-text">
-              <span className="list-title">Restart the crew's daemon</span>
-              <span className="faint">Once no turn is running: none starts meanwhile, and anything waiting carries on after.</span>
-            </span>
-            <button className="button small" disabled={Boolean(crew.crewState?.restarting)} onClick={() => crew.restart(true)}>
-              {crew.crewState?.restarting ? "Restarting when idle…" : "Restart when idle"}
-            </button>
-          </div>
         </div>
       </section>
-
-      <Updates />
 
       <section className="page-section">
         <h2>GitHub</h2>
@@ -227,68 +215,6 @@ function Reviewers({ crew }: { crew: Crew }) {
         )}
       </div>
       {error && <p className="error-text">{error}</p>}
-    </section>
-  );
-}
-
-/** Updating crewbots from its checkout: what's new, and the update that builds it, installs it, restarts the crew's
- * daemon once it's idle and then this app. */
-function Updates() {
-  const { update, checking, installing, error } = useUpdates();
-  const release = update?.release;
-  const busy = running(update) || installing;
-  const stopped = release?.state === "failed" && release.commit !== __APP_COMMIT__;
-  return (
-    <section className="page-section">
-      <h2>Updates</h2>
-      <div className="list">
-        <div className="list-row">
-          <span className="list-text">
-            <span className="list-title">
-              {installing ? "Updating: installing it…" : busy ? `Updating: ${release?.step?.toLowerCase() ?? "starting"}…` : ready(update) ? "An update is built and ready to install" : update?.available ? `${update.commits.length === 1 ? "1 change" : `${update.commits.length} changes`} since this build` : "crewbots is up to date"}
-            </span>
-            <span className="faint">
-              {busy
-                ? "The crew's daemon checks and builds it; then the app installs it over itself, the daemon restarts once the crew is idle, and the app restarts. A few minutes."
-                : `This app is ${__APP_COMMIT__ || "a development build"}${update?.daemon ? `, the crew's daemon ${update.daemon}` : ""}${update?.pull ? ". The changes come from GitHub." : "."}`}
-            </span>
-            {(update?.note || error) && !busy && <span className="faint">{error ?? update?.note}</span>}
-          </span>
-          {busy ? (
-            <span className="working-dot" />
-          ) : ready(update) ? (
-            <button className="button small primary" onClick={() => install()}>
-              Install and restart
-            </button>
-          ) : update?.available ? (
-            <button className="button small primary" onClick={() => start()}>
-              Update and restart
-            </button>
-          ) : (
-            <button className="button small" disabled={checking} onClick={() => check(true)}>
-              {checking ? "Checking…" : "Check for updates"}
-            </button>
-          )}
-        </div>
-        {update?.available && !busy && (
-          <ul className="update-changes">
-            {update.commits.slice(0, 12).map((c) => (
-              <li key={c.sha}>
-                {c.subject} <span className="faint mono small">{c.sha}</span>
-              </li>
-            ))}
-            {update.commits.length > 12 && <li className="faint">and {update.commits.length - 12} more</li>}
-          </ul>
-        )}
-        {stopped && (
-          <div className="list-row">
-            <span className="list-text">
-              <span className="list-title bad">The last update stopped at {release?.step?.toLowerCase()}</span>
-              {release?.log && <pre className="update-log">{release.log}</pre>}
-            </span>
-          </div>
-        )}
-      </div>
     </section>
   );
 }

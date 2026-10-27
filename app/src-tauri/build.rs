@@ -3,7 +3,17 @@ use std::process::Command;
 
 fn main() {
     dictation_helper();
+    commit();
     tauri_build::build()
+}
+
+/// The commit this build is made from, for About crewbots.
+fn commit() {
+    println!("cargo:rerun-if-changed=../../.git/HEAD");
+    println!("cargo:rerun-if-changed=../../.git/refs/heads");
+    let out = Command::new("git").args(["rev-parse", "--short=12", "HEAD"]).output();
+    let commit = out.ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    println!("cargo:rustc-env=CREWBOTS_COMMIT={}", commit.unwrap_or_else(|| "a local build".into()));
 }
 
 /// Builds crewbots-dictate (dictation/main.swift), which ships beside the app as a sidecar: macOS's speech recognizer

@@ -8,9 +8,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::SystemTime;
 
 use serde_json::{Value, json};
-use tauri::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
+use tauri::menu::{AboutMetadata, CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Manager, RunEvent, State, WindowEvent, Wry};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State, WindowEvent, Wry};
 use tauri_plugin_notification::NotificationExt;
 
 use crew::{ConnectionStatus, Crew};
@@ -158,8 +158,53 @@ fn on_menu(app: &AppHandle, event: MenuEvent) {
             });
         }
         "quit" => app.exit(0),
+        // The app menu's own: the window does them.
+        "check-updates" | "settings" => {
+            show_window(app);
+            let _ = app.emit("app:menu", event.id.as_ref());
+        }
         _ => {}
     }
+}
+
+/// The menu bar's menus: crewbots's own (About, Check for Updates…, Settings…, and the usual Hide and Quit), then
+/// Edit, View and Window as every Mac app has them.
+fn app_menu(app: &tauri::App) -> tauri::Result<Menu<Wry>> {
+    let about = AboutMetadata {
+        version: Some(format!("{} ({})", env!("CARGO_PKG_VERSION"), env!("CREWBOTS_COMMIT"))),
+        ..Default::default()
+    };
+    let crewbots = Submenu::with_items(app, "crewbots", true, &[
+        &PredefinedMenuItem::about(app, Some("About crewbots"), Some(about))?,
+        &PredefinedMenuItem::separator(app)?,
+        &MenuItem::with_id(app, "check-updates", "Check for Updates…", true, None::<&str>)?,
+        &MenuItem::with_id(app, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?,
+        &PredefinedMenuItem::separator(app)?,
+        &PredefinedMenuItem::services(app, None)?,
+        &PredefinedMenuItem::separator(app)?,
+        &PredefinedMenuItem::hide(app, Some("Hide crewbots"))?,
+        &PredefinedMenuItem::hide_others(app, None)?,
+        &PredefinedMenuItem::show_all(app, None)?,
+        &PredefinedMenuItem::separator(app)?,
+        &PredefinedMenuItem::quit(app, Some("Quit crewbots"))?,
+    ])?;
+    let edit = Submenu::with_items(app, "Edit", true, &[
+        &PredefinedMenuItem::undo(app, None)?,
+        &PredefinedMenuItem::redo(app, None)?,
+        &PredefinedMenuItem::separator(app)?,
+        &PredefinedMenuItem::cut(app, None)?,
+        &PredefinedMenuItem::copy(app, None)?,
+        &PredefinedMenuItem::paste(app, None)?,
+        &PredefinedMenuItem::select_all(app, None)?,
+    ])?;
+    let view = Submenu::with_items(app, "View", true, &[&PredefinedMenuItem::fullscreen(app, None)?])?;
+    let window = Submenu::with_items(app, "Window", true, &[
+        &PredefinedMenuItem::minimize(app, None)?,
+        &PredefinedMenuItem::maximize(app, Some("Zoom"))?,
+        &PredefinedMenuItem::separator(app)?,
+        &PredefinedMenuItem::close_window(app, None)?,
+    ])?;
+    Menu::with_items(app, &[&crewbots, &edit, &view, &window])
 }
 
 fn build_tray(app: &tauri::App, crew: &Crew) -> tauri::Result<()> {
@@ -214,6 +259,7 @@ pub fn run() {
         ])
         .setup(move |app| {
             LAUNCHED_BUILD.get_or_init(executable_time);
+            app.set_menu(app_menu(app)?)?;
             build_tray(app, &crew)?;
             files::allow(app.handle(), crew.home());
             tauri::async_runtime::spawn(crew.clone().run(app.handle().clone()));

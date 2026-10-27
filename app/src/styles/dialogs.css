@@ -195,3 +195,41 @@
 .shape.on {
   background: var(--raised);
 }
+
+/* crewbots → Check for Updates…: what an update brings, how it's going, and where the last one stopped */
+.updates-dialog {
+  width: 460px;
+}
+
+.updates-text {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--soft);
+}
+
+.updates-working {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13.5px;
+  color: var(--soft);
+}
+.update-changes {
+  margin: 0;
+  padding: 0 0 0 20px;
+  max-height: 240px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.update-log {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  max-height: 180px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--raised);
+  font: 11.5px/1.5 var(--mono);
+  white-space: pre-wrap;
+}

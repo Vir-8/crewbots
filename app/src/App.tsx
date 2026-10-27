@@ -5,6 +5,7 @@ import { CrewBanner } from "./components/CrewBanner";
 import { Icon } from "./components/Icon";
 import { Panel } from "./components/Panel";
 import { Palette } from "./components/Palette";
+import { UpdatesDialog } from "./components/UpdatesDialog";
 import { paletteItems } from "./components/paletteItems";
 import { showPanel } from "./components/Composer";
 import { Profile, RoomProfile } from "./components/Profile";
@@ -17,6 +18,7 @@ import { Settings } from "./pages/Settings";
 import { Activity } from "./pages/Activity";
 import { Analytics } from "./pages/Analytics";
 import { Tools } from "./pages/Tools";
+import { bridge } from "./api";
 import { latestChat } from "./sidebar";
 import type { Crew } from "./state";
 import { useCrew } from "./state";
@@ -56,6 +58,7 @@ export function App() {
   const [profileOn, setProfileOn] = useRemembered("crewbots.profile", true);
   const [newGroup, setNewGroup] = useState<{ title: string; members: string[] } | null>(null); // the dialog, and what it starts with
   const [palette, setPalette] = useState(false);
+  const [updates, setUpdates] = useState(false); // crewbots → Check for Updates…
   const [pull, setPull] = useState<{ repo: string; number: number } | null>(null); // one the palette went to
   const [sideOff, setSideOff] = useRemembered("crewbots.sidebar-hidden", false);
   // Code review needs the room: in a smaller window, the sidebar steps aside while you're there, without changing
@@ -97,6 +100,15 @@ export function App() {
     window.addEventListener("keydown", keys);
     return () => window.removeEventListener("keydown", keys);
   }, []);
+  // The crewbots menu in the menu bar.
+  useEffect(
+    () =>
+      bridge.onMenu((item) => {
+        if (item === "check-updates") setUpdates(true);
+        else if (item === "settings") setCurrent("page:settings");
+      }),
+    [],
+  );
   const go = {
     chat: (key: string) => {
       setCurrent(key);
@@ -111,6 +123,7 @@ export function App() {
     editBot: (name: string) => setEditing(name),
     panel: (name: string) => setTimeout(() => showPanel(name), 0), // once the palette has closed and focus is back
     sidebar: () => setSideHidden(!sideHidden),
+    updates: () => setUpdates(true),
   };
 
   // Open on the most recent conversation, or the task asked for in the URL.
@@ -235,7 +248,8 @@ export function App() {
         />
       )}
       {palette && <Palette items={paletteItems(crew, current, go)} onClose={() => setPalette(false)} />}
-      <CrewBanner crew={crew} />
+      {updates && <UpdatesDialog onClose={() => setUpdates(false)} />}
+      <CrewBanner crew={crew} onUpdates={() => setUpdates(true)} />
       {crew.error && (
         <div className="toast" onClick={crew.clearError}>
           <Icon name="alert" size={14} />
