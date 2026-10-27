@@ -1,0 +1,1 @@
+Change part of one of your pages: `find` is replaced by `replace`. find must be text that's in the page exactly once (copy it from the page as it is now); for bigger changes, write the page whole with write_page.

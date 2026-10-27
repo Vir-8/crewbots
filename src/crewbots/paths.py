@@ -37,6 +37,12 @@ def review_snapshots() -> Path:
     return root() / "reviews"
 
 
+def bot_folders() -> Path:
+    """Where each bot's own folder is, unless its role card names one: its chat works there, and what it makes for
+    itself (drafts, notes, renders) lands there, where you can find it."""
+    return home() / "Documents" / "Crewbots"
+
+
 def logs() -> Path:
     return root() / "logs"
 

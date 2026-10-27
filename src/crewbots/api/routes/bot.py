@@ -15,6 +15,8 @@ from crewbots.api.schemas import (
     HandoffBody,
     MergeProposal,
     OpenGroup,
+    PageEdit,
+    PageWrite,
     PostBody,
     ProposedRoutine,
     Recall,
@@ -36,8 +38,8 @@ def routes(c: Context) -> APIRouter:
 
     @v1.post("/bot/delegate", status_code=201)
     async def bot_delegate(request: Request, body: Delegation):
-        child = runner.delegate(request.state.task.id, body.bot, body.goal, workspace=body.workspace,
-                                review_of=body.review_of)
+        child = runner.delegate(request.state.task.id, body.bot, body.goal, project=body.project,
+                                workspace=body.workspace, review_of=body.review_of)
         return {"id": child.id, "bot": child.bot, "title": child.title, "status": child.status}
 
     @v1.post("/bot/open_group", status_code=201, response_model=RoomOut)
@@ -81,6 +83,16 @@ def routes(c: Context) -> APIRouter:
         note = runner.remember(request.state.task.id, body.title, body.body, shared=body.shared)
         return {"title": note.title, "path": str(note.path)}
 
+    @v1.post("/bot/write_page", status_code=201)
+    async def bot_write_page(request: Request, body: PageWrite):
+        page = runner.write_page(request.state.task.id, body.page, body.text)
+        return {"page": page.name, "path": str(page.path)}
+
+    @v1.post("/bot/edit_page")
+    async def bot_edit_page(request: Request, body: PageEdit):
+        page = runner.write_page(request.state.task.id, body.page, body.replace, find=body.find)
+        return {"page": page.name, "path": str(page.path)}
+
     @v1.post("/bot/forget")
     async def bot_forget(request: Request, body: Forget):
         note = runner.forget(request.state.task.id, body.name, shared=body.shared)
@@ -106,7 +118,7 @@ def routes(c: Context) -> APIRouter:
 
     @v1.post("/bot/start_thread", status_code=201)
     async def bot_start_thread(request: Request, body: ThreadBody):
-        thread = runner.start_thread(request.state.task.id, body.title, body.goal)
+        thread = runner.start_thread(request.state.task.id, body.title, body.goal, body.project)
         return {"id": thread.id, "bot": thread.bot, "title": thread.title, "status": thread.status}
 
     @v1.post("/bot/add_bot", status_code=201)

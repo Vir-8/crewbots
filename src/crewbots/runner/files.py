@@ -16,8 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from crewbots import attachments, paths
-from crewbots.backends import Access
-from crewbots.runner.common import WORK, NotAllowed
+from crewbots.runner.common import NotAllowed
 from crewbots.store import Task
 
 MAX_SHARED = 10  # files in one share
@@ -101,15 +100,13 @@ class Files:
         if task.worktree_path:
             return Path(task.worktree_path)
         bot = self.crew.bots.get(task.bot)
-        workspace = task.workspace or (bot.workspace if bot else None)
-        if workspace:
-            return Path(workspace).expanduser()
-        writes = bot is not None and bot.access is not Access.READ_ONLY and task.kind != "ask"
-        return self.crew.home / WORK / task.bot if writes else self.crew.home
+        if task.workspace or not bot:
+            return Path(task.workspace).expanduser() if task.workspace else self.crew.home
+        return self.crew.folder_of(bot)
 
     def _own_folders(self, task: Task) -> list[Path]:
         bot = self.crew.bots.get(task.bot)
-        folders = [task.worktree_path, task.workspace, bot.workspace if bot else None, self.crew.home / WORK / task.bot,
+        folders = [task.worktree_path, task.workspace, self.crew.folder_of(bot) if bot else None,
                    self.crew.home / attachments.FOLDER, paths.temp()]
         return [Path(f).expanduser().resolve() for f in folders if f]
 

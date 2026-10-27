@@ -104,7 +104,7 @@ def test_a_bots_instructions_start_the_same_for_every_task_so_the_prompt_cache_m
     with_a_note = loaded.system_prompt(chief)
 
     same = next(i for i, (a, b) in enumerate(zip(from_user, by_routine, strict=False)) if a != b)
-    assert "No notes yet.\n\n# This task\n\n" in from_user[:same]  # all that stays put comes first
+    assert "No notes yet.\n\n# Your scratchpad\n\n" in from_user[:same]  # all that stays put comes first
     assert "# team/protocol.md" in from_user[:same] and "# Skills" in from_user[:same]
     noted = next(i for i, (a, b) in enumerate(zip(from_user, with_a_note, strict=False)) if a != b)
     assert from_user.index("# Memory") < noted  # a new note changes only the end

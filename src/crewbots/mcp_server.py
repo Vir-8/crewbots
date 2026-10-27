@@ -52,6 +52,16 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
         call("POST", "/bot/review", {"verdict": verdict.lower(), "summary": summary, "findings": findings or []})
         return "Verdict recorded. End your reply with a short summary."
 
+    @server.tool(description=describe("write_page"))
+    def write_page(page: str, text: str) -> str:
+        written = call("POST", "/bot/write_page", {"page": page, "text": text})
+        return f"Wrote {written['page']} ({written['path']})."
+
+    @server.tool(description=describe("edit_page"))
+    def edit_page(page: str, find: str, replace: str) -> str:
+        written = call("POST", "/bot/edit_page", {"page": page, "find": find, "replace": replace})
+        return f"Changed {written['page']}."
+
     @server.tool(description=describe("remember"))
     def remember(title: str, body: str, shared: bool = False) -> str:
         note = call("POST", "/bot/remember", {"title": title, "body": body, "shared": shared})
@@ -84,8 +94,8 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
         return f"Kept this task's state ({call('POST', '/bot/update_state', {'state': state})['path']})."
 
     @server.tool(description=describe("start_thread"))
-    def start_thread(title: str, goal: str) -> str:
-        thread = call("POST", "/bot/start_thread", {"title": title, "goal": goal})
+    def start_thread(title: str, goal: str, project: str | None = None) -> str:
+        thread = call("POST", "/bot/start_thread", {"title": title, "goal": goal, "project": project})
         return f"Opened thread {thread['id']}: {thread['title']}. Its result comes back here when it's done."
 
     @server.tool(description=describe("post"))
@@ -114,8 +124,10 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
         return f"Asked {asked['bot']} ({asked['id']}). End your turn: the answer arrives as your next message."
 
     @server.tool(description=describe("delegate"))
-    def delegate(bot: str, goal: str, workspace: str | None = None, review_of: str | None = None) -> str:
-        task = call("POST", "/bot/delegate", {"bot": bot, "goal": goal, "workspace": workspace, "review_of": review_of})
+    def delegate(bot: str, goal: str, project: str | None = None, workspace: str | None = None,
+                 review_of: str | None = None) -> str:
+        task = call("POST", "/bot/delegate", {"bot": bot, "goal": goal, "project": project, "workspace": workspace,
+                                              "review_of": review_of})
         return f"Delegated {task['id']} to {task['bot']}: {task['title']}"
 
     @server.tool(description=describe("tasks"))

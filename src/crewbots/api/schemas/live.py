@@ -29,6 +29,11 @@ class LivePins(BaseModel):
     type: Literal["pins"]
     pins: list[str]
 
+class LivePage(BaseModel):
+    type: Literal["page"]
+    bot: str
+    page: str  # its name: written by the bot, or by the user from the app
+
 class LiveTask(BaseModel):
     type: Literal["task"]
     task: TaskOut
@@ -37,5 +42,5 @@ class LiveEvent(BaseModel):
     type: Literal["event"]
     event: EventOut
 
-LiveMessage = Annotated[LiveTask | LiveEvent | LiveCrew | LiveRoom | LiveRoomGone | LiveRoomMessage | LivePins,
+LiveMessage = Annotated[LiveTask | LiveEvent | LiveCrew | LiveRoom | LiveRoomGone | LiveRoomMessage | LivePins | LivePage,
                         Field(discriminator="type")]

@@ -9,6 +9,7 @@ from crewbots.store import Verdict
 class Delegation(BaseModel):
     bot: str
     goal: str
+    project: str | None = None
     workspace: str | None = None
     review_of: str | None = None
 
@@ -56,6 +57,15 @@ class Remember(BaseModel):
     body: str
     shared: bool = False
 
+class PageWrite(BaseModel):
+    page: str
+    text: str
+
+class PageEdit(BaseModel):
+    page: str
+    find: str
+    replace: str
+
 class Forget(BaseModel):
     name: str
     shared: bool = False
@@ -63,6 +73,7 @@ class Forget(BaseModel):
 class ThreadBody(BaseModel):
     title: str
     goal: str
+    project: str | None = None
 
 class PostBody(BaseModel):
     text: str

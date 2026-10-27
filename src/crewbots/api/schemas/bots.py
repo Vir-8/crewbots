@@ -34,6 +34,15 @@ class Budget(BaseModel):
     tokens: int
     per: Literal["day", "week"] = "week"
 
+class PageOut(BaseModel):
+    name: str
+    path: str
+    updated: str
+    text: str | None = None  # left out when listing
+
+class PageBody(BaseModel):
+    text: str
+
 class CardBody(BaseModel):
     """A role card's editable parts. Fields left out are left as they are."""
 

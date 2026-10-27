@@ -1,14 +1,16 @@
 """Bots: the crew's list, each bot's role card and profile, adding one, and the models they can run on."""
 
 import contextlib
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from crewbots import cards, mcp_catalog
+from crewbots import cards, mcp_catalog, pages
 from crewbots import models as models_module
 from crewbots.api.context import Context
-from crewbots.api.schemas import BotOut, CardBody, CardOut, ModelsOut, NewBot, ProfileOut
+from crewbots.api.schemas import BotOut, CardBody, CardOut, ModelsOut, NewBot, PageBody, PageOut, ProfileOut
+from crewbots.pages import PageError
 
 
 def routes(c: Context) -> APIRouter:
@@ -32,6 +34,35 @@ def routes(c: Context) -> APIRouter:
         if fields.get("avatar") is not None:
             fields["avatar"] = {k: v for k, v in fields["avatar"].items() if v}
         return fields
+
+    def pages_folder(bot: str):
+        if bot not in runner.crew.bots:
+            raise HTTPException(404, f"no bot named {bot!r}")
+        return runner.crew.pages_of(runner.crew.bots[bot])
+
+    @v1.get("/bots/{bot}/pages", response_model=list[PageOut])
+    async def bot_pages(bot: str):
+        """The bot's pages, its scratchpad first."""
+        return [_page_out(p) for p in pages.pages(pages_folder(bot))]
+
+    @v1.get("/bots/{bot}/pages/{name:path}", response_model=PageOut)
+    async def bot_page(bot: str, name: str):
+        folder = pages_folder(bot)
+        resolved = pages.resolve(folder, name)  # a [[link]] names a page by its own name too
+        try:
+            return _page_out(next(p for p in pages.pages(folder) if p.name == resolved), text=True)
+        except StopIteration:
+            raise HTTPException(404, f"no page named {name!r}") from None
+
+    @v1.put("/bots/{bot}/pages/{name:path}", response_model=PageOut)
+    async def put_bot_page(bot: str, name: str, body: PageBody):
+        """The user writes one of a bot's pages: it sees the change in its next turn."""
+        try:
+            page = pages.write(pages_folder(bot), name, body.text)
+        except PageError as e:
+            raise HTTPException(422, str(e)) from None
+        runner.bus.publish({"type": "page", "bot": bot, "page": page.name})
+        return _page_out(page, text=True)
 
     @v1.get("/bots/{name}/card", response_model=CardOut)
     async def get_card(name: str):
@@ -86,3 +117,8 @@ def routes(c: Context) -> APIRouter:
         return await models_module.models(fresh)
 
     return v1
+
+
+def _page_out(page: pages.Page, text: bool = False) -> dict[str, Any]:
+    return {"name": page.name, "path": str(page.path), "updated": datetime.fromtimestamp(page.updated).astimezone().isoformat(),
+            "text": page.path.read_text(errors="replace") if text else None}

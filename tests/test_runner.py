@@ -3,6 +3,7 @@ import asyncio
 import pytest
 from fakes import FakeBackend, bot, git_repo, make_crew, wait_until
 
+from crewbots import paths
 from crewbots.backends import Access
 from crewbots.events import Done, SessionStarted, Text
 from crewbots.runner import Runner, UnknownBot
@@ -49,7 +50,7 @@ async def test_the_bot_gets_its_role_card_and_the_team_files(store, tmp_path):
 
     prompt = backend.specs[0].system_prompt
     assert "You are the worker." in prompt and "# team/standards.md" in prompt and "Tests pass." in prompt
-    assert backend.specs[0].cwd == tmp_path  # no workspace: the crew's own folder
+    assert backend.specs[0].cwd == paths.bot_folders() / "worker"  # no workspace: its own folder, made for it
 
 
 async def test_a_follow_up_resumes_the_same_session(store, tmp_path):
@@ -226,11 +227,11 @@ async def test_a_writing_bot_never_works_in_the_crews_own_folder(store, tmp_path
     home = tmp_path / "crew"
     (home / "team").mkdir(parents=True)
     runner, backend = runner_for(store, home, bot("editor", access=Access.WORKSPACE_WRITE), bot("reader"))
-    own = runner.submit("editor", "tidy up")  # no folder of its own: it gets one in the crew's work/
-    look = runner.submit("reader", "look")  # reading the crew's folder is fine
+    own = runner.submit("editor", "tidy up")  # no folder named on its card: it works in its own
+    look = runner.submit("reader", "look")
     await wait_until(settled(store, own.id))
     await wait_until(settled(store, look.id))
-    assert {s.cwd.resolve() for s in backend.specs} == {home.resolve() / "work" / "editor", home.resolve()}
+    assert {s.cwd for s in backend.specs} == {paths.bot_folders() / "editor", paths.bot_folders() / "reader"}
 
     for folder in (home, home / "team", tmp_path):  # one that holds the crew's settings, it doesn't start in
         task = runner.submit("editor", "edit the cards", workspace=str(folder))

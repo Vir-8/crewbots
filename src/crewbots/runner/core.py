@@ -58,7 +58,6 @@ from crewbots.runner.checkins import Checkins
 from crewbots.runner.common import (
     MCP_COMMAND,
     MCP_SERVER_NAME,
-    WORK,
     Bus,
     NotAllowed,
     OpenSession,
@@ -515,7 +514,8 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
                          **({} if in_process else self._crew_tools(token, bot))},
             proactive=proactive,
             crew=CrewTools(self, task.id, bot.can_delegate) if in_process else None,
-            read_dirs=[*self.crew.skill_dirs, *[d for d in (self.crew.memory.root, self.crew.home / attachments_module.FOLDER)
+            read_dirs=[*self.crew.skill_dirs, *[d for d in (self.crew.memory.root, self.crew.home / attachments_module.FOLDER,
+                                                            self.crew.pages_of(bot))
                                                  if d.is_dir()]], timeout_s=bot.timeout_s,
             network=bot.network, effort=bot.effort, context_window=bot.context_window,
         )
@@ -564,31 +564,28 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
     def _cwd(self, task: Task, bot: Bot) -> Path:
         if task.worktree_path:
             return Path(task.worktree_path)
-        workspace = Path(task.workspace).expanduser() if task.workspace else bot.workspace or self.crew.home
+        workspace = Path(task.workspace).expanduser() if task.workspace else self.crew.folder_of(bot)
+        if not task.workspace and not bot.workspace:
+            workspace.mkdir(parents=True, exist_ok=True)  # the bot's own folder, made the first time it's needed
         if not workspace.is_dir():
             raise FileNotFoundError(f"workspace {workspace} does not exist")
         if bot.access is Access.READ_ONLY or task.kind == "ask":
             return workspace
         if not bot.worktree or not worktree.is_repo(workspace):
-            return self._in_place(workspace, bot, chosen=bool(task.workspace or bot.workspace))
+            return self._in_place(workspace)
         wt = worktree.create(workspace, task.id, root=self.worktree_root)
         self._set(task.id, repo=str(wt.repo), worktree_path=str(wt.path), branch=wt.branch, base=wt.base)  # watchers see it now
         self._record(task.id, kind="worktree", data={"path": str(wt.path), "branch": wt.branch, "base": wt.base})
         return wt.path
 
-    def _in_place(self, workspace: Path, bot: Bot, chosen: bool) -> Path:
-        """Where a bot that writes in place (not in a worktree) works. Never a folder that holds the crew's own
-        settings, which only the user changes: role cards, team rules, routines and the database. A writing bot
-        with no folder of its own gets one in the crew's work/ folder."""
+    def _in_place(self, workspace: Path) -> Path:
+        """Where a bot that writes in place (not in a worktree) works: never a folder that holds the crew's own
+        settings, which only the user changes (role cards, team rules, routines and the database)."""
         home, folder = self.crew.home.resolve(), workspace.resolve()
-        if folder.is_relative_to(home / WORK) or not (home.is_relative_to(folder) or folder.is_relative_to(home)):
-            return workspace
-        if chosen:
+        if home.is_relative_to(folder) or folder.is_relative_to(home):
             raise NotAllowed(f"{workspace} holds the crew's own settings, and a bot that writes can't work there; "
                              "give it a folder of its own")
-        own = home / WORK / bot.name
-        own.mkdir(parents=True, exist_ok=True)
-        return own
+        return workspace
 
     def _message(self, task_id: str, sender: str, text: str, attachments: list[dict[str, Any]] | None = None) -> None:
         self._record(task_id, kind="message", data={"from": sender, "text": text,

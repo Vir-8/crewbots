@@ -48,13 +48,15 @@ SPECS: dict[str, Spec] = {
             {"location": STRING, "problem": STRING, "scenario": STRING}, ["location", "problem"])},
     }, ["verdict", "summary"])),
     "remember": Spec(_object({"title": STRING, "body": STRING, "shared": {"type": "boolean"}}, ["title", "body"])),
+    "write_page": Spec(_object({"page": STRING, "text": STRING}, ["page", "text"])),
+    "edit_page": Spec(_object({"page": STRING, "find": STRING, "replace": STRING}, ["page", "find", "replace"])),
     "forget": Spec(_object({"name": STRING, "shared": {"type": "boolean"}}, ["name"])),
     "recall": Spec(_object({"query": STRING}, ["query"])),
     "update_state": Spec(_object({"state": STRING}, ["state"])),
     "remind_on": Spec(_object({"event": STRING, "match": STRING, "then": STRING}, ["event", "then"])),
     "propose_routine": Spec(_object({"name": STRING, "description": STRING, "goal": STRING, "schedule": STRING,
                                      "on": STRING, "repo": STRING}, ["name", "description", "goal"])),
-    "start_thread": Spec(_object({"title": STRING, "goal": STRING}, ["title", "goal"])),
+    "start_thread": Spec(_object({"title": STRING, "goal": STRING, "project": STRING}, ["title", "goal"])),
     "post": Spec(_object({"text": STRING, "room": STRING}, ["text"])),
     "share": Spec(_object({"files": STRINGS, "text": STRING, "room": STRING}, ["files"])),
     "ask": Spec(_object({"bot": STRING, "question": STRING}, ["bot", "question"])),
@@ -66,7 +68,8 @@ SPECS: dict[str, Spec] = {
          "access": {"type": "string", "enum": ["read_only", "workspace_write"]},
          "network": {"type": "boolean"}, "can_delegate": {"type": "boolean"}, "mcp": STRINGS, "skills": STRINGS},
         ["name", "title", "description", "instructions"]), coordinator_only=True),
-    "delegate": Spec(_object({"bot": STRING, "goal": STRING, "workspace": STRING, "review_of": STRING}, ["bot", "goal"])),
+    "delegate": Spec(_object({"bot": STRING, "goal": STRING, "project": STRING, "workspace": STRING,
+                              "review_of": STRING}, ["bot", "goal"])),
     "tasks": Spec(_object({}, [])),
     "message": Spec(_object({"task_id": STRING, "text": STRING}, ["task_id", "text"])),
     "propose_merge": Spec(_object({"task_id": STRING, "summary": STRING}, ["task_id", "summary"]), coordinator_only=True),
@@ -103,6 +106,7 @@ class CrewTools:
         from crewbots.attachments import AttachmentError
         from crewbots.crew import CrewError
         from crewbots.memory import MemoryError
+        from crewbots.pages import PageError
         from crewbots.runner import NotAllowed, UnknownBot
         from crewbots.store import Verdict
 
@@ -131,7 +135,8 @@ class CrewTools:
                     r.review(me, verdict, args["summary"], findings)
                     return "Verdict recorded. End your reply with a short summary."
                 case "delegate":
-                    child = r.delegate(me, args["bot"], args["goal"], workspace=args.get("workspace") or None,
+                    child = r.delegate(me, args["bot"], args["goal"], project=args.get("project") or None,
+                                       workspace=args.get("workspace") or None,
                                        review_of=args.get("review_of") or None)
                     return f"Delegated {child.id} to {child.bot}: {child.title}"
                 case "tasks":
@@ -147,6 +152,12 @@ class CrewTools:
                 case "remember":
                     note = r.remember(me, args["title"], args["body"], shared=bool(args.get("shared")))
                     return f"Remembered: {note.title} ({note.path})."
+                case "write_page":
+                    page = r.write_page(me, args["page"], args["text"])
+                    return f"Wrote {page.name} ({page.path})."
+                case "edit_page":
+                    page = r.write_page(me, args["page"], args["replace"], find=args["find"])
+                    return f"Changed {page.name}."
                 case "forget":
                     note = r.forget(me, args["name"], shared=bool(args.get("shared")))
                     return f"Forgot: {note.title}."
@@ -167,7 +178,7 @@ class CrewTools:
                     return (f"Added {added.label} (@{added.name}), {added.title}, to the crew. It's in the roster now: "
                             "@mention it in a group chat to bring it in.")
                 case "start_thread":
-                    thread = r.start_thread(me, args["title"], args["goal"])
+                    thread = r.start_thread(me, args["title"], args["goal"], args.get("project") or None)
                     return f"Opened thread {thread.id}: {thread.title}. Its result comes back here when it's done."
                 case "ask":
                     asked = r.ask(me, args["bot"], args["question"])
@@ -189,7 +200,7 @@ class CrewTools:
             self.runner.store.log_agent("refused", self.runner.store.get_task(self.task_id).bot, task_id=self.task_id,
                                         text=f"{name}: {e}")
             raise ToolRefused(str(e)) from None
-        except (UnknownBot, MemoryError, CrewError, AttachmentError) as e:
+        except (UnknownBot, MemoryError, CrewError, AttachmentError, PageError) as e:
             raise ToolRefused(str(e.args[0] if e.args else e)) from None
         raise ToolRefused(f"{name} is not implemented")
 

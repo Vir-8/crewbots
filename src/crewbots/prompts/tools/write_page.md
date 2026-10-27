@@ -1,0 +1,1 @@
+Write one of your pages whole, making it if it's new: your scratchpad (page "Scratchpad") or any page it links to. Pages are Markdown files in your own folder, and the user reads and edits them too. page: its name, with / for a subfolder ("Projects/Sky Islands"). text: all of it. Link other pages with [[Page name]].

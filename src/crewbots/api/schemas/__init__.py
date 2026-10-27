@@ -11,6 +11,8 @@ from crewbots.api.schemas.bot import (
     HandoffBody,
     MergeProposal,
     OpenGroup,
+    PageEdit,
+    PageWrite,
     PostBody,
     ProposedRoutine,
     Recall,
@@ -32,6 +34,8 @@ from crewbots.api.schemas.bots import (
     ModelsOut,
     NewBot,
     OutputOut,
+    PageBody,
+    PageOut,
     ProfileOut,
 )
 from crewbots.api.schemas.chats import (
@@ -73,6 +77,7 @@ from crewbots.api.schemas.live import (
     LiveCrew,
     LiveEvent,
     LiveMessage,
+    LivePage,
     LivePins,
     LiveRoom,
     LiveRoomGone,
@@ -90,6 +95,17 @@ from crewbots.api.schemas.mcp import (
     RegistryField,
     RegistryOption,
     SkillOut,
+)
+from crewbots.api.schemas.projects import (
+    BringIn,
+    BroughtIn,
+    FoundFolderOut,
+    FoundMemoryOut,
+    FoundOut,
+    NewProject,
+    ProjectBody,
+    ProjectOut,
+    ProjectsOut,
 )
 from crewbots.api.schemas.reviews import (
     Checks,
@@ -141,6 +157,20 @@ from crewbots.api.schemas.usage import (
 )
 
 __all__ = [
+    "LivePage",
+    "PageBody",
+    "PageOut",
+    "PageEdit",
+    "PageWrite",
+    "BringIn",
+    "BroughtIn",
+    "FoundFolderOut",
+    "FoundMemoryOut",
+    "FoundOut",
+    "NewProject",
+    "ProjectBody",
+    "ProjectOut",
+    "ProjectsOut",
     "AgentLogOut",
     "AskBody",
     "GroupMember",

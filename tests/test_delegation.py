@@ -2,6 +2,7 @@
 crewbots MCP tools reach through the daemon, as the task its run token belongs to."""
 
 import asyncio
+import dataclasses
 
 import pytest
 from fakes import FakeBackend, ScriptedCrew, bot, git_repo, make_crew, wait_until
@@ -11,6 +12,7 @@ from crewbots.api import create_app
 from crewbots.backends import Access
 from crewbots.crew_tools import CrewTools, ToolRefused
 from crewbots.events import Done
+from crewbots.projects import Project
 from crewbots.runner import MCP_SERVER_NAME, NotAllowed, Runner
 from crewbots.store import Status, Store
 
@@ -100,6 +102,28 @@ async def test_a_teammate_writes_in_place_only_where_the_user_said_work_goes(sto
         crew.runner.delegate(top.id, "editor", "cut it", workspace=str(fine))
     crew.runner.delegate(top.id, "reader", "look it over", workspace=str(elsewhere))  # reading is fine anywhere
     await wait_until(lambda: not crew.runner.running())
+
+
+async def test_work_on_a_project_runs_in_its_folder_which_the_user_gave_by_adding_it(store, tmp_path):
+    footage, game = tmp_path / "footage", git_repo(tmp_path / "game")
+    footage.mkdir()
+    crew = ScriptedCrew(store, tmp_path / "crew", chief(), bot("editor", access=Access.WORKSPACE_WRITE))
+    crew.runner.crew = dataclasses.replace(crew.runner.crew, projects={
+        "film": Project("film", footage, "The short film.", tmp_path / "film.md"),
+        "game": Project("game", game, "The game.", tmp_path / "game.md")})
+    top = store.create_task("chief", "plan")  # its chat, in no project
+
+    cut = crew.runner.delegate(top.id, "editor", "cut the trailer", project="film")  # not a repository: in place
+    fix = crew.runner.delegate(top.id, "editor", "fix the jump", project="game")  # a repository: its own worktree
+    plan = crew.runner.start_thread(top.id, "Plan the level", "plan it", project="game")
+    with pytest.raises(NotAllowed, match="no project named 'web'"):
+        crew.runner.delegate(top.id, "editor", "ship it", project="web")
+    await wait_until(lambda: not crew.runner.running())
+
+    assert footage in {s.cwd for s in crew.specs_for("editor")}
+    assert store.get_task(fix.id).repo == str(game) and store.get_task(fix.id).worktree_path
+    assert store.get_task(cut.id).workspace == store.get_task(plan.id).workspace.replace("game", "footage")
+    assert "- film (" in crew.specs_for("editor")[0].system_prompt  # every bot sees the projects
 
 
 async def test_a_reviewer_reads_the_worktree_of_the_work_it_reviews(store, tmp_path):

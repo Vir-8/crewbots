@@ -11,8 +11,9 @@ from typing import Any
 from crewbots import cards, prompts, worktree
 from crewbots import crew as crew_module
 from crewbots.backends import Access
-from crewbots.crew import Bot
+from crewbots.crew import Bot, CrewError
 from crewbots.events import Notice
+from crewbots.projects import Project
 from crewbots.runner.common import NotAllowed, UnknownBot, _clip
 from crewbots.runner.reviews import MAX_REVIEW_ROUNDS, _review_findings, _round_status
 from crewbots.store import Handoff, Review, Status, Task
@@ -25,19 +26,23 @@ MAX_OUT = 4  # tasks one bot has delegated that aren't finished yet, across all 
 class Delegation:
     """The part of Runner that opens threads, hands out work, and reports results back up."""
 
-    def start_thread(self, task_id: str, title: str, goal: str) -> Task:
-        """A bot opens a thread for itself, under the conversation it's in. Its result comes back there."""
+    def start_thread(self, task_id: str, title: str, goal: str, project: str | None = None) -> Task:
+        """A bot opens a thread for itself, under the conversation it's in, in a project's folder or the
+        conversation's own. Its result comes back there."""
         parent = self.store.get_task(task_id)
+        workspace = str(self._project(project).folder) if project else parent.workspace
         _not_answering(parent)
         if len(self.store.children(task_id)) >= self.max_children:
             raise NotAllowed(f"stop condition: this conversation already opened {self.max_children} threads. Finish or "
                              "report on those before opening more.")
-        return self.submit(parent.bot, goal, created_by=parent.bot, parent_id=task_id, workspace=parent.workspace,
+        return self.submit(parent.bot, goal, created_by=parent.bot, parent_id=task_id, workspace=workspace,
                            title=title)
 
-    def delegate(self, parent_id: str, bot: str, goal: str, *, workspace: str | None = None,
-                 review_of: str | None = None) -> Task:
+    def delegate(self, parent_id: str, bot: str, goal: str, *, project: str | None = None,
+                 workspace: str | None = None, review_of: str | None = None) -> Task:
         parent = self.store.get_task(parent_id)
+        if project and not review_of:
+            workspace = str(self._project(project).folder)  # the user's to give, and given by adding it
         _not_answering(parent)
         if bot not in self.crew.bots:
             raise UnknownBot(f"no bot named {bot!r}; the crew is {sorted(self.crew.bots)}")
@@ -79,12 +84,18 @@ class Delegation:
                     f"stop condition: {work.id} has had {MAX_REVIEW_ROUNDS} review rounds. Report to the user with the "
                     "best version and the open objections, instead of another round (team/rules.md).")
             workspace = work.worktree_path or work.workspace
-        elif workspace:
+        elif workspace and not project:
             self._check_folder(parent, bot, workspace)
         task = self.submit(bot, goal, created_by=parent.bot, parent_id=parent_id,
                            workspace=workspace or parent.workspace, review_of=review_of, review_version=version)
         self.store.log_agent("review" if review_of else "delegate", parent.bot, bot, task.id, text=goal)
         return task
+
+    def _project(self, name: str) -> Project:
+        try:
+            return self.crew.project(name)
+        except CrewError as e:
+            raise NotAllowed(str(e)) from None
 
     def _check_folder(self, parent: Task, bot: str, workspace: str) -> None:
         """Where a teammate writes in place is the user's say, not the delegating bot's: the folder of the work it's

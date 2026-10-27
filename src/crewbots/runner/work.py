@@ -4,8 +4,9 @@ keeps notes."""
 from pathlib import Path
 from typing import Any
 
-from crewbots import cards, prompts, worktree
+from crewbots import cards, pages, prompts, worktree
 from crewbots.memory import CREW_SCOPE, Note
+from crewbots.pages import Page
 from crewbots.routines import RoutineError
 from crewbots.runner.common import MergeError, NotAllowed
 from crewbots.runner.reviews import MAX_REVIEW_ROUNDS
@@ -23,6 +24,14 @@ class Work:
         self._record(task_id, kind="memory", data={"action": "remember", "scope": scope, "title": note.title,
                                                    "body": note.body, "path": str(note.path)})
         return note
+
+    def write_page(self, task_id: str, name: str, text: str, find: str | None = None) -> Page:
+        """One of the bot's pages, written whole, or with `find` replaced by `text`."""
+        task = self.store.get_task(task_id)
+        folder = self.crew.pages_of(self.crew.bots[task.bot])
+        page = pages.edit(folder, name, find, text) if find is not None else pages.write(folder, name, text)
+        self.bus.publish({"type": "page", "bot": task.bot, "page": page.name})
+        return page
 
     def remember_for(self, bot: str, text: str) -> Note:
         """A note the user gives a bot (`/remember`): its first line is the title. It's in the bot's chat as remembered,

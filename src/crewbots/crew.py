@@ -16,9 +16,12 @@ from typing import Any
 
 import yaml
 
+from crewbots import pages as pages_module
 from crewbots import paths, prompts
+from crewbots import projects as projects_module
 from crewbots.backends import BACKENDS, Access, McpServer
 from crewbots.memory import CREW_SCOPE, Memory
+from crewbots.projects import Project
 
 CARD_FIELDS = {
     "name", "title", "description", "backend", "model", "access", "workspace", "worktree", "timeout", "mcp",
@@ -86,6 +89,13 @@ class Skill:
     path: Path  # the SKILL.md; bots read it when a task matches
     source: str = "crew"  # the crew's skills/ folder, or the global folder it came from
 
+    @property
+    def gist(self) -> str:
+        """What it's for, short enough to list every skill in every bot's instructions: its description's first
+        sentence, the rest being in its SKILL.md."""
+        first = re.split(r"(?<=[.!?])\s", self.description, maxsplit=1)[0]
+        return first if len(first) <= 200 else first[:199].rsplit(" ", 1)[0] + "…"
+
 
 MCP_FILE = "mcp.json"  # the crew's MCP servers, in Claude's mcpServers shape
 MCP_NAME = re.compile(r"[A-Za-z0-9_-]+")  # a server's name becomes a config key in Codex
@@ -101,6 +111,14 @@ class Crew:
     global_skill_dirs: tuple[Path, ...] = ()
     mcp_servers: dict[str, McpServer] = field(default_factory=dict)  # the crew's own list (mcp.json)
     shadowed_skills: tuple[Skill, ...] = ()  # skills named like one found first, so not used
+    projects: dict[str, Project] = field(default_factory=dict)  # the user's, from projects/
+    project_errors: dict[str, str] = field(default_factory=dict)  # project files that couldn't be read, and why
+
+    def project(self, name: str) -> Project:
+        if name not in self.projects:
+            known = ", ".join(sorted(self.projects)) or "none yet: the user adds them in the app"
+            raise CrewError(f"no project named {name!r}; the projects are {known}")
+        return self.projects[name]
 
     @property
     def skills_dir(self) -> Path:
@@ -120,6 +138,14 @@ class Crew:
     def memory(self) -> Memory:
         return Memory(self.home)
 
+    def folder_of(self, bot: Bot) -> Path:
+        """The bot's own folder: where its chat, and work that isn't any project's, runs."""
+        return bot.workspace or paths.bot_folders() / bot.name
+
+    def pages_of(self, bot: Bot) -> Path:
+        """Where the bot's pages are, its scratchpad first: its own folder in Documents, wherever its chat runs."""
+        return paths.bot_folders() / bot.name
+
     @property
     def routines_dir(self) -> Path:
         return self.home / "routines"
@@ -132,15 +158,17 @@ class Crew:
             f"- {b.label} (@{b.name}, {b.title}){' ← you' if b.name == bot.name else ''}: {b.description}"
             for b in self.bots.values()
         )
-        parts = {"role": ("Your role card", bot.instructions.strip()), "crew": ("The crew", roster)}
+        parts = {"role": ("Your role card", bot.instructions.strip()), "crew": ("The crew", roster),
+                 "projects": ("Projects", projects_module.listing(self.projects) or "None yet.")}
         if skills := self.skills_for(bot):
-            parts["skills"] = ("Skills", "\n".join(f"- {s.name}: {s.description} ({s.path})" for s in skills))
+            parts["skills"] = ("Skills", "\n".join(f"- {s.name}: {s.gist} ({s.path})" for s in skills))
         parts |= {f"team/{name}": (f"team/{name}", text.strip()) for name, text in self.team_files.items()}
         memory = self.memory
         if core := [f"## {whose}\n\n{text}" for whose, text in (("Yours", memory.core(bot.name)),
                                                                  ("The crew's", memory.core(CREW_SCOPE))) if text]:
             parts["core"] = ("Core memory", "\n\n".join(core))
         parts["notes"] = ("Notes", memory.prompt(bot.name) or "No notes yet.")
+        parts["scratchpad"] = ("Your scratchpad", pages_module.for_instructions(self.pages_of(bot)))
         return parts
 
     def system_prompt(self, bot: Bot, delegated_by: str | None = None, reviewing: str | None = None,
@@ -154,6 +182,9 @@ class Crew:
             f"You are {bot.label}, the {bot.title} of a crew of AI agents run by crewbots. Your handle is @{bot.name}.",
             f"# Your role card\n\n{living['role'][1]}",
             f"# The crew\n\n{living['crew'][1]}",
+            "# Projects\n\nThe user's projects, each a folder of theirs. Work on one runs in its folder: name the project "
+            "when you open a thread for it or delegate it. Your chat isn't any one project's; it runs in your own "
+            f"folder, {_home_relative(self.folder_of(bot))}.\n\n{living['projects'][1]}",
             prompts.text("crew-tools", self.home) + "\n\n" + prompts.text("delegation", self.home)
             + ("\n\n" + prompts.text("coordinating", self.home) if bot.can_delegate else ""),
         ]
@@ -169,6 +200,8 @@ class Crew:
         parts.append(prompts.text("memory-guide", self.home) + f"\n\n{living['notes'][1]}")
         if recent:
             parts.append(f"# Lately\n\nThe last two days' logs, yours and the crew's, as this session began:\n\n{recent}")
+        parts.append(prompts.text("scratchpad-guide", self.home, folder=_home_relative(self.pages_of(bot)))
+                     + f"\n\n## Scratchpad\n\n{living['scratchpad'][1]}")
         parts.append("# This task\n\n" + (
             setting if setting else
             f"This task was delegated to you by {delegated_by}; your handoff goes back to them. Their goal is a "
@@ -188,6 +221,10 @@ class Crew:
 
 class CrewError(ValueError):
     pass
+
+
+def _home_relative(path: Path) -> str:
+    return str(path).replace(str(Path.home()), "~", 1) if path.is_relative_to(Path.home()) else str(path)
 
 
 def load(home: Path) -> Crew:
@@ -226,14 +263,16 @@ def load(home: Path) -> Crew:
             raise CrewError(f"{bot.name}: Codex can't use SSE MCP servers ({', '.join(sse)}); run it on Claude, or "
                             "use the server's streamable HTTP address")
         bots[name] = replace(bot, mcp={**named, **bot.mcp})
+    projects, project_errors = projects_module.load(home)
     return Crew(home=home, bots=bots, team_files=team_files, skills=skills, global_skill_dirs=global_dirs,
-                mcp_servers=servers, shadowed_skills=tuple(shadowed))
+                mcp_servers=servers, shadowed_skills=tuple(shadowed), projects=projects, project_errors=project_errors)
 
 
 def stamp(home: Path) -> tuple[tuple[str, int], ...]:
     """What the crew is made of on disk, as names and modification times: when it changes, the crew is read again."""
     home = home.expanduser()
     files = [*home.glob("bots/*.md"), *home.glob("team/*.md"), *home.glob("skills/**/SKILL.md"), *home.glob(MCP_FILE),
+             *home.glob(f"{projects_module.FOLDER}/*.md"),
              *(p for d in paths.global_skill_dirs() if d.is_dir() for p in d.rglob("SKILL.md"))]
     found = []
     for p in sorted(files):

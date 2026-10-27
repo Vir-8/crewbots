@@ -7,6 +7,7 @@ import pytest
 from fakes import ScriptedCrew, bot, wait_until
 from test_bot_api import ADMIN, as_bot, crew_app, start  # noqa: F401
 
+from crewbots import paths
 from crewbots.backends import Access
 from crewbots.crew_tools import CrewTools, ToolRefused
 from crewbots.events import Done
@@ -69,13 +70,10 @@ async def test_only_files_in_the_bots_own_folders(crew, store, tmp_path, studio)
         await tools.call("share", {"files": [f"{n}.png" for n in range(11)]})
     assert not (tmp_path / "attachments").exists()  # nothing copied for a share that was refused
 
-    own = tmp_path / "work" / "critic"  # a bot with no folder of its own shares from its folder in the crew
+    own = paths.bot_folders() / "critic"  # a bot with no folder named on its card shares from its own folder
     own.mkdir(parents=True)
     (own / "notes.md").write_text("# Notes")
-    with pytest.raises(ToolRefused, match="isn't in your folders"):  # a reader works in the crew's folder
-        await CrewTools(crew.runner, crew.runner.chat("critic").id, False).call("share", {"files": ["notes.md"]})
-    said = await CrewTools(crew.runner, crew.runner.chat("critic").id, False).call(
-        "share", {"files": [str(own / "notes.md")]})
+    said = await CrewTools(crew.runner, crew.runner.chat("critic").id, False).call("share", {"files": ["notes.md"]})
     assert "notes.md" in said
 
 

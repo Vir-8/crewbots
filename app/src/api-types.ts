@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "b3da616bdf9e";
+export const API_SCHEMA = "f3a4ab493edc";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -84,6 +84,17 @@ export interface BotUse {
   input: number;
   cached: number;
   written?: number;
+}
+
+export interface BringIn {
+  projects?: NewProject[];
+  memories?: string[];
+}
+
+export interface BroughtIn {
+  projects: ProjectOut[];
+  memories: number;
+  task_id: string | null;
 }
 
 export interface Budget {
@@ -222,6 +233,7 @@ export interface CursorOut {
 export interface Delegation {
   bot: string;
   goal: string;
+  project?: string | null;
   workspace?: string | null;
   review_of?: string | null;
 }
@@ -288,6 +300,28 @@ export interface FindingOut {
 export interface Forget {
   name: string;
   shared?: boolean;
+}
+
+export interface FoundFolderOut {
+  folder: string;
+  name: string;
+  about: string;
+  sources: string[];
+  sessions: number;
+  last_used: string;
+  memories: FoundMemoryOut[];
+  project: string | null;
+}
+
+export interface FoundMemoryOut {
+  path: string;
+  source: string;
+  title: string;
+}
+
+export interface FoundOut {
+  folders: FoundFolderOut[];
+  memories: FoundMemoryOut[];
 }
 
 export interface GroupMember {
@@ -380,6 +414,12 @@ export interface LiveCrew {
 export interface LiveEvent {
   type: "event";
   event: EventOut;
+}
+
+export interface LivePage {
+  type: "page";
+  bot: string;
+  page: string;
 }
 
 export interface LivePins {
@@ -499,6 +539,12 @@ export interface NewNote {
   text: string;
 }
 
+export interface NewProject {
+  name: string;
+  folder: string;
+  about?: string;
+}
+
 export interface NewRoom {
   title?: string;
   members: string[];
@@ -544,6 +590,28 @@ export interface OutputOut {
   task_id: string;
   title: string;
   at: string;
+}
+
+export interface PageBody {
+  text: string;
+}
+
+export interface PageEdit {
+  page: string;
+  find: string;
+  replace: string;
+}
+
+export interface PageOut {
+  name: string;
+  path: string;
+  updated: string;
+  text?: string | null;
+}
+
+export interface PageWrite {
+  page: string;
+  text: string;
 }
 
 export interface Pins {
@@ -602,6 +670,23 @@ export interface ProfileOut {
   last_active: string | null;
   threads: TaskOut[];
   outputs: OutputOut[];
+}
+
+export interface ProjectBody {
+  folder: string;
+  about?: string;
+}
+
+export interface ProjectOut {
+  name: string;
+  folder: string;
+  about: string;
+  missing: boolean;
+}
+
+export interface ProjectsOut {
+  projects: ProjectOut[];
+  errors: Record<string, string>;
 }
 
 export interface ProposedRoutine {
@@ -972,6 +1057,7 @@ export interface TaskStatus {
 export interface ThreadBody {
   title: string;
   goal: string;
+  project?: string | null;
 }
 
 export interface UpdateBody {
