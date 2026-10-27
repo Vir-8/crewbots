@@ -30,6 +30,7 @@ class ReleaseOut(BaseModel):
     started_at: int | None = None
     at: int | None = None
     log: str | None = None  # the end of its log, when it failed
+    bundle: str | None = None  # the app it built, for the app to install ("built")
 
 
 class UpdateOut(BaseModel):

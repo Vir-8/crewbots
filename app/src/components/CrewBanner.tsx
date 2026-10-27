@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, bridge } from "../api";
 import { API_SCHEMA, API_VERSION, type VersionOut } from "../api-types";
 import type { Crew } from "../state";
-import { running, start, useUpdates } from "../updates";
+import { install, ready, running, start, useUpdates } from "../updates";
 import { Icon } from "./Icon";
 
 const VERSION_EVERY_MS = 5 * 60_000;
@@ -12,7 +12,8 @@ const INSTALLED_EVERY_MS = 60_000;
  * version from this app. */
 export function CrewBanner({ crew }: { crew: Crew }) {
   const versions = useUpdate(crew);
-  const own = useUpdates().update; // an update to crewbots itself, from its checkout
+  const ownState = useUpdates();
+  const own = ownState.update; // an update to crewbots itself, from its checkout
   const [dismissed, setDismissed] = useState<string | null>(null);
 
   if (crew.status.state !== "connected") {
@@ -42,12 +43,12 @@ export function CrewBanner({ crew }: { crew: Crew }) {
       </div>
     );
   }
-  if (running(own)) {
+  if (running(own) || ownState.installing) {
     return (
       <div className="crew-banner" role="status">
         <span className="working-dot" />
         <span>
-          Updating crewbots: {own!.release.step?.toLowerCase() ?? "starting"}
+          Updating crewbots: {ownState.installing ? "installing it" : own!.release.step?.toLowerCase() ?? "starting"}
           <span className="faint"> · the app restarts itself when it's done</span>
         </span>
       </div>
@@ -55,7 +56,9 @@ export function CrewBanner({ crew }: { crew: Crew }) {
   }
   const failed = own?.release.state === "failed" && own.release.commit !== __APP_COMMIT__;
   const update: Update | null = versions ?? (
-    failed ? { text: `The update stopped at ${own!.release.step?.toLowerCase()}`, why: own!.release.log ?? undefined, bad: true, action: { label: "Try again", run: () => void start() } }
+    ownState.error && ready(own) ? { text: `Couldn't install the update: ${ownState.error}`, bad: true, action: { label: "Try again", run: () => void install() } }
+    : ready(own) ? { text: "An update to crewbots is built and ready", action: { label: "Install and restart", run: () => void install() } }
+    : failed ? { text: `The update stopped at ${own!.release.step?.toLowerCase()}`, why: own!.release.log ?? undefined, bad: true, action: { label: "Try again", run: () => void start() } }
     : own?.available ? { text: `An update to crewbots is ready: ${own.commits.length === 1 ? "1 change" : `${own.commits.length} changes`}`, why: own.commits.map((c) => `· ${c.subject}`).join("\n"), action: { label: "Update and restart", run: () => void start() } }
     : null);
   if (!update || dismissed === update.text) return null;

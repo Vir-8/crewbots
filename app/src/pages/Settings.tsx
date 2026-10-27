@@ -5,7 +5,7 @@ import { ModelPicker } from "../components/ModelPicker";
 import { Page, Segmented, Switch } from "../components/ui";
 import type { Crew } from "../state";
 import type { Reviewer } from "../types";
-import { check, running, start, useUpdates } from "../updates";
+import { check, install, ready, running, start, useUpdates } from "../updates";
 
 /** How crewbots itself is set up: starting at login, where the crew lives, GitHub, and code review's local copies. */
 export function Settings({ crew }: { crew: Crew }) {
@@ -234,9 +234,9 @@ function Reviewers({ crew }: { crew: Crew }) {
 /** Updating crewbots from its checkout: what's new, and the update that builds it, installs it, restarts the crew's
  * daemon once it's idle and then this app. */
 function Updates() {
-  const { update, checking, error } = useUpdates();
+  const { update, checking, installing, error } = useUpdates();
   const release = update?.release;
-  const busy = running(update);
+  const busy = running(update) || installing;
   const stopped = release?.state === "failed" && release.commit !== __APP_COMMIT__;
   return (
     <section className="page-section">
@@ -245,17 +245,21 @@ function Updates() {
         <div className="list-row">
           <span className="list-text">
             <span className="list-title">
-              {busy ? `Updating: ${release?.step?.toLowerCase() ?? "starting"}…` : update?.available ? `${update.commits.length === 1 ? "1 change" : `${update.commits.length} changes`} since this build` : "crewbots is up to date"}
+              {installing ? "Updating: installing it…" : busy ? `Updating: ${release?.step?.toLowerCase() ?? "starting"}…` : ready(update) ? "An update is built and ready to install" : update?.available ? `${update.commits.length === 1 ? "1 change" : `${update.commits.length} changes`} since this build` : "crewbots is up to date"}
             </span>
             <span className="faint">
               {busy
-                ? "Checks, a build of the app, installing it, and the crew's daemon restarted once it's idle; then the app restarts itself. A few minutes."
+                ? "The crew's daemon checks and builds it; then the app installs it over itself, the daemon restarts once the crew is idle, and the app restarts. A few minutes."
                 : `This app is ${__APP_COMMIT__ || "a development build"}${update?.daemon ? `, the crew's daemon ${update.daemon}` : ""}${update?.pull ? ". The changes come from GitHub." : "."}`}
             </span>
             {(update?.note || error) && !busy && <span className="faint">{error ?? update?.note}</span>}
           </span>
           {busy ? (
             <span className="working-dot" />
+          ) : ready(update) ? (
+            <button className="button small primary" onClick={() => install()}>
+              Install and restart
+            </button>
           ) : update?.available ? (
             <button className="button small primary" onClick={() => start()}>
               Update and restart

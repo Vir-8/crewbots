@@ -311,13 +311,14 @@ function bigDiff(): string {
   return out;
 }
 
-// An update to crewbots: three changes waiting; starting it walks through the release's steps, a few seconds each.
-const UPDATE_STEPS = ["Checks", "Building the app", "Installing it", "Restarting the daemon once the crew is idle"];
+// An update to crewbots: three changes waiting; starting it walks through the build's steps, a few seconds each, and
+// ends with a build for the app to install.
+const UPDATE_STEPS = ["Checks", "Building the app"];
 let updateStarted = 0;
 function previewUpdate(starting: boolean) {
   if (starting && !updateStarted) updateStarted = Date.now();
   const at = updateStarted ? Math.floor((Date.now() - updateStarted) / 3000) : -1;
-  const release = at < 0 ? {} : at < UPDATE_STEPS.length ? { state: "running", step: UPDATE_STEPS[at], commit: "f00dfeed1234" } : { state: "done", step: "Released", commit: "f00dfeed1234" };
+  const release = at < 0 ? {} : at < UPDATE_STEPS.length ? { state: "running", step: UPDATE_STEPS[at], commit: "f00dfeed1234" } : { state: "built", step: "Built", commit: "f00dfeed1234", bundle: "~/.crewbots/build/app/release/bundle/macos/crewbots.app" };
   return {
     app: __APP_COMMIT__, daemon: __APP_COMMIT__, head: "f00dfeed1234", available: at < 0, pull: true, note: null, release,
     commits: [
@@ -355,6 +356,7 @@ export const previewBridge = {
   startAtLogin: async (enabled?: boolean) => enabled ?? true,
   appInfo: async () => ({ installed_newer: new URLSearchParams(location.search).has("update") }), // ?update shows the banner
   restartApp: async () => location.assign(location.pathname),
+  installUpdate: async (_bundle: string) => "/Applications/crewbots.app",
   dictation: browserDictation(),
   onStatus: (_callback: Listener<ConnectionStatus>) => () => undefined,
   onLive: (callback: Listener<Live>) => {

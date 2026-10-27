@@ -1,6 +1,7 @@
 mod crew;
 mod dictation;
 mod files;
+mod update;
 mod watch;
 
 use std::sync::{Arc, Mutex, OnceLock};
@@ -86,6 +87,13 @@ fn restart_app(app: AppHandle) {
 #[tauri::command]
 fn selftest_wanted() -> bool {
     std::env::var("CREWBOTS_SELFTEST").is_ok()
+}
+
+/// With CREWBOTS_SELFTEST=update, the self-test also installs an update the daemon has built, the way Settings does,
+/// to see that macOS lets this app replace itself; it doesn't restart.
+#[tauri::command]
+fn selftest_update() -> bool {
+    std::env::var("CREWBOTS_SELFTEST").is_ok_and(|v| v == "update")
 }
 
 #[tauri::command]
@@ -192,6 +200,7 @@ pub fn run() {
             crew_request,
             menu_bar,
             selftest_wanted,
+            selftest_update,
             selftest_report,
             start_at_login,
             app_info,
@@ -200,7 +209,8 @@ pub fn run() {
             dictation::dictation_stop,
             files::show_files,
             files::open_file,
-            files::thumbnail
+            files::thumbnail,
+            update::install_update
         ])
         .setup(move |app| {
             LAUNCHED_BUILD.get_or_init(executable_time);

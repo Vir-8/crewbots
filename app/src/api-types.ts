@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "a08e3305dea4";
+export const API_SCHEMA = "b3da616bdf9e";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -714,6 +714,7 @@ export interface ReleaseOut {
   started_at?: number | null;
   at?: number | null;
   log?: string | null;
+  bundle?: string | null;
 }
 
 export interface Remember {

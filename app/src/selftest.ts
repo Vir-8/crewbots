@@ -69,6 +69,13 @@ export async function selftest() {
     report.liveCrewMessages = (await until(() => (crewMessages.length >= 2 ? crewMessages.length : 0), 10_000)) ?? 0;
     off();
     report.files = await checkFiles();
+    if (await invoke<boolean>("selftest_update")) {
+      const update = await api.update();
+      report.updateBuilt = update.release.state === "built" ? update.release.commit : update.release.state ?? "none";
+      if (update.release.state === "built" && update.release.bundle) {
+        report.updateInstalled = await bridge.installUpdate(update.release.bundle).then((to) => `into ${to}`, (e) => `failed: ${e}`);
+      }
+    }
   } catch (error) {
     report.error = String(error);
   }
