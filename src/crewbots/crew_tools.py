@@ -130,7 +130,8 @@ class CrewTools:
                     return "Handoff recorded. End your reply with a short summary."
                 case "escalate":
                     r.escalate(me, args["question"], args.get("choices"), bool(args.get("multiple")))
-                    return "Asked, so don't repeat the question. End your turn now; the answer will arrive as your next message."
+                    return ("Asked: they see your question, with its choices if it has any, and can answer in their own "
+                            "words. End your turn: the answer arrives as your next message.")
                 case "ask_permission":
                     r.ask_permission(me, args["what"], args.get("why") or "", args.get("kind") or "action",
                                      args.get("folder"))

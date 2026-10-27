@@ -192,6 +192,9 @@ class Delegation:
             return
         for s in finished:
             self.store.update_task(s.id, reported=True)
+        if told := self.brought_in(finished):  # starting a crew off: what the chief learned, to tell the user
+            self.send(parent.id, sender="crewbots", text=told)
+            return
         if parent.kind == "review":  # a review's reviewers: their findings, whole, for the lead to put together
             self.send(parent.id, sender="crewbots", text=_review_findings(parent, finished))
             return

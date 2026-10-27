@@ -20,7 +20,7 @@ from crewbots.runner.common import NotAllowed
 from crewbots.store import Task
 from crewbots.store.records import _now
 
-STARTED = "started"  # in the routines table: when the crew was started off, which happens once
+STARTED = "started"  # in the routines table: when the crew was started off (once), and the thread it learned in
 NAME_CHARS = 40  # of the name a bot goes by
 
 
@@ -63,8 +63,8 @@ class Welcome:
 
     def bring_in(self, projects: list[dict[str, Any]],
                  memories: list[discovery.FoundMemory]) -> tuple[list[Project], Task | None]:
-        """Adds the folders the user picked as projects, and has the chief learn from the memories they picked, in a
-        thread of its own. The crew's started off then."""
+        """Adds the folders the user picked as projects, and has the chief learn about them and from the memories
+        they picked, in a thread of its own. The crew's started off then."""
         added = [projects_module.save(self.crew.home, p["name"], Path(p["folder"]), p.get("about", "")) for p in projects]
         if added:
             loaded, errors = projects_module.load(self.crew.home)
@@ -75,14 +75,23 @@ class Welcome:
             return added, None
         chat = self.chat(chief.name)
         thread = None
-        if memories:
+        if memories or added:
             text, taken = discovery.digest(memories)
-            thread = self.submit(chief.name, prompts.text("bring-in", self.crew.home, memories=text),
+            thread = self.submit(chief.name, prompts.text("bring-in", self.crew.home, memories=text or "(none)"),
                                  parent_id=chat.id, title="Learn what Claude Code and Codex know", said_by="crewbots")
             self.store.mark_brought_in({str(path): print_ for path, print_ in taken.items()})
+            self.store.routine_ran(STARTED, _now(), thread.id)
         self._record(chat.id, kind="onboarding", data={"brought": {
             "projects": [p.name for p in added], "memories": len(memories), "thread": thread.id if thread else None}})
         return added, thread
+
+    def brought_in(self, finished: list[Task]) -> str | None:
+        """What the chief's chat hears when the thread it learned in finishes: what it found, and to tell the user,
+        then ask where to start. None for any other thread."""
+        learned = (self.store.routine_state(STARTED) or {}).get("last_task_id")
+        if len(finished) != 1 or not learned or finished[0].id != learned:
+            return None
+        return prompts.text("brought-in", self.crew.home, result=(finished[0].result or "").strip() or "(nothing)")
 
     def not_now(self) -> None:
         """The user would rather start without bringing anything in: the offer isn't made again."""

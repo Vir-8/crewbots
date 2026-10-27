@@ -90,9 +90,22 @@ async def test_bringing_in_adds_projects_and_learns_in_a_thread_of_its_own(store
     assert first.data["from"] == "crewbots" and "never painted pavements" in first.data["text"]  # out of view
     assert ("onboarding", {"brought": {"projects": ["sky-islands"], "memories": 1, "thread": thread.id}}) in kinds(
         store, chat.id)
-    assert any(e.kind == "message" and "Learn what Claude Code and Codex know" in e.data["text"]
-               for e in store.events(chat.id))  # the thread's result came back to the chat
+    told = [e.data["text"] for e in store.events(chat.id) if e.kind == "message" and e.data["from"] == "crewbots"]
+    assert told[-1].startswith("The thread you opened to learn what Claude Code and Codex know has finished")
+    assert store.get_task(thread.id).result in told[-1] and "The question, with `escalate`: where to start" in told[-1]
     assert runner.started() and runner.greet() is None
+
+
+async def test_folders_alone_are_still_learned_about(store, tmp_path):
+    runner = runner_for(store, tmp_path)
+    runner.greet()
+    game = paths.home() / "Games" / "Gold Hauler"
+    game.mkdir(parents=True)
+
+    _, thread = runner.bring_in([{"name": "gold-hauler", "folder": str(game)}], [])
+    await wait_until(lambda: not runner.running())
+
+    assert thread is not None and "(none)" in store.events(thread.id)[0].data["text"]  # it looks at the folders
 
 
 def test_not_now_is_remembered(store, tmp_path):

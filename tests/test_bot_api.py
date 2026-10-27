@@ -134,7 +134,8 @@ async def test_the_mcp_tools_call_the_daemon_as_the_task(crew_app):
     assert "Delegated t_" in str(result)
     assert [c.bot for c in store.children(chief_id)] == ["engineer"]
 
-    await server.call_tool("escalate", {"question": "Which?", "choices": [{"label": "A", "description": "the first"}]})
+    asked = await server.call_tool("escalate", {"question": "Which?", "choices": [{"label": "A", "description": "the first"}]})
+    assert "the answer arrives as your next message." in str(asked)
     assert store.events(chief_id)[-1].data == {"question": "Which?", "choices": [{"label": "A", "description": "the first"}],
                                                "multiple": False}
 
