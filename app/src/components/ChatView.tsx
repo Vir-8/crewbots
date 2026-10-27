@@ -108,7 +108,6 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
     return seat && ACTIVE.includes(seat.status);
   });
   const groups = useMemo(() => byAuthor(messages ?? []), [messages]);
-  const latest = messages?.at(-1)?.id; // its time always shows
   const find = useFind();
   const hits = useMemo(() => {
     const out: { el: () => Element | null | undefined; nth: number }[] = [];
@@ -159,7 +158,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
                     <div className="you" data-msg={m.id}>
                       {m.text && <div className="you-text">{withMentions(m.text)}</div>}
                       <Files items={m.attachments ?? []} mine />
-                      <MessageMeta at={m.at} text={m.text} latest={m.id === latest} />
+                      <MessageMeta at={m.at} text={m.text} />
                     </div>
                   </Boundary>
                 ))
@@ -180,7 +179,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
                             </div>
                           )}
                           <Files items={m.attachments ?? []} />
-                          <MessageMeta at={m.at} text={m.text} latest={m.id === latest} />
+                          <MessageMeta at={m.at} text={m.text} />
                         </div>
                       </Boundary>
                     ))}

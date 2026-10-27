@@ -50,7 +50,7 @@
   flex-direction: column;
 }
 
-/* When a message was sent and a copy button, under it: shown on hover, and always under the latest message. */
+/* When a message was sent and a copy button, under it: shown on hover. */
 .message-meta {
   display: flex;
   align-items: center;
@@ -77,8 +77,7 @@
 .you:hover > .message-meta,
 .said:hover > .message-meta,
 .room-message:hover > .message-meta,
-.message-meta:focus-within,
-.message-meta.latest {
+.message-meta:focus-within {
   opacity: 1;
 }
 

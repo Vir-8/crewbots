@@ -52,7 +52,6 @@ export function Thread(props: {
   const children = crew.children.get(task.id) ?? [];
   const blocks = useMemo(() => build(events ?? [], children, crew.tasks), [events, children, crew.tasks]);
   const active = ACTIVE.includes(task.status);
-  const latest = useMemo(() => blocks.map((b) => b.kind === "you" || b.kind === "say").lastIndexOf(true), [blocks]); // its time always shows
 
   // A long conversation draws only its latest blocks, and more as you scroll up to them, keeping your place: opening
   // one costs the same however long it is. `start` is the first block drawn; null follows the latest PAGE.
@@ -112,9 +111,9 @@ export function Thread(props: {
             Earlier messages
           </button>
         )}
-        {blocks.slice(start).map((block, i) => (
+        {blocks.slice(start).map((block) => (
           <Boundary key={`${block.kind}-${block.id}`} where={`a message (${block.kind} ${block.id} in ${task.id})`}>
-            <BlockView block={block} crew={crew} lead={task.bot} onOpen={props.onOpen} latest={start + i === latest} />
+            <BlockView block={block} crew={crew} lead={task.bot} onOpen={props.onOpen} />
           </Boundary>
         ))}
         </Finding.Provider>
@@ -306,7 +305,7 @@ function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>
   return out;
 }
 
-function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id: string) => void; latest: boolean }) {
+function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id: string) => void }) {
   const { block } = props;
   switch (block.kind) {
     case "you":
@@ -314,7 +313,7 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
         <div className="you">
           {block.text && <div className="you-text"><Marked text={block.text} /></div>}
           <Files items={block.files} mine />
-          <MessageMeta at={block.at} text={block.text} latest={props.latest} />
+          <MessageMeta at={block.at} text={block.text} />
         </div>
       );
     case "brief":
@@ -328,7 +327,7 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
             {block.files && <Files items={block.files} />}
             {block.raised && <Reactions crew={props.crew} id={block.raised} />}
           </div>
-          <MessageMeta at={block.at} text={block.text} latest={props.latest} />
+          <MessageMeta at={block.at} text={block.text} />
         </div>
       );
     case "steps":

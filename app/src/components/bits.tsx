@@ -80,8 +80,8 @@ export function fullDate(iso: string): string {
 }
 
 /** Under a message: when it was sent (the whole date on hover) and a button that copies what it says. Shown while the
- * pointer is on the message, and always under the latest one. */
-export function MessageMeta({ at, text, latest }: { at?: string; text?: string; latest?: boolean }) {
+ * pointer is on the message. */
+export function MessageMeta({ at, text }: { at?: string; text?: string }) {
   const [copied, setCopied] = useState(false);
   if (!at) return null;
   const copy = () =>
@@ -93,7 +93,7 @@ export function MessageMeta({ at, text, latest }: { at?: string; text?: string; 
       () => undefined,
     );
   return (
-    <div className={`message-meta ${latest ? "latest" : ""}`}>
+    <div className="message-meta">
       <time dateTime={at} title={fullDate(at)}>
         {stamp(at)}
       </time>
