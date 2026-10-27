@@ -257,3 +257,22 @@
   align-items: center;
   gap: 8px;
 }
+
+/* Settings, Updates: what an update would bring, and where the last one stopped */
+.update-changes {
+  margin: 0;
+  padding: 4px 16px 10px 32px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.update-log {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  max-height: 180px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--raised);
+  font: 11.5px/1.5 var(--mono);
+  white-space: pre-wrap;
+}

@@ -1,4 +1,5 @@
-"""The crew as a whole: pausing, restarting, reloading, the daemon's version, the app's errors, and the agent log."""
+"""The crew as a whole: pausing, restarting, reloading, the daemon's version and updating crewbots, the app's errors, and
+the agent log."""
 
 import asyncio
 import sys
@@ -9,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from crewbots import crew as crew_module
 from crewbots import typescript
-from crewbots.api.context import API_VERSION, Context, checkout_commit
+from crewbots.api.context import API_VERSION, PROJECT, Context, checkout_commit
 from crewbots.api.schemas import (
     AgentLogOut,
     ClientError,
@@ -22,8 +23,11 @@ from crewbots.api.schemas import (
     Reaction,
     RestartBody,
     TaskOut,
+    UpdateBody,
+    UpdateOut,
     VersionOut,
 )
+from crewbots.updates import UpdateError, Updates
 
 RESTART_EXIT = 75  # EX_TEMPFAIL: stopped to be started again
 CLIENT_ERRORS_PER_MINUTE = 30
@@ -49,6 +53,22 @@ def routes(c: Context) -> APIRouter:
         return runner.state()
 
     started_from = checkout_commit()
+    updates = Updates(PROJECT, started_from)
+
+    @v1.get("/update", response_model=UpdateOut)
+    async def check_update(app: str | None = None, fetch: bool = False):
+        """What updating crewbots from its checkout would bring (`fetch`: asking GitHub too), and how the last update
+        went."""
+        return await asyncio.to_thread(updates.check, app, fetch)
+
+    @v1.post("/update", response_model=UpdateOut, status_code=202)
+    async def start_update(body: UpdateBody):
+        """Updates crewbots: scripts/release, apart from the daemon, which it restarts once the crew is idle. The app
+        restarts itself into the new build once it's done."""
+        try:
+            return await asyncio.to_thread(updates.start, body.app)
+        except UpdateError as e:
+            raise HTTPException(409, str(e)) from None
 
     reported: deque[float] = deque()  # when the app last reported errors, so a part failing in a loop can't flood
 

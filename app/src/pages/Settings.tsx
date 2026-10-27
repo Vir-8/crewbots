@@ -5,6 +5,7 @@ import { ModelPicker } from "../components/ModelPicker";
 import { Page, Segmented, Switch } from "../components/ui";
 import type { Crew } from "../state";
 import type { Reviewer } from "../types";
+import { check, running, start, useUpdates } from "../updates";
 
 /** How crewbots itself is set up: starting at login, where the crew lives, GitHub, and code review's local copies. */
 export function Settings({ crew }: { crew: Crew }) {
@@ -104,6 +105,8 @@ export function Settings({ crew }: { crew: Crew }) {
           </div>
         </div>
       </section>
+
+      <Updates />
 
       <section className="page-section">
         <h2>GitHub</h2>
@@ -224,6 +227,64 @@ function Reviewers({ crew }: { crew: Crew }) {
         )}
       </div>
       {error && <p className="error-text">{error}</p>}
+    </section>
+  );
+}
+
+/** Updating crewbots from its checkout: what's new, and the update that builds it, installs it, restarts the crew's
+ * daemon once it's idle and then this app. */
+function Updates() {
+  const { update, checking, error } = useUpdates();
+  const release = update?.release;
+  const busy = running(update);
+  const stopped = release?.state === "failed" && release.commit !== __APP_COMMIT__;
+  return (
+    <section className="page-section">
+      <h2>Updates</h2>
+      <div className="list">
+        <div className="list-row">
+          <span className="list-text">
+            <span className="list-title">
+              {busy ? `Updating: ${release?.step?.toLowerCase() ?? "starting"}…` : update?.available ? `${update.commits.length === 1 ? "1 change" : `${update.commits.length} changes`} since this build` : "crewbots is up to date"}
+            </span>
+            <span className="faint">
+              {busy
+                ? "Checks, a build of the app, installing it, and the crew's daemon restarted once it's idle; then the app restarts itself. A few minutes."
+                : `This app is ${__APP_COMMIT__ || "a development build"}${update?.daemon ? `, the crew's daemon ${update.daemon}` : ""}${update?.pull ? ". The changes come from GitHub." : "."}`}
+            </span>
+            {(update?.note || error) && !busy && <span className="faint">{error ?? update?.note}</span>}
+          </span>
+          {busy ? (
+            <span className="working-dot" />
+          ) : update?.available ? (
+            <button className="button small primary" onClick={() => start()}>
+              Update and restart
+            </button>
+          ) : (
+            <button className="button small" disabled={checking} onClick={() => check(true)}>
+              {checking ? "Checking…" : "Check for updates"}
+            </button>
+          )}
+        </div>
+        {update?.available && !busy && (
+          <ul className="update-changes">
+            {update.commits.slice(0, 12).map((c) => (
+              <li key={c.sha}>
+                {c.subject} <span className="faint mono small">{c.sha}</span>
+              </li>
+            ))}
+            {update.commits.length > 12 && <li className="faint">and {update.commits.length - 12} more</li>}
+          </ul>
+        )}
+        {stopped && (
+          <div className="list-row">
+            <span className="list-text">
+              <span className="list-title bad">The last update stopped at {release?.step?.toLowerCase()}</span>
+              {release?.log && <pre className="update-log">{release.log}</pre>}
+            </span>
+          </div>
+        )}
+      </div>
     </section>
   );
 }

@@ -15,6 +15,40 @@ class PlanLimitOut(BaseModel):
     used_percent: float | None
     resets_at: int | None
 
+class UpdateCommit(BaseModel):
+    sha: str
+    at: str
+    subject: str
+
+
+class ReleaseOut(BaseModel):
+    """How the last update went, as scripts/release left it."""
+
+    state: str | None = None  # running, done or failed
+    step: str | None = None
+    commit: str | None = None  # what it releases
+    started_at: int | None = None
+    at: int | None = None
+    log: str | None = None  # the end of its log, when it failed
+
+
+class UpdateOut(BaseModel):
+    """What updating crewbots from its checkout would bring, and how the last update went."""
+
+    app: str | None  # the commit the asking app was built from
+    daemon: str | None  # the commit the daemon started from
+    head: str | None  # the checkout's
+    available: bool
+    commits: list[UpdateCommit]  # what's new, newest first
+    pull: bool  # it comes from GitHub, as a fast-forward
+    note: str | None  # why there's nothing to update to, when there's a reason
+    release: ReleaseOut
+
+
+class UpdateBody(BaseModel):
+    app: str | None = None  # the commit the app was built from
+
+
 class VersionOut(BaseModel):
     """What the daemon is, so the app can tell when one of them is out of date."""
 

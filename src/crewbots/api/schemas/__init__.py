@@ -62,7 +62,11 @@ from crewbots.api.schemas.crew import (
     PlanLimitOut,
     ProactiveOut,
     Reaction,
+    ReleaseOut,
     RestartBody,
+    UpdateBody,
+    UpdateCommit,
+    UpdateOut,
     VersionOut,
 )
 from crewbots.api.schemas.live import (
@@ -259,4 +263,8 @@ __all__ = [
     "UsagePeak",
     "UsageSummary",
     "VersionOut",
+    "UpdateCommit",
+    "ReleaseOut",
+    "UpdateOut",
+    "UpdateBody",
 ]

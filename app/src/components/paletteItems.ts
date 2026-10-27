@@ -2,6 +2,7 @@
 
 import type { Crew } from "../state";
 import { movePin, pinsOf } from "../sidebar";
+import { check } from "../updates";
 import { oneLine } from "../state";
 import type { Item } from "./Palette";
 import { labelOf } from "./Avatar";
@@ -52,6 +53,7 @@ export function paletteItems(crew: Crew, current: string | null, go: Go): Item[]
     { key: "cmd:pause", title: paused ? "Resume the crew" : "Pause the crew", sub: paused ? "Let bots start turns again" : "No new turns until you resume", icon: paused ? "play" : "pause", group: "Command", run: () => crew.pause(!paused) },
     { key: "cmd:usage", title: "Usage", sub: "What's left on your Claude and Codex plans", icon: "chart", group: "Command", run: () => (chat ? go.panel("usage") : go.chat("page:analytics")) },
     { key: "cmd:sidebar", title: "Show or hide the sidebar", icon: "sidebar", group: "Command", run: go.sidebar },
+    { key: "cmd:update", title: "Check for updates", sub: "Settings, Updates", icon: "repeat", group: "Command", run: () => { go.chat("page:settings"); void check(true); } },
     { key: "cmd:new-bot", title: "New bot", icon: "plus", group: "Command", run: () => go.editBot("") },
   );
   if (chat) {

@@ -1,6 +1,7 @@
 #!/bin/bash
 # Releases this checkout to this Mac: runs the checks, builds the app and installs it, restarts the crew's daemon once
-# no turn is running, relaunches the app (it keeps what you'd typed), and says what it did.
+# no turn is running, relaunches the app (it keeps what you'd typed), and says what it did. How far it got is in
+# ~/.crewbots/release.json, which the app reads when you update from it (Settings, Updates).
 #
 #   scripts/release              everything
 #   scripts/release --daemon     checks, then the daemon only: for changes that don't touch the app
@@ -15,13 +16,24 @@ daemon_only=false
 
 done_lines=()
 started=$SECONDS
+began=$(date +%s)
+commit=$(git rev-parse --short=12 HEAD)
+STATUS="$HOME/.crewbots/release.json"
+current="Starting"
+status() { # state, step: for the app, written whole so it never reads half of it
+  mkdir -p "$(dirname "$STATUS")"
+  printf '{"state": "%s", "step": "%s", "commit": "%s", "pid": %d, "started_at": %d, "at": %d}\n' \
+    "$1" "$2" "$commit" $$ "$began" "$(date +%s)" >"$STATUS.tmp" && mv "$STATUS.tmp" "$STATUS"
+}
+trap 'status failed "$current"' ERR
 step() {
   printf '\n\033[1m== %s\033[0m\n' "$1"
   step_started=$SECONDS
+  current="$1"
+  status running "$1"
 }
 did() { done_lines+=("$1 ($((SECONDS - step_started))s)"); }
 
-commit=$(git rev-parse --short HEAD)
 [[ -n "$(git status --porcelain)" ]] && echo "Note: the checkout has uncommitted changes; they go out too."
 
 step "Checks"
@@ -45,7 +57,9 @@ before=$(python3 -c "import json,os; print(json.load(open(os.path.expanduser('~/
 uv run crewbots restart --when-idle
 did "Restarted the daemon (pid $before before), from $commit"
 
-if ! $daemon_only; then
+if ! $daemon_only && [[ -n "${CREWBOTS_RELEASE_FROM_APP:-}" ]]; then
+  did "Left the relaunch to the app, which restarts itself into the new build"
+elif ! $daemon_only; then
   step "Relaunching the app"
   front=$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' 2>/dev/null || true)
   if pgrep -f "$APP/Contents/MacOS/crewbots" >/dev/null; then
@@ -61,5 +75,6 @@ if ! $daemon_only; then
   fi
 fi
 
+status done "Released"
 printf '\n\033[1mReleased %s in %ss:\033[0m\n' "$commit" "$((SECONDS - started))"
 printf '  - %s\n' "${done_lines[@]}"

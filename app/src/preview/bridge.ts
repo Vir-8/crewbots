@@ -58,6 +58,7 @@ async function request(method: string, path: string, body?: any) {
   if (method === "GET" && url.pathname === "/events/recent") return ok(allEvents.slice(-Number(url.searchParams.get("limit") ?? 400)));
   if (method === "GET" && url.pathname === "/events/cursor") return ok({ id: allEvents.at(-1)?.id ?? 0 });
   if (parts[0] === "bot") return { ok: false, status: 0, data: { detail: "not an app path" } };
+  if (url.pathname === "/update") return ok(previewUpdate(method === "POST"));
   if (method === "GET" && url.pathname === "/crew") return ok(crewState);
   if (method === "POST" && (url.pathname === "/crew/pause" || url.pathname === "/crew/resume")) {
     crewState.paused = url.pathname === "/crew/pause";
@@ -308,6 +309,23 @@ function bigDiff(): string {
     out += `diff --git a/gen/file_${f}.py b/gen/file_${f}.py\n--- a/gen/file_${f}.py\n+++ b/gen/file_${f}.py\n@@ -1,50 +1,60 @@\n${rows.join("\n")}\n`;
   }
   return out;
+}
+
+// An update to crewbots: three changes waiting; starting it walks through the release's steps, a few seconds each.
+const UPDATE_STEPS = ["Checks", "Building the app", "Installing it", "Restarting the daemon once the crew is idle"];
+let updateStarted = 0;
+function previewUpdate(starting: boolean) {
+  if (starting && !updateStarted) updateStarted = Date.now();
+  const at = updateStarted ? Math.floor((Date.now() - updateStarted) / 3000) : -1;
+  const release = at < 0 ? {} : at < UPDATE_STEPS.length ? { state: "running", step: UPDATE_STEPS[at], commit: "f00dfeed1234" } : { state: "done", step: "Released", commit: "f00dfeed1234" };
+  return {
+    app: __APP_COMMIT__, daemon: __APP_COMMIT__, head: "f00dfeed1234", available: at < 0, pull: true, note: null, release,
+    commits: [
+      { sha: "f00dfee", at: "", subject: "Check for updates and update from the app" },
+      { sha: "a1b2c3d", at: "", subject: "Pin chats to the top of the sidebar in your own order" },
+      { sha: "0ddba11", at: "", subject: "Find with ⌘F in chats, group chats and the thread beside them" },
+    ],
+  };
 }
 
 /** A file the preview draws: a demo file, or one you attached here. */

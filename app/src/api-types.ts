@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "c1e28bcf31d8";
+export const API_SCHEMA = "a08e3305dea4";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -706,6 +706,16 @@ export interface RegistryOption {
   fields: RegistryField[];
 }
 
+/** How the last update went, as scripts/release left it. */
+export interface ReleaseOut {
+  state?: string | null;
+  step?: string | null;
+  commit?: string | null;
+  started_at?: number | null;
+  at?: number | null;
+  log?: string | null;
+}
+
 export interface Remember {
   title: string;
   body: string;
@@ -961,6 +971,28 @@ export interface TaskStatus {
 export interface ThreadBody {
   title: string;
   goal: string;
+}
+
+export interface UpdateBody {
+  app?: string | null;
+}
+
+export interface UpdateCommit {
+  sha: string;
+  at: string;
+  subject: string;
+}
+
+/** What updating crewbots from its checkout would bring, and how the last update went. */
+export interface UpdateOut {
+  app: string | null;
+  daemon: string | null;
+  head: string | null;
+  available: boolean;
+  commits: UpdateCommit[];
+  pull: boolean;
+  note: string | null;
+  release: ReleaseOut;
 }
 
 export interface UsageCounts {
