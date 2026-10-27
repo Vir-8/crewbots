@@ -308,8 +308,10 @@ Then list skills on a role card, for example `skills: [pstack:tdd, pstack:archit
 ## Tests
 
 ```bash
-uv run pytest -q
+uv run pytest -q -n auto
 ```
+
+`-n auto` runs them across the Mac's cores (pytest-xdist): about 20 seconds rather than a minute.
 
 And the app's own logic (Markdown, diffs and find, mentions, commands, the sidebar's order), with Vitest:
 

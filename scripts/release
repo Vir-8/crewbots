@@ -58,7 +58,7 @@ if $from_app; then
 else
   step "Checks"
   uv run ruff check src tests
-  uv run pytest -q
+  uv run pytest -q -n auto # across the cores: about 20s rather than a minute
   (cd app && npx tsc --noEmit -p . && npm test --silent)
   did "Checks passed: ruff, pytest, tsc, the app's tests"
 fi
