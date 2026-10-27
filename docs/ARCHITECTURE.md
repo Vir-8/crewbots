@@ -528,6 +528,6 @@ Checked on Claude Code 2.1.310 and codex-cli 0.164.0 (26 October 2026), before b
 ## Still open
 
 - **Multiple crews:** whether crews share bots or memory (default: no, a crew is self-contained).
-- **The chat bridge:** which app, and how much the chief can do from it (default: read status, answer questions, approve nothing irreversible).
+- **The phone:** a Tauri 2 iOS build over the local network, paired by QR with a pinned certificate and revocable device tokens, through a second listener that's off by default ([PHONE.md](PHONE.md)). Designed, not built: it waits on a go-ahead for that listener and on signing the app.
 - **Evals for crew behavior:** a suite in the style of the refund harness's evals. Does the chief delegate instead of doing the work? Does a reviewer fail planted bugs? Scored in code against fake and real runs.
 - **Telemetry:** OpenTelemetry traces per task and turn, local only, for finding slow or expensive steps.
