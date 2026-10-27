@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "2db2430353ef";
+export const API_SCHEMA = "83e43712d286";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -193,6 +193,11 @@ export interface ChildOut {
   error?: string | null;
 }
 
+export interface Choice {
+  label: string;
+  description?: string | null;
+}
+
 /** Something in the app's window that failed, for the daemon's log: the app has no terminal of its own. */
 export interface ClientError {
   where: string;
@@ -275,6 +280,8 @@ export interface EffortUse {
 
 export interface Escalation {
   question: string;
+  choices?: Choice[];
+  multiple?: boolean;
 }
 
 export interface EventOut {
@@ -317,6 +324,8 @@ export interface FoundMemoryOut {
   path: string;
   source: string;
   title: string;
+  brought_at?: string | null;
+  changed?: boolean;
 }
 
 export interface FoundOut {

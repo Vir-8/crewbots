@@ -247,6 +247,15 @@ create table if not exists wakes (  -- an always-on bot's own looks around (runn
 """
 SCHEMA += WAKES
 
+BROUGHT_IN = """
+create table if not exists brought_in (  -- memories from Claude Code and Codex the chief has learned from
+    path        text primary key,
+    fingerprint text not null,  -- of what it said then: a different one now means it's changed since
+    at          text not null
+);
+"""
+SCHEMA += BROUGHT_IN
+
 # Full-text search over what the crew said and decided: the `recall` tool. Kept in step with events as they're added.
 # `search` matches words (stemmed); `trigrams`, the same rows, matches any three or more characters, for ids, paths
 # and parts of code names (migration 6).
@@ -384,6 +393,7 @@ MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] =
     ("what the crew raised on its own, and digests", lambda db, _: db.executescript(PROACTIVE)),
     ("chats pinned to the top of the sidebar", lambda db, _: db.executescript(PINS)),
     ("an always-on bot's looks around", lambda db, _: db.executescript(WAKES)),
+    ("memories brought in from Claude Code and Codex", lambda db, _: db.executescript(BROUGHT_IN)),
 ]
 
 

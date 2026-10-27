@@ -76,8 +76,10 @@ class Welcome:
         chat = self.chat(chief.name)
         thread = None
         if memories:
-            thread = self.submit(chief.name, prompts.text("bring-in", self.crew.home, memories=discovery.digest(memories)),
+            text, taken = discovery.digest(memories)
+            thread = self.submit(chief.name, prompts.text("bring-in", self.crew.home, memories=text),
                                  parent_id=chat.id, title="Learn what Claude Code and Codex know", said_by="crewbots")
+            self.store.mark_brought_in({str(path): print_ for path, print_ in taken.items()})
         self._record(chat.id, kind="onboarding", data={"brought": {
             "projects": [p.name for p in added], "memories": len(memories), "thread": thread.id if thread else None}})
         return added, thread

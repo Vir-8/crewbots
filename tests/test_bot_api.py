@@ -92,9 +92,13 @@ def test_handoffs_and_escalations_are_recorded_on_the_callers_task(crew_app):
 
     client.post("/bot/handoff", json={"done": "built", "output": ["a.py"]}, headers=as_bot(token)).raise_for_status()
     client.post("/bot/escalate", json={"question": "ship?"}, headers=as_bot(token)).raise_for_status()
+    where = {"question": "Where?", "choices": [{"label": "Staging"}, {"label": "Prod", "description": "now"}]}
+    client.post("/bot/escalate", json=where, headers=as_bot(token)).raise_for_status()
 
     assert store.latest_handoff(task_id).output == ["a.py"]
-    assert "escalation" in [e.kind for e in store.events(task_id)]
+    assert [e.data for e in store.events(task_id) if e.kind == "escalation"] == [
+        {"question": "ship?"},
+        {"question": "Where?", "choices": [{"label": "Staging"}, {"label": "Prod", "description": "now"}], "multiple": False}]
 
 
 def test_run_tokens_and_the_users_token_open_different_doors(crew_app):
@@ -129,6 +133,10 @@ async def test_the_mcp_tools_call_the_daemon_as_the_task(crew_app):
 
     assert "Delegated t_" in str(result)
     assert [c.bot for c in store.children(chief_id)] == ["engineer"]
+
+    await server.call_tool("escalate", {"question": "Which?", "choices": [{"label": "A", "description": "the first"}]})
+    assert store.events(chief_id)[-1].data == {"question": "Which?", "choices": [{"label": "A", "description": "the first"}],
+                                               "multiple": False}
 
 
 async def test_a_refusal_reaches_the_bot_as_a_tool_error_it_can_read(crew_app):

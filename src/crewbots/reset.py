@@ -27,10 +27,11 @@ DB = "crewbots.db"
 DAEMON_FILE = "daemon.json"
 KEPT = "kind = 'review'"  # code review's own tasks, which stay with their events
 FOLDERS = ("memory", "projects", "attachments")  # in the crew's folder
-# Tables of the crew's conversations, cleared whole. The rest stay: code review's drafts, the routines' state, what
-# triggers have started on, the digests sent and what the crew noticed around it, so what ran once doesn't again.
+# Tables of the crew's conversations, and of what was brought in for it, cleared whole. The rest stay: code review's
+# drafts, the routines' state, what triggers have started on, the digests sent and what the crew noticed around it, so
+# what ran once doesn't again.
 CLEARED = ("room_messages", "rooms", "handoffs", "pending_turns", "primed", "agent_log", "recall_log", "intents",
-           "proactive", "reads", "wakes")
+           "proactive", "reads", "wakes", "brought_in")
 
 
 class ResetError(RuntimeError):

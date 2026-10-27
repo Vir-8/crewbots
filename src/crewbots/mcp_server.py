@@ -43,8 +43,8 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
         return "Handoff recorded. End your reply with a short summary."
 
     @server.tool(description=describe("escalate"))
-    def escalate(question: str) -> str:
-        call("POST", "/bot/escalate", {"question": question})
+    def escalate(question: str, choices: list[dict[str, str]] | None = None, multiple: bool = False) -> str:
+        call("POST", "/bot/escalate", {"question": question, "choices": choices or [], "multiple": multiple})
         return "Escalated. End your turn now; the answer will arrive as your next message."
 
     @server.tool(description=describe("review"))

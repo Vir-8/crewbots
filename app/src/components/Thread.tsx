@@ -9,10 +9,12 @@ import { Markdown, MessageMeta, PageLinkTo, TimeBreak, timeBreaks } from "./bits
 import { Finding, Marked, count, useCurrentHit } from "./Find";
 import { Icon } from "./Icon";
 import { Offer } from "./Offer";
+import { Question } from "./Question";
 import { AskCard, Brief, Reactions, Steps, VerdictBlock } from "./ThreadParts";
 import { type Block, build, fold, said, summary } from "./threadBlocks";
 import { WorkCard } from "./WorkCard";
 import "../styles/chat.css";
+import "../styles/cards.css";
 
 const PAGE = 80; // blocks drawn when a conversation opens, and added each time you scroll up near the top
 
@@ -124,26 +126,32 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
   switch (block.kind) {
     case "you":
       return (
-        <div className="you">
+        <div className={props.afterBreak ? "you after-break" : "you"}>
           {props.afterBreak && <TimeBreak at={block.at} />}
-          {block.text && <div className="you-text"><Marked text={block.text} /></div>}
-          <Files items={block.files} mine />
-          <MessageMeta at={block.at} text={block.text} />
+          <div className="message-row">
+            <div className="message-body">
+              {block.text && <div className="you-text"><Marked text={block.text} /></div>}
+              <Files items={block.files} mine />
+            </div>
+            <MessageMeta at={block.at} text={block.text} />
+          </div>
         </div>
       );
     case "brief":
       return <Brief from={block.from} text={block.text} at={block.at} />;
     case "say":
       return (
-        <div className="said">
+        <div className={props.afterBreak ? "said after-break" : "said"}>
           {props.afterBreak && <TimeBreak at={block.at} />}
-          <div className="say">
-            {block.tag && <div className={`say-tag ${block.tag === "Needs you" ? "urgent" : ""}`}>{block.tag}</div>}
-            {block.text && <Markdown text={block.text} onSelect={props.onOpen} />}
-            {block.files && <Files items={block.files} />}
-            {block.raised && <Reactions crew={props.crew} id={block.raised} />}
+          <div className="message-row">
+            <div className="say">
+              {block.tag && <div className={`say-tag ${block.tag === "Needs you" ? "urgent" : ""}`}>{block.tag}</div>}
+              {block.text && <Markdown text={block.text} onSelect={props.onOpen} />}
+              {block.files && <Files items={block.files} />}
+              {block.raised && <Reactions crew={props.crew} id={block.raised} />}
+            </div>
+            <MessageMeta at={block.at} text={block.text} />
           </div>
-          <MessageMeta at={block.at} text={block.text} />
         </div>
       );
     case "steps":
@@ -173,15 +181,7 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
         </div>
       );
     case "ask":
-      return (
-        <div className="ask">
-          <div className="ask-head">
-            <Icon name="question" size={15} />
-            Needs your decision
-          </div>
-          <div className="ask-text"><Marked text={block.question} /></div>
-        </div>
-      );
+      return <Question crew={props.crew} block={block} />;
     case "held": {
       const still = props.crew.tasks.get(block.taskId)?.status === "held";
       return (

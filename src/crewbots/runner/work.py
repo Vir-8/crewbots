@@ -13,6 +13,10 @@ from crewbots.runner.reviews import MAX_REVIEW_ROUNDS
 from crewbots.sources import KINDS
 from crewbots.store import Handoff, Task
 
+CHOICES = 6  # offered with a question, at most
+LABEL_CHARS, DESCRIPTION_CHARS = 80, 240  # of a choice
+OTHER = {"other", "something else", "other (specify)", "other (please specify)"}  # the app always offers Other
+
 
 class Work:
     """The part of Runner that takes a bot's handoffs, questions, merge proposals and notes."""
@@ -172,17 +176,39 @@ class Work:
                              + (f" Open: {_short(open, 200)}" if open.strip() else ""))
         return handoff
 
-    def escalate(self, task_id: str, question: str) -> None:
-        """Marks the task as waiting on a decision. Its parent hears at once; a top-level task waits for the user."""
+    def escalate(self, task_id: str, question: str, choices: list[Any] | None = None, multiple: bool = False) -> None:
+        """Marks the task as waiting on an answer: a decision that isn't its bot's, or what's wanted when it's unsure.
+        With `choices`, the user picks one (or several, if `multiple`), or answers in their own words. Its parent
+        hears at once; a top-level task waits for the user."""
         task = self.store.get_task(task_id)
+        offered = _choices(choices)
         self._escalated.add(task_id)
-        self._record(task_id, kind="escalation", data={"question": question})
+        self._record(task_id, kind="escalation", data={"question": question} | (
+            {"choices": offered, "multiple": bool(multiple)} if offered else {}))
         if task.parent_id:
+            listed = "".join(f"\n- {c['label']}" + (f": {c['description']}" if "description" in c else "") for c in offered)
             self.store.update_task(task_id, reported=True)
             self.send(task.parent_id, sender="crewbots", text=(
                 f"{task.bot} escalated on task {task_id} ({task.title}):\n\n{question}\n\n"
-                f"Answer with message(task_id={task_id!r}, text=...), or escalate it to the user if the decision "
+                + (f"Its choices{' (any of them)' if multiple else ''}:{listed}\n\n" if offered else "")
+                + f"Answer with message(task_id={task_id!r}, text=...), or escalate it to the user if the decision "
                 "is theirs."))
+
+
+def _choices(given: list[Any] | None) -> list[dict[str, str]]:
+    """A question's choices as {label, description}: from labels, or labels with descriptions, without repeats and
+    without an "other" (the app always offers one)."""
+    out: list[dict[str, str]] = []
+    for item in given or []:
+        label, description = (item.get("label"), item.get("description")) if isinstance(item, dict) else (item, None)
+        label = _short(str(label or ""), LABEL_CHARS)
+        if not label or label.lower().rstrip(".:…") in OTHER or any(c["label"].lower() == label.lower() for c in out):
+            continue
+        choice = {"label": label}
+        if description and (description := _short(str(description), DESCRIPTION_CHARS)):
+            choice["description"] = description
+        out.append(choice)
+    return out[:CHOICES]
 
 
 def _short(text: str, chars: int) -> str:

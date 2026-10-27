@@ -1,5 +1,6 @@
 // Projects, what Claude Code and Codex know, and the bots' pages, for the preview's bridge.
 
+import type { FoundOut } from "../../api-types";
 import type { Live as LiveMessage } from "../../types";
 import { chatIds } from "./chats";
 import { emit } from "./make";
@@ -21,9 +22,9 @@ const projects = [
   { name: "acme-web", folder: "/Users/you/code/acme-web", about: "Acme's customer site: Next.js, deployed from main by you.", missing: false },
   { name: "export-service", folder: "/Users/you/code/export-service", about: "The service behind report exports.", missing: false },
 ];
-const found = {
+const found: FoundOut = {
   folders: [
-    { folder: "/Users/you/code/acme-web", name: "acme-web", about: "Acme's customer site.", sources: ["claude", "codex"], sessions: 42, last_used: new Date(Date.now() - 2 * 3600_000).toISOString(), memories: [{ path: "/Users/you/.claude/projects/acme-web/memory/MEMORY.md", source: "claude", title: "Its index" }, { path: "/Users/you/.claude/projects/acme-web/memory/deploys.md", source: "claude", title: "Deploys go out from main on Fridays only" }], project: "acme-web" },
+    { folder: "/Users/you/code/acme-web", name: "acme-web", about: "Acme's customer site.", sources: ["claude", "codex"], sessions: 42, last_used: new Date(Date.now() - 2 * 3600_000).toISOString(), memories: [{ path: "/Users/you/.claude/projects/acme-web/memory/MEMORY.md", source: "claude", title: "Its index", brought_at: new Date(Date.now() - 3 * 86400_000).toISOString() }, { path: "/Users/you/.claude/projects/acme-web/memory/deploys.md", source: "claude", title: "Deploys go out from main on Fridays only", brought_at: new Date(Date.now() - 3 * 86400_000).toISOString(), changed: true }], project: "acme-web" },
     { folder: "/Users/you/Games/Sky Islands", name: "sky-islands", about: "A cozy third-person glider game in Unity.", sources: ["claude"], sessions: 24, last_used: new Date(Date.now() - 26 * 3600_000).toISOString(), memories: [{ path: "/Users/you/.claude/projects/sky/memory/MEMORY.md", source: "claude", title: "Its index" }, { path: "/Users/you/.claude/projects/sky/memory/art.md", source: "claude", title: "Stylized fantasy art; no painted pavements" }, { path: "/Users/you/.claude/projects/sky/memory/demo.md", source: "claude", title: "The Steam demo's status" }], project: null },
     { folder: "/Users/you/Documents/Trading", name: "trading", about: "", sources: ["codex"], sessions: 27, last_used: new Date(Date.now() - 4 * 86400_000).toISOString(), memories: [], project: null },
   ],
@@ -48,6 +49,9 @@ export function projectRequest(method: string, pathname: string, parts: string[]
   if (pathname === "/projects/bring-in" && method === "POST") {
     for (const p of body.projects) projects.push({ ...p, missing: false });
     for (const f of found.folders) if (body.projects.some((p: { folder: string }) => p.folder === f.folder)) f.project = f.name;
+    for (const m of [...found.memories, ...found.folders.flatMap((f) => f.memories)]) {
+      if (body.memories.includes(m.path)) Object.assign(m, { brought_at: new Date().toISOString(), changed: false });
+    }
     started = true;
     const chat = chatIds.chief;
     say(chat, "onboarding", { brought: { projects: body.projects.map((p: { name: string }) => p.name), memories: body.memories.length, thread: null } });

@@ -6,6 +6,8 @@ import type { Attachment, StoredEvent, Task } from "../types";
 import { tokens } from "./bits";
 import { shown } from "./Find";
 
+export type Choice = { label: string; description?: string };
+
 export type Block =
   | { kind: "you"; id: number; at: string; text: string; files: Attachment[] }
   | { kind: "brief"; id: number; at: string; from: string; text: string }
@@ -17,7 +19,7 @@ export type Block =
   | { kind: "page"; id: number; page: string; changed: boolean }
   | { kind: "activity"; id: number; items: Block[] }
   | { kind: "offer"; id: number; outcome?: Record<string, any> } // the chief's, under its greeting: how it was answered
-  | { kind: "ask"; id: number; question: string }
+  | { kind: "ask"; id: number; taskId: string; question: string; choices?: Choice[]; multiple?: boolean; answer?: string }
   | { kind: "held"; id: number; taskId: string; reason: string }
   | { kind: "handoff"; id: number; data: Record<string, any> }
   | { kind: "verdict"; id: number; data: Record<string, any> };
@@ -40,7 +42,7 @@ export function said(block: Block): string {
     case "say":
       return shown(block.text);
     case "ask":
-      return block.question;
+      return [block.question, ...(block.choices ?? []).map((c) => c.label)].join("\n");
     case "asked":
       return block.question;
     case "handoff":
@@ -160,7 +162,7 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
         break;
       case "escalation":
         flush();
-        out.push({ kind: "ask", id: e.id, question: d.question });
+        out.push({ kind: "ask", id: e.id, taskId: e.task_id, question: d.question, choices: d.choices, multiple: d.multiple, answer: answerTo(events, e.id) });
         break;
       case "handoff":
         flush();
@@ -251,6 +253,12 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
   for (const left of delegated) out.push({ kind: "work", id: Number.MAX_SAFE_INTEGER - out.length, task: left }); // no call seen
   for (const left of asked) out.push({ kind: "asked", id: Number.MAX_SAFE_INTEGER - out.length, bot: left.bot, question: left.title, task: left });
   return out;
+}
+
+/** What a question was answered with: the next message to its task from the user or a teammate, if one came. */
+function answerTo(events: StoredEvent[], id: number): string | undefined {
+  const person = (from: unknown) => typeof from === "string" && from !== "crewbots" && from !== "room" && !from.startsWith("routine");
+  return events.find((x) => x.id > id && x.kind === "message" && person(x.data.from))?.data.text;
 }
 
 function minutes(n: number): string {

@@ -39,8 +39,14 @@ class HandoffBody(BaseModel):
     open: str = ""
     needs: str = ""
 
+class Choice(BaseModel):
+    label: str
+    description: str | None = None
+
 class Escalation(BaseModel):
     question: str
+    choices: list[Choice] = []  # what the user can pick from; they can always answer in their own words
+    multiple: bool = False  # whether they may pick several
 
 class Finding(BaseModel):
     location: str

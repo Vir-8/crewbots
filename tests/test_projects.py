@@ -99,3 +99,10 @@ def test_bringing_in_what_claude_code_and_codex_know(client, monkeypatch):
     assert sent[0]["from"] == "crewbots" and "never painted pavements" in sent[0]["text"]
     assert "passwd" not in sent[0]["text"]
     assert client.runner.store.get_task(brought["task_id"]).bot == "chief"  # the coordinator learns from them
+
+    # Looking again, what's in already says so, and so does a memory that's changed since.
+    again = client.get("/projects/found", headers=AUTH).json()["folders"][0]
+    assert again["project"] == "sky-islands"
+    assert again["memories"][0]["brought_at"] and again["memories"][0]["changed"] is False
+    memory.write_text("Stylized art, never painted pavements. Warm light.")
+    assert client.get("/projects/found", headers=AUTH).json()["folders"][0]["memories"][0]["changed"] is True

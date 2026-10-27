@@ -158,11 +158,15 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
               group.author === "user" ? (
                 group.messages.map((m) => (
                   <Boundary key={m.id} where={`a group chat message (${m.id})`}>
-                    <div className="you" data-msg={m.id}>
+                    <div className={breaks.has(m.id) ? "you after-break" : "you"} data-msg={m.id}>
                       {breaks.has(m.id) && <TimeBreak at={m.at} />}
-                      {m.text && <div className="you-text">{withMentions(m.text)}</div>}
-                      <Files items={m.attachments ?? []} mine />
-                      <MessageMeta at={m.at} text={m.text} />
+                      <div className="message-row">
+                        <div className="message-body">
+                          {m.text && <div className="you-text">{withMentions(m.text)}</div>}
+                          <Files items={m.attachments ?? []} mine />
+                        </div>
+                        <MessageMeta at={m.at} text={m.text} />
+                      </div>
                     </div>
                   </Boundary>
                 ))
@@ -178,13 +182,15 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
                       </div>
                       {group.messages.map((m) => (
                         <Boundary key={m.id} where={`a group chat message (${m.id})`}>
-                          <div className="room-message" data-msg={m.id}>
-                            {m.text && (
-                              <div className="room-bubble">
-                                <Markdown text={m.text} onSelect={props.onOpen} />
-                              </div>
-                            )}
-                            <Files items={m.attachments ?? []} />
+                          <div className="room-message message-row" data-msg={m.id}>
+                            <div className="message-body">
+                              {m.text && (
+                                <div className="room-bubble">
+                                  <Markdown text={m.text} onSelect={props.onOpen} />
+                                </div>
+                              )}
+                              <Files items={m.attachments ?? []} />
+                            </div>
                             <MessageMeta at={m.at} text={m.text} />
                           </div>
                         </Boundary>

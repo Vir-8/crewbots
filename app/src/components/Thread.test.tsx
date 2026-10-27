@@ -93,6 +93,23 @@ describe("a bot's working, in a chat", () => {
     expect(renderToStaticMarkup(<Thread crew={crew} task={task} onOpen={() => undefined} chat />)).toContain("Compacted its conversation · 1 update");
   });
 
+  it("draws a question's choices with Other, and what was picked once it's answered", () => {
+    const { crew, task } = chat(0);
+    const at = new Date(Date.UTC(2026, 9, 27, 7)).toISOString();
+    const asked: StoredEvent = { id: 1, task_id: task.id, kind: "escalation", data: { question: "Which way?", choices: [{ label: "Recharts", description: "Port 6 charts" }, { label: "Stay on 18" }] }, at };
+    crew.events.set(task.id, [asked]);
+    const open = renderToStaticMarkup(<Thread crew={crew} task={task} onOpen={() => undefined} chat />);
+    expect(open).toContain("Needs your answer");
+    expect(open).toContain("Port 6 charts");
+    expect(open).toContain("Answer in your own words");
+
+    crew.events.set(task.id, [asked, { id: 2, task_id: task.id, kind: "message", data: { from: "user", text: "Stay on 18" }, at }]);
+    const answered = renderToStaticMarkup(<Thread crew={crew} task={task} onOpen={() => undefined} chat />);
+    expect(answered).toContain("Answered");
+    expect(answered).toMatch(/ask-choice picked"[^>]*>(?:(?!<\/button>).)*Stay on 18/);
+    expect(answered).not.toContain("Answer in your own words");
+  });
+
   it("says so when a bot takes the name it's given", () => {
     const { crew, task } = chat(0);
     const at = new Date(Date.UTC(2026, 9, 27, 7)).toISOString();

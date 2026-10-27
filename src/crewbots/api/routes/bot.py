@@ -163,7 +163,8 @@ def routes(c: Context) -> APIRouter:
 
     @v1.post("/bot/escalate")
     async def bot_escalate(request: Request, body: Escalation):
-        runner.escalate(request.state.task.id, body.question)
+        runner.escalate(request.state.task.id, body.question, [c.model_dump(exclude_none=True) for c in body.choices],
+                        body.multiple)
         return {"ok": True}
 
     return v1

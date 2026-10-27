@@ -17,7 +17,7 @@ from crewbots.projects import Project, ProjectError
 
 
 def routes(c: Context) -> APIRouter:
-    runner = c.runner
+    runner, store = c.runner, c.store
     v1 = APIRouter()
 
     def home() -> Path:
@@ -57,11 +57,21 @@ def routes(c: Context) -> APIRouter:
 
     @v1.get("/projects/found", response_model=FoundOut)
     async def found():
-        """The folders the user worked in lately with Claude Code or Codex, and the memories those keep."""
+        """The folders the user worked in lately with Claude Code or Codex, and the memories those keep: each with
+        whether it's been brought in already, and whether it's changed since."""
         folders, memories = await asyncio.to_thread(discovery.found)
         by_folder = {p.folder.resolve(): p.name for p in runner.crew.projects.values()}
-        return {"folders": [_found_out(f, by_folder.get(f.folder)) for f in folders],
-                "memories": [_memory_out(m) for m in memories]}
+        now = await asyncio.to_thread(discovery.fingerprints, [*memories, *(m for f in folders for m in f.memories)])
+        brought = store.brought_in()
+
+        def memory_out(memory: discovery.FoundMemory) -> dict[str, Any]:
+            was = brought.get(str(memory.path))
+            return _memory_out(memory) | {"brought_at": was["at"] if was else None,
+                                          "changed": bool(was) and was["fingerprint"] != now.get(memory.path)}
+
+        return {"folders": [_found_out(f, by_folder.get(f.folder)) | {"memories": [memory_out(m) for m in f.memories]}
+                            for f in folders],
+                "memories": [memory_out(m) for m in memories]}
 
     @v1.post("/projects/bring-in", response_model=BroughtIn)
     async def bring_in(body: BringIn):

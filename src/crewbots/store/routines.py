@@ -1,4 +1,5 @@
-"""Routines' bookkeeping: when each was last checked and run, and what each trigger has started on."""
+"""Bookkeeping: when each routine was last checked and run, what each trigger has started on, the chief's looks
+around, and which memories from Claude Code and Codex have been brought in."""
 
 from typing import Any
 
@@ -24,6 +25,18 @@ class Routines:
     def wake_state(self, bot: str) -> dict[str, Any]:
         row = self.db.execute("select * from wakes where bot = ?", (bot,)).fetchone()
         return dict(row) if row else {"bot": bot, "looked_at": None, "next_at": None, "next_why": None}
+
+    def brought_in(self) -> dict[str, dict[str, str]]:
+        """The memories brought in from Claude Code and Codex, by path: the fingerprint of what each said then, and
+        when."""
+        return {r["path"]: {"fingerprint": r["fingerprint"], "at": r["at"]} for r in self.db.execute(
+            "select * from brought_in").fetchall()}
+
+    def mark_brought_in(self, fingerprints: dict[str, str]) -> None:
+        now = _now()
+        self.db.executemany("insert into brought_in (path, fingerprint, at) values (?, ?, ?) on conflict(path) do update"
+                            " set fingerprint = excluded.fingerprint, at = excluded.at",
+                            [(path, print_, now) for path, print_ in fingerprints.items()])
 
     def set_wake(self, bot: str, **fields: str | None) -> None:
         """Sets some of the bot's `looked_at`, `next_at` and `next_why`, keeping the rest."""

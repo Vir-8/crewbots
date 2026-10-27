@@ -276,6 +276,33 @@ async def test_an_escalation_reaches_the_chief_at_once_and_its_answer_resumes_th
     assert "use postgres" in final_report
 
 
+async def test_a_question_can_offer_choices_and_the_chief_hears_them(store, tmp_path):
+    crew = ScriptedCrew(store, tmp_path, chief(), bot("engineer"))
+    state = {}
+
+    def plan(spec, me):
+        if spec.prompt == "go":
+            state["eng"] = crew.runner.delegate(me.id, "engineer", "build")
+        return [Done(final_text="ok")]
+
+    def engineer(spec, me):
+        crew.runner.escalate(me.id, "Which database?", [
+            "Postgres", {"label": "SQLite", "description": "  one file,\n no server "}, "postgres", "Other",
+            {"label": ""}, *[f"option {n}" for n in range(9)]], multiple=True)
+        return [Done(final_text="asked")]
+
+    crew.script = {"chief": plan, "engineer": engineer}
+    top = crew.runner.submit("chief", "go")
+    await wait_until(lambda: any("escalated" in m["text"] for m in messages(store, top.id)))
+
+    [asked] = [e.data for e in store.events(state["eng"].id) if e.kind == "escalation"]
+    assert asked["multiple"] is True and len(asked["choices"]) == 6  # no repeat, no "Other", no blank; six at most
+    assert asked["choices"][:3] == [{"label": "Postgres"}, {"label": "SQLite", "description": "one file, no server"},
+                                    {"label": "option 0"}]
+    told = next(m["text"] for m in messages(store, top.id) if "escalated" in m["text"])
+    assert "Its choices (any of them):\n- Postgres\n- SQLite: one file, no server" in told
+
+
 async def test_a_top_level_escalation_waits_for_the_user(store, tmp_path):
     crew = ScriptedCrew(store, tmp_path, chief())
     crew.script["chief"] = lambda spec, me: (crew.runner.escalate(me.id, "merge it?"), [Done(final_text="asked")])[1]

@@ -23,6 +23,8 @@ class FoundMemoryOut(BaseModel):
     path: str
     source: str  # claude or codex
     title: str
+    brought_at: str | None = None  # when it was brought in, if it has been
+    changed: bool = False  # whether it's changed since it was
 
 class FoundFolderOut(BaseModel):
     folder: str

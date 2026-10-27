@@ -1,0 +1,378 @@
+/* The cards a conversation shows: work held, a question waiting on you, a handoff, a verdict, work handed to a
+   bot, and a question asked of a teammate. */
+
+.hold-card {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--raised);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.hold-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--amber);
+}
+
+.hold-card.over .hold-head {
+  color: var(--faint);
+}
+
+.hold-text {
+  font-size: 13.5px;
+  color: var(--soft);
+}
+
+.hold-go {
+  align-self: flex-start;
+  margin-top: 6px;
+  background: var(--bg);
+}
+
+.ask {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--amber) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--amber) 28%, transparent);
+}
+
+.ask-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--amber);
+  margin-bottom: 4px;
+}
+
+.ask.answered {
+  background: var(--raised);
+  border-color: transparent;
+}
+
+.ask.answered .ask-head {
+  color: var(--faint);
+}
+
+/* A question's choices: one a row, picked with a click (or ticked, when several may be), and Other. */
+.ask-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.ask-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ask-choice:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--amber) 45%, var(--line));
+}
+
+.ask-choice:disabled {
+  cursor: default;
+}
+
+.ask.answered .ask-choice:not(.picked) {
+  opacity: 0.5;
+}
+
+.ask-choice.picked {
+  border-color: color-mix(in srgb, var(--amber) 60%, var(--line));
+}
+
+.ask.answered .ask-choice.picked {
+  border-color: var(--line);
+}
+
+.ask-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border: 1.5px solid var(--faint);
+  border-radius: 50%;
+}
+
+.ask-mark.box {
+  border-radius: 4px;
+}
+
+.ask-choice.picked .ask-mark {
+  border-color: var(--amber);
+  background: var(--amber);
+  color: var(--bg);
+}
+
+.ask-choice-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ask-label {
+  font-weight: 550;
+}
+
+.ask-description {
+  font-size: 12.5px;
+  color: var(--faint);
+}
+
+.ask-other {
+  display: flex;
+  gap: 6px;
+}
+
+.ask-other input {
+  flex: 1;
+  min-width: 0;
+}
+
+.ask-send {
+  align-self: flex-start;
+}
+
+.handoff {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--raised);
+}
+
+.handoff-head {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--faint);
+  margin-bottom: 2px;
+}
+
+.handoff-files {
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--soft);
+}
+
+.handoff-open {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--soft);
+}
+
+.verdict {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+}
+
+.verdict-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.verdict.pass .verdict-head .icon {
+  color: var(--green);
+}
+
+.verdict.fail .verdict-head .icon {
+  color: var(--red);
+}
+
+.verdict-text {
+  color: var(--soft);
+}
+
+.findings {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
+/* Work handed to a bot */
+
+.work {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 13px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.work:hover {
+  background: color-mix(in srgb, var(--raised) 50%, transparent);
+  border-color: color-mix(in srgb, var(--soft) 30%, var(--line));
+}
+
+/* A question asked of a teammate, and its answer: quieter than work, since nothing is being built */
+.ask-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line-soft);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.ask-card:hover {
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--raised) 40%, transparent);
+}
+
+.ask-card.pending {
+  cursor: default;
+}
+
+.ask-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ask-line .icon {
+  flex: none;
+  align-self: center;
+  color: var(--soft);
+}
+
+.ask-line.answer {
+  padding-left: 19px;
+  color: var(--soft);
+}
+
+.ask-who {
+  flex: none;
+  font-weight: 600;
+  color: var(--soft);
+}
+
+.work-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.work-bot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--soft);
+}
+
+.work-stop {
+  height: 22px;
+  margin-right: 8px;
+}
+
+.work-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.work-status.running,
+.work-status.queued {
+  color: var(--blue);
+}
+
+.work-status.needs_input {
+  color: var(--amber);
+}
+
+.work-status.failed {
+  color: var(--red);
+}
+
+.work-title {
+  font-weight: 550;
+  line-height: 1.45;
+}
+
+.work-line {
+  font-size: 13px;
+  color: var(--faint);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.work-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 12.5px;
+  cursor: default;
+}
+
+.review-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px 2px 7px;
+  border-radius: 20px;
+  background: var(--raised);
+  color: var(--soft);
+  cursor: pointer;
+}
+
+.review-chip:hover {
+  background: var(--hover);
+}
+
+.review-chip.pass .icon {
+  color: var(--green);
+}
+
+.review-chip.fail .icon {
+  color: var(--red);
+}
+
+.merged {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--green);
+  font-size: 12.5px;
+  font-weight: 550;
+}

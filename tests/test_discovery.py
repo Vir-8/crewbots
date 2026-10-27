@@ -54,8 +54,9 @@ def test_the_folders_worked_in_lately_with_their_memories(tmp_path, monkeypatch)
     assert sky.about == "A cozy glider game."
     assert [m.title for m in sky.memories] == ["Its index", 'Stylized "fantasy" art']
     assert memories == []  # Codex keeps no memories here
-    text = discovery.digest(sky.memories)
+    text, taken = discovery.digest(sky.memories)
     assert "## Claude Code: ~/.claude/projects/" in text and "Stylized" in text
+    assert taken == discovery.fingerprints(sky.memories) and len(taken) == 2
     assert "private words" not in text  # sessions give their folder, nothing they said
 
 
@@ -84,4 +85,6 @@ def test_old_sessions_and_codex_memories(tmp_path, monkeypatch):
     folders, found = discovery.found()
 
     assert folders == [] and [m.path.name for m in found] == ["memory_summary.md"]
-    assert "The user ships games." in discovery.digest(found)
+    assert "The user ships games." in discovery.digest(found)[0]
+    assert discovery.digest(found, limit=10) == ("## Codex: ~/.codex/memories/memory_summary.md\n\n(left out: there was "
+                                                 "more than fits)\n", {})  # what didn't fit isn't counted as brought in

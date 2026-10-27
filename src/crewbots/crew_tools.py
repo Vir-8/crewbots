@@ -35,12 +35,14 @@ def _object(properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
 
 STRING = {"type": "string"}
 STRINGS = {"type": "array", "items": {"type": "string"}}
+CHOICES = {"type": "array", "items": {"type": "object", "properties": {"label": STRING, "description": STRING},
+                                      "required": ["label"]}}
 
 # What each tool takes, and whether only coordinators get it. What it's for, which the bot reads, is a prompt:
 # prompts/tools/<name>.md, which a crew can replace (crewbots.prompts).
 SPECS: dict[str, Spec] = {
     "handoff": Spec(_object({"done": STRING, "output": STRINGS, "open": STRING, "needs": STRING}, ["done"])),
-    "escalate": Spec(_object({"question": STRING}, ["question"])),
+    "escalate": Spec(_object({"question": STRING, "choices": CHOICES, "multiple": {"type": "boolean"}}, ["question"])),
     "review": Spec(_object({
         "verdict": {"type": "string", "enum": ["pass", "fail"]},
         "summary": STRING,
@@ -125,7 +127,7 @@ class CrewTools:
                     r.handoff(me, args["done"], list(args.get("output") or []), args.get("open") or "", args.get("needs") or "")
                     return "Handoff recorded. End your reply with a short summary."
                 case "escalate":
-                    r.escalate(me, args["question"])
+                    r.escalate(me, args["question"], args.get("choices"), bool(args.get("multiple")))
                     return "Escalated. End your turn now; the answer will arrive as your next message."
                 case "review":
                     try:

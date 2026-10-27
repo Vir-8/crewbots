@@ -6,6 +6,7 @@ Only a folder's path is taken from the CLIs' session files, never what was said 
 user picks it.
 """
 
+import hashlib
 import json
 import re
 import subprocess
@@ -76,22 +77,40 @@ def found(days: int = DAYS) -> tuple[list[FoundFolder], list[FoundMemory]]:
     return ordered, _codex_memories()
 
 
-def digest(memories: list[FoundMemory], limit: int = MEMORY_CHARS) -> str:
-    """The memories' text, each under where it came from, up to `limit` characters."""
-    parts, used = [], 0
+def digest(memories: list[FoundMemory], limit: int = MEMORY_CHARS) -> tuple[str, dict[Path, str]]:
+    """The memories' text, each under where it came from, up to `limit` characters; and the fingerprint of each one
+    that went in whole, by its path."""
+    parts, used, taken = [], 0, {}
     for memory in memories:
         try:
-            text = memory.path.read_text(errors="replace").strip()
+            text = memory.path.read_text(errors="replace")
         except OSError:
             continue
         where = f"{'Claude Code' if memory.source == 'claude' else 'Codex'}: {_shown(memory.path)}"
-        block = f"## {where}\n\n{text}\n"
+        block = f"## {where}\n\n{text.strip()}\n"
         if used + len(block) > limit:
             parts.append(f"## {where}\n\n(left out: there was more than fits)\n")
             continue
         parts.append(block)
         used += len(block)
-    return "\n".join(parts)
+        taken[memory.path] = fingerprint(text)
+    return "\n".join(parts), taken
+
+
+def fingerprint(text: str) -> str:
+    """What a memory said, in a few characters: when they change, it has."""
+    return hashlib.sha256(text.encode()).hexdigest()[:16]
+
+
+def fingerprints(memories: list[FoundMemory]) -> dict[Path, str]:
+    """Each readable memory's fingerprint, by its path."""
+    out = {}
+    for memory in memories:
+        try:
+            out[memory.path] = fingerprint(memory.path.read_text(errors="replace"))
+        except OSError:
+            continue
+    return out
 
 
 def _claude_folders(since: float) -> list[tuple[Path, float, int, list[FoundMemory]]]:
