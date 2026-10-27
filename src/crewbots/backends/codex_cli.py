@@ -12,11 +12,12 @@ import os
 import re
 from collections.abc import AsyncIterator, Sequence
 from contextlib import aclosing
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from crewbots.backends.base import Access, McpServer, RunSpec
 from crewbots.backends.codex_isolation import isolation_overrides
-from crewbots.backends.credentials import without_credentials
+from crewbots.backends.credentials import private_paths, without_credentials
 from crewbots.backends.process import stream_jsonl
 from crewbots.events import Done, Event, Notice, SessionStarted, Text, ToolCall, ToolResult, Usage
 
@@ -24,7 +25,8 @@ if TYPE_CHECKING:
     from crewbots.backends.codex_app_server import CodexSession
 
 MCP_NAME = re.compile(r"[A-Za-z0-9_-]+")
-SANDBOX = {Access.READ_ONLY: "read-only", Access.WORKSPACE_WRITE: "workspace-write"}
+PROFILE = "crewbots"
+BASE_PROFILE = {Access.READ_ONLY: ":read-only", Access.WORKSPACE_WRITE: ":workspace"}
 
 
 class CodexExec:
@@ -58,7 +60,7 @@ class CodexExec:
         if spec.access is Access.FULL:
             args.append("--dangerously-bypass-approvals-and-sandbox")
         else:
-            args += ["-c", f'sandbox_mode="{SANDBOX[spec.access]}"', *network_overrides(spec)]
+            args += [*sandbox_overrides(spec), *network_overrides(spec)]
         args += self.config_overrides(spec)
         if spec.model:
             args += ["--model", spec.model]
@@ -220,12 +222,28 @@ def compact_limit(window: int) -> int:
     return int(window * 0.85)
 
 
+def sandbox_overrides(spec: RunSpec, temp: Path | None = None) -> list[str]:
+    """Codex's sandbox for a bot that isn't on full access, as a permissions profile of crewbots' own: Codex's built-in
+    one for the bot's access, with the private paths (backends/credentials.py) unreadable, and the network on only for
+    a writing bot whose role card turns it on. `temp`, a writing bot's own temp folder, takes the place of /tmp and
+    $TMPDIR, which commands could otherwise write to: a way out of the task's folder. (Codex's older sandbox settings
+    can only limit writes, and a profile set here wins over them, even with `sandbox_mode` in the user's config.)"""
+    files = {str(path): "deny" for path in private_paths()}
+    if temp is not None:
+        files |= {":slash_tmp": "read", ":tmpdir": "read", str(temp): "write"}
+    table = ", ".join(f"{json.dumps(key)} = {json.dumps(access)}" for key, access in files.items())
+    network = spec.network is True and spec.access is Access.WORKSPACE_WRITE
+    return ["-c", f'default_permissions="{PROFILE}"',
+            "-c", f'permissions.{PROFILE}.extends="{BASE_PROFILE[spec.access]}"',
+            "-c", f"permissions.{PROFILE}.filesystem={{{table}}}",
+            "-c", f"permissions.{PROFILE}.network.enabled={str(network).lower()}"]
+
+
 def network_overrides(spec: RunSpec) -> list[str]:
-    """Codex's sandbox has the network on or off for the whole run; it can't keep to a list of hosts."""
+    """Codex's sandbox has the network on or off for the whole run (sandbox_overrides); it can't keep to a list of
+    hosts. With it off, so is its web search, which runs on OpenAI's side, past the sandbox."""
     if isinstance(spec.network, tuple) and spec.network:
         raise ValueError("Codex can't limit the network to some hosts; give this bot network: true, or run it on Claude")
     if not spec.network and spec.access is not Access.FULL:
-        return ['-c', 'web_search="disabled"']  # its web search runs on OpenAI's side, past the sandbox
-    if spec.network is True and spec.access is Access.WORKSPACE_WRITE:
-        return ["-c", "sandbox_workspace_write.network_access=true"]
+        return ['-c', 'web_search="disabled"']
     return []

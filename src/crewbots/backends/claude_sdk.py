@@ -11,6 +11,7 @@ protocol a plain `claude -p` doesn't have, which gives crewbots three things:
 
 import asyncio
 import contextlib
+import json
 import os
 import shutil
 from collections.abc import AsyncIterator
@@ -37,7 +38,7 @@ from claude_agent_sdk import (
 )
 
 from crewbots.backends.base import CLAUDE_BOT_ENV, Access, RunSpec, claude_retry
-from crewbots.backends.claude_cli import READ_ONLY_TOOLS, _images, _stringify, compacted, rate_limit
+from crewbots.backends.claude_cli import READ_ONLY_TOOLS, SANDBOX, _images, _stringify, compacted, rate_limit, settings
 from crewbots.backends.credentials import without_credentials
 from crewbots.backends.policy import WEB_TOOLS, Policy
 from crewbots.crew_tools import CrewTools, ToolRefused
@@ -89,7 +90,7 @@ class ClaudeAgent:
             # The sandbox points TMPDIR at /tmp/claude, which it doesn't create; without it, tools needing a temp
             # folder fail.
             Path("/tmp/claude").mkdir(exist_ok=True)
-            sandbox = {"enabled": True, "autoAllowBashIfSandboxed": False, "allowUnsandboxedCommands": False}
+            sandbox = SANDBOX
             env |= without_credentials()
         return ClaudeAgentOptions(
             cli_path=self.cli_path,
@@ -108,6 +109,7 @@ class ClaudeAgent:
             if spec.access is Access.READ_ONLY else None,
             permission_mode="bypassPermissions" if full else "default",
             can_use_tool=None if full else session.policy,
+            settings=json.dumps(extra) if (extra := settings(spec.access)) else None,
             env=env,
             sandbox=sandbox,
             effort=spec.effort if spec.effort in CLAUDE_EFFORTS else None,
@@ -128,7 +130,7 @@ class ClaudeAgentSession:
         self.session_id = spec.resume_session_id
         self.timeout_s = spec.timeout_s
         self.policy = ClaudePolicy(spec.access, Path(spec.cwd), set(spec.mcp_servers) | {CREW_SERVER},
-                                   network=spec.network, proactive=spec.proactive)
+                                   network=spec.network)
         self.stderr_lines: list[str] = []
         self.temp: Path | None = None
         self._broken = False

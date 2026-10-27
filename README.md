@@ -92,8 +92,11 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
       any bot, and a writing bot's shell commands. A list needs Claude, which checks each page's host: Codex only
       switches the network on or off, and a web search can lead anywhere, so a list allows pages but not search.
     - writing bots' shells never get your logins: `gh` sees an empty config, git has no credential helper and offers
-      no SSH key, and there's no SSH agent. Your git name and email stay. This stops ordinary signing in, not a
-      determined command, which could still read a key file; containers are that boundary.
+      no SSH key, and there's no SSH agent. Your git name and email stay.
+    - no bot reads what's private, short of full access: your keys and logins (`~/.ssh`, `~/.aws`, `gh`'s and the
+      CLIs' sign-ins, configs holding MCP servers' keys) and crewbots' own (the daemon's admin token, `mcp.json`, the
+      database, the logs). Both CLIs' sandboxes keep commands out of them, and Claude's file tools are refused them.
+    - work a bot starts on its own (a check-in, a thread from one) gets none of its MCP servers, only crewbots' own.
   - **How it's enforced:** Claude asks on every tool call. Codex's sandbox is the boundary, and every request to leave it is declined. Writing bots' shell commands are OS-sandboxed on both.
   - **Claude's tools run inside the daemon.**
   - **Interrupts:** a cancelled or timed-out Claude turn is interrupted, not killed, so its session stays warm.

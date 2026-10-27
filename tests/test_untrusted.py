@@ -7,8 +7,7 @@ import pytest
 from fakes import FakeBackend, ScriptedCrew, bot, make_crew, wait_until
 
 from crewbots import prompts
-from crewbots.backends import Access, McpServer
-from crewbots.backends.policy import ON_ITS_OWN, Policy
+from crewbots.backends import McpServer
 from crewbots.events import Done
 from crewbots.runner import Runner
 from crewbots.scheduler import Scheduler
@@ -24,18 +23,7 @@ def store(tmp_path):
     s.close()
 
 
-def test_work_started_on_its_own_cant_send_anything_out_through_mcp(tmp_path):
-    own = Policy(Access.READ_ONLY, tmp_path, {"slack", "github", "crewbots"}, proactive=True)
-    asked = Policy(Access.READ_ONLY, tmp_path, {"slack", "github", "crewbots"})
-    for tool in ("mcp__slack__send_message", "mcp__github__create_pull_request", "mcp__slack__post_reply",
-                 "mcp__github__add_comment"):
-        assert own.check_tool(tool, {}) == ON_ITS_OWN, tool
-        assert asked.check_tool(tool, {}) is None, tool
-    for tool in ("mcp__github__list_pull_requests", "mcp__slack__read_channel", "mcp__crewbots__post", "Read"):
-        assert own.check_tool(tool, {}) is None, tool
-
-
-async def test_a_proactive_thread_runs_under_the_rule_and_codex_gets_no_mcp_servers(store, tmp_path):
+async def test_a_thread_started_on_its_own_gets_none_of_the_bots_mcp_servers(store, tmp_path):
     claude = bot("engineer", mcp={"slack": SLACK})
     codex = bot("critic", mcp={"slack": SLACK})
     backend = FakeBackend()
@@ -48,9 +36,11 @@ async def test_a_proactive_thread_runs_under_the_rule_and_codex_gets_no_mcp_serv
     await wait_until(lambda: not runner.running())
 
     by = {(s.prompt, "codex" if "critic" in s.system_prompt.split("\n")[0] else "claude"): s for s in backend.specs}
-    assert by[("Fuzz the filters", "claude")].proactive and "slack" in by[("Fuzz the filters", "claude")].mcp_servers
-    assert by[("Fuzz the filters", "codex")].proactive and "slack" not in by[("Fuzz the filters", "codex")].mcp_servers
-    assert not by[("the user's own work", "codex")].proactive and "slack" in by[("the user's own work", "codex")].mcp_servers
+    for backend_name in ("claude", "codex"):  # telling a tool that sends from one that reads isn't left to its name
+        assert by[("Fuzz the filters", backend_name)].proactive
+        assert "slack" not in by[("Fuzz the filters", backend_name)].mcp_servers
+        assert not by[("the user's own work", backend_name)].proactive
+        assert "slack" in by[("the user's own work", backend_name)].mcp_servers
 
 
 async def test_events_and_fired_intents_reach_bots_as_untrusted_text(store, tmp_path):

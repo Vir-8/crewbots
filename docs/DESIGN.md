@@ -71,7 +71,7 @@ crewbots daemon (Python, asyncio)
 ### Learned in milestone 1
 
 - Without `--strict-mcp-config` and `--setting-sources project,local`, `claude -p` loads the user's personal MCP servers, hooks and plugins. Bots must not inherit those.
-- `codex exec resume` takes neither `-s` nor `-C`, so the sandbox is set with `-c sandbox_mode=…` and the directory is the process's working directory.
+- `codex exec resume` takes neither `-s` nor `-C`, so the sandbox is set with `-c` (crewbots' permissions profile) and the directory is the process's working directory.
 - Claude's list options (`--allowedTools`, `--mcp-config`) take multiple values and would swallow a prompt passed after them, so both CLIs get the prompt on stdin.
 - Read-only access was checked on real runs: Claude's `dontAsk` mode with only the Read, Glob and Grep tools, and Codex's `read-only` sandbox, both refused to write a file.
 

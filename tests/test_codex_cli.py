@@ -1,10 +1,12 @@
 import json
+import tomllib
 
 import pytest
 from helpers import collect, fake_command, kinds, lines
 
+from crewbots import paths
 from crewbots.backends import Access, CodexExec, McpServer, RunSpec, codex_isolation
-from crewbots.backends.codex_cli import CodexParser
+from crewbots.backends.codex_cli import CodexParser, sandbox_overrides
 from crewbots.events import Done, Notice, SessionStarted, Text, ToolCall, ToolResult, Usage
 
 
@@ -77,7 +79,7 @@ def test_sandbox_goes_through_config_so_resume_works_too():
     argv = CodexExec(isolate=False).argv(RunSpec(prompt="x", cwd=".", access=Access.WORKSPACE_WRITE, resume_session_id="t-1"))
 
     assert argv[:4] == ["codex", "exec", "resume", "t-1"]
-    assert 'sandbox_mode="workspace-write"' in argv
+    assert 'default_permissions="crewbots"' in argv and 'permissions.crewbots.extends=":workspace"' in argv
     assert 'approval_policy="never"' in argv
     assert "-s" not in argv and "-C" not in argv
     assert argv[-1] == "-"
@@ -87,9 +89,9 @@ def test_a_writing_bot_gets_the_network_only_when_its_card_says_so():
     def argv(network, access=Access.WORKSPACE_WRITE):
         return CodexExec(isolate=False).argv(RunSpec(prompt="x", cwd=".", access=access, network=network))
 
-    assert "sandbox_workspace_write.network_access=true" in argv(True)
-    assert "sandbox_workspace_write.network_access=true" not in argv(False)
-    assert "sandbox_workspace_write.network_access=true" not in argv(True, Access.READ_ONLY)
+    assert "permissions.crewbots.network.enabled=true" in argv(True)
+    assert "permissions.crewbots.network.enabled=false" in argv(False)
+    assert "permissions.crewbots.network.enabled=false" in argv(True, Access.READ_ONLY)  # its commands, as before
     with pytest.raises(ValueError, match="can't limit the network to some hosts"):
         argv(("pypi.org",))
 
@@ -106,7 +108,20 @@ def test_full_access_bypasses_the_sandbox():
     argv = CodexExec(isolate=False).argv(RunSpec(prompt="x", cwd=".", access=Access.FULL))
 
     assert "--dangerously-bypass-approvals-and-sandbox" in argv
-    assert not any(a.startswith("sandbox_mode") for a in argv)
+    assert not any(a.startswith(("default_permissions", "permissions.")) for a in argv)
+
+
+def test_no_codex_bot_reads_the_private_paths_and_a_writing_one_keeps_to_its_own_temp_folder(tmp_path):
+    def files(access, temp=None):
+        args = sandbox_overrides(RunSpec(prompt="x", cwd=tmp_path, access=access), temp)
+        table = next(a for a in args if a.startswith("permissions.crewbots.filesystem="))
+        return tomllib.loads(f"files = {table.split('=', 1)[1]}")["files"]
+
+    written = files(Access.WORKSPACE_WRITE, tmp_path / "temp")
+    assert written[str(paths.crew() / "daemon.json")] == written[str(paths.home() / ".ssh")] == "deny"
+    assert written[":slash_tmp"] == written[":tmpdir"] == "read" and written[str(tmp_path / "temp")] == "write"
+    read = files(Access.READ_ONLY)
+    assert read[str(paths.crew() / "mcp.json")] == "deny" and ":slash_tmp" not in read
 
 
 def test_mcp_servers_become_config_overrides():
@@ -221,4 +236,4 @@ def test_reasoning_effort_goes_to_codex():
     argv = CodexExec(isolate=False).argv(RunSpec(prompt="x", cwd=".", effort="high"))
 
     assert 'model_reasoning_effort="high"' in argv
-    assert not any("reasoning" in a for a in CodexExec(isolate=False).argv(RunSpec(prompt="x", cwd=".")))
+    assert not any(a.startswith("model_reasoning") for a in CodexExec(isolate=False).argv(RunSpec(prompt="x", cwd=".")))

@@ -2,6 +2,7 @@
 cancels and timeouts (against a fake SDK client, so no test calls a model)."""
 
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,7 @@ from claude_agent_sdk import (
 )
 from fakes import ScriptedCrew, bot, wait_until
 
+from crewbots import paths
 from crewbots.backends import Access, ClaudeAgent, McpServer, RunSpec
 from crewbots.backends.claude_sdk import ClaudeAgentSession, ClaudePolicy, SdkMapper, crew_server
 from crewbots.crew_tools import CrewTools, ToolRefused
@@ -59,6 +61,19 @@ def test_writing_bots_write_only_inside_their_task_folder(worktree):
     assert "own folder" in policy.check_tool("Write", {"file_path": str(worktree.parent / "elsewhere.py")})
     assert "own folder" in policy.check_tool("Edit", {"file_path": str(worktree / ".." / "escape.py")})
     assert "own folder" in policy.check_tool("Edit", {})
+
+
+def test_no_bot_reads_logins_keys_or_crewbots_own_records(worktree):
+    policy = ClaudePolicy(Access.READ_ONLY, worktree, {"crewbots"})
+    crew = paths.crew()
+
+    for tool, args in [("Read", {"file_path": str(crew / "daemon.json")}), ("Read", {"file_path": "~/.ssh/id_ed25519"}),
+                       ("Glob", {"pattern": "~/.ssh/*"}), ("Glob", {"pattern": f"{crew}/crewbots.db*"}),
+                       ("Grep", {"pattern": "key", "path": str(paths.home() / ".aws")})]:
+        assert "private" in policy.check_tool(tool, args)
+    assert policy.check_tool("Read", {"file_path": str(crew / "team" / "rules.md")}) is None  # the crew's own files
+    assert policy.check_tool("Glob", {"pattern": "**/*.py"}) is None
+    assert ClaudePolicy(Access.FULL, worktree, set()).check_tool("Read", {"file_path": str(crew / "daemon.json")}) is None
 
 
 @pytest.mark.parametrize("command", [
@@ -219,6 +234,17 @@ def test_full_access_skips_the_policy(tmp_path):
     options = ClaudeAgent(cli_path="/bin/claude").options(spec, ClaudeAgentSession(spec))
 
     assert options.permission_mode == "bypassPermissions" and options.can_use_tool is None
+    assert options.settings is None and options.sandbox is None
+
+
+def test_claude_keeps_its_file_tools_and_its_shell_out_of_the_private_paths(tmp_path):
+    spec = RunSpec(prompt="", cwd=tmp_path, access=Access.WORKSPACE_WRITE)
+
+    options = ClaudeAgent(cli_path="/bin/claude").options(spec, ClaudeAgentSession(spec))
+
+    deny = json.loads(options.settings)["permissions"]["deny"]
+    assert f"Read(/{paths.crew() / 'daemon.json'})" in deny and f"Read(/{paths.home() / '.ssh'}/**)" in deny
+    assert options.sandbox["enabled"] and not options.sandbox["allowUnsandboxedCommands"]
 
 
 # A session, with a fake SDK client

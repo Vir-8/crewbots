@@ -2,6 +2,7 @@ import json
 
 from helpers import collect, fake_command, kinds, lines, write_fixture
 
+from crewbots import paths
 from crewbots.backends import Access, ClaudeCLI, McpServer, RunSpec
 from crewbots.backends.claude_cli import ClaudeParser
 from crewbots.events import Done, RateLimit, SessionStarted, Text, ToolCall, ToolResult, Usage
@@ -63,6 +64,18 @@ def test_read_only_allows_reading_tools_and_crewbots_mcp_only():
     assert "--strict-mcp-config" in argv
     config = json.loads(argv[argv.index("--mcp-config") + 1])
     assert config == {"mcpServers": {"crew": {"type": "stdio", "command": "crewbots-mcp", "args": [], "env": {}}}}
+
+
+def test_a_writing_bot_runs_its_commands_in_the_sandbox_and_no_bot_reads_the_private_paths():
+    def settings(access):
+        argv = ClaudeCLI().argv(RunSpec(prompt="x", cwd=".", access=access))
+        return json.loads(argv[argv.index("--settings") + 1]) if "--settings" in argv else None
+
+    written, read = settings(Access.WORKSPACE_WRITE), settings(Access.READ_ONLY)
+    assert written["sandbox"]["enabled"] and "sandbox" not in read
+    assert f"Read(/{paths.crew() / 'daemon.json'})" in read["permissions"]["deny"]
+    assert written["permissions"] == read["permissions"]
+    assert settings(Access.FULL) is None
 
 
 def test_access_levels_map_to_permission_modes():

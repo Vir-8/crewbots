@@ -81,7 +81,7 @@ class Checkins:
                     cwd=bot.workspace or self.crew.home, access=Access.READ_ONLY, model=bot.model, effort=bot.effort,
                     system_prompt=prompts.text("checkin-setting", self.crew.home, bot=f"{bot.label}, the {bot.title}",
                                                role=bot.description),
-                    mcp_servers={} if bot.backend.startswith("codex") else dict(bot.mcp), timeout_s=bot.timeout_s,
+                    mcp_servers={}, timeout_s=bot.timeout_s,  # on its own: nothing outside crewbots (runner/core.py)
                     network=bot.network, proactive=True)
                 report = await self._checkin_run(task, spec)
             for item in items:

@@ -8,8 +8,11 @@
 - Shell commands are confined by the OS (each CLI's sandbox) to the task's folder and a temp folder: a private one on
   Codex. Claude's sandbox also allows /tmp, which it needs for its own temp folder. On Codex every request to leave the
   sandbox is refused.
-- Work a bot starts on its own (a check-in, a thread from one) sends nothing outside crewbots: on Claude its MCP tools
-  that send, post, publish or pay are refused by name; on Codex, which can't refuse an MCP tool, it gets none.
+- **No bot** short of full access reads what's private (backends/credentials.py): the user's logins and keys, and
+  crewbots' own, its admin token above all. Claude's file tools are refused them here and by Claude Code's own rules,
+  and both CLIs' sandboxes keep commands out of them.
+- Work a bot starts on its own (a check-in, a thread from one) reaches nothing outside crewbots: it gets none of the
+  bot's MCP servers, only crewbots' own (runner/core.py).
 - The network is off for shell commands, unless the role card says `network: true` (any host) or lists the hosts.
   Claude's sandbox asks for each new host, and the list answers. Codex's sandbox only switches the network on or off,
   so a Codex bot takes `network: true` or nothing.
@@ -26,6 +29,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from crewbots.backends.base import Access
+from crewbots.backends.credentials import private_paths
 
 READ_TOOLS = {"Read", "Glob", "Grep", "LS", "NotebookRead", "TodoWrite"}
 # Claude Code runs these itself, outside the shell's sandbox, so they follow the network setting on their own.
@@ -41,22 +45,17 @@ READ_ONLY = "this bot is read-only (its role card says access: read_only)"
 USERS_TO_DO = "pushing, merging, publishing and rewriting history are the user's to do (team/rules.md)"
 NO_NETWORK = "this bot has no network access; its role card can give it some with network: true, or a list of hosts"
 SEARCH_NEEDS_ANY_HOST = "a web search can lead anywhere, and this bot's network is limited to some hosts"
+PRIVATE = "that's private: the user's logins and keys, or crewbots' own; no bot reads it"
 STAY_IN_SANDBOX = "commands run inside this bot's sandbox, and stepping outside it isn't something a bot can grant itself"
-# An MCP tool that reaches people or the world, by its name: not for work a bot started on its own.
-SENDS = re.compile(r"send|post|repl(y|ies)|e?mail|message|publish|comment|tweet|invite|share|upload|submit"
-                   r"|notify|transfer|pay|order|purchase|buy|create_issue|create_pull|merge|delete", re.IGNORECASE)
-ON_ITS_OWN = ("work a bot started on its own doesn't send, post, publish or pay for anything outside crewbots; "
-              "suggest it to the user instead")
 
 
 class Policy:
-    def __init__(self, access: Access, cwd: Path, granted_servers: set[str], network: bool | tuple[str, ...] = False,
-                 proactive: bool = False):
+    def __init__(self, access: Access, cwd: Path, granted_servers: set[str], network: bool | tuple[str, ...] = False):
         self.access = access
         self.cwd = Path(cwd).resolve()
         self.granted = granted_servers
         self.network = network
-        self.proactive = proactive
+        self.private = tuple(p.resolve() for p in private_paths())
         self._refusals: list[str] = []
 
     # Claude: one decision per tool call.
@@ -67,10 +66,9 @@ class Policy:
             server = name.split("__")[1] if name.count("__") >= 2 else ""
             if server not in self.granted:
                 return f"the MCP server {server!r} isn't granted by this bot's role card"
-            tool = name.split("__", 2)[-1]
-            return ON_ITS_OWN if self.proactive and server != "crewbots" and SENDS.search(tool) else None
-        if name in READ_TOOLS:
             return None
+        if name in READ_TOOLS:
+            return self.check_read(args)
         if name in WEB_TOOLS:
             return self.check_web(name, args)
         if self.access is Access.READ_ONLY:
@@ -112,6 +110,18 @@ class Policy:
             return self.check_network(urlparse(str(args.get("url", ""))).hostname or "")
         return SEARCH_NEEDS_ANY_HOST
 
+    def check_read(self, args: dict[str, Any]) -> str | None:
+        """A file tool's read: anywhere but the private paths. A search names the folder it starts from, or a pattern
+        whose folder part is where it looks."""
+        if self.access is Access.FULL:
+            return None
+        pattern = os.path.expanduser(str(args.get("pattern", "")))
+        where = pattern.split("*")[0] if os.path.isabs(pattern) else ""
+        for target in (args.get("file_path"), args.get("notebook_path"), args.get("path"), where):
+            if target and self._private(str(target)):
+                return PRIVATE
+        return None
+
     def check_write(self, path: str) -> str | None:
         if self.access is Access.READ_ONLY:
             return READ_ONLY
@@ -130,6 +140,15 @@ class Policy:
     def take_refusals(self) -> list[str]:
         out, self._refusals = self._refusals, []
         return out
+
+    def _private(self, path: str) -> bool:
+        target = Path(os.path.expanduser(path))
+        target = target if target.is_absolute() else self.cwd / target
+        try:
+            target = target.resolve()
+        except OSError:
+            return True
+        return any(target.is_relative_to(p) for p in self.private)
 
     def _inside(self, path: str) -> bool:
         target = Path(path) if os.path.isabs(path) else self.cwd / path

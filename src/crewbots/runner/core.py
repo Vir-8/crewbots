@@ -509,8 +509,9 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
                                                   recent=self._recent(bot.name),
                                                   state=self.crew.memory.state(bot.name, task.id)),
             resume_session_id=task.session_id,
-            # Work it started on its own reaches nothing outside: Codex can't refuse an MCP tool, so it gets none of them.
-            mcp_servers={**({} if proactive and bot.backend.startswith("codex") else bot.mcp),
+            # Work it started on its own reaches nothing outside crewbots, so it gets none of the bot's own MCP servers:
+            # which of their tools only read can't be told from their names.
+            mcp_servers={**({} if proactive else bot.mcp),
                          **({} if in_process else self._crew_tools(token, bot))},
             proactive=proactive,
             crew=CrewTools(self, task.id, bot.can_delegate) if in_process else None,

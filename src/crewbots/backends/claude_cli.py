@@ -4,14 +4,31 @@ import asyncio
 import json
 import os
 from collections.abc import AsyncIterator, Sequence
+from pathlib import Path
 from typing import Any
 
 from crewbots.backends.base import CLAUDE_BOT_ENV, Access, RunSpec, claude_retry, mcp_servers_json
+from crewbots.backends.credentials import private_paths, without_credentials
 from crewbots.backends.process import JsonlProcess, stream_jsonl
 from crewbots.events import Compacted, Done, Event, Notice, RateLimit, SessionStarted, Text, ToolCall, ToolResult, Usage
 
 READ_ONLY_TOOLS = "Read,Glob,Grep"
 WEB_TOOLS = "WebFetch,WebSearch"  # with network on; this backend can't check a fetch's host, so a host list is off
+# Claude Code's OS sandbox for a writing bot's shell commands: writes kept to the working folder, no opting out.
+SANDBOX = {"enabled": True, "autoAllowBashIfSandboxed": False, "allowUnsandboxedCommands": False}
+
+
+def private_rules() -> list[str]:
+    """Claude Code's deny rules for the private paths (backends/credentials.py), as the files they are or the folders
+    they might be. Its file tools obey them, and its sandbox keeps commands out of the same paths."""
+    return [rule for path in private_paths() for rule in (f"Read(/{path})", f"Read(/{path}/**)")]
+
+
+def settings(access: Access) -> dict[str, Any] | None:
+    """What a bot that isn't on full access gets on top of the repo's settings."""
+    if access is Access.FULL:
+        return None
+    return {"permissions": {"deny": private_rules()}}
 
 
 class ClaudeCLI:
@@ -25,19 +42,21 @@ class ClaudeCLI:
 
     def run(self, spec: RunSpec) -> AsyncIterator[Event]:
         return stream_jsonl(
-            self.argv(spec), cwd=spec.cwd, env=self.env(), parser=ClaudeParser(), stdin_text=spec.prompt,
+            self.argv(spec), cwd=spec.cwd, env=self.env(spec), parser=ClaudeParser(), stdin_text=spec.prompt,
             timeout_s=spec.timeout_s,
         )
 
     async def open(self, spec: RunSpec) -> "ClaudeSession":
         """`claude -p --input-format stream-json` stays running and takes each turn as a message on stdin."""
         argv = [*self.argv(spec), "--input-format", "stream-json"]
-        return ClaudeSession(await JsonlProcess.start(argv, cwd=spec.cwd, env=self.env()), spec)
+        return ClaudeSession(await JsonlProcess.start(argv, cwd=spec.cwd, env=self.env(spec)), spec)
 
-    def env(self) -> dict[str, str]:
+    def env(self, spec: RunSpec) -> dict[str, str]:
         env = dict(os.environ) | CLAUDE_BOT_ENV
         if not self.use_api_key:
             env.pop("ANTHROPIC_API_KEY", None)
+        if spec.access is Access.WORKSPACE_WRITE:
+            env |= without_credentials()
         return env
 
     def argv(self, spec: RunSpec) -> list[str]:
@@ -59,11 +78,14 @@ class ClaudeCLI:
                 args += ["--permission-mode", "dontAsk", "--tools", ",".join([READ_ONLY_TOOLS, *web])]
                 args += ["--allowedTools", ",".join([READ_ONLY_TOOLS, *web, *mcp_tools])]
             case Access.WORKSPACE_WRITE:
-                # acceptEdits allows edits inside the working directory; Bash has to be allowed by name. With
-                # --print there is nobody to ask, so anything else is denied.
+                # acceptEdits allows edits inside the working directory; Bash has to be allowed by name, and runs in
+                # the sandbox. With --print there is nobody to ask, so anything else is denied.
                 args += ["--permission-mode", "acceptEdits", "--allowedTools", ",".join(["Bash", *web, *mcp_tools])]
+                Path("/tmp/claude").mkdir(exist_ok=True)  # the sandbox's TMPDIR, which it doesn't create
             case Access.FULL:
                 args += ["--permission-mode", "bypassPermissions"]
+        if extra := settings(spec.access):
+            args += ["--settings", json.dumps(extra | ({"sandbox": SANDBOX} if spec.access is Access.WORKSPACE_WRITE else {}))]
         for path in spec.read_dirs:
             args += ["--add-dir", str(path)]
         if spec.model:

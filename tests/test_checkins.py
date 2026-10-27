@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from crewbots import checkins
 from crewbots.api import create_app
+from crewbots.backends import McpServer
 from crewbots.events import Done, Usage
 from crewbots.runner import Runner
 from crewbots.scheduler import Scheduler
@@ -39,7 +40,8 @@ def crew_with(store, tmp_path, reply, checklist=CHECKLIST, gate=None):
     if checklist:
         (tmp_path / "bots" / "engineer" / "checkin.md").write_text(checklist)
     backend = FakeBackend(reply=reply, gate=gate)
-    runner = Runner(store, make_crew(tmp_path, bot("engineer"), bot("critic")), {"fake": backend})
+    engineer = bot("engineer", mcp={"github": McpServer(command="github-mcp")})
+    runner = Runner(store, make_crew(tmp_path, engineer, bot("critic")), {"fake": backend})
     return runner, Scheduler(runner), backend
 
 
@@ -84,8 +86,8 @@ async def test_a_check_with_news_says_it_in_the_bots_chat(store, tmp_path):
                      "proactive_id": 1}]
     done = store.get_task(task.id)
     assert done.status is Status.IDLE and done.created_by == "crewbots" and done.title == "engineer's check-ins"
-    spec = backend.specs[0]  # small, read-only, the bot's own model, no crew tools
-    assert spec.access.value == "read_only" and "crewbots" not in spec.mcp_servers and "in the background" in spec.system_prompt
+    spec = backend.specs[0]  # small, read-only, the bot's own model, no crew tools and none of its MCP servers
+    assert spec.access.value == "read_only" and spec.mcp_servers == {} and "in the background" in spec.system_prompt
     assert "pull requests waiting on the user" in spec.prompt and "The user reviews in the morning." in spec.prompt
     assert len(spec.prompt) < 6000 and store.bot_usage("engineer", "2000-01-01") == 2060
 

@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from crewbots.backends.base import Access, RunSpec, codex_retry, session_temp_dir
-from crewbots.backends.codex_cli import network_overrides
+from crewbots.backends.codex_cli import network_overrides, sandbox_overrides
 from crewbots.backends.credentials import without_credentials
 from crewbots.backends.policy import NO_NETWORK, STAY_IN_SANDBOX, Policy
 from crewbots.backends.process import JsonlProcess
@@ -43,7 +43,6 @@ from crewbots.events import (
 if TYPE_CHECKING:
     from crewbots.backends.codex_cli import CodexCLI
 
-SANDBOX = {Access.READ_ONLY: "read-only", Access.WORKSPACE_WRITE: "workspace-write", Access.FULL: "danger-full-access"}
 OPEN_TIMEOUT_S = 120.0  # starting the thread waits for its MCP servers
 CLIENT = {"name": "crewbots", "title": "crewbots", "version": "0.1"}
 CREW_SERVER = "crewbots"
@@ -81,13 +80,11 @@ class CodexSession:
         env = dict(os.environ)
         temp = None
         if spec.access is Access.WORKSPACE_WRITE:
-            # The sandbox otherwise lets commands write to /tmp and $TMPDIR too: a way out of the task's folder.
-            temp = session_temp_dir()
+            temp = session_temp_dir()  # in place of /tmp and $TMPDIR (sandbox_overrides)
             env["TMPDIR"] = str(temp)
             env |= without_credentials()
-            overrides += ["-c", "sandbox_workspace_write.exclude_slash_tmp=true",
-                          "-c", "sandbox_workspace_write.exclude_tmpdir_env_var=true",
-                          "-c", f"sandbox_workspace_write.writable_roots={json.dumps([str(temp)])}"]
+        if spec.access is not Access.FULL:
+            overrides += sandbox_overrides(spec, temp)
         overrides += network_overrides(spec)
         argv = [*cli.command, "app-server", "-c", f'approval_policy="{policy}"', *overrides, *spec.extra_args]
         session = cls(await JsonlProcess.start(argv, cwd=spec.cwd, env=env), spec)
@@ -96,7 +93,10 @@ class CodexSession:
             await session._request("initialize", {"clientInfo": CLIENT, "capabilities": None})
             await session.process.send({"jsonrpc": "2.0", "method": "initialized"})
             params: dict[str, Any] = {
-                "cwd": str(spec.cwd), "approvalPolicy": session.approval_policy, "sandbox": SANDBOX[spec.access],
+                "cwd": str(spec.cwd), "approvalPolicy": session.approval_policy,
+                # Full access has no sandbox; otherwise it's the permissions profile, which a sandbox mode here
+                # would replace.
+                **({"sandbox": "danger-full-access"} if spec.access is Access.FULL else {}),
                 "developerInstructions": spec.system_prompt, "model": spec.model,
             }
             if spec.resume_session_id:
