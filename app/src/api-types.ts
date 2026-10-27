@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "e265923fa973";
+export const API_SCHEMA = "760f49fc255b";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -847,7 +847,7 @@ export interface ReleaseOut {
   log?: string | null;
   bundle?: string | null;
   expected?: number | null;
-  background?: boolean;
+  kind?: string | null;
 }
 
 export interface Remember {
@@ -1118,6 +1118,13 @@ export interface UpdateCommit {
   subject: string;
 }
 
+/** Which parts an update needs: the app built again (its code changed since it was built), the daemon restarted
+(its code changed since it started). */
+export interface UpdateNeeds {
+  app?: boolean;
+  daemon?: boolean;
+}
+
 /** What updating crewbots from its checkout would bring, and how the last update went. */
 export interface UpdateOut {
   app: string | null;
@@ -1127,6 +1134,7 @@ export interface UpdateOut {
   commits: UpdateCommit[];
   pull: boolean;
   note: string | null;
+  needs?: UpdateNeeds;
   release: ReleaseOut;
 }
 

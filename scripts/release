@@ -6,10 +6,12 @@
 #   scripts/release              everything
 #   scripts/release --daemon     checks, then the daemon only: for changes that don't touch the app
 #
-# Started from the app (by the daemon, CREWBOTS_RELEASE_FROM_APP set), it checks and builds, then stops with the
-# build ready ("built"): the app installs it over itself, has the daemon restart once the crew is idle, and restarts.
-# The daemon also starts it so before anyone asks (CREWBOTS_RELEASE_BACKGROUND, at low priority), to have the update
-# ready by the time it's wanted; CREWBOTS_RELEASE_EXPECTED is how long the last build took, for the app's progress.
+# Started from the app (by the daemon, CREWBOTS_RELEASE_FROM_APP set), it gets an update ready, then stops ("built"):
+# the app installs it over itself, has the daemon restart once the crew is idle, and restarts. It does only what the
+# update needs: the app is built when its code changed (CREWBOTS_RELEASE_APP=0 when it didn't: then only the daemon
+# restarts, taking the checkout's code as it is), and the checks are the quick ones, that the daemon loads and the app
+# compiles, since a change was checked when it was made; the whole suite is a terminal release's.
+# CREWBOTS_RELEASE_EXPECTED is how long the last update like it took, for the app's progress bar.
 # macOS lets an app replace itself, but not the daemon (a launchd service) touch an app it didn't make.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -21,6 +23,9 @@ daemon_only=false
 [[ "${1:-}" == "--daemon" ]] && daemon_only=true
 from_app=false
 [[ -n "${CREWBOTS_RELEASE_FROM_APP:-}" ]] && from_app=true
+build_app=true
+{ $daemon_only || [[ "${CREWBOTS_RELEASE_APP:-1}" == "0" ]]; } && build_app=false
+kind=$($build_app && echo app || echo daemon)
 
 done_lines=()
 started=$SECONDS
@@ -30,9 +35,9 @@ STATUS="$HOME/.crewbots/release.json"
 current="Starting"
 status() { # state, step[, the built app]: for the app, written whole so it never reads half of it
   mkdir -p "$(dirname "$STATUS")"
-  printf '{"state": "%s", "step": "%s", "commit": "%s", "pid": %d, "started_at": %d, "at": %d, "bundle": "%s", "expected": %d, "background": %s}\n' \
-    "$1" "$2" "$commit" $$ "$began" "$(date +%s)" "${3:-}" "${CREWBOTS_RELEASE_EXPECTED:-0}" \
-    "$([[ -n "${CREWBOTS_RELEASE_BACKGROUND:-}" ]] && echo true || echo false)" >"$STATUS.tmp" && mv "$STATUS.tmp" "$STATUS"
+  printf '{"state": "%s", "step": "%s", "commit": "%s", "pid": %d, "started_at": %d, "at": %d, "bundle": "%s", "expected": %d, "kind": "%s"}\n' \
+    "$1" "$2" "$commit" $$ "$began" "$(date +%s)" "${3:-}" "${CREWBOTS_RELEASE_EXPECTED:-0}" "$kind" >"$STATUS.tmp" &&
+    mv "$STATUS.tmp" "$STATUS"
 }
 trap 'status failed "$current"' ERR
 step() {
@@ -45,13 +50,20 @@ did() { done_lines+=("$1 ($((SECONDS - step_started))s)"); }
 
 [[ -n "$(git status --porcelain)" ]] && echo "Note: the checkout has uncommitted changes; they go out too."
 
-step "Checks"
-uv run ruff check src tests
-uv run pytest -q
-(cd app && npx tsc --noEmit -p . && npm test --silent)
-did "Checks passed: ruff, pytest, tsc, the app's tests"
+if $from_app; then
+  step "Checking it starts"
+  uv run python -c "import crewbots.api, crewbots.cli" # the daemon loads (uv run brings its dependencies up to date)
+  if $build_app; then (cd app && npx tsc --noEmit -p .); fi
+  did "Quick checks passed: the daemon loads$($build_app && echo ", the app compiles")"
+else
+  step "Checks"
+  uv run ruff check src tests
+  uv run pytest -q
+  (cd app && npx tsc --noEmit -p . && npm test --silent)
+  did "Checks passed: ruff, pytest, tsc, the app's tests"
+fi
 
-if ! $daemon_only; then
+if $build_app; then
   step "Building the app"
   # Made again by every build. macOS won't let one app overwrite files another left (they carry its provenance),
   # so a release from the app (run by the daemon) and one from a terminal would trip on each other's copies.
@@ -70,8 +82,9 @@ if ! $daemon_only; then
 fi
 
 if $from_app; then
-  status built "Built" "$(cd "$(dirname "$BUILT")" && pwd)/crewbots.app"
-  printf '\n\033[1mBuilt %s in %ss: the app installs it and restarts.\033[0m\n' "$commit" "$((SECONDS - started))"
+  status built "Built" "$($build_app && echo "$(cd "$(dirname "$BUILT")" && pwd)/crewbots.app")"
+  printf '\n\033[1mReady %s in %ss: %s.\033[0m\n' "$commit" "$((SECONDS - started))" \
+    "$($build_app && echo "the app installs it and restarts" || echo "the daemon restarts once the crew is idle")"
   exit 0
 fi
 

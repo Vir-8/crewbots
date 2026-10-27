@@ -323,7 +323,8 @@ function previewUpdate(starting: boolean) {
   const at = updateStarted ? Math.floor((Date.now() - updateStarted) / 3000) : -1;
   const release = at < 0 ? {} : at < UPDATE_STEPS.length ? { state: "running", step: UPDATE_STEPS[at], commit: "f00dfeed1234", started_at: Math.floor(updateStarted / 1000), expected: UPDATE_STEPS.length * 3 } : { state: "built", step: "Built", commit: "f00dfeed1234", bundle: "~/.crewbots/build/app/release/bundle/macos/crewbots.app" };
   return {
-    app: __APP_COMMIT__, daemon: __APP_COMMIT__, head: "f00dfeed1234", available: at < 0, pull: true, note: null, release,
+    app: __APP_COMMIT__, daemon: __APP_COMMIT__, head: "f00dfeed1234", available: true, pull: true, note: null, release,
+    needs: { app: true, daemon: true },
     commits: [
       { sha: "f00dfee", at: "", subject: "Check for updates and update from the app" },
       { sha: "a1b2c3d", at: "", subject: "Pin chats to the top of the sidebar in your own order" },

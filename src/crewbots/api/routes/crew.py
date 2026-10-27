@@ -59,7 +59,7 @@ def routes(c: Context) -> APIRouter:
     async def check_update(app: str | None = None, fetch: bool = False):
         """What updating crewbots from its checkout would bring (`fetch`: asking GitHub too), and how the last update
         went."""
-        return await asyncio.to_thread(updates.check, app, fetch, True)
+        return await asyncio.to_thread(updates.check, app, fetch)
 
     @v1.post("/update", response_model=UpdateOut, status_code=202)
     async def start_update(body: UpdateBody):

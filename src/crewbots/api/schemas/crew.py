@@ -31,8 +31,16 @@ class ReleaseOut(BaseModel):
     at: int | None = None
     log: str | None = None  # the end of its log, when it failed
     bundle: str | None = None  # the app it built, for the app to install ("built")
-    expected: int | None = None  # seconds the last build took, to say how far along this one is
-    background: bool = False  # got ready before anyone asked
+    expected: int | None = None  # seconds the last update like it took, to say how far along this one is
+    kind: str | None = None  # app (built again, and the daemon restarted) or daemon (restarted only)
+
+
+class UpdateNeeds(BaseModel):
+    """Which parts an update needs: the app built again (its code changed since it was built), the daemon restarted
+    (its code changed since it started)."""
+
+    app: bool = False
+    daemon: bool = False
 
 
 class UpdateOut(BaseModel):
@@ -45,6 +53,7 @@ class UpdateOut(BaseModel):
     commits: list[UpdateCommit]  # what's new, newest first
     pull: bool  # it comes from GitHub, as a fast-forward
     note: str | None  # why there's nothing to update to, when there's a reason
+    needs: UpdateNeeds = UpdateNeeds()
     release: ReleaseOut
 
 

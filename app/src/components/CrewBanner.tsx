@@ -43,14 +43,15 @@ export function CrewBanner({ crew, onUpdates }: { crew: Crew; onUpdates: () => v
       </div>
     );
   }
-  if ((running(own) && ownState.following) || ownState.installing) {
+  if (running(own) || ownState.installing) {
     const left = ownState.installing ? "" : timeLeft(own);
+    const after = own?.needs?.app ? "then the app restarts" : "then the crew's daemon restarts";
     return (
       <div className="crew-banner" role="status">
         <span className="working-dot" />
         <span>
           Updating crewbots: {ownState.installing ? "installing it" : own!.release.step?.toLowerCase() ?? "starting"}
-          <span className="faint"> · {left ? `${left}, then the app restarts` : "the app restarts itself when it's done"}</span>
+          <span className="faint"> · {left ? `${left}, ${after}` : own?.needs?.app ? "the app restarts itself when it's done" : "the crew's daemon restarts when it's done"}</span>
         </span>
       </div>
     );
