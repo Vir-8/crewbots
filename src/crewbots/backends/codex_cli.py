@@ -15,7 +15,7 @@ from contextlib import aclosing
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from crewbots.backends.base import Access, McpServer, RunSpec
+from crewbots.backends.base import Access, McpServer, RunSpec, package_caches
 from crewbots.backends.codex_isolation import isolation_overrides
 from crewbots.backends.credentials import private_paths, without_credentials
 from crewbots.backends.process import stream_jsonl
@@ -39,7 +39,8 @@ class CodexExec:
 
     async def run(self, spec: RunSpec) -> AsyncIterator[Event]:
         argv = await asyncio.to_thread(self.argv, spec)  # may list Codex's MCP servers, which takes seconds
-        env = dict(os.environ) | (without_credentials() if spec.access is Access.WORKSPACE_WRITE else {})
+        env = dict(os.environ) | (without_credentials() | package_caches() if spec.access is Access.WORKSPACE_WRITE
+                                  else {})
         async with aclosing(stream_jsonl(argv, cwd=spec.cwd, env=env, parser=CodexParser(),
                                          stdin_text=self.prompt(spec), timeout_s=spec.timeout_s)) as stream:
             async for event in stream:
@@ -227,12 +228,14 @@ def sandbox_overrides(spec: RunSpec, temp: Path | None = None) -> list[str]:
     one for the bot's access, with the private paths (backends/credentials.py) unreadable, and the network on only for
     a writing bot whose role card turns it on. `temp`, a writing bot's own temp folder, takes the place of /tmp and
     $TMPDIR, which commands could otherwise write to: a way out of the task's folder. The folders the user let it
-    write in, for this task, are writable too. (Codex's older sandbox settings can only limit writes, and a profile
-    set here wins over them, even with `sandbox_mode` in the user's config.)"""
+    write in, for this task, are writable too, and a writing bot's package caches. (Codex's older sandbox settings can
+    only limit writes, and a profile set here wins over them, even with `sandbox_mode` in the user's config.)"""
     files = {str(path): "deny" for path in private_paths()}
     if temp is not None:
         files |= {":slash_tmp": "read", ":tmpdir": "read", str(temp): "write"}
     files |= {str(folder): "write" for folder in spec.write_dirs}
+    if spec.access is Access.WORKSPACE_WRITE:
+        files |= {folder: "write" for folder in package_caches().values()}
     table = ", ".join(f"{json.dumps(key)} = {json.dumps(access)}" for key, access in files.items())
     network = spec.network is True and spec.access is Access.WORKSPACE_WRITE
     return ["-c", f'default_permissions="{PROFILE}"',

@@ -103,7 +103,12 @@ def test_what_crewbots_reads_is_still_in_the_protocol(schema):
         assert kind in items and read <= items[kind], f"{kind}: {read - items.get(kind, set())}"
 
 
-@pytest.mark.skipif(sys.platform != "darwin", reason="Codex's macOS sandbox")
+def sandboxed() -> bool:
+    """Whether these tests run in a sandbox already, a bot's: Codex's can't start inside it."""
+    return subprocess.run(["sandbox-exec", "-p", "(version 1)(allow default)", "true"], capture_output=True).returncode != 0
+
+
+@pytest.mark.skipif(sys.platform != "darwin" or sandboxed(), reason="Codex's macOS sandbox, which can't start in one")
 def test_the_sandbox_profile_keeps_commands_out_of_the_private_paths(tmp_path, monkeypatch):
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
     (tmp_path / "codex-home").mkdir()
@@ -123,3 +128,5 @@ def test_the_sandbox_profile_keeps_commands_out_of_the_private_paths(tmp_path, m
     assert run("cat", token).returncode != 0
     assert run("touch", work / "made").returncode == 0 and (work / "made").exists()
     assert run("touch", Path(paths.home()) / "outside").returncode != 0
+    assert run("touch", paths.caches() / "uv" / "downloaded").returncode == 0  # what uv and npm download, kept
+    assert run("touch", paths.crew() / "made").returncode != 0

@@ -56,6 +56,11 @@ def temp() -> Path:
     return root() / "tmp"
 
 
+def caches() -> Path:
+    """What writing bots' package managers download, kept between their tasks (backends/base.py)."""
+    return root() / "caches"
+
+
 def no_credentials() -> Path:
     """The empty logins a writing bot's shell gets (backends/credentials.py)."""
     return root() / "no-credentials"

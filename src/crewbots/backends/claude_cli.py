@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
 from typing import Any
 
-from crewbots.backends.base import CLAUDE_BOT_ENV, Access, RunSpec, claude_retry, mcp_servers_json
+from crewbots.backends.base import CLAUDE_BOT_ENV, Access, RunSpec, claude_retry, mcp_servers_json, package_caches
 from crewbots.backends.credentials import private_paths, without_credentials
 from crewbots.backends.process import JsonlProcess, stream_jsonl
 from crewbots.events import Compacted, Done, Event, Notice, RateLimit, SessionStarted, Text, ToolCall, ToolResult, Usage
@@ -29,12 +29,14 @@ def private_rules() -> list[str]:
 
 def settings(access: Access, write_dirs: Sequence[Path] = ()) -> dict[str, Any] | None:
     """What a bot that isn't on full access gets on top of the repo's settings: the private paths denied, and the
-    folders the user let it write in, for this task, allowed to its file tools (and so to its sandbox's commands)."""
+    folders the user let it write in, for this task, allowed to its file tools (and so to its sandbox's commands), with
+    a writing bot's package caches."""
     if access is Access.FULL:
         return None
     permissions: dict[str, list[str]] = {"deny": private_rules()}
-    if write_dirs:
-        permissions["allow"] = [rule for folder in write_dirs for rule in (f"Edit(/{folder})", f"Edit(/{folder}/**)")]
+    caches = package_caches().values() if access is Access.WORKSPACE_WRITE else ()
+    if folders := [*map(str, write_dirs), *caches]:
+        permissions["allow"] = [rule for folder in folders for rule in (f"Edit(/{folder})", f"Edit(/{folder}/**)")]
     return {"permissions": permissions}
 
 
@@ -63,7 +65,7 @@ class ClaudeCLI:
         if not self.use_api_key:
             env.pop("ANTHROPIC_API_KEY", None)
         if spec.access is Access.WORKSPACE_WRITE:
-            env |= without_credentials()
+            env |= without_credentials() | package_caches()
         return env
 
     def argv(self, spec: RunSpec) -> list[str]:

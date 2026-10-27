@@ -45,7 +45,7 @@ def quick_retries(monkeypatch):
 # running beside them and writing its own files, so those are left out, and so are the user's own Claude sessions.
 LIVE = {".crewbots/crew/crewbots.db", ".crewbots/crew/crewbots.db-wal", ".crewbots/crew/crewbots.db-shm",
         ".crewbots/crew/daemon.json", ".crewbots/logs", ".crewbots/crew/attachments", ".crewbots/crew/memory",
-        ".crewbots/tmp"}
+        ".crewbots/tmp", ".crewbots/caches"}
 WATCHED_DEPTH = 3  # deep enough for every folder crewbots makes; not into checkouts, which are big
 
 
@@ -73,16 +73,20 @@ def _snapshot() -> dict[str, float]:
 
 
 def _crew_was_working(since: float) -> bool:
-    """Whether the real crew's daemon did any work while the tests ran: then a change may be its, not a test's."""
+    """Whether the real crew's daemon did any work while the tests ran: then a change may be its, not a test's. A
+    bot's sandbox (a bot running these tests on crewbots itself) can't read the crew's records, but then nothing the
+    tests run could have changed the user's folders either."""
     import sqlite3
 
     db = REAL_HOME / ".crewbots" / "crew" / "crewbots.db"
-    if not db.exists():
-        return False
     try:
+        if not db.exists():
+            return False
         with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
             started = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(since))
             return conn.execute("select count(*) from tasks where updated_at >= ?", (started,)).fetchone()[0] > 0
+    except PermissionError:
+        return True
     except sqlite3.Error:
         return False
 

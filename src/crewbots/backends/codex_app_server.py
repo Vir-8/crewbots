@@ -22,7 +22,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from crewbots.backends.base import Access, RunSpec, codex_retry, session_temp_dir
+from crewbots.backends.base import Access, RunSpec, codex_retry, package_caches, session_temp_dir
 from crewbots.backends.codex_cli import network_overrides, sandbox_overrides
 from crewbots.backends.credentials import without_credentials
 from crewbots.backends.policy import NO_NETWORK, STAY_IN_SANDBOX, Policy
@@ -82,7 +82,7 @@ class CodexSession:
         if spec.access is Access.WORKSPACE_WRITE:
             temp = session_temp_dir()  # in place of /tmp and $TMPDIR (sandbox_overrides)
             env["TMPDIR"] = str(temp)
-            env |= without_credentials()
+            env |= without_credentials() | package_caches()
         if spec.access is not Access.FULL:
             overrides += sandbox_overrides(spec, temp)
         overrides += network_overrides(spec)

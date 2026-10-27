@@ -74,7 +74,11 @@ def test_a_writing_bot_runs_its_commands_in_the_sandbox_and_no_bot_reads_the_pri
     written, read = settings(Access.WORKSPACE_WRITE), settings(Access.READ_ONLY)
     assert written["sandbox"]["enabled"] and "sandbox" not in read
     assert f"Read(/{paths.crew() / 'daemon.json'})" in read["permissions"]["deny"]
-    assert written["permissions"] == read["permissions"]
+    assert written["permissions"]["deny"] == read["permissions"]["deny"]
+    caches = [f"Edit(/{paths.caches() / 'uv'}/**)", f"Edit(/{paths.caches() / 'npm'}/**)"]
+    assert set(caches) <= set(written["permissions"]["allow"]) and "allow" not in read["permissions"]
+    env = ClaudeCLI().env(RunSpec(prompt="x", cwd=".", access=Access.WORKSPACE_WRITE))
+    assert env["UV_CACHE_DIR"] == str(paths.caches() / "uv") and env["npm_config_cache"] == str(paths.caches() / "npm")
     assert settings(Access.FULL) is None
 
 

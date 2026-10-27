@@ -125,5 +125,15 @@ def session_temp_dir() -> Path:
     return Path(tempfile.mkdtemp(prefix="session-", dir=paths.temp()))
 
 
+def package_caches() -> dict[str, str]:
+    """Where a writing bot's package managers keep what they download, as environment variables: folders of crewbots'
+    own that its sandbox may write in, since the user's (~/.cache/uv, ~/.npm) are outside it. The crew's bots share
+    them, so a task in a new worktree installs from what an earlier one downloaded."""
+    folders = {"UV_CACHE_DIR": paths.caches() / "uv", "npm_config_cache": paths.caches() / "npm"}
+    for folder in folders.values():
+        folder.mkdir(parents=True, exist_ok=True)
+    return {name: str(folder) for name, folder in folders.items()}
+
+
 def mcp_servers_json(servers: dict[str, McpServer]) -> dict[str, Any]:
     return {name: s.config() for name, s in servers.items()}

@@ -37,7 +37,7 @@ from claude_agent_sdk import (
     tool,
 )
 
-from crewbots.backends.base import CLAUDE_BOT_ENV, Access, RunSpec, claude_retry
+from crewbots.backends.base import CLAUDE_BOT_ENV, Access, RunSpec, claude_retry, package_caches
 from crewbots.backends.claude_cli import (
     EDIT_TOOLS,
     READ_ONLY_TOOLS,
@@ -100,7 +100,7 @@ class ClaudeAgent:
             # folder fail.
             Path("/tmp/claude").mkdir(exist_ok=True)
             sandbox = SANDBOX
-            env |= without_credentials()
+            env |= without_credentials() | package_caches()
         return ClaudeAgentOptions(
             cli_path=self.cli_path,
             cwd=str(spec.cwd),

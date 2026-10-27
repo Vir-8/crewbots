@@ -85,7 +85,9 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
 - **Backends** translate each CLI's output into one shared event stream.
   - **One policy for both backends** (`backends/policy.py`):
     - read-only bots only read
-    - writing bots only write in their task's folder
+    - writing bots only write in their task's folder, and in the package caches crewbots keeps for them
+      (`~/.crewbots/caches`, uv's and npm's, the crew's and not yours), so they can install a project's dependencies
+      and run its tests
     - nobody pushes, merges or publishes
     - a bot has no network unless its role card says `network: true`, or lists the hosts
       (`network: [pypi.org, files.pythonhosted.org, "*.npmjs.org"]`). That covers web search and fetching pages, for
