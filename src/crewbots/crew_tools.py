@@ -53,6 +53,7 @@ SPECS: dict[str, Spec] = {
     "forget": Spec(_object({"name": STRING, "shared": {"type": "boolean"}}, ["name"])),
     "recall": Spec(_object({"query": STRING}, ["query"])),
     "update_state": Spec(_object({"state": STRING}, ["state"])),
+    "set_name": Spec(_object({"name": STRING}, ["name"])),
     "remind_on": Spec(_object({"event": STRING, "match": STRING, "then": STRING}, ["event", "then"])),
     "propose_routine": Spec(_object({"name": STRING, "description": STRING, "goal": STRING, "schedule": STRING,
                                      "on": STRING, "repo": STRING}, ["name", "description", "goal"])),
@@ -169,6 +170,9 @@ class CrewTools:
                     return recall_text(r.recall(me, args["query"]))
                 case "update_state":
                     return f"Kept this task's state ({r.update_state(me, args['state'])})."
+                case "set_name":
+                    bot = r.set_name(me, args["name"])
+                    return f"You go by {bot.label} now: the app shows it for you. Your handle, @{bot.name}, stays."
                 case "propose_routine":
                     r.propose_routine(me, args["name"], args["description"], args["goal"], args.get("schedule") or None,
                                       args.get("on") or None, args.get("repo") or None)

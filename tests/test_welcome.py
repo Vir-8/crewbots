@@ -6,8 +6,10 @@ import dataclasses
 import pytest
 from fakes import FakeBackend, bot, make_crew, wait_until
 
-from crewbots import discovery, paths
-from crewbots.runner import Runner
+from crewbots import cards, discovery, paths
+from crewbots import crew as crew_module
+from crewbots.crew import CrewError
+from crewbots.runner import NotAllowed, Runner
 from crewbots.store import Store
 
 
@@ -44,6 +46,23 @@ def test_a_chief_with_no_name_asks_for_one(store, tmp_path):
     runner = runner_for(store, tmp_path)
     chat = runner.greet()
     assert ("text", "Want to give me a name?") in kinds(store, chat.id)
+
+
+def test_the_chief_carries_on_from_its_hello(store, tmp_path):
+    """Its first session starts from what it said, which crewbots said for it."""
+    runner = runner_for(store, tmp_path)
+    briefing = store.get_task(runner.greet().id).briefing
+    assert "Hey! I'm your Chief." in briefing and "Want to give me a name?" in briefing
+    assert "rather than introducing yourself again" in briefing and "`set_name`" in briefing
+
+
+def test_a_crew_the_user_has_talked_with_isnt_greeted(store, tmp_path):
+    runner = runner_for(store, tmp_path)
+    chat = runner.chat("chief")
+    store.append_event(chat.id, kind="message", data={"from": "user", "text": "Morning"})
+
+    assert runner.greet() is None
+    assert runner.started() and kinds(store, chat.id) == [("message", "Morning")]
 
 
 async def test_bringing_in_adds_projects_and_learns_in_a_thread_of_its_own(store, tmp_path):
@@ -86,3 +105,19 @@ def test_a_crew_already_started_off_isnt_greeted(store, tmp_path):
     runner.reload(dataclasses.replace(runner.crew, projects={"web": object()}))
 
     assert runner.greet() is None
+
+
+def test_a_bot_takes_the_name_the_user_gives_it_in_its_chat(store, tmp_path):
+    home = crew_module.init(tmp_path / "crew")
+    runner = Runner(store, crew_module.load(home), {"fake": FakeBackend()})
+    chat = runner.chat("chief")
+
+    runner.set_name(chat.id, "  Roger ")
+
+    assert runner.crew.bots["chief"].label == "Roger" and cards.card(home, "chief")["display_name"] == "Roger"
+    assert crew_module.load(home).bots["chief"].mcp == runner.crew.bots["chief"].mcp  # the rest of its card as it was
+    with pytest.raises(NotAllowed):  # work isn't where it's named
+        runner.set_name(store.create_task("chief", "Plan the launch").id, "Rog")
+    for taken in ("Engineer", "R@ger", "x" * 41):
+        with pytest.raises(CrewError):
+            runner.set_name(chat.id, taken)

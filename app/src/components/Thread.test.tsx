@@ -92,4 +92,16 @@ describe("a bot's working, in a chat", () => {
     ]);
     expect(renderToStaticMarkup(<Thread crew={crew} task={task} onOpen={() => undefined} chat />)).toContain("Compacted its conversation · 1 update");
   });
+
+  it("says so when a bot takes the name it's given", () => {
+    const { crew, task } = chat(0);
+    const at = new Date(Date.UTC(2026, 9, 27, 7)).toISOString();
+    crew.events.set(task.id, [
+      { id: 1, task_id: task.id, kind: "tool_call", data: { id: "a", name: "mcp__crewbots__set_name", input: { name: "Roger" } }, at },
+      { id: 2, task_id: task.id, kind: "tool_result", data: { id: "a", output: "You go by Roger now" }, at },
+    ]);
+    const html = renderToStaticMarkup(<Thread crew={crew} task={task} onOpen={() => undefined} chat />);
+    expect(html).toContain("Took the name Roger");
+    expect(html).not.toContain("set_name");
+  });
 });

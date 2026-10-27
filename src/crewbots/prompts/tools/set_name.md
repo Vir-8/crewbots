@@ -1,0 +1,1 @@
+Take the name the user gives you, or a new one they'd rather: the app shows it for you, and the user and teammates can @mention you by it. Your handle stays as it is. Only when the user gives it, in your chat or a group chat, and only your own: you can't name a teammate.

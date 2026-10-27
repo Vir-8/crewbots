@@ -58,6 +58,11 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
             at = call("POST", "/bot/next_check", {"minutes": minutes, "why": why})["at"]
             return f"You'll look around again at {at[11:16]}, unless something comes up first."
 
+    @server.tool(description=describe("set_name"))
+    def set_name(name: str) -> str:
+        bot = call("POST", "/bot/set_name", {"name": name})
+        return f"You go by {bot['display_name']} now: the app shows it for you. Your handle, @{bot['name']}, stays."
+
     @server.tool(description=describe("write_page"))
     def write_page(page: str, text: str) -> str:
         written = call("POST", "/bot/write_page", {"page": page, "text": text})

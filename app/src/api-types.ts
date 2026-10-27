@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "8b0cd0fcdab6";
+export const API_SCHEMA = "2db2430353ef";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -515,6 +515,10 @@ export interface ModelUse {
 export interface ModelsOut {
   claude: ModelOut[];
   codex: ModelOut[];
+}
+
+export interface NameBody {
+  name: string;
 }
 
 export interface NewBot {

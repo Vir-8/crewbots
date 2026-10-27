@@ -25,7 +25,7 @@ export type Block =
 // Crew tools that are shown as what they did (a card, a verdict, a question, a note kept, a page), not as steps.
 const SHOWN_ELSEWHERE = new Set(
   ["delegate", "start_thread", "post", "share", "handoff", "review", "escalate", "propose_merge", "message", "ask", "remember",
-    "forget", "update_state", "write_page", "edit_page", "next_check"].map((t) => `mcp__crewbots__${t}`),
+    "forget", "update_state", "write_page", "edit_page", "next_check", "set_name"].map((t) => `mcp__crewbots__${t}`),
 );
 const COMPACTED = "compacted its conversation"; // the gist of the lines about a conversation grown long
 const NOTE = /^(Remembered|You gave it a note)/;
@@ -123,6 +123,9 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
       } else if (d.name === "mcp__crewbots__next_check" && !result?.data.is_error) {
         flush();
         out.push({ kind: "line", id: e.id, text: `Will look around again in ${minutes(Number(d.input?.minutes))}: ${oneLine(d.input?.why ?? "", 140)}`, icon: "repeat", gist: "planned when to look again" });
+      } else if (d.name === "mcp__crewbots__set_name" && !result?.data.is_error) {
+        flush();
+        out.push({ kind: "line", id: e.id, text: `Took the name ${oneLine(String(d.input?.name ?? ""), 60)}`, icon: "check" });
       } else if (d.name === "mcp__crewbots__message") {
         flush();
         const to = tasks.get(d.input?.task_id)?.bot ?? "the task";

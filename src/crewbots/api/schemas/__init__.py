@@ -10,6 +10,7 @@ from crewbots.api.schemas.bot import (
     GroupMember,
     HandoffBody,
     MergeProposal,
+    NameBody,
     NextCheck,
     OpenGroup,
     PageEdit,
@@ -158,6 +159,7 @@ from crewbots.api.schemas.usage import (
 )
 
 __all__ = [
+    "NameBody",
     "NextCheck",
     "LivePage",
     "PageBody",

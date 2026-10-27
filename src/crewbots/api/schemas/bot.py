@@ -61,6 +61,9 @@ class NextCheck(BaseModel):
     minutes: float
     why: str
 
+class NameBody(BaseModel):
+    name: str
+
 class PageWrite(BaseModel):
     page: str
     text: str

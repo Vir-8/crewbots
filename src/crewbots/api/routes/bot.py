@@ -14,6 +14,7 @@ from crewbots.api.schemas import (
     GroupMember,
     HandoffBody,
     MergeProposal,
+    NameBody,
     NextCheck,
     OpenGroup,
     PageEdit,
@@ -87,6 +88,11 @@ def routes(c: Context) -> APIRouter:
     @v1.post("/bot/next_check")
     async def bot_next_check(request: Request, body: NextCheck):
         return {"at": runner.next_check(request.state.task.id, body.minutes, body.why).isoformat()}
+
+    @v1.post("/bot/set_name")
+    async def bot_set_name(request: Request, body: NameBody):
+        bot = runner.set_name(request.state.task.id, body.name)
+        return {"name": bot.name, "display_name": bot.display_name}
 
     @v1.post("/bot/write_page", status_code=201)
     async def bot_write_page(request: Request, body: PageWrite):
