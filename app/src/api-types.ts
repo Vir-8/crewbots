@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "f3a4ab493edc";
+export const API_SCHEMA = "3d3e13b39f29";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -572,6 +572,11 @@ export interface NewTask {
 
 export interface NewThread {
   goal: string;
+}
+
+export interface NextCheck {
+  minutes: number;
+  why: string;
 }
 
 export interface NoteOut {

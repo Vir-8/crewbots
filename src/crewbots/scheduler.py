@@ -7,6 +7,7 @@ on what's new since it was added, never on what was already there, and once per 
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -16,8 +17,11 @@ from crewbots import checkins, prompts, sources
 from crewbots import crew as crew_module
 from crewbots import github as github_module
 from crewbots import routines as routines_module
+from crewbots.attention import BREAK_S
+from crewbots.crew import NO_REPLY
 from crewbots.routines import Routine, RoutineError
 from crewbots.runner import Runner
+from crewbots.runner.wakes import NEWS_GAP, URGENT_GAP
 from crewbots.store import Store, Task
 
 TICK_S = 30.0
@@ -26,6 +30,7 @@ MAX_STARTS_PER_POLL = 3  # per trigger; the rest wait for the next poll
 FIRST_SINCE = timedelta(days=1)  # what a routine's first run looks back over
 ACTIVITY_CHARS = 30_000
 CHECKIN_CHARS = 4_000  # of what changed, for a check-in: its context stays small
+WAKE_CHARS = 6_000  # of what the crew did, for the chief's look around
 SOURCES_EVERY_S = 60.0  # how often the user's workspaces and watched folders are looked at for events
 AWAY = timedelta(days=7)  # with nothing from the user for this long, routines and check-ins wait
 # A trigger's fields that someone outside the crew wrote, and what each is.
@@ -114,6 +119,7 @@ class Scheduler:
                 self.runner.happened(event.kind, event.subject, event.text)
         if not away:
             self._check_in_due(now)
+            self._wake_due(now)
         self.runner.attention.tick(now)
         triggers = [r for r in self.routines if r.enabled and r.on and not away]
         if (triggers or self._wants_github()) and (self._polled is None or loop.time() - self._polled >= self.github_every_s):
@@ -144,7 +150,8 @@ class Scheduler:
         runs git)."""
         crew = self.runner.crew
         recent = self.store.list_tasks(limit=200)
-        repos = sources.repos([b.workspace for b in crew.bots.values()] + [Path(t.repo) for t in recent if t.repo])
+        repos = sources.repos([b.workspace for b in crew.bots.values()] + [p.folder for p in crew.projects.values()]
+                              + [Path(t.repo) for t in recent if t.repo])
         folders = {f for bot in crew.bots if (c := checkins.load(crew.home, bot)) for f in c.watch if f.is_dir()}
         return self.sources.git(repos) + self.sources.folders(sorted(folders))
 
@@ -169,6 +176,44 @@ class Scheduler:
             if due and self.runner.capacity.verdict(card.backend.split("-")[0]).go:
                 return self.check_in(bot, due, now)
         return None
+
+    def _wake_due(self, now: datetime) -> Task | None:
+        """The chief's look around on its own (runner/wakes.py), when it's worth one: the time it asked for has come,
+        or there's news and it's been NEWS_GAP since its last look (URGENT_GAP for something failing). Never while
+        it's working, while the user is mid-conversation, or in quiet hours unless something's urgent. One a tick."""
+        runner = self.runner
+        for bot, card in runner.crew.bots.items():
+            if not runner.always_on(bot) or runner.bot_busy(bot):
+                continue
+            state = self.store.wake_state(bot)
+            if not state["looked_at"]:  # from now on, what happens is news
+                self.store.set_wake(bot, looked_at=_utc(now))
+                continue
+            looked = datetime.fromisoformat(state["looked_at"])
+            due = bool(state["next_at"]) and datetime.fromisoformat(state["next_at"]) <= now
+            events, stopped, urgent = runner.news_for(bot, state["looked_at"])
+            news = bool(events or stopped) and now - looked >= (URGENT_GAP if urgent else NEWS_GAP)
+            if not (due or news) or (runner.attention.quiet(now) and not urgent):
+                continue
+            if time.time() - runner.attention.user_wrote < BREAK_S or not runner.capacity.verdict(
+                    card.backend.split("-")[0]).go:
+                continue
+            return runner.wake(bot, self._wake_text(bot, state, events, stopped, looked, now, due))
+        return None
+
+    def _wake_text(self, bot: str, state: dict[str, Any], events: list[dict[str, Any]], stopped: list[Task],
+                   looked: datetime, now: datetime, due: bool) -> str:
+        reason = (f"You asked to look again now: {state['next_why'] or 'no reason given'}." if due else
+                  f"Something new since you last looked, at {_human(looked)}.")
+        lines = [f"- {e['at'][11:16]} {e['kind']}: {e['text']}" for e in events]
+        lines += [f"- {t.id} {t.bot}'s {t.title!r} is {t.status.value.replace('_', ' ')}" for t in stopped]
+        seen = "\n".join(f"- {e['at'][11:16]} {e['kind']}: {e['text']}" for e in self.store.crew_events(_utc(looked))
+                         if e not in events)
+        news = ("# New\n\n" + prompts.untrusted("events", "\n".join(lines)) + "\n\n" if lines else "") + (
+            "# Also\n\n" + prompts.untrusted("events", seen) + "\n\n" if seen else "") + activity(
+            self.store, looked, chars=WAKE_CHARS)
+        return prompts.text("wake", self.runner.crew.home, now=_human(now), reason=reason, news=news,
+                            no_reply=NO_REPLY)
 
     def check_in(self, bot: str, items: list[checkins.Item] | None = None, now: datetime | None = None) -> Task:
         """Checks `bot` in on `items` (default: its whole checklist), with what the crew did since its last one."""

@@ -73,6 +73,7 @@ SPECS: dict[str, Spec] = {
     "tasks": Spec(_object({}, [])),
     "message": Spec(_object({"task_id": STRING, "text": STRING}, ["task_id", "text"])),
     "propose_merge": Spec(_object({"task_id": STRING, "summary": STRING}, ["task_id", "summary"]), coordinator_only=True),
+    "next_check": Spec(_object({"minutes": {"type": "number"}, "why": STRING}, ["minutes", "why"]), coordinator_only=True),
 }
 
 
@@ -152,6 +153,9 @@ class CrewTools:
                 case "remember":
                     note = r.remember(me, args["title"], args["body"], shared=bool(args.get("shared")))
                     return f"Remembered: {note.title} ({note.path})."
+                case "next_check":
+                    at = r.next_check(me, args["minutes"], args["why"])
+                    return f"You'll look around again at {at:%H:%M} ({at:%a %d %b}), unless something comes up first."
                 case "write_page":
                     page = r.write_page(me, args["page"], args["text"])
                     return f"Wrote {page.name} ({page.path})."

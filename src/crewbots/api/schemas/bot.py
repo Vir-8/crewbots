@@ -57,6 +57,10 @@ class Remember(BaseModel):
     body: str
     shared: bool = False
 
+class NextCheck(BaseModel):
+    minutes: float
+    why: str
+
 class PageWrite(BaseModel):
     page: str
     text: str

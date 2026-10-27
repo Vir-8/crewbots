@@ -237,6 +237,16 @@ create table if not exists pins (
 """
 SCHEMA += PINS
 
+WAKES = """
+create table if not exists wakes (  -- an always-on bot's own looks around (runner/wakes.py)
+    bot       text primary key,
+    looked_at text,              -- when it last looked: what happened since is news
+    next_at   text,              -- when it asked to look again, if it did
+    next_why  text
+);
+"""
+SCHEMA += WAKES
+
 # Full-text search over what the crew said and decided: the `recall` tool. Kept in step with events as they're added.
 # `search` matches words (stemmed); `trigrams`, the same rows, matches any three or more characters, for ids, paths
 # and parts of code names (migration 6).
@@ -373,6 +383,7 @@ MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] =
     ("crew events, and standing intents", lambda db, _: db.executescript(HAPPENINGS)),
     ("what the crew raised on its own, and digests", lambda db, _: db.executescript(PROACTIVE)),
     ("chats pinned to the top of the sidebar", lambda db, _: db.executescript(PINS)),
+    ("an always-on bot's looks around", lambda db, _: db.executescript(WAKES)),
 ]
 
 

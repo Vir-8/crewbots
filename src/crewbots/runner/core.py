@@ -72,6 +72,7 @@ from crewbots.runner.holds import Holds
 from crewbots.runner.reviews import Reviewing
 from crewbots.runner.rooms import Rooms
 from crewbots.runner.sessions import Sessions
+from crewbots.runner.wakes import Wakes
 from crewbots.runner.work import Work
 from crewbots.store import Status, Store, Task
 
@@ -86,9 +87,9 @@ RETRY_WAITS_S = (30.0, 120.0, 300.0)
 STALL_S = 1200.0  # no event at all from a turn for this long: it's stuck, so it's stopped and tried again
 
 
-class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams, Checkins):
+class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams, Checkins, Wakes):
     """Runs the crew's tasks. Its parts are by area: sessions, rooms, delegation, reviews, work, files bots show the
-    user, holds, dreams (memory consolidated overnight) and check-ins."""
+    user, holds, dreams (memory consolidated overnight), check-ins, and the chief's own looks around (wakes)."""
 
     def __init__(
         self,
@@ -141,6 +142,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         self._turn_ended: dict[str, float] = {}  # task id → when its last turn ended (time.time())
         self._flushed: set[str] = set()  # tasks whose bot set down where things stand since their last turn
         self._dreaming: set[str] = set()  # bots whose memory is being consolidated now
+        self._waking: set[str] = set()  # chats looking around on their own (wakes.py): what they say is said unasked
         self.capacity = Capacity(self)  # whether background work may run now
         self.attention = Attention(self)  # when what the crew raises on its own reaches the user
         self._started = time.time()
@@ -352,6 +354,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
             if settled:  # stopped by the daemon stopping, it's kept for the next start to carry on
                 self.store.clear_pending(task_id)
             self._runs.pop(task_id, None)
+            self._waking.discard(task_id)
             self._stay_awake()
         self._report_up(task_id)
         task = self.store.get_task(task_id)
@@ -437,9 +440,15 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
                             elif isinstance(event, ToolResult) and event.images:  # as files, not in the database
                                 kept = await asyncio.to_thread(self._kept_images, event.images, looked_at.get(event.id))
                                 event = replace(event, images=kept)
-                            elif isinstance(event, Text) and (named := self._mentioned(task, cwd, event.text, started)):
-                                self._record(task_id, kind="text", data={"text": event.text, "files": named})
-                                continue
+                            elif isinstance(event, Text):
+                                if event.text.strip("`*_. ") == NO_REPLY:
+                                    continue  # nothing to say: the chat shows nothing
+                                named = self._mentioned(task, cwd, event.text, started)
+                                if named or task_id in self._waking:
+                                    self._record(task_id, kind="text", data={
+                                        "text": event.text, **({"files": named} if named else {}),
+                                        **({"checkin": True} if task_id in self._waking else {})})
+                                    continue
                             self._record(task_id, event)
                         match event:
                             case SessionStarted(session_id=sid):

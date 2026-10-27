@@ -150,7 +150,7 @@ async def test_workers_delegate_but_only_coordinators_add_bots_and_propose_merge
     assert worker == {"handoff", "escalate", "review", "remember", "forget", "recall", "start_thread", "post",
                       "delegate", "tasks", "message", "ask", "open_group", "add_to_group", "update_state", "remind_on",
                       "propose_routine", "share", "write_page", "edit_page"}
-    assert coordinator == worker | {"add_bot", "propose_merge"}
+    assert coordinator == worker | {"add_bot", "propose_merge", "next_check"}
 
 
 def test_a_verdict_from_a_task_that_is_not_a_review_is_refused_with_a_reason(crew_app):

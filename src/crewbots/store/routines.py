@@ -21,6 +21,17 @@ class Routines:
                         " on conflict(name) do update set last_run_at = excluded.last_run_at,"
                         " last_task_id = excluded.last_task_id", (name, at, at, task_id))
 
+    def wake_state(self, bot: str) -> dict[str, Any]:
+        row = self.db.execute("select * from wakes where bot = ?", (bot,)).fetchone()
+        return dict(row) if row else {"bot": bot, "looked_at": None, "next_at": None, "next_why": None}
+
+    def set_wake(self, bot: str, **fields: str | None) -> None:
+        """Sets some of the bot's `looked_at`, `next_at` and `next_why`, keeping the rest."""
+        state = self.wake_state(bot) | fields
+        self.db.execute("insert into wakes (bot, looked_at, next_at, next_why) values (?, ?, ?, ?) on conflict(bot) do"
+                        " update set looked_at = excluded.looked_at, next_at = excluded.next_at, next_why = excluded.next_why",
+                        (bot, state["looked_at"], state["next_at"], state["next_why"]))
+
     def triggered(self, routine: str, keys: list[str]) -> set[str]:
         """Which of `keys` this trigger already started on."""
         if not keys:
