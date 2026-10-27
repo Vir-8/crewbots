@@ -5,7 +5,7 @@ import type { Attachment, StoredEvent, Task } from "../types";
 import { ACTIVE } from "../types";
 import { Files } from "./Attachments";
 import { Boundary } from "./Boundary";
-import { Markdown, tokens } from "./bits";
+import { Markdown, MessageMeta, tokens } from "./bits";
 import { Finding, Marked, count, shown, useCurrentHit } from "./Find";
 import { Icon } from "./Icon";
 import { AskCard, Brief, Reactions, Steps, VerdictBlock } from "./ThreadParts";
@@ -15,9 +15,9 @@ import "../styles/chat.css";
 const PAGE = 80; // blocks drawn when a conversation opens, and added each time you scroll up near the top
 
 type Block =
-  | { kind: "you"; id: number; text: string; files: Attachment[] }
-  | { kind: "brief"; id: number; from: string; text: string }
-  | { kind: "say"; id: number; text: string; tag?: string; raised?: number; files?: Attachment[] }
+  | { kind: "you"; id: number; at: string; text: string; files: Attachment[] }
+  | { kind: "brief"; id: number; at: string; from: string; text: string }
+  | { kind: "say"; id: number; at: string; text: string; tag?: string; raised?: number; files?: Attachment[] }
   | { kind: "steps"; id: number; calls: { call: StoredEvent; result?: StoredEvent }[] }
   | { kind: "work"; id: number; task: Task }
   | { kind: "asked"; id: number; bot: string; question: string; task?: Task }
@@ -52,6 +52,7 @@ export function Thread(props: {
   const children = crew.children.get(task.id) ?? [];
   const blocks = useMemo(() => build(events ?? [], children, crew.tasks), [events, children, crew.tasks]);
   const active = ACTIVE.includes(task.status);
+  const latest = useMemo(() => blocks.map((b) => b.kind === "you" || b.kind === "say").lastIndexOf(true), [blocks]); // its time always shows
 
   // A long conversation draws only its latest blocks, and more as you scroll up to them, keeping your place: opening
   // one costs the same however long it is. `start` is the first block drawn; null follows the latest PAGE.
@@ -111,9 +112,9 @@ export function Thread(props: {
             Earlier messages
           </button>
         )}
-        {blocks.slice(start).map((block) => (
+        {blocks.slice(start).map((block, i) => (
           <Boundary key={`${block.kind}-${block.id}`} where={`a message (${block.kind} ${block.id} in ${task.id})`}>
-            <BlockView block={block} crew={crew} lead={task.bot} onOpen={props.onOpen} />
+            <BlockView block={block} crew={crew} lead={task.bot} onOpen={props.onOpen} latest={start + i === latest} />
           </Boundary>
         ))}
         </Finding.Provider>
@@ -196,19 +197,19 @@ function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>
     switch (e.kind) {
       case "message":
         flush();
-        if (d.from === "user") out.push({ kind: "you", id: e.id, text: d.text, files: d.attachments ?? [] });
-        else if (String(d.from).startsWith("routine:")) out.push({ kind: "brief", id: e.id, from: `the ${String(d.from).slice(8)} routine`, text: String(d.text).replace(/^\[routine: [^\]]+\]\s*/, "") });
+        if (d.from === "user") out.push({ kind: "you", id: e.id, at: e.at, text: d.text, files: d.attachments ?? [] });
+        else if (String(d.from).startsWith("routine:")) out.push({ kind: "brief", id: e.id, at: e.at, from: `the ${String(d.from).slice(8)} routine`, text: String(d.text).replace(/^\[routine: [^\]]+\]\s*/, "") });
         else if (d.from === "room") continue;
-        else if (d.from === "routine") out.push({ kind: "brief", id: e.id, from: `the ${tasks.get(e.task_id)?.routine ?? ""} routine`, text: d.text });
-        else if (d.from !== "crewbots") out.push({ kind: "brief", id: e.id, from: d.from, text: d.text });
+        else if (d.from === "routine") out.push({ kind: "brief", id: e.id, at: e.at, from: `the ${tasks.get(e.task_id)?.routine ?? ""} routine`, text: d.text });
+        else if (d.from !== "crewbots") out.push({ kind: "brief", id: e.id, at: e.at, from: d.from, text: d.text });
         break;
       case "text":
         flush();
-        out.push({ kind: "say", id: e.id, text: d.text, tag: d.digest ? "Morning digest" : d.level === "needs_you" ? "Needs you" : d.checkin ? "Checked in on its own" : undefined, raised: d.proactive_id, files: d.files });
+        out.push({ kind: "say", id: e.id, at: e.at, text: d.text, tag: d.digest ? "Morning digest" : d.level === "needs_you" ? "Needs you" : d.checkin ? "Checked in on its own" : undefined, raised: d.proactive_id, files: d.files });
         break;
       case "shared":
         flush();
-        out.push({ kind: "say", id: e.id, text: d.text ?? "", files: d.attachments ?? [] });
+        out.push({ kind: "say", id: e.id, at: e.at, text: d.text ?? "", files: d.attachments ?? [] });
         break;
       case "escalation":
         flush();
@@ -305,7 +306,7 @@ function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>
   return out;
 }
 
-function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id: string) => void }) {
+function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id: string) => void; latest: boolean }) {
   const { block } = props;
   switch (block.kind) {
     case "you":
@@ -313,17 +314,21 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
         <div className="you">
           {block.text && <div className="you-text"><Marked text={block.text} /></div>}
           <Files items={block.files} mine />
+          <MessageMeta at={block.at} text={block.text} latest={props.latest} />
         </div>
       );
     case "brief":
-      return <Brief from={block.from} text={block.text} />;
+      return <Brief from={block.from} text={block.text} at={block.at} />;
     case "say":
       return (
-        <div className="say">
-          {block.tag && <div className={`say-tag ${block.tag === "Needs you" ? "urgent" : ""}`}>{block.tag}</div>}
-          {block.text && <Markdown text={block.text} onSelect={props.onOpen} />}
-          {block.files && <Files items={block.files} />}
-          {block.raised && <Reactions crew={props.crew} id={block.raised} />}
+        <div className="said">
+          <div className="say">
+            {block.tag && <div className={`say-tag ${block.tag === "Needs you" ? "urgent" : ""}`}>{block.tag}</div>}
+            {block.text && <Markdown text={block.text} onSelect={props.onOpen} />}
+            {block.files && <Files items={block.files} />}
+            {block.raised && <Reactions crew={props.crew} id={block.raised} />}
+          </div>
+          <MessageMeta at={block.at} text={block.text} latest={props.latest} />
         </div>
       );
     case "steps":

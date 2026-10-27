@@ -45,6 +45,43 @@
   word-break: break-word;
 }
 
+.said {
+  display: flex;
+  flex-direction: column;
+}
+
+/* When a message was sent and a copy button, under it: shown on hover, and always under the latest message. */
+.message-meta {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--faint);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.message-meta time {
+  padding: 0 4px;
+  cursor: default;
+}
+
+.message-meta .icon-button {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+}
+
+.you:hover > .message-meta,
+.said:hover > .message-meta,
+.room-message:hover > .message-meta,
+.message-meta:focus-within,
+.message-meta.latest {
+  opacity: 1;
+}
+
 .brief {
   padding: 2px 0 2px 14px;
   border-left: 2px solid var(--line);
@@ -55,6 +92,10 @@
   font-weight: 600;
   color: var(--faint);
   margin-bottom: 2px;
+}
+
+.brief-time {
+  font-weight: 400;
 }
 
 .brief-text {
@@ -561,19 +602,22 @@ button.chat-head-who:hover {
   gap: 14px;
 }
 
-.thread-col.chat > .say {
-  align-self: flex-start;
+.thread-col.chat > .said {
+  align-items: flex-start;
+}
+
+.thread-col.chat > .said > .say {
   max-width: 85%;
   padding: 10px 15px;
   border-radius: 18px;
   background: var(--raised);
 }
 
-.thread-col.chat > .say > :first-child {
+.thread-col.chat > .said > .say > :first-child {
   margin-top: 0;
 }
 
-.thread-col.chat > .say > :last-child {
+.thread-col.chat > .said > .say > :last-child {
   margin-bottom: 0;
 }
 

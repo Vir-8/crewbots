@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { Markdown } from "./bits";
+import { Markdown, MessageMeta, stamp } from "./bits";
 
 const html = (text: string) => renderToStaticMarkup(<Markdown text={text} onSelect={() => undefined} />);
 
@@ -58,5 +58,38 @@ describe("Markdown", () => {
       slowest = Math.max(slowest, performance.now() - started);
     }
     expect(slowest).toBeLessThan(100);
+  });
+});
+
+describe("when a message was sent", () => {
+  const now = new Date(2026, 9, 27, 18, 0); // a Tuesday evening
+  const at = (...date: [number, number, number, number, number]) => new Date(...date).toISOString();
+  const time = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+
+  it("says the time today, and the day as well before", () => {
+    const today = at(2026, 9, 27, 0, 5);
+    expect(stamp(today, now)).toBe(time(today));
+    expect(stamp(at(2026, 9, 26, 23, 50), now)).toBe(`Yesterday ${time(at(2026, 9, 26, 23, 50))}`);
+    const monday = at(2026, 9, 21, 15, 29); // under a week ago: the weekday
+    expect(stamp(monday, now)).toBe(`${new Date(monday).toLocaleDateString(undefined, { weekday: "long" })} ${time(monday)}`);
+  });
+
+  it("gives a date further back, with the year once it isn't this one", () => {
+    const october = at(2026, 9, 20, 15, 29); // a week ago to the day: no longer "Tuesday"
+    expect(stamp(october, now)).toContain(time(october));
+    expect(stamp(october, now)).not.toMatch(/day/);
+    const last = stamp(at(2025, 9, 22, 9, 0), now);
+    expect(last).toContain("2025");
+    expect(last).not.toContain(time(at(2025, 9, 22, 9, 0)));
+  });
+
+  it("shows the whole date on hover, and copies only when there's something to copy", () => {
+    const sent = at(2026, 9, 22, 17, 55);
+    const html = renderToStaticMarkup(<MessageMeta at={sent} text="Fixed it" />);
+    expect(html.toLowerCase()).toContain(`datetime="${sent.toLowerCase()}"`);
+    expect(html).toContain("2026"); // in the title
+    expect(html).toContain('aria-label="Copy"');
+    expect(renderToStaticMarkup(<MessageMeta at={sent} text="" />)).not.toContain("Copy");
+    expect(renderToStaticMarkup(<MessageMeta text="no time" />)).toBe("");
   });
 });

@@ -8,15 +8,22 @@ import type { Attachment, StoredEvent, Task } from "../types";
 import { ACTIVE } from "../types";
 import { Files } from "./Attachments";
 import { labelOf } from "./Avatar";
+import { fullDate, stamp } from "./bits";
 import { Marked } from "./Find";
 import { Icon } from "./Icon";
 
-export function Brief({ from, text }: { from: string; text: string }) {
+export function Brief({ from, text, at }: { from: string; text: string; at: string }) {
   const long = text.length > 280;
   const [open, setOpen] = useState(!long);
   return (
     <div className="brief">
-      <div className="brief-head">{from.startsWith("the ") ? `From ${from}` : `Brief from ${from}`}</div>
+      <div className="brief-head">
+        {from.startsWith("the ") ? `From ${from}` : `Brief from ${from}`}
+        <time className="brief-time" dateTime={at} title={fullDate(at)}>
+          {" · "}
+          {stamp(at)}
+        </time>
+      </div>
       <div className={`brief-text ${open ? "" : "clamped"}`}><Marked text={text} /></div>
       {long && (
         <button className="text-button" onClick={() => setOpen(!open)}>

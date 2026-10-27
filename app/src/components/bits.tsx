@@ -1,6 +1,7 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { Status } from "../types";
 import { Marked } from "./Find";
+import { Icon } from "./Icon";
 
 const STATUS_LABEL: Record<Status, string> = {
   queued: "queued",
@@ -57,6 +58,68 @@ export function ago(iso: string, short = false): string {
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m${suffix}`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h${suffix}`;
   return `${Math.floor(seconds / 86400)}d${suffix}`;
+}
+
+/** When a message was sent, the way chat apps say it: "15:29" today, "Yesterday 15:29", "Monday 15:29" this week,
+ * "Oct 22, 15:29" this year, and "Oct 22, 2025" before. */
+export function stamp(iso: string, now = new Date()): string {
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const day = (t: Date) => new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime();
+  const days = Math.round((day(now) - day(d)) / 86_400_000); // rounded: a day with a clock change isn't 24 hours
+  if (days <= 0) return time;
+  if (days === 1) return `Yesterday ${time}`;
+  if (days < 7) return `${d.toLocaleDateString(undefined, { weekday: "long" })} ${time}`;
+  if (d.getFullYear() === now.getFullYear()) return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${time}`;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+/** The whole date and time, for a tooltip: "Oct 22, 2026, 5:55 PM". */
+export function fullDate(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+/** Under a message: when it was sent (the whole date on hover) and a button that copies what it says. Shown while the
+ * pointer is on the message, and always under the latest one. */
+export function MessageMeta({ at, text, latest }: { at?: string; text?: string; latest?: boolean }) {
+  const [copied, setCopied] = useState(false);
+  if (!at) return null;
+  const copy = () =>
+    toClipboard(text ?? "").then(
+      () => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1500);
+      },
+      () => undefined,
+    );
+  return (
+    <div className={`message-meta ${latest ? "latest" : ""}`}>
+      <time dateTime={at} title={fullDate(at)}>
+        {stamp(at)}
+      </time>
+      {text && (
+        <button className="icon-button" onClick={() => void copy()} title={copied ? "Copied" : "Copy"} aria-label="Copy">
+          <Icon name={copied ? "check" : "copy"} size={13} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Puts text on the clipboard, the older way where the page may not write to it directly. */
+async function toClipboard(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.style.cssText = "position: fixed; opacity: 0";
+    document.body.append(area);
+    area.select();
+    const copied = document.execCommand("copy");
+    area.remove();
+    if (!copied) throw new Error("couldn't copy");
+  }
 }
 
 /**

@@ -6,7 +6,7 @@ import { ACTIVE } from "../types";
 import { Files } from "./Attachments";
 import { Avatar, GroupAvatar, labelOf } from "./Avatar";
 import { Boundary } from "./Boundary";
-import { Markdown, ago } from "./bits";
+import { Markdown, MessageMeta, ago, fullDate } from "./bits";
 import { crewCommands } from "./CommandPreview";
 import { Composer } from "./Composer";
 import { FindBar, Finding, Marked, count, shown, useCurrentHit, useFind } from "./Find";
@@ -108,6 +108,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
     return seat && ACTIVE.includes(seat.status);
   });
   const groups = useMemo(() => byAuthor(messages ?? []), [messages]);
+  const latest = messages?.at(-1)?.id; // its time always shows
   const find = useFind();
   const hits = useMemo(() => {
     const out: { el: () => Element | null | undefined; nth: number }[] = [];
@@ -158,6 +159,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
                     <div className="you" data-msg={m.id}>
                       {m.text && <div className="you-text">{withMentions(m.text)}</div>}
                       <Files items={m.attachments ?? []} mine />
+                      <MessageMeta at={m.at} text={m.text} latest={m.id === latest} />
                     </div>
                   </Boundary>
                 ))
@@ -167,7 +169,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
                   <div className="room-group-body">
                     <div className="room-author">
                       {labelOf(group.author)}
-                      <span className="faint"> · {ago(group.messages[0].at)}</span>
+                      <span className="faint" title={fullDate(group.messages[0].at)}> · {ago(group.messages[0].at)}</span>
                     </div>
                     {group.messages.map((m) => (
                       <Boundary key={m.id} where={`a group chat message (${m.id})`}>
@@ -178,6 +180,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
                             </div>
                           )}
                           <Files items={m.attachments ?? []} />
+                          <MessageMeta at={m.at} text={m.text} latest={m.id === latest} />
                         </div>
                       </Boundary>
                     ))}
