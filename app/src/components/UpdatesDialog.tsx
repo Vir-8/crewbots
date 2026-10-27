@@ -1,12 +1,12 @@
 import { useEffect } from "react";
-import { check, install, ready, running, start, useUpdates } from "../updates";
+import { check, install, progress, ready, running, start, timeLeft, useUpdates } from "../updates";
 import "../styles/dialogs.css";
 
 /** crewbots → Check for Updates…: checks at once, then says it's up to date, or what an update brings and runs it
  * (the daemon checks and builds, the app installs it over itself and restarts). Closing it doesn't stop an update:
  * the banner keeps following it. */
 export function UpdatesDialog({ onClose }: { onClose: () => void }) {
-  const { update, checking, installing, error } = useUpdates();
+  const { update, checking, installing, following, error } = useUpdates();
   useEffect(() => {
     check(true);
     const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -14,7 +14,8 @@ export function UpdatesDialog({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener("keydown", key);
   }, []);
   const release = update?.release;
-  const busy = running(update) || installing;
+  const busy = (running(update) && following) || installing;
+  const preparing = running(update) && !busy; // being got ready in the background, before anyone asked
   const stopped = release?.state === "failed" && release.commit !== __APP_COMMIT__;
   const changes = update?.commits ?? [];
 
@@ -23,15 +24,15 @@ export function UpdatesDialog({ onClose }: { onClose: () => void }) {
   let action: { label: string; run: () => void } | null = null;
   if (busy) {
     title = "Updating crewbots…";
-    text = installing ? "Installing it. crewbots restarts in a moment." : `${release?.step ?? "Starting"}. The crew's daemon checks and builds it, then crewbots installs it and restarts. A few minutes; you can close this.`;
+    text = installing ? "Installing it. crewbots restarts in a moment." : `${release?.step ?? "Starting"}${timeLeft(update) ? `, ${timeLeft(update)}` : ""}. Then crewbots installs it and restarts; you can close this.`;
   } else if (ready(update)) {
     title = "An update is ready to install";
     text = "It's built. crewbots installs it and restarts; the crew's daemon restarts once no bot is working.";
-    action = { label: "Install and Restart", run: () => void install() };
+    action = { label: "Restart to Update", run: () => void install() };
   } else if (update?.available) {
     title = "A new version of crewbots is available";
     text = `${changes.length === 1 ? "1 change" : `${changes.length} changes`}${update.pull ? ", from GitHub" : ""}:`;
-    action = { label: stopped ? "Try Again" : "Update and Restart", run: () => void start() };
+    action = { label: stopped && !preparing ? "Try Again" : "Update and Restart", run: () => void start() };
   } else if (update && !checking) {
     title = update.note ? "crewbots can't update just now" : "crewbots is up to date";
     text = update.note ?? `This is the latest build (${__APP_COMMIT__ || "a development build"}).`;
@@ -42,6 +43,12 @@ export function UpdatesDialog({ onClose }: { onClose: () => void }) {
       <div className="dialog updates-dialog" role="dialog" aria-label="Updates" onClick={(e) => e.stopPropagation()}>
         <h2>{title}</h2>
         {(checking && !update) || busy ? <div className="updates-working"><span className="working-dot" />{text && <span>{text}</span>}</div> : text && <p className="updates-text">{text}</p>}
+        {(busy || preparing) && progress(update) !== null && (
+          <div className="update-progress" role="progressbar" aria-valuenow={Math.round(progress(update)! * 100)} aria-valuemin={0} aria-valuemax={100}>
+            <span style={{ width: `${Math.round(progress(update)! * 100)}%` }} />
+          </div>
+        )}
+        {preparing && <p className="updates-text faint">Getting it ready in the background: {release?.step?.toLowerCase() ?? "starting"}{timeLeft(update) ? `, ${timeLeft(update)}` : ""}. Updating now waits for it, then restarts.</p>}
         {update?.available && !busy && !ready(update) && (
           <ul className="update-changes">
             {changes.slice(0, 12).map((c) => (

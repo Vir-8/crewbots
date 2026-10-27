@@ -321,7 +321,7 @@ let updateStarted = 0;
 function previewUpdate(starting: boolean) {
   if (starting && !updateStarted) updateStarted = Date.now();
   const at = updateStarted ? Math.floor((Date.now() - updateStarted) / 3000) : -1;
-  const release = at < 0 ? {} : at < UPDATE_STEPS.length ? { state: "running", step: UPDATE_STEPS[at], commit: "f00dfeed1234" } : { state: "built", step: "Built", commit: "f00dfeed1234", bundle: "~/.crewbots/build/app/release/bundle/macos/crewbots.app" };
+  const release = at < 0 ? {} : at < UPDATE_STEPS.length ? { state: "running", step: UPDATE_STEPS[at], commit: "f00dfeed1234", started_at: Math.floor(updateStarted / 1000), expected: UPDATE_STEPS.length * 3 } : { state: "built", step: "Built", commit: "f00dfeed1234", bundle: "~/.crewbots/build/app/release/bundle/macos/crewbots.app" };
   return {
     app: __APP_COMMIT__, daemon: __APP_COMMIT__, head: "f00dfeed1234", available: at < 0, pull: true, note: null, release,
     commits: [

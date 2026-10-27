@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, bridge } from "../api";
 import { API_SCHEMA, API_VERSION, type VersionOut } from "../api-types";
 import type { Crew } from "../state";
-import { install, ready, running, start, useUpdates } from "../updates";
+import { install, ready, running, start, timeLeft, useUpdates } from "../updates";
 import { Icon } from "./Icon";
 
 const VERSION_EVERY_MS = 5 * 60_000;
@@ -43,13 +43,14 @@ export function CrewBanner({ crew, onUpdates }: { crew: Crew; onUpdates: () => v
       </div>
     );
   }
-  if (running(own) || ownState.installing) {
+  if ((running(own) && ownState.following) || ownState.installing) {
+    const left = ownState.installing ? "" : timeLeft(own);
     return (
       <div className="crew-banner" role="status">
         <span className="working-dot" />
         <span>
           Updating crewbots: {ownState.installing ? "installing it" : own!.release.step?.toLowerCase() ?? "starting"}
-          <span className="faint"> · the app restarts itself when it's done</span>
+          <span className="faint"> · {left ? `${left}, then the app restarts` : "the app restarts itself when it's done"}</span>
         </span>
       </div>
     );
@@ -57,7 +58,7 @@ export function CrewBanner({ crew, onUpdates }: { crew: Crew; onUpdates: () => v
   const failed = own?.release.state === "failed" && own.release.commit !== __APP_COMMIT__;
   const update: Update | null = versions ?? (
     ownState.error && ready(own) ? { text: `Couldn't install the update: ${ownState.error}`, bad: true, action: { label: "Try again", run: () => void install() } }
-    : ready(own) ? { text: "An update to crewbots is built and ready", action: { label: "Install and restart", run: () => void install() } }
+    : ready(own) ? { text: "A new version of crewbots is ready", why: own!.commits.map((c) => `· ${c.subject}`).join("\n"), action: { label: "Restart to update", run: () => void install() } }
     : failed ? { text: `The update stopped at ${own!.release.step?.toLowerCase()}`, why: own!.release.log ?? undefined, bad: true, action: { label: "Try again", run: () => void start() } }
     : own?.available ? { text: "A new version of crewbots is available", why: own.commits.map((c) => `· ${c.subject}`).join("\n"), action: { label: "See what's new", run: onUpdates } }
     : null);

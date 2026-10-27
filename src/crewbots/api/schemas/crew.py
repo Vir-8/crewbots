@@ -31,6 +31,8 @@ class ReleaseOut(BaseModel):
     at: int | None = None
     log: str | None = None  # the end of its log, when it failed
     bundle: str | None = None  # the app it built, for the app to install ("built")
+    expected: int | None = None  # seconds the last build took, to say how far along this one is
+    background: bool = False  # got ready before anyone asked
 
 
 class UpdateOut(BaseModel):

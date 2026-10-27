@@ -98,3 +98,53 @@ def test_a_release_that_stopped_part_way_says_where(checkout):
     release = Updates(project, None).release()
     assert release["state"] == "failed" and release["step"] == "Building the app (it stopped)"
     assert "linking failed" in release["log"]
+
+
+BUILD = """#!/bin/bash
+# stands in for scripts/release started from the app: says the build is ready, as the real one does
+printf '{"state": "built", "step": "Built", "commit": "%s", "pid": %d, "started_at": 100, "at": 178, "bundle": "/b"}' \\
+  "$(git rev-parse --short=12 HEAD)" $$ > "$HOME/.crewbots/release.json"
+echo "background: ${CREWBOTS_RELEASE_BACKGROUND:-no}, expected: ${CREWBOTS_RELEASE_EXPECTED:-?}"
+"""
+
+
+def settled(project, built):
+    end = time.time() + 5
+    while Updates(project, built).release().get("state") == "running" and time.time() < end:
+        time.sleep(0.05)
+    return Updates(project, built).release()
+
+
+def test_an_update_in_the_checkout_is_got_ready_before_anyone_asks(checkout):
+    project, _ = checkout
+    (project / "scripts" / "release").write_text(BUILD)
+    built = run(project, "rev-parse", "--short=12", "HEAD")
+    newer = commit(project, "Show files in chats")
+
+    assert Updates(project, built).check(built)["release"] == {}  # only the app's own checks get one ready
+    Updates(project, built).check(built, prepare=True)
+    ready = settled(project, built)
+    assert ready["state"] == "built" and ready["commit"] == newer
+    assert "background: 1, expected: 0" in updates.log_file().read_text()  # at low priority, nothing to go by yet
+
+    Updates(project, built).check(built, prepare=True)  # built already: not again
+    assert "background: 1" in updates.log_file().read_text() and Updates(project, built).start(built)["release"] == ready
+
+    newest = commit(project, "Pin chats")
+    Updates(project, built).check(built, prepare=True)
+    assert settled(project, built)["commit"] == newest
+    assert "expected: 78" in updates.log_file().read_text()  # how long the last build took, for the app's progress
+
+
+def test_one_from_github_waits_to_be_asked_and_a_failed_build_isnt_tried_again(checkout, tmp_path):
+    project, origin = checkout
+    built = run(project, "rev-parse", "--short=12", "HEAD")
+    commit(origin, "Pin chats to the top")
+    run(origin, "push", "-q", str(tmp_path / "upstream.git"), "HEAD:main")
+    assert Updates(project, built).check(built, fetch=True, prepare=True)["release"] == {}  # the checkout stays
+
+    run(project, "merge", "-q", "--ff-only", "@{u}")
+    head = run(project, "rev-parse", "--short=12", "HEAD")
+    updates.status_file().parent.mkdir(parents=True, exist_ok=True)
+    updates.status_file().write_text(json.dumps({"state": "failed", "step": "Checks", "commit": head}))
+    assert Updates(project, built).check(built, prepare=True)["release"]["state"] == "failed"

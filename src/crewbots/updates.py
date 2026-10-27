@@ -4,6 +4,10 @@ fast-forward) than what's running, and the release that brings it in.
 The release is `scripts/release`: checks, build, install, the daemon restarted once the crew is idle, the app
 relaunched. It runs apart from the daemon (its own session), since it restarts the daemon and quits the app it was
 started from, and says how far it got in a status file the daemon reads back for the app.
+
+An update in the checkout is got ready before anyone asks: checked and built in the background, at low priority, as
+soon as the app's check finds it, so updating is then only installing it and restarting. Not one from GitHub, which
+changes the checkout and waits to be asked, and not again for a commit whose build failed.
 """
 
 import json
@@ -17,6 +21,7 @@ from crewbots import paths
 
 FETCH_EVERY_S = 600.0  # GitHub is asked again only this often, however often the app checks
 MAX_COMMITS = 30
+NICE = "10"  # an update got ready in the background makes way for whatever else the Mac is doing
 
 
 class UpdateError(RuntimeError):
@@ -43,8 +48,9 @@ class Updates:
         self._fetched = 0.0
         self._fetch_error: str | None = None
 
-    def check(self, app: str | None = None, fetch: bool = False) -> dict[str, Any]:
-        """What an update would bring this Mac. `app` is the commit the app was built from."""
+    def check(self, app: str | None = None, fetch: bool = False, prepare: bool = False) -> dict[str, Any]:
+        """What an update would bring this Mac. `app` is the commit the app was built from. `prepare` starts getting
+        one in the checkout ready, if it isn't already."""
         out: dict[str, Any] = {"app": app, "daemon": self.running, "available": False, "commits": [], "head": None,
                                "pull": False, "note": None, "release": self.release()}
         if not (self.project / ".git").exists() or not (self.project / "scripts" / "release").exists():
@@ -70,6 +76,9 @@ class Updates:
             out["available"] = bool(head) and head not in (app, self.running)
         if self._fetch_error and not out["available"]:
             out["note"] = self._fetch_error
+        if prepare and out["available"] and not out["pull"] and not _tried(out["release"], head):
+            self._release(background=True)
+            out["release"] = self.release()
         return out
 
     def _commits(self, target: str, base: str) -> list[dict[str, str]]:
@@ -78,25 +87,38 @@ class Updates:
                 for line in (listed or "").splitlines() if line.count("\t") >= 2]
 
     def start(self, app: str | None = None) -> dict[str, Any]:
-        """Starts the release, after bringing in what GitHub has if that's a fast-forward."""
-        if self.release().get("state") == "running":
-            raise UpdateError("an update is already under way")
+        """Starts the release, after bringing in what GitHub has if that's a fast-forward. One already under way (got
+        ready in the background, say), or built and ready, is the app's to follow or install."""
         found = self.check(app)
+        release = found["release"]
+        if release.get("state") == "running" or (release.get("state") == "built" and release.get("commit") == found["head"]):
+            return found
         if not found["available"]:
             raise UpdateError(found["note"] or "crewbots is up to date")
         if found["pull"] and self._git("merge", "--ff-only", "--quiet", "@{u}", timeout=60) is None:
             raise UpdateError("couldn't bring in the new commits as a fast-forward")
+        self._release()
+        return self.check(app)
+
+    def _release(self, background: bool = False) -> None:
+        """Runs scripts/release apart from the daemon, saying how long the last build took, for the app to show how
+        far along this one is."""
+        last = self.release()
+        took = last["at"] - last["started_at"] if last.get("state") == "built" and last.get("at") and last.get(
+            "started_at") else 0
         log_file().parent.mkdir(parents=True, exist_ok=True)
+        now = int(time.time())
         _write_status({"state": "running", "step": "Starting", "commit": self._git("rev-parse", "--short=12", "HEAD"),
-                       "started_at": int(time.time()), "at": int(time.time())})
+                       "started_at": now, "at": now, "expected": took, "background": background})
         with log_file().open("w") as log:
             # The app restarts itself once it's done: it's the one that may relaunch it, with no Apple Events asked of
             # anyone. The build has a folder of its own: macOS doesn't let this process reuse what a build started
             # elsewhere (a terminal) left in the checkout's, which carries that other app's provenance.
-            env = {**os.environ, "CREWBOTS_RELEASE_FROM_APP": "1", "CARGO_TARGET_DIR": str(build_dir())}
-            subprocess.Popen([str(self.project / "scripts" / "release")], cwd=self.project, stdout=log, stderr=log,
-                             stdin=subprocess.DEVNULL, start_new_session=True, env=env)
-        return self.check(app)
+            env = {**os.environ, "CREWBOTS_RELEASE_FROM_APP": "1", "CARGO_TARGET_DIR": str(build_dir()),
+                   "CREWBOTS_RELEASE_EXPECTED": str(took), **({"CREWBOTS_RELEASE_BACKGROUND": "1"} if background else {})}
+            script = str(self.project / "scripts" / "release")
+            subprocess.Popen(["nice", "-n", NICE, script] if background else [script], cwd=self.project, stdout=log,
+                             stderr=log, stdin=subprocess.DEVNULL, start_new_session=True, env=env)
 
     def release(self) -> dict[str, Any]:
         """How the last release went, as scripts/release left it, with the end of its log if it failed."""
@@ -121,6 +143,11 @@ class Updates:
         except (OSError, subprocess.TimeoutExpired):
             return None
         return done.stdout.strip() if done.returncode == 0 else None
+
+
+def _tried(release: dict[str, Any], head: str | None) -> bool:
+    """Whether the checkout's newest is being built, has been, or failed to be (not tried again on its own)."""
+    return release.get("state") == "running" or (release.get("commit") == head and release.get("state") in ("built", "failed"))
 
 
 def _alive(pid: int) -> bool:

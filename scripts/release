@@ -8,6 +8,8 @@
 #
 # Started from the app (by the daemon, CREWBOTS_RELEASE_FROM_APP set), it checks and builds, then stops with the
 # build ready ("built"): the app installs it over itself, has the daemon restart once the crew is idle, and restarts.
+# The daemon also starts it so before anyone asks (CREWBOTS_RELEASE_BACKGROUND, at low priority), to have the update
+# ready by the time it's wanted; CREWBOTS_RELEASE_EXPECTED is how long the last build took, for the app's progress.
 # macOS lets an app replace itself, but not the daemon (a launchd service) touch an app it didn't make.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -28,8 +30,9 @@ STATUS="$HOME/.crewbots/release.json"
 current="Starting"
 status() { # state, step[, the built app]: for the app, written whole so it never reads half of it
   mkdir -p "$(dirname "$STATUS")"
-  printf '{"state": "%s", "step": "%s", "commit": "%s", "pid": %d, "started_at": %d, "at": %d, "bundle": "%s"}\n' \
-    "$1" "$2" "$commit" $$ "$began" "$(date +%s)" "${3:-}" >"$STATUS.tmp" && mv "$STATUS.tmp" "$STATUS"
+  printf '{"state": "%s", "step": "%s", "commit": "%s", "pid": %d, "started_at": %d, "at": %d, "bundle": "%s", "expected": %d, "background": %s}\n' \
+    "$1" "$2" "$commit" $$ "$began" "$(date +%s)" "${3:-}" "${CREWBOTS_RELEASE_EXPECTED:-0}" \
+    "$([[ -n "${CREWBOTS_RELEASE_BACKGROUND:-}" ]] && echo true || echo false)" >"$STATUS.tmp" && mv "$STATUS.tmp" "$STATUS"
 }
 trap 'status failed "$current"' ERR
 step() {

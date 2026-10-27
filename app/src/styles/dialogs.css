@@ -307,3 +307,20 @@
   cursor: pointer;
   white-space: nowrap;
 }
+
+/* How far along an update's build is, from how long the last one took. */
+.update-progress {
+  height: 4px;
+  margin: 10px 0 4px;
+  border-radius: 2px;
+  background: var(--raised);
+  overflow: hidden;
+}
+
+.update-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--blue);
+  transition: width 1s linear;
+}
