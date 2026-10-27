@@ -154,6 +154,43 @@
   align-self: flex-start;
 }
 
+/* What a bot asks you to allow: what, where, why, and Allow or not. */
+.permission-what {
+  font-weight: 550;
+}
+
+.permission-folder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--faint);
+  word-break: break-all;
+}
+
+.permission-why {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--faint);
+}
+
+.permission-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.permission-where {
+  display: block;
+  margin: -2px 0 6px;
+  font-size: 12.5px;
+  color: var(--faint);
+  text-align: left;
+}
+
 .handoff {
   padding: 12px 14px;
   border-radius: 12px;

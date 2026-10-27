@@ -30,7 +30,7 @@ import type {
   Submitted,
   Attachment,
 } from "./types";
-import type { BroughtIn, FoundOut, PageOut, ProjectOut, ProjectsOut, UpdateOut, VersionOut } from "./api-types";
+import type { BroughtIn, FoundOut, PageOut, PermissionOut, ProjectOut, ProjectsOut, UpdateOut, VersionOut } from "./api-types";
 
 import { bridge } from "./bridge";
 
@@ -63,6 +63,7 @@ export const api = {
   cancel: (taskId: string) => call<Task>("POST", `/tasks/${taskId}/cancel`),
   merge: (taskId: string, force = false) => call<Task>("POST", `/tasks/${taskId}/merge`, { force }),
   release: (taskId: string) => call<Task>("POST", `/tasks/${taskId}/release`),
+  answerPermission: (id: number, allowed: boolean) => call<PermissionOut>("POST", `/permissions/${id}`, { allowed }),
   crew: () => call<CrewState>("GET", "/crew"),
   routines: () => call<Routines>("GET", "/routines"),
   budgets: () => call<Budget[]>("GET", "/budgets"),

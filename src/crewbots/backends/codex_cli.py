@@ -226,11 +226,13 @@ def sandbox_overrides(spec: RunSpec, temp: Path | None = None) -> list[str]:
     """Codex's sandbox for a bot that isn't on full access, as a permissions profile of crewbots' own: Codex's built-in
     one for the bot's access, with the private paths (backends/credentials.py) unreadable, and the network on only for
     a writing bot whose role card turns it on. `temp`, a writing bot's own temp folder, takes the place of /tmp and
-    $TMPDIR, which commands could otherwise write to: a way out of the task's folder. (Codex's older sandbox settings
-    can only limit writes, and a profile set here wins over them, even with `sandbox_mode` in the user's config.)"""
+    $TMPDIR, which commands could otherwise write to: a way out of the task's folder. The folders the user let it
+    write in, for this task, are writable too. (Codex's older sandbox settings can only limit writes, and a profile
+    set here wins over them, even with `sandbox_mode` in the user's config.)"""
     files = {str(path): "deny" for path in private_paths()}
     if temp is not None:
         files |= {":slash_tmp": "read", ":tmpdir": "read", str(temp): "write"}
+    files |= {str(folder): "write" for folder in spec.write_dirs}
     table = ", ".join(f"{json.dumps(key)} = {json.dumps(access)}" for key, access in files.items())
     network = spec.network is True and spec.access is Access.WORKSPACE_WRITE
     return ["-c", f'default_permissions="{PROFILE}"',

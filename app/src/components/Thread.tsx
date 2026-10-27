@@ -9,6 +9,7 @@ import { Markdown, MessageMeta, PageLinkTo, TimeBreak, timeBreaks } from "./bits
 import { Finding, Marked, count, useCurrentHit } from "./Find";
 import { Icon } from "./Icon";
 import { Offer } from "./Offer";
+import { Permission } from "./Permission";
 import { Question } from "./Question";
 import { AskCard, Brief, Reactions, Steps, VerdictBlock } from "./ThreadParts";
 import { type Block, build, fold, said, summary } from "./threadBlocks";
@@ -182,6 +183,8 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
       );
     case "ask":
       return <Question crew={props.crew} block={block} />;
+    case "permission":
+      return <Permission crew={props.crew} block={block} onOpen={props.onOpen} />;
     case "held": {
       const still = props.crew.tasks.get(block.taskId)?.status === "held";
       return (

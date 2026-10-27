@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "83e43712d286";
+export const API_SCHEMA = "0168ef7b84eb";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -630,6 +630,29 @@ export interface PageOut {
 export interface PageWrite {
   page: string;
   text: string;
+}
+
+export interface PermissionAnswer {
+  allowed: boolean;
+}
+
+export interface PermissionAsk {
+  what: string;
+  why?: string;
+  kind?: "action" | "folder" | "network";
+  folder?: string | null;
+}
+
+export interface PermissionOut {
+  id: number;
+  task_id: string;
+  kind: string;
+  folder: string;
+  what: string;
+  why: string;
+  asked_at: string;
+  allowed: boolean | null;
+  answered_at: string | null;
 }
 
 export interface Pins {

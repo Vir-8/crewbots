@@ -47,6 +47,11 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
         call("POST", "/bot/escalate", {"question": question, "choices": choices or [], "multiple": multiple})
         return "Asked, so don't repeat the question. End your turn now; the answer will arrive as your next message."
 
+    @server.tool(description=describe("ask_permission"))
+    def ask_permission(what: str, why: str = "", kind: str = "action", folder: str | None = None) -> str:
+        call("POST", "/bot/ask_permission", {"what": what, "why": why, "kind": kind, "folder": folder})
+        return "Asked the user. End your turn now: their answer arrives as your next message."
+
     @server.tool(description=describe("review"))
     def review(verdict: str, summary: str, findings: list[dict[str, str]] | None = None) -> str:
         call("POST", "/bot/review", {"verdict": verdict.lower(), "summary": summary, "findings": findings or []})

@@ -16,6 +16,9 @@
 - The network is off for shell commands, unless the role card says `network: true` (any host) or lists the hosts.
   Claude's sandbox asks for each new host, and the list answers. Codex's sandbox only switches the network on or off,
   so a Codex bot takes `network: true` or nothing.
+- What a bot asks the user for (`ask_permission`) and gets is its task's, for the rest of it: writing in a folder
+  outside its own (`write_dirs`; a read-only bot then writes there and nowhere else), and the network. Never the
+  private paths, and never what's the user's to do.
 
 Claude asks through `can_use_tool` (`check_tool`); Codex asks through its approval requests (`check_command`,
 `check_write`). Each refusal is kept, with its reason, so the backend can show it in the transcript.
@@ -42,20 +45,23 @@ OUTWARD = re.compile(
     r"|\bgh\s+(pr\s+(create|merge)|release|repo\s+delete)\b"
     r"|\b(npm|pnpm|yarn|cargo|poetry|uv)\s+publish\b|\btwine\s+upload\b"
 )
-READ_ONLY = "this bot is read-only (its role card says access: read_only)"
+ASK = "ask the user with ask_permission"
+READ_ONLY = f"this bot is read-only (its role card says access: read_only); to write somewhere, {ASK}"
 USERS_TO_DO = "pushing, merging, publishing and rewriting history are the user's to do (team/rules.md)"
-NO_NETWORK = "this bot has no network access; its role card can give it some with network: true, or a list of hosts"
+NO_NETWORK = f"this bot has no network access; if this task needs it, {ASK}"
 SEARCH_NEEDS_ANY_HOST = "a web search can lead anywhere, and this bot's network is limited to some hosts"
 PRIVATE = "that's private: the user's logins and keys, or crewbots' own; no bot reads it"
-STAY_IN_SANDBOX = "commands run inside this bot's sandbox, and stepping outside it isn't something a bot can grant itself"
+STAY_IN_SANDBOX = f"commands run inside this bot's sandbox, which a bot can't widen itself; if this task needs more, {ASK}"
 
 
 class Policy:
-    def __init__(self, access: Access, cwd: Path, granted_servers: set[str], network: bool | tuple[str, ...] = False):
+    def __init__(self, access: Access, cwd: Path, granted_servers: set[str], network: bool | tuple[str, ...] = False,
+                 write_dirs: tuple[Path, ...] | list[Path] = ()):
         self.access = access
         self.cwd = Path(cwd).resolve()
         self.granted = granted_servers
         self.network = network
+        self.write_dirs = tuple(Path(d).resolve() for d in write_dirs)
         self.private = tuple(p.resolve() for p in private_paths())
         self._refusals: list[str] = []
 
@@ -74,10 +80,10 @@ class Policy:
             return None
         if name in WEB_TOOLS:
             return self.check_web(name, args)
-        if self.access is Access.READ_ONLY:
-            return READ_ONLY
         if name in EDIT_TOOLS:
             return self.check_write(args.get("file_path") or args.get("notebook_path") or "")
+        if self.access is Access.READ_ONLY:
+            return READ_ONLY
         if name == "Bash":
             return self.check_command(str(args.get("command", "")), sandboxed=False)
         if name == "SandboxNetworkAccess":  # the sandbox asking for a host a command wants to reach
@@ -126,12 +132,17 @@ class Policy:
         return None
 
     def check_write(self, path: str) -> str | None:
-        if self.access is Access.READ_ONLY:
-            return READ_ONLY
+        """A write: in the task's own folder, or in a folder the user allowed it (a read-only bot only there)."""
         if self.access is Access.FULL:
             return None
-        if not path or not self._inside(path):
-            return f"writes are limited to this task's own folder, {self.cwd}"
+        if path and self._private(path):
+            return PRIVATE
+        if path and any(self._inside(path, folder) for folder in self.write_dirs):
+            return None
+        if self.access is Access.READ_ONLY:
+            return READ_ONLY
+        if not path or not self._inside(path, self.cwd):
+            return f"writes are limited to this task's own folder, {self.cwd}; to write elsewhere, {ASK}"
         return None
 
     # Keeping refusals, to show them.
@@ -153,9 +164,9 @@ class Policy:
             return True
         return any(target.is_relative_to(p) for p in self.private)
 
-    def _inside(self, path: str) -> bool:
+    def _inside(self, path: str, folder: Path) -> bool:
         target = Path(path) if os.path.isabs(path) else self.cwd / path
         try:
-            return target.resolve().is_relative_to(self.cwd)
+            return target.resolve().is_relative_to(folder)
         except OSError:
             return False

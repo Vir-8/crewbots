@@ -19,6 +19,8 @@ export type Block =
   | { kind: "page"; id: number; page: string; changed: boolean }
   | { kind: "activity"; id: number; items: Block[] }
   | { kind: "offer"; id: number; outcome?: Record<string, any> } // the chief's, under its greeting: how it was answered
+  // What a bot asks the user to allow: in its own thread, and in the chat its work came from (`here` false there).
+  | { kind: "permission"; id: number; permission: number; bot: string; taskId: string; ask: string; what: string; why: string; folder?: string; here: boolean; allowed?: boolean }
   | { kind: "ask"; id: number; taskId: string; question: string; choices?: Choice[]; multiple?: boolean; answer?: string }
   | { kind: "held"; id: number; taskId: string; reason: string }
   | { kind: "handoff"; id: number; data: Record<string, any> }
@@ -51,6 +53,8 @@ export function said(block: Block): string {
       return block.data.summary ?? "";
     case "page":
       return block.page;
+    case "permission":
+      return [block.what, block.why, block.folder ?? ""].filter(Boolean).join("\n");
     case "activity":
       return block.items.map(said).filter(Boolean).join("\n");
     default:
@@ -159,6 +163,13 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
           flush();
           out.push({ kind: "offer", id: e.id, outcome: events.find((x) => x.kind === "onboarding" && !x.data.offer && x.id > e.id)?.data });
         }
+        break;
+      case "permission":
+        flush();
+        out.push({
+          kind: "permission", id: e.id, permission: d.permission, bot: d.bot, taskId: d.task, ask: d.kind, what: d.what, why: d.why ?? "", folder: d.folder, here: d.task === e.task_id,
+          allowed: events.find((x) => x.kind === "permission_answer" && x.data.permission === d.permission)?.data.allowed,
+        });
         break;
       case "escalation":
         flush();

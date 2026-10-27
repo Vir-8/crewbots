@@ -19,6 +19,7 @@ from crewbots.api.schemas import (
     OpenGroup,
     PageEdit,
     PageWrite,
+    PermissionAsk,
     PostBody,
     ProposedRoutine,
     Recall,
@@ -160,6 +161,11 @@ def routes(c: Context) -> APIRouter:
         except ToolRefused as e:
             raise HTTPException(422, str(e)) from None
         return {"text": text}
+
+    @v1.post("/bot/ask_permission", status_code=201)
+    async def bot_ask_permission(request: Request, body: PermissionAsk):
+        asked = runner.ask_permission(request.state.task.id, body.what, body.why, body.kind, body.folder)
+        return {"id": asked["id"]}
 
     @v1.post("/bot/escalate")
     async def bot_escalate(request: Request, body: Escalation):

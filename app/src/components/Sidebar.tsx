@@ -10,14 +10,16 @@ import "../styles/sidebar.css";
 
 const NEED: Record<InboxItem["reason"], string> = {
   merge: "Ready to merge",
+  permission: "Asks your permission",
   question: "Has a question",
   held: "Waiting on a budget",
   failed: "Failed",
   interrupted: "Interrupted",
 };
 
-const NEED_ICON: Record<InboxItem["reason"], "merge" | "question" | "pause" | "alert"> = {
+const NEED_ICON: Record<InboxItem["reason"], "merge" | "lock" | "question" | "pause" | "alert"> = {
   merge: "merge",
+  permission: "lock",
   question: "question",
   held: "pause",
   failed: "alert",

@@ -1,6 +1,7 @@
-"""Tasks: starting, reading, messaging, stopping, releasing and merging them."""
+"""Tasks: starting, reading, messaging, stopping, releasing and merging them, and answering what they ask to be
+allowed."""
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from crewbots.api.context import Context
 from crewbots.api.schemas import (
@@ -10,6 +11,8 @@ from crewbots.api.schemas import (
     MergeRequest,
     Message,
     NewTask,
+    PermissionAnswer,
+    PermissionOut,
     ReviewStateOut,
     TaskOut,
     TaskStatus,
@@ -64,6 +67,14 @@ def routes(c: Context) -> APIRouter:
         """Lets a task held on a budget or plan limit go ahead, with the rest of its goal."""
         task_or_404(task_id)
         return runner.release(task_id).to_json()
+
+    @v1.post("/permissions/{permission_id}", response_model=PermissionOut)
+    async def answer_permission(permission_id: int, body: PermissionAnswer):
+        """The user allows what a bot asked, or not. Only the user can: a bot's token doesn't reach this."""
+        try:
+            return runner.answer_permission(permission_id, body.allowed)
+        except KeyError as e:
+            raise HTTPException(404, str(e.args[0])) from None
 
     @v1.get("/tasks/{task_id}/children", response_model=list[ChildOut])
     async def task_children(task_id: str):

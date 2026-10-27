@@ -10,8 +10,8 @@ kinds:
 
 A room is a group chat: the user and some bots, with one of them the lead. Its messages are kept on their own.
 
-Store's parts are by area: tasks, events, rooms, search, code review's drafts and routines; `db.py` has the database
-itself and its migrations.
+Store's parts are by area: tasks, events, rooms, search, code review's drafts, routines, what happened around the
+crew, and what bots asked the user to allow; `db.py` has the database itself and its migrations.
 """
 
 from pathlib import Path
@@ -20,13 +20,14 @@ from crewbots.store.db import Connection, migrate
 from crewbots.store.drafts import Drafts
 from crewbots.store.events import Events
 from crewbots.store.happenings import Happenings
+from crewbots.store.permissions import Permissions
 from crewbots.store.rooms import Rooms
 from crewbots.store.routines import Routines
 from crewbots.store.search import Search
 from crewbots.store.tasks import Tasks
 
 
-class Store(Tasks, Events, Rooms, Search, Drafts, Routines, Happenings):
+class Store(Tasks, Events, Rooms, Search, Drafts, Routines, Happenings, Permissions):
     def __init__(self, path: Path | str):
         self.db = Connection(path)
         self.db.execute("pragma journal_mode=wal")

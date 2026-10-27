@@ -69,6 +69,7 @@ from crewbots.runner.delegation import MAX_CHILDREN, MAX_DEPTH, MAX_OUT, Delegat
 from crewbots.runner.dreams import Dreams
 from crewbots.runner.files import Files
 from crewbots.runner.holds import Holds
+from crewbots.runner.permissions import Permissions
 from crewbots.runner.reviews import Reviewing
 from crewbots.runner.rooms import Rooms
 from crewbots.runner.sessions import Sessions
@@ -88,10 +89,10 @@ RETRY_WAITS_S = (30.0, 120.0, 300.0)
 STALL_S = 1200.0  # no event at all from a turn for this long: it's stuck, so it's stopped and tried again
 
 
-class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams, Checkins, Wakes, Welcome):
+class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams, Checkins, Wakes, Welcome, Permissions):
     """Runs the crew's tasks. Its parts are by area: sessions, rooms, delegation, reviews, work, files bots show the
-    user, holds, dreams (memory consolidated overnight), check-ins, the chief's own looks around (wakes), and starting
-    a crew off (welcome)."""
+    user, holds, dreams (memory consolidated overnight), check-ins, the chief's own looks around (wakes), starting a
+    crew off (welcome), and what bots ask the user to allow (permissions)."""
 
     def __init__(
         self,
@@ -511,6 +512,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
                            mcp_servers=servers, crew=tools if in_process else None, network=bot.network)
         # A backend that hosts tools in-process gets the crew tools as Python; any other, as an MCP server with a token.
         in_process = getattr(backend, "in_process_tools", False) and self.api_url is not None
+        grants = self.store.grants(task.id)  # what the user allowed this task beyond its bot's role card
         proactive = task.created_by == "crewbots" and task.parent_id is not None  # started on its own, from a check-in
         return RunSpec(
             prompt=prompt, cwd=cwd, model=bot.model,
@@ -530,7 +532,9 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
             read_dirs=[*self.crew.skill_dirs, *[d for d in (self.crew.memory.root, self.crew.home / attachments_module.FOLDER,
                                                             self.crew.pages_of(bot))
                                                  if d.is_dir()]], timeout_s=bot.timeout_s,
-            network=bot.network, effort=bot.effort, context_window=bot.context_window,
+            write_dirs=[Path(g["folder"]) for g in grants if g["kind"] == "folder"],
+            network=True if any(g["kind"] == "network" for g in grants) else bot.network,
+            effort=bot.effort, context_window=bot.context_window,
         )
 
     def _stay_awake(self) -> None:

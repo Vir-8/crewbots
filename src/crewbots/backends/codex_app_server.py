@@ -65,7 +65,7 @@ class CodexSession:
         full = spec.access is Access.FULL
         self.approval_policy = "never" if full else "on-request"
         self.policy = None if full else Policy(spec.access, spec.cwd, set(spec.mcp_servers) | {CREW_SERVER},
-                                                    network=spec.network)
+                                                    network=spec.network, write_dirs=spec.write_dirs)
         self._files: dict[str, list[str]] = {}  # file change item id → the paths it touches, for its approval
         self._turn_id: str | None = None
         self._steers: list[str] = []  # reasons to tell the model, after a refusal

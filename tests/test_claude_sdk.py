@@ -21,6 +21,7 @@ from fakes import ScriptedCrew, bot, wait_until
 from crewbots import paths
 from crewbots.backends import Access, ClaudeAgent, McpServer, RunSpec
 from crewbots.backends.claude_sdk import ClaudeAgentSession, ClaudePolicy, SdkMapper, crew_server
+from crewbots.backends.policy import READ_ONLY
 from crewbots.crew_tools import CrewTools, ToolRefused
 from crewbots.events import Done, Notice, SessionStarted, Text, ToolCall, ToolResult, Usage
 from crewbots.store import Store
@@ -144,7 +145,7 @@ async def test_a_refusal_is_reported_and_tells_claude_why(worktree):
     decision = await policy("Bash", {"command": "rm -rf build"}, None)
 
     assert decision.behavior == "deny" and "read-only" in decision.message
-    assert policy.take_refusals() == ["Refused Bash: this bot is read-only (its role card says access: read_only)"]
+    assert policy.take_refusals() == [f"Refused Bash: {READ_ONLY}"]
     assert policy.take_refusals() == []
 
 
@@ -348,7 +349,7 @@ async def test_refusals_during_a_turn_become_notices(worktree):
     session.client = Refusing([])
     events = await collect(session.turn("clean up"))
 
-    assert Notice(message="Refused Bash: this bot is read-only (its role card says access: read_only)") in events
+    assert Notice(message=f"Refused Bash: {READ_ONLY}") in events
 
 
 # The in-process crew tools
@@ -384,7 +385,7 @@ async def test_workers_cant_reach_coordinator_tools(store, tmp_path):
     assert {d.name for d in tools.definitions()} == {
         "handoff", "escalate", "review", "remember", "forget", "recall", "start_thread", "post", "delegate", "tasks",
         "message", "ask", "open_group", "add_to_group", "update_state", "remind_on", "propose_routine", "share",
-        "write_page", "edit_page", "set_name"}
+        "write_page", "edit_page", "set_name", "ask_permission"}
     with pytest.raises(ToolRefused, match="not one of this bot's crew tools"):
         await tools.call("propose_merge", {"task_id": "t_x", "summary": "x"})
     reply = await tools.call("handoff", {"done": "built", "output": ["a.py"]})

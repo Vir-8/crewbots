@@ -1,5 +1,6 @@
 """What a bot sends to the /bot/ API, through its crewbots MCP server."""
 
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -78,6 +79,12 @@ class PageEdit(BaseModel):
     page: str
     find: str
     replace: str
+
+class PermissionAsk(BaseModel):
+    what: str  # what it'd do, in a line the user can say yes to
+    why: str = ""
+    kind: Literal["action", "folder", "network"] = "action"
+    folder: str | None = None  # for a folder: its whole path
 
 class Forget(BaseModel):
     name: str

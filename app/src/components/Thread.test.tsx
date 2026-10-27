@@ -110,6 +110,24 @@ describe("a bot's working, in a chat", () => {
     expect(answered).not.toContain("Answer in your own words");
   });
 
+  it("asks your permission with Allow and Don't allow, and says how it was answered", () => {
+    const { crew, task } = chat(0);
+    const at = new Date(Date.UTC(2026, 9, 27, 7)).toISOString();
+    const asked: StoredEvent = { id: 1, task_id: task.id, kind: "permission", data: { permission: 7, kind: "network", bot: "engineer", task: "t_thread", what: "Install the test dependencies", why: "pytest needs them" }, at };
+    crew.tasks.set("t_thread", { ...task, id: "t_thread", kind: "thread", title: "Fix the build", parent_id: task.id });
+    crew.events.set(task.id, [asked]);
+    const open = renderToStaticMarkup(<Thread crew={crew} task={task} onOpen={() => undefined} chat />);
+    expect(open).toContain("asks your permission");
+    expect(open).toContain("In its thread: Fix the build"); // shown in the chat its thread came from
+    expect(open).toContain("Don&#x27;t allow");
+    expect(open).toContain("For the rest of this thread");
+
+    crew.events.set(task.id, [asked, { id: 2, task_id: task.id, kind: "permission_answer", data: { permission: 7, allowed: false }, at }]);
+    const answered = renderToStaticMarkup(<Thread crew={crew} task={task} onOpen={() => undefined} chat />);
+    expect(answered).toContain("Not allowed");
+    expect(answered).not.toContain("Don&#x27;t allow");
+  });
+
   it("says so when a bot takes the name it's given", () => {
     const { crew, task } = chat(0);
     const at = new Date(Date.UTC(2026, 9, 27, 7)).toISOString();

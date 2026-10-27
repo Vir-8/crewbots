@@ -16,6 +16,7 @@ from crewbots.events import Compacted, Done, Event, Notice, RateLimit, SessionSt
 # every request instead: four creative-tool servers took a read-only bot's turns from 9K tokens to 91K.
 READ_ONLY_TOOLS = "Read,Glob,Grep,ToolSearch"
 WEB_TOOLS = "WebFetch,WebSearch"  # with network on; this backend can't check a fetch's host, so a host list is off
+EDIT_TOOLS = "Edit,Write,MultiEdit"  # for a read-only bot, only in the folders the user let it write in
 # Claude Code's OS sandbox for a writing bot's shell commands: writes kept to the working folder, no opting out.
 SANDBOX = {"enabled": True, "autoAllowBashIfSandboxed": False, "allowUnsandboxedCommands": False}
 
@@ -26,11 +27,15 @@ def private_rules() -> list[str]:
     return [rule for path in private_paths() for rule in (f"Read(/{path})", f"Read(/{path}/**)")]
 
 
-def settings(access: Access) -> dict[str, Any] | None:
-    """What a bot that isn't on full access gets on top of the repo's settings."""
+def settings(access: Access, write_dirs: Sequence[Path] = ()) -> dict[str, Any] | None:
+    """What a bot that isn't on full access gets on top of the repo's settings: the private paths denied, and the
+    folders the user let it write in, for this task, allowed to its file tools (and so to its sandbox's commands)."""
     if access is Access.FULL:
         return None
-    return {"permissions": {"deny": private_rules()}}
+    permissions: dict[str, list[str]] = {"deny": private_rules()}
+    if write_dirs:
+        permissions["allow"] = [rule for folder in write_dirs for rule in (f"Edit(/{folder})", f"Edit(/{folder}/**)")]
+    return {"permissions": permissions}
 
 
 class ClaudeCLI:
@@ -77,7 +82,8 @@ class ClaudeCLI:
         web = [WEB_TOOLS] if spec.network is True else []
         match spec.access:
             case Access.READ_ONLY:
-                args += ["--permission-mode", "dontAsk", "--tools", ",".join([READ_ONLY_TOOLS, *web])]
+                edits = [EDIT_TOOLS] if spec.write_dirs else []
+                args += ["--permission-mode", "dontAsk", "--tools", ",".join([READ_ONLY_TOOLS, *edits, *web])]
                 args += ["--allowedTools", ",".join([READ_ONLY_TOOLS, *web, *mcp_tools])]
             case Access.WORKSPACE_WRITE:
                 # acceptEdits allows edits inside the working directory; Bash has to be allowed by name, and runs in
@@ -86,9 +92,9 @@ class ClaudeCLI:
                 Path("/tmp/claude").mkdir(exist_ok=True)  # the sandbox's TMPDIR, which it doesn't create
             case Access.FULL:
                 args += ["--permission-mode", "bypassPermissions"]
-        if extra := settings(spec.access):
+        if extra := settings(spec.access, spec.write_dirs):
             args += ["--settings", json.dumps(extra | ({"sandbox": SANDBOX} if spec.access is Access.WORKSPACE_WRITE else {}))]
-        for path in spec.read_dirs:
+        for path in [*spec.read_dirs, *spec.write_dirs]:
             args += ["--add-dir", str(path)]
         if spec.model:
             args += ["--model", spec.model]

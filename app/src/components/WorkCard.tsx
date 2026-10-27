@@ -50,7 +50,7 @@ export function WorkCard({ crew, task, onOpen }: { crew: Crew; task: Task; onOpe
         )}
         <span className={`work-status ${status}`}>
           {active && <span className="working-dot small" />}
-          {STATUS[status]}
+          {crew.asks.has(task.id) ? "Asks your permission" : STATUS[status]}
         </span>
       </div>
       <div className="work-title">{oneLine(task.title, 160)}</div>

@@ -250,7 +250,7 @@ export type Crew = ReturnType<typeof useCrew>;
 
 export interface InboxItem {
   task: Task;
-  reason: "merge" | "question" | "held" | "failed" | "interrupted";
+  reason: "merge" | "permission" | "question" | "held" | "failed" | "interrupted";
   text: string;
 }
 
@@ -276,11 +276,20 @@ function derive(tasks: Map<string, Task>, recent: StoredEvent[]) {
   for (const e of recent) if (e.kind === "escalation") questions.set(e.task_id, e.data.question);
   const holds = new Map<string, string>();
   for (const e of recent) if (e.kind === "held") holds.set(e.task_id, e.data.reason);
+  // What a task asks the user to allow, while it's unanswered: from the asking task's own record of it.
+  const asked = new Map<number, { task: string; what: string }>();
+  for (const e of recent) {
+    if (e.kind === "permission" && e.data.task === e.task_id) asked.set(e.data.permission, { task: e.task_id, what: e.data.what });
+    else if (e.kind === "permission_answer") asked.delete(e.data.permission);
+  }
+  const asks = new Map([...asked.values()].map((a) => [a.task, a.what]));
 
   const inbox: InboxItem[] = [];
   for (const task of [...all].sort((a, b) => b.updated_at.localeCompare(a.updated_at))) {
     if (task.merge_state === "proposed") {
       inbox.push({ task, reason: "merge", text: "Reviewed and ready to merge" });
+    } else if (asks.has(task.id)) {
+      inbox.push({ task, reason: "permission", text: asks.get(task.id)! });
     } else if (task.status === "needs_input" && !task.parent_id) {
       inbox.push({ task, reason: "question", text: questions.get(task.id) ?? "Waiting on your answer" });
     } else if (task.status === "held") {
@@ -294,7 +303,7 @@ function derive(tasks: Map<string, Task>, recent: StoredEvent[]) {
 
   const family = (id: string): Task[] => (children.get(id) ?? []).flatMap((k) => [k, ...family(k.id)]);
   const running = all.filter((t) => ACTIVE.includes(t.status));
-  return { goals, children, family, latest, verdicts, inbox, running, holds };
+  return { goals, children, family, latest, verdicts, inbox, running, holds, asks };
 }
 
 /** One human line for what an event says, or null when it is noise for a feed. */

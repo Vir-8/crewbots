@@ -37,6 +37,7 @@ class OpenSession:
     token: str  # the session's crew tools act with this for as long as the session is open
     cwd: Path
     last_used: float
+    grants: tuple[int, ...] = ()  # what the user had allowed its task when it opened (runner/permissions.py)
 
 
 class Bus:

@@ -38,7 +38,16 @@ from claude_agent_sdk import (
 )
 
 from crewbots.backends.base import CLAUDE_BOT_ENV, Access, RunSpec, claude_retry
-from crewbots.backends.claude_cli import READ_ONLY_TOOLS, SANDBOX, _images, _stringify, compacted, rate_limit, settings
+from crewbots.backends.claude_cli import (
+    EDIT_TOOLS,
+    READ_ONLY_TOOLS,
+    SANDBOX,
+    _images,
+    _stringify,
+    compacted,
+    rate_limit,
+    settings,
+)
 from crewbots.backends.credentials import without_credentials
 from crewbots.backends.policy import WEB_TOOLS, Policy
 from crewbots.crew_tools import CrewTools, ToolRefused
@@ -103,13 +112,15 @@ class ClaudeAgent:
             setting_sources=["project", "local"],
             strict_mcp_config=True,
             mcp_servers=servers,
-            add_dirs=[str(d) for d in spec.read_dirs],
-            # A read-only bot gets the web tools too when it has network: the policy checks each call's host.
-            tools=[*READ_ONLY_TOOLS.split(","), *(sorted(WEB_TOOLS) if spec.network else [])]
+            add_dirs=[str(d) for d in [*spec.read_dirs, *spec.write_dirs]],
+            # A read-only bot gets the web tools too when it has network (the policy checks each call's host), and
+            # the file tools when the user let it write in a folder (the policy keeps them to it).
+            tools=[*READ_ONLY_TOOLS.split(","), *(EDIT_TOOLS.split(",") if spec.write_dirs else []),
+                   *(sorted(WEB_TOOLS) if spec.network else [])]
             if spec.access is Access.READ_ONLY else None,
             permission_mode="bypassPermissions" if full else "default",
             can_use_tool=None if full else session.policy,
-            settings=json.dumps(extra) if (extra := settings(spec.access)) else None,
+            settings=json.dumps(extra) if (extra := settings(spec.access, spec.write_dirs)) else None,
             env=env,
             sandbox=sandbox,
             effort=spec.effort if spec.effort in CLAUDE_EFFORTS else None,
@@ -130,7 +141,7 @@ class ClaudeAgentSession:
         self.session_id = spec.resume_session_id
         self.timeout_s = spec.timeout_s
         self.policy = ClaudePolicy(spec.access, Path(spec.cwd), set(spec.mcp_servers) | {CREW_SERVER},
-                                   network=spec.network)
+                                   network=spec.network, write_dirs=spec.write_dirs)
         self.stderr_lines: list[str] = []
         self.temp: Path | None = None
         self._broken = False

@@ -58,8 +58,9 @@ class Sessions:
     async def _session_for(self, task: Task, bot: Bot, cwd: Path, backend: Backend) -> OpenSession | None:
         """The task's open session, or a new one; None to run this turn as its own process."""
         current = self._sessions.get(task.id)
-        if current and current.session.alive and current.cwd == cwd:
-            return current
+        grants = tuple(g["id"] for g in self.store.grants(task.id))
+        if current and current.session.alive and current.cwd == cwd and current.grants == grants:
+            return current  # one that opened before the user allowed something opens again, with it
         if current:
             await self._close_session(task.id)
         if not self.use_sessions or not hasattr(backend, "open"):
@@ -74,7 +75,8 @@ class Sessions:
             self._record(task.id, kind="notice", data={"message": f"couldn't keep a session open ({e}); "
                                                                   "running this turn on its own"})
             return None
-        opened = OpenSession(session=session, token=token, cwd=cwd, last_used=asyncio.get_running_loop().time())
+        opened = OpenSession(session=session, token=token, cwd=cwd, last_used=asyncio.get_running_loop().time(),
+                             grants=grants)
         self._sessions[task.id] = opened
         return opened
 

@@ -256,6 +256,22 @@ create table if not exists brought_in (  -- memories from Claude Code and Codex 
 """
 SCHEMA += BROUGHT_IN
 
+PERMISSIONS = """
+create table if not exists permissions (  -- what a bot asked the user to allow (runner/permissions.py), and the answer
+    id          integer primary key autoincrement,
+    task_id     text not null references tasks(id),
+    kind        text not null,             -- action, folder or network
+    folder      text not null default '',  -- for a folder: where it may write
+    what        text not null,             -- what it asked for, in its words
+    why         text not null default '',
+    asked_at    text not null,
+    allowed     integer,                   -- 1 or 0 once the user answers
+    answered_at text
+);
+create index if not exists permissions_by_task on permissions(task_id);
+"""
+SCHEMA += PERMISSIONS
+
 # Full-text search over what the crew said and decided: the `recall` tool. Kept in step with events as they're added.
 # `search` matches words (stemmed); `trigrams`, the same rows, matches any three or more characters, for ids, paths
 # and parts of code names (migration 6).
@@ -394,6 +410,7 @@ MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] =
     ("chats pinned to the top of the sidebar", lambda db, _: db.executescript(PINS)),
     ("an always-on bot's looks around", lambda db, _: db.executescript(WAKES)),
     ("memories brought in from Claude Code and Codex", lambda db, _: db.executescript(BROUGHT_IN)),
+    ("what bots ask the user to allow", lambda db, _: db.executescript(PERMISSIONS)),
 ]
 
 

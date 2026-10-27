@@ -124,3 +124,17 @@ class Message(BaseModel):
 
 class MergeRequest(BaseModel):
     force: bool = False
+
+class PermissionAnswer(BaseModel):
+    allowed: bool
+
+class PermissionOut(BaseModel):
+    id: int
+    task_id: str
+    kind: str  # action, folder or network
+    folder: str
+    what: str
+    why: str
+    asked_at: str
+    allowed: bool | None  # none until the user answers
+    answered_at: str | None

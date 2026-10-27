@@ -43,6 +43,8 @@ CHOICES = {"type": "array", "items": {"type": "object", "properties": {"label": 
 SPECS: dict[str, Spec] = {
     "handoff": Spec(_object({"done": STRING, "output": STRINGS, "open": STRING, "needs": STRING}, ["done"])),
     "escalate": Spec(_object({"question": STRING, "choices": CHOICES, "multiple": {"type": "boolean"}}, ["question"])),
+    "ask_permission": Spec(_object({"what": STRING, "why": STRING, "kind": {"type": "string", "enum": [
+        "action", "folder", "network"]}, "folder": STRING}, ["what"])),
     "review": Spec(_object({
         "verdict": {"type": "string", "enum": ["pass", "fail"]},
         "summary": STRING,
@@ -129,6 +131,10 @@ class CrewTools:
                 case "escalate":
                     r.escalate(me, args["question"], args.get("choices"), bool(args.get("multiple")))
                     return "Asked, so don't repeat the question. End your turn now; the answer will arrive as your next message."
+                case "ask_permission":
+                    r.ask_permission(me, args["what"], args.get("why") or "", args.get("kind") or "action",
+                                     args.get("folder"))
+                    return "Asked the user. End your turn now: their answer arrives as your next message."
                 case "review":
                     try:
                         verdict = Verdict(str(args["verdict"]).lower())

@@ -1,9 +1,9 @@
-// Projects, what Claude Code and Codex know, and the bots' pages, for the preview's bridge.
+// Projects, what Claude Code and Codex know, the bots' pages, and what a bot asks you to allow, for the preview's bridge.
 
 import type { FoundOut } from "../../api-types";
 import type { Live as LiveMessage } from "../../types";
 import { chatIds } from "./chats";
-import { emit } from "./make";
+import { emit, message, say as said, task, tasks } from "./make";
 
 type Live = { publish: (message: LiveMessage) => void; say: (id: string, kind: string, data: Record<string, unknown>) => void };
 const ok = (data: unknown) => ({ ok: true, status: 200, data });
@@ -30,6 +30,18 @@ const found: FoundOut = {
   ],
   memories: [],
 };
+
+// A thread waiting on your permission: asked there, shown in the chief's chat too, and answered from either.
+const trailer = task("t_trailer001", "engineer", "Render the launch trailer", { parent_id: chatIds.chief, created_by: "chief", status: "needs_input", workspace: null });
+message(trailer.id, "chief", "Render the 30-second launch trailer from the gameplay captures.");
+said(trailer.id, "The captures are cut. The frames and the final render come to about 6 GB, too big for the repo.");
+const asked = {
+  permission: 1, kind: "folder", bot: "engineer", task: trailer.id, folder: "/Users/you/Movies/Launch Trailer",
+  what: "Write the trailer's frames and the final cut into ~/Movies/Launch Trailer", why: "They're about 6 GB: too big for the repo, and they belong with your other renders.",
+};
+const askedIn = [trailer.id, chatIds.chief];
+for (const id of askedIn) emit(id, "permission", asked);
+
 const pages: Record<string, Record<string, { text: string; updated: string }>> = {
   chief: {
     Scratchpad: { text: "## Top of mind\n\n- The CSV export ships Friday: [[Launch plan]]\n\n## In flight\n\n- engineer: the export endpoint and button (t_csv0000002), in review with the critic\n\n## Waiting on you\n\n- Whether release days belong in the standards\n\n## Next look\n\n- The critic's review, this afternoon", updated: new Date(Date.now() - 40 * 60_000).toISOString() },
@@ -46,6 +58,11 @@ export function projectRequest(method: string, pathname: string, parts: string[]
     return ok(null);
   }
   if (pathname === "/projects/found") return ok(found);
+  if (method === "POST" && parts[0] === "permissions" && Number(parts[1]) === asked.permission) {
+    for (const id of askedIn) say(id, "permission_answer", { permission: asked.permission, allowed: body.allowed });
+    publish({ type: "task", task: { ...tasks.get(trailer.id)!, status: body.allowed ? "running" : "idle" } });
+    return ok({ id: asked.permission, task_id: trailer.id, kind: asked.kind, folder: asked.folder, what: asked.what, why: asked.why, asked_at: "", allowed: body.allowed, answered_at: new Date().toISOString() });
+  }
   if (pathname === "/projects/bring-in" && method === "POST") {
     for (const p of body.projects) projects.push({ ...p, missing: false });
     for (const f of found.folders) if (body.projects.some((p: { folder: string }) => p.folder === f.folder)) f.project = f.name;

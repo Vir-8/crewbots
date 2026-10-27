@@ -72,6 +72,7 @@ class RunSpec:
     resume_session_id: str | None = None
     mcp_servers: dict[str, McpServer] = field(default_factory=dict)
     read_dirs: list[Path] = field(default_factory=list)  # outside cwd, readable even when read-only (e.g. skills)
+    write_dirs: list[Path] = field(default_factory=list)  # outside cwd, where the user let it write, for this task
     crew: Any = None  # the crew tools as Python (crewbots.crew_tools.CrewTools), for backends that host them in-process
     timeout_s: float | None = None
     network: bool | tuple[str, ...] = False  # a writing bot's shell commands: no network, any host, or these hosts

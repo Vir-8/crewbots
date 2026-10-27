@@ -31,7 +31,7 @@ FOLDERS = ("memory", "projects", "attachments")  # in the crew's folder
 # drafts, the routines' state, what triggers have started on, the digests sent and what the crew noticed around it, so
 # what ran once doesn't again.
 CLEARED = ("room_messages", "rooms", "handoffs", "pending_turns", "primed", "agent_log", "recall_log", "intents",
-           "proactive", "reads", "wakes", "brought_in")
+           "proactive", "reads", "wakes", "brought_in", "permissions")
 
 
 class ResetError(RuntimeError):
