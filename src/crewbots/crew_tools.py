@@ -128,7 +128,7 @@ class CrewTools:
                     return "Handoff recorded. End your reply with a short summary."
                 case "escalate":
                     r.escalate(me, args["question"], args.get("choices"), bool(args.get("multiple")))
-                    return "Escalated. End your turn now; the answer will arrive as your next message."
+                    return "Asked, so don't repeat the question. End your turn now; the answer will arrive as your next message."
                 case "review":
                     try:
                         verdict = Verdict(str(args["verdict"]).lower())

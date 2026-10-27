@@ -45,7 +45,7 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
     @server.tool(description=describe("escalate"))
     def escalate(question: str, choices: list[dict[str, str]] | None = None, multiple: bool = False) -> str:
         call("POST", "/bot/escalate", {"question": question, "choices": choices or [], "multiple": multiple})
-        return "Escalated. End your turn now; the answer will arrive as your next message."
+        return "Asked, so don't repeat the question. End your turn now; the answer will arrive as your next message."
 
     @server.tool(description=describe("review"))
     def review(verdict: str, summary: str, findings: list[dict[str, str]] | None = None) -> str:
