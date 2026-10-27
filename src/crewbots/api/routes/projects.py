@@ -9,17 +9,15 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from crewbots import discovery, prompts
+from crewbots import discovery
 from crewbots import projects as projects_module
 from crewbots.api.context import Context
 from crewbots.api.schemas import BringIn, BroughtIn, FoundOut, ProjectBody, ProjectOut, ProjectsOut
 from crewbots.projects import Project, ProjectError
 
-STARTED = "started"  # in the routines table: when the crew was started off, which happens once
-
 
 def routes(c: Context) -> APIRouter:
-    runner, store = c.runner, c.store
+    runner = c.runner
     v1 = APIRouter()
 
     def home() -> Path:
@@ -33,13 +31,12 @@ def routes(c: Context) -> APIRouter:
     @v1.get("/projects", response_model=ProjectsOut)
     async def projects():
         loaded, errors = projects_module.load(home())
-        return {"projects": [_project_out(p) for p in loaded.values()], "errors": errors,
-                "started": bool(loaded) or store.routine_state(STARTED) is not None}
+        return {"projects": [_project_out(p) for p in loaded.values()], "errors": errors, "started": runner.started()}
 
     @v1.post("/projects/started", status_code=204)
-    async def started():
-        """The user started the crew off themselves, or said not now: the offer to bring things in isn't made again."""
-        store.routine_ran(STARTED, datetime.now().astimezone().isoformat(timespec="seconds"), "")
+    async def not_now():
+        """The user would rather start without bringing anything in: the offer isn't made again."""
+        runner.not_now()
 
     @v1.put("/projects/{name}", response_model=ProjectOut)
     async def put_project(name: str, body: ProjectBody):
@@ -68,28 +65,19 @@ def routes(c: Context) -> APIRouter:
 
     @v1.post("/projects/bring-in", response_model=BroughtIn)
     async def bring_in(body: BringIn):
-        """Adds the folders the user picked as projects, and hands the memories they picked to the chief, which keeps
-        what's worth keeping and says what it learned. Only memories that were found can come in."""
-        added: list[Project] = []
-        for new in body.projects:
-            try:
-                added.append(projects_module.save(home(), new.name, Path(new.folder), new.about))
-            except ProjectError as e:
-                raise HTTPException(422, f"{new.name}: {e}") from None
-        if added:
-            reload()
-        task_id = None
+        """Adds the folders the user picked as projects, and has the chief learn from the memories they picked, in a
+        thread of its own whose result comes back to its chat. Only memories that were found can come in."""
         picked = set(body.memories)
+        memories: list[discovery.FoundMemory] = []
         if picked:
             folders, loose = await asyncio.to_thread(discovery.found)
             memories = [m for m in [*loose, *(m for f in folders for m in f.memories)] if str(m.path) in picked]
-            if memories:
-                chief = next((b for b in runner.crew.bots.values() if b.can_delegate), next(iter(runner.crew.bots.values())))
-                text = prompts.text("bring-in", home(), memories=discovery.digest(memories))
-                task_id = runner.send(runner.chat(chief.name).id, text, sender="crewbots").id
-            picked = {str(m.path) for m in memories}
-        store.routine_ran(STARTED, datetime.now().astimezone().isoformat(timespec="seconds"), task_id or "")
-        return {"projects": [_project_out(p) for p in added], "memories": len(picked), "task_id": task_id}
+        try:
+            added, thread = runner.bring_in([p.model_dump() for p in body.projects], memories)
+        except ProjectError as e:
+            raise HTTPException(422, str(e)) from None
+        return {"projects": [_project_out(p) for p in added], "memories": len(memories),
+                "task_id": thread.id if thread else None}
 
     return v1
 

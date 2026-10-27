@@ -28,8 +28,8 @@ CARD_FIELDS = {
     "can_delegate", "skills", "budget", "network", "display_name", "avatar", "effort", "context_window", "proactive",
 }
 # How much conversation a bot's session holds before the CLI compacts it, and what the rollover is measured against.
-# Without it, the model's whole window counts: on a 1M model the rollover would wait for 700K tokens.
-DEFAULT_CONTEXT_WINDOW = 200_000
+# Unless its card says, the model's whole window: on a 1M model, the rollover comes at about 700K tokens.
+DEFAULT_CONTEXT_WINDOW = "auto"
 CONTEXT_WINDOW_RANGE = (100_000, 1_000_000)  # what Claude Code's --autocompact takes
 EFFORTS = ("low", "medium", "high", "xhigh", "max", "ultra")  # what each CLI accepts is narrower; its model list says
 # A bot's face in the app: one of these colors and shapes, or one picked from its name.

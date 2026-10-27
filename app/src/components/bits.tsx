@@ -278,6 +278,11 @@ function PageLink({ raw }: { raw: string }) {
   );
 }
 
+/** A link to one of a bot's pages, by its name. */
+export function PageLinkTo({ page }: { page: string }) {
+  return <PageLink raw={`[[${page}]]`} />;
+}
+
 export function Inline({ text, onSelect }: { text: string; onSelect: (id: string) => void }) {
   const parts: ReactNode[] = [];
   const pattern = /(`[^`]+`|\*\*[^*]+\*\*|\[\[[^\]\n]+\]\])/g;

@@ -21,7 +21,7 @@ from crewbots.projects import name_for
 DAYS = 180  # how far back a folder counts as one the user works in
 MOST = 20  # folders offered
 LINES = 60  # of a Claude Code session file, read for its folder
-MEMORY_CHARS = 60_000  # of memories handed to the chief at once, the newest first
+MEMORY_CHARS = 400_000  # of memories handed to the chief at once (about 100K tokens): past this, they're left out
 DATED = re.compile(r"\d{4}-\d{2}-\d{2}")  # Codex's folders for chats without a project: ~/Documents/Codex/<date>/...
 
 

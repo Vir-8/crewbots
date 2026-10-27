@@ -1,0 +1,279 @@
+// A conversation's events as people would tell them: what was said and decided, as blocks, with the mechanics
+// folded away (Thread draws them).
+
+import { limitText, oneLine } from "../state";
+import type { Attachment, StoredEvent, Task } from "../types";
+import { tokens } from "./bits";
+import { shown } from "./Find";
+
+export type Block =
+  | { kind: "you"; id: number; at: string; text: string; files: Attachment[] }
+  | { kind: "brief"; id: number; at: string; from: string; text: string }
+  | { kind: "say"; id: number; at: string; text: string; tag?: string; raised?: number; files?: Attachment[] }
+  | { kind: "steps"; id: number; calls: { call: StoredEvent; result?: StoredEvent }[] }
+  | { kind: "work"; id: number; task: Task }
+  | { kind: "asked"; id: number; bot: string; question: string; task?: Task }
+  | { kind: "line"; id: number; text: string; icon?: "check" | "merge" | "branch" | "alert" | "play" | "message" | "repeat"; tone?: string; gist?: string } // gist: what it was, in a folded run's few words
+  | { kind: "page"; id: number; page: string; changed: boolean }
+  | { kind: "activity"; id: number; items: Block[] }
+  | { kind: "offer"; id: number; outcome?: Record<string, any> } // the chief's, under its greeting: how it was answered
+  | { kind: "ask"; id: number; question: string }
+  | { kind: "held"; id: number; taskId: string; reason: string }
+  | { kind: "handoff"; id: number; data: Record<string, any> }
+  | { kind: "verdict"; id: number; data: Record<string, any> };
+
+// Crew tools that are shown as what they did (a card, a verdict, a question, a note kept, a page), not as steps.
+const SHOWN_ELSEWHERE = new Set(
+  ["delegate", "start_thread", "post", "share", "handoff", "review", "escalate", "propose_merge", "message", "ask", "remember",
+    "forget", "update_state", "write_page", "edit_page", "next_check"].map((t) => `mcp__crewbots__${t}`),
+);
+const COMPACTED = "compacted its conversation"; // the gist of the lines about a conversation grown long
+const NOTE = /^(Remembered|You gave it a note)/;
+
+/** What a block says, as it's drawn: where ⌘F looks. */
+export function said(block: Block): string {
+  switch (block.kind) {
+    case "you":
+    case "brief":
+    case "line":
+      return block.text;
+    case "say":
+      return shown(block.text);
+    case "ask":
+      return block.question;
+    case "asked":
+      return block.question;
+    case "handoff":
+      return [block.data.done, block.data.open ? `Open: ${block.data.open}` : ""].join("\n");
+    case "verdict":
+      return block.data.summary ?? "";
+    case "page":
+      return block.page;
+    case "activity":
+      return block.items.map(said).filter(Boolean).join("\n");
+    default:
+      return "";
+  }
+}
+
+/** Whether a block is part of a bot's working rather than the conversation: folded away in a chat. What went wrong,
+ * and anything that needs the user (a card, a question, a proposal), stays in view. */
+export function quiet(block: Block): boolean {
+  return block.kind === "steps" || block.kind === "page" || (block.kind === "line" && !block.tone && block.icon !== "merge");
+}
+
+/** Runs of a bot's working (two or more quiet blocks) folded into one. */
+export function fold(blocks: Block[]): Block[] {
+  const out: Block[] = [];
+  let run: Block[] = [];
+  const close = () => {
+    if (run.length > 1) out.push({ kind: "activity", id: run[0].id, items: run });
+    else out.push(...run);
+    run = [];
+  };
+  for (const block of blocks) {
+    if (quiet(block)) run.push(block);
+    else {
+      close();
+      out.push(block);
+    }
+  }
+  close();
+  return out;
+}
+
+export function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>): Block[] {
+  const out: Block[] = [];
+  const delegated = children.filter((c) => !c.review_of && c.kind !== "review" && c.kind !== "ask"); // in the order they were delegated, like the calls; a review's reviewers show in its pane
+  const asked = children.filter((c) => c.kind === "ask");
+  const results = new Map(events.filter((e) => e.kind === "tool_result").map((e) => [e.data.id, e]));
+  let steps: { call: StoredEvent; result?: StoredEvent }[] = [];
+  const flush = () => {
+    if (steps.length) out.push({ kind: "steps", id: steps[0].call.id, calls: steps });
+    steps = [];
+  };
+
+  for (const e of events) {
+    const d = e.data;
+    if (e.kind === "tool_call") {
+      const result = results.get(d.id);
+      if (d.name === "mcp__crewbots__delegate" || d.name === "mcp__crewbots__start_thread") {
+        flush();
+        if (d.input?.review_of) continue; // a review shows inside the card of the work it reviews
+        if (result?.data.is_error) out.push({ kind: "line", id: e.id, text: `Couldn't delegate: ${oneLine(result.data.output, 160)}`, icon: "alert", tone: "bad" });
+        else if (delegated.length) out.push({ kind: "work", id: e.id, task: delegated.shift()! });
+      } else if (d.name === "mcp__crewbots__ask") {
+        flush();
+        if (result?.data.is_error) out.push({ kind: "line", id: e.id, text: `Couldn't ask: ${oneLine(result.data.output, 160)}`, icon: "alert", tone: "bad" });
+        else out.push({ kind: "asked", id: e.id, bot: d.input?.bot ?? "", question: d.input?.question ?? "", task: asked.shift() });
+      } else if (d.name === "mcp__crewbots__post") {
+        flush();
+        out.push({ kind: "line", id: e.id, text: `Said in a group chat: ${oneLine(d.input?.text ?? "", 160)}`, icon: "message" });
+      } else if (d.name === "mcp__crewbots__share" && d.input?.room) {
+        flush(); // shared in a group chat, it shows there; here, a line says so
+        if (result?.data.is_error) out.push({ kind: "line", id: e.id, text: `Couldn't share: ${oneLine(result.data.output, 160)}`, icon: "alert", tone: "bad" });
+        else out.push({ kind: "line", id: e.id, text: `Shared in a group chat: ${(d.input.files ?? []).map((f: string) => f.split("/").at(-1)).join(", ")}`, icon: "message" });
+      } else if (d.name === "mcp__crewbots__share" && result?.data.is_error) {
+        flush();
+        out.push({ kind: "line", id: e.id, text: `Couldn't share: ${oneLine(result.data.output, 160)}`, icon: "alert", tone: "bad" });
+      } else if ((d.name === "mcp__crewbots__write_page" || d.name === "mcp__crewbots__edit_page") && d.input?.page) {
+        flush();
+        if (result?.data.is_error) out.push({ kind: "line", id: e.id, text: `Couldn't write ${d.input.page}: ${oneLine(result.data.output, 160)}`, icon: "alert", tone: "bad" });
+        else out.push({ kind: "page", id: e.id, page: String(d.input.page), changed: d.name.endsWith("edit_page") });
+      } else if (d.name === "mcp__crewbots__next_check" && !result?.data.is_error) {
+        flush();
+        out.push({ kind: "line", id: e.id, text: `Will look around again in ${minutes(Number(d.input?.minutes))}: ${oneLine(d.input?.why ?? "", 140)}`, icon: "repeat", gist: "planned when to look again" });
+      } else if (d.name === "mcp__crewbots__message") {
+        flush();
+        const to = tasks.get(d.input?.task_id)?.bot ?? "the task";
+        out.push({ kind: "line", id: e.id, text: `Sent to ${to}: ${oneLine(d.input?.text ?? "", 160)}` });
+      } else if (!SHOWN_ELSEWHERE.has(d.name)) {
+        steps.push({ call: e, result });
+      }
+      continue;
+    }
+    switch (e.kind) {
+      case "message":
+        flush();
+        if (d.from === "user") out.push({ kind: "you", id: e.id, at: e.at, text: d.text, files: d.attachments ?? [] });
+        else if (String(d.from).startsWith("routine:")) out.push({ kind: "brief", id: e.id, at: e.at, from: `the ${String(d.from).slice(8)} routine`, text: String(d.text).replace(/^\[routine: [^\]]+\]\s*/, "") });
+        else if (d.from === "room") continue;
+        else if (d.from === "routine") out.push({ kind: "brief", id: e.id, at: e.at, from: `the ${tasks.get(e.task_id)?.routine ?? ""} routine`, text: d.text });
+        else if (d.from !== "crewbots") out.push({ kind: "brief", id: e.id, at: e.at, from: d.from, text: d.text });
+        break;
+      case "text":
+        flush();
+        out.push({ kind: "say", id: e.id, at: e.at, text: d.text, tag: d.digest ? "Morning digest" : d.level === "needs_you" ? "Needs you" : d.checkin ? "Checked in on its own" : undefined, raised: d.proactive_id, files: d.files });
+        break;
+      case "shared":
+        flush();
+        out.push({ kind: "say", id: e.id, at: e.at, text: d.text ?? "", files: d.attachments ?? [] });
+        break;
+      case "onboarding":
+        if (d.offer) {
+          flush();
+          out.push({ kind: "offer", id: e.id, outcome: events.find((x) => x.kind === "onboarding" && !x.data.offer && x.id > e.id)?.data });
+        }
+        break;
+      case "escalation":
+        flush();
+        out.push({ kind: "ask", id: e.id, question: d.question });
+        break;
+      case "handoff":
+        flush();
+        out.push({ kind: "handoff", id: e.id, data: d });
+        break;
+      case "review":
+        flush();
+        out.push({ kind: "verdict", id: e.id, data: d });
+        break;
+      case "worktree":
+        out.push({ kind: "line", id: e.id, text: `Working on its own branch, ${d.branch}`, icon: "branch" });
+        break;
+      case "merge_proposed":
+        flush();
+        out.push({ kind: "line", id: e.id, text: `${d.by} proposed it for merging`, icon: "merge" });
+        break;
+      case "memory":
+        flush();
+        out.push({
+          kind: "line",
+          id: e.id,
+          text: d.action === "state" ? "Kept this task's state" : d.by === "user" ? `You gave it a note: ${d.title}` : `${d.action === "remember" ? "Remembered" : "Forgot"}${d.scope === "crew" ? " for the crew" : ""}: ${d.title}`,
+          icon: "check",
+        });
+        break;
+      case "held":
+        flush();
+        out.push({ kind: "held", id: e.id, taskId: e.task_id, reason: d.reason });
+        break;
+      case "released":
+        flush();
+        out.push({ kind: "line", id: e.id, text: "You let it go ahead", icon: "play" });
+        break;
+      case "rate_limit":
+        if (d.status !== "ok") {
+          flush();
+          out.push({ kind: "line", id: e.id, text: limitText(d as Parameters<typeof limitText>[0]), icon: "alert", tone: d.status === "limited" ? "bad" : "warn" });
+        }
+        break;
+      case "restarted":
+        flush();
+        out.push(
+          d.again
+            ? { kind: "line", id: e.id, text: "Cut off by a restart again while carrying on. Send a message to carry on.", icon: "alert", tone: "warn" }
+            : { kind: "line", id: e.id, text: "The crew restarted mid-turn, so it carried on where it left off", icon: "play" },
+        );
+        break;
+      case "rollover":
+        flush();
+        out.push({ kind: "line", id: e.id, text: `Continued in a fresh session from a briefing (the conversation had used ${d.percent}% of its context)`, gist: COMPACTED });
+        break;
+      case "flushed":
+        flush();
+        out.push({ kind: "line", id: e.id, text: d.logged ? `Set down where things stand, and ${d.logged} line${d.logged === 1 ? "" : "s"} in today's log` : "Set down where things stand", gist: COMPACTED });
+        break;
+      case "compacted":
+        flush();
+        out.push({ kind: "line", id: e.id, text: `${d.trigger === "auto" ? "The CLI compacted" : "Compacted"} the conversation${d.before && d.after ? ` (${tokens(d.before)} → ${tokens(d.after)} tokens)` : ""}`, gist: COMPACTED });
+        break;
+      case "started_on_own":
+        flush();
+        out.push({ kind: "line", id: e.id, text: `Started on its own${d.why ? `: ${d.why}` : ""}`, icon: "play" });
+        break;
+      case "consolidated":
+        flush();
+        out.push({ kind: "line", id: e.id, text: `${d.text}${d.commit ? ` · memory commit ${d.commit}` : ""}`, icon: "check", gist: "tidied up its memory" });
+        break;
+      case "fresh_session":
+        flush();
+        out.push({ kind: "line", id: e.id, text: d.why === "idle" ? "Carried on in a fresh session from memory, since the conversation sat idle past its cache" : "Carried on in a fresh session from memory, since the conversation couldn't be compacted", gist: COMPACTED });
+        break;
+      case "merged":
+        flush();
+        out.push({ kind: "line", id: e.id, text: `Merged as ${String(d.commit).slice(0, 7)}${d.forced ? ", without approval" : ""}`, icon: "check", tone: "good" });
+        break;
+      case "done":
+        if (d.is_error) {
+          flush();
+          out.push({ kind: "line", id: e.id, text: `Stopped: ${d.error}`, icon: "alert", tone: "bad" });
+        }
+        break;
+      case "notice":
+        out.push({ kind: "line", id: e.id, text: oneLine(d.message, 200) });
+        break;
+    }
+  }
+  flush();
+  for (const left of delegated) out.push({ kind: "work", id: Number.MAX_SAFE_INTEGER - out.length, task: left }); // no call seen
+  for (const left of asked) out.push({ kind: "asked", id: Number.MAX_SAFE_INTEGER - out.length, bot: left.bot, question: left.title, task: left });
+  return out;
+}
+
+function minutes(n: number): string {
+  if (!Number.isFinite(n)) return "a while";
+  return n < 90 ? `${Math.round(n)} min` : n < 36 * 60 ? `${Math.round(n / 60)}h` : `${Math.round(n / 1440)} days`;
+}
+
+/** A run of work, in a few words: the notes kept, the pages written, what else it was, the steps, and the rest as
+ * updates. */
+export function summary(items: Block[]): string {
+  const lines = items.flatMap((i) => (i.kind === "line" ? [i] : []));
+  const notes = lines.filter((i) => i.icon === "check" && NOTE.test(i.text));
+  const pages = [...new Set(items.flatMap((i) => (i.kind === "page" ? [i.page] : [])))];
+  const steps = items.reduce((n, i) => n + (i.kind === "steps" ? i.calls.length : 0), 0);
+  const rest = lines.filter((i) => !i.gist && !notes.includes(i)).length;
+  const parts = [
+    notes.length ? `kept ${count(notes.length, "note")}` : "",
+    pages.length ? `wrote ${pages.length === 1 ? pages[0] : `${pages.length} pages`}` : "",
+    ...new Set(lines.flatMap((i) => (i.gist ? [i.gist] : []))),
+    steps ? count(steps, "step") : "",
+    rest ? count(rest, "update") : "",
+  ].filter(Boolean);
+  const text = parts.join(" · ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function count(n: number, thing: string): string {
+  return `${n} ${thing}${n === 1 ? "" : "s"}`;
+}

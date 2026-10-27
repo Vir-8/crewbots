@@ -124,7 +124,7 @@ export function BotEditor({ crew, name, onClose }: { crew: Crew; name: string | 
       backend: draft.backend,
       model: draft.model ?? "",
       effort: draft.effort ?? "",
-      context_window: draft.context_window === 200000 ? null : draft.context_window ?? null, // the default stays off the card
+      context_window: draft.context_window === "auto" ? null : draft.context_window ?? null, // the default stays off the card
       access: draft.access,
       network: networkMode === "hosts" ? (draft.hosts ?? "").split(/[\s,]+/).filter(Boolean) : networkMode === "any",
       avatar: draft.avatar ?? null,
@@ -216,9 +216,9 @@ export function BotEditor({ crew, name, onClose }: { crew: Crew; name: string | 
         <ModelPicker crew={crew} backend={draft.backend ?? "claude"} model={draft.model} effort={draft.effort} onChange={(model, effort) => set({ model, effort })} />
       </Field>
 
-      <Field label="Context window" hint="How much of a conversation it keeps before compacting. Past 70% it carries on in a fresh session, from a briefing. Smaller is quicker and cheaper.">
+      <Field label="Context window" hint="How much of a conversation it keeps before compacting: past 70% of it (about 700K on a 1M model), it sets down where things stand and compacts. Smaller is quicker and cheaper.">
         <Segmented
-          value={String(draft.context_window ?? 200000)}
+          value={draft.context_window == null ? "auto" : String(draft.context_window)}
           options={[...WINDOWS, ...(typeof draft.context_window === "number" && !WINDOWS.some(([v]) => v === String(draft.context_window)) ? [[String(draft.context_window), tokens(draft.context_window)] as [string, string]] : [])]}
           onChange={(v) => set({ context_window: v === "auto" ? "auto" : Number(v) })}
         />

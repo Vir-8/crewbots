@@ -248,7 +248,7 @@ def test_a_bot_can_have_a_name_and_a_face():
 
 def test_a_bots_context_window():
     card = lambda value: f"---\ndescription: d\n{value}---\nbody"  # noqa: E731
-    assert parse_card(card(""), "x").context_window == 200_000  # explicit, never the model's whole window
+    assert parse_card(card(""), "x").context_window is None  # unless the card says: the model's whole window
     assert parse_card(card("context_window: 400k\n"), "x").context_window == 400_000
     assert parse_card(card("context_window: 1m\n"), "x").context_window == 1_000_000
     assert parse_card(card("context_window: 300000\n"), "x").context_window == 300_000

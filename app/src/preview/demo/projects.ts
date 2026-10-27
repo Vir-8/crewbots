@@ -2,6 +2,7 @@
 
 import type { Live as LiveMessage } from "../../types";
 import { chatIds } from "./chats";
+import { emit } from "./make";
 
 type Live = { publish: (message: LiveMessage) => void; say: (id: string, kind: string, data: Record<string, unknown>) => void };
 const ok = (data: unknown) => ({ ok: true, status: 200, data });
@@ -9,6 +10,13 @@ const missing = (what: string) => ({ ok: false, status: 404, data: { detail: `no
 
 // The demo's, kept while the preview is open. ?first shows the chief's first word, before the crew's been started off.
 let started = !new URLSearchParams(globalThis.location?.search ?? "").has("first");
+if (!started) {
+  // The chief's first word, as the daemon records it: a few messages, and the offer under them.
+  for (const text of ["Hey! I'm your Chief of Staff.", "Message me anytime. I'll keep things moving, even when we're not talking, and check in with updates or questions.", "Want to give me a name?"]) {
+    emit(chatIds.chief, "text", { text, greeting: true });
+  }
+  emit(chatIds.chief, "onboarding", { offer: "bring_in" });
+}
 const projects = [
   { name: "acme-web", folder: "/Users/you/code/acme-web", about: "Acme's customer site: Next.js, deployed from main by you.", missing: false },
   { name: "export-service", folder: "/Users/you/code/export-service", about: "The service behind report exports.", missing: false },
@@ -33,6 +41,7 @@ export function projectRequest(method: string, pathname: string, parts: string[]
   if (pathname === "/projects" && method === "GET") return ok({ projects, errors: {}, started });
   if (pathname === "/projects/started" && method === "POST") {
     started = true;
+    say(chatIds.chief, "onboarding", { declined: true });
     return ok(null);
   }
   if (pathname === "/projects/found") return ok(found);
@@ -41,8 +50,9 @@ export function projectRequest(method: string, pathname: string, parts: string[]
     for (const f of found.folders) if (body.projects.some((p: { folder: string }) => p.folder === f.folder)) f.project = f.name;
     started = true;
     const chat = chatIds.chief;
+    say(chat, "onboarding", { brought: { projects: body.projects.map((p: { name: string }) => p.name), memories: body.memories.length, thread: null } });
     if (body.memories.length) {
-      setTimeout(() => say(chat, "text", { text: "Thanks: I've kept what's worth keeping, and put the projects on my [[Scratchpad]]. (This is the design preview; in the app I'd have read the memories.) What's top of mind?" }), 1500);
+      setTimeout(() => say(chat, "text", { text: "I've kept what's worth keeping, and put the projects on my [[Scratchpad]]. (This is the design preview; in the app I'd learn from them in a thread.) What's top of mind?" }), 1500);
     }
     return ok({ projects: body.projects.map((p: object) => ({ ...p, missing: false })), memories: body.memories.length, task_id: body.memories.length ? chat : null });
   }

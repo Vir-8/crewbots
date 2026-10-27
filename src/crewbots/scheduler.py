@@ -99,6 +99,7 @@ class Scheduler:
     async def tick(self, now: datetime | None = None) -> list[Task]:
         self.reload_if_changed()
         self.load()
+        self.runner.greet()  # a crew not started off yet: the chief's first word, once
         if self.runner.paused:
             return []  # nothing is marked checked, so what came due while paused runs once on resume
         now = now or datetime.now().astimezone()

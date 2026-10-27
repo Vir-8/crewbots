@@ -56,3 +56,40 @@ describe("opening a long chat", () => {
     expect(renderToStaticMarkup(<Thread crew={short.crew} task={short.task} onOpen={() => undefined} chat />)).not.toContain("Earlier messages");
   });
 });
+
+describe("a bot's working, in a chat", () => {
+  it("folds into one line between two messages, and stays whole in a thread", () => {
+    const { crew, task } = chat(0);
+    const at = new Date(Date.UTC(2026, 9, 27, 7)).toISOString();
+    const events: StoredEvent[] = [
+      { id: 1, task_id: task.id, kind: "message", data: { from: "user", text: "Bring it in" }, at },
+      { id: 2, task_id: task.id, kind: "tool_call", data: { id: "a", name: "mcp__crewbots__remember", input: { title: "Who the user is" } }, at },
+      { id: 3, task_id: task.id, kind: "memory", data: { action: "remember", scope: "crew", title: "Who the user is" }, at },
+      { id: 4, task_id: task.id, kind: "memory", data: { action: "remember", scope: "crew", title: "Commits: when and how" }, at },
+      { id: 5, task_id: task.id, kind: "tool_call", data: { id: "b", name: "Read", input: { file_path: "/x/MEMORY.md" } }, at },
+      { id: 6, task_id: task.id, kind: "tool_call", data: { id: "c", name: "mcp__crewbots__write_page", input: { page: "Scratchpad", text: "..." } }, at },
+      { id: 7, task_id: task.id, kind: "text", data: { text: "I've kept what's worth keeping." }, at },
+    ];
+    crew.events.set(task.id, events);
+
+    const inChat = renderToStaticMarkup(<Thread crew={crew} task={task} onOpen={() => undefined} chat />);
+    const inThread = renderToStaticMarkup(<Thread crew={crew} task={task} onOpen={() => undefined} />);
+
+    expect(inChat).toContain("Kept 2 notes · wrote Scratchpad · 1 step");
+    expect(inChat).not.toContain("Remembered for the crew");  // folded away until opened
+    expect(inChat).toContain("I&#x27;ve kept what&#x27;s worth keeping.");
+    expect(inThread).toContain("Remembered for the crew: Who the user is") ;
+    expect(inThread).toContain("Wrote");
+  });
+
+  it("says what a run of housekeeping was", () => {
+    const { crew, task } = chat(0);
+    const at = new Date(Date.UTC(2026, 9, 27, 7)).toISOString();
+    crew.events.set(task.id, [
+      { id: 1, task_id: task.id, kind: "flushed", data: { logged: 3 }, at },
+      { id: 2, task_id: task.id, kind: "compacted", data: { trigger: "auto", before: 131000, after: 8000 }, at },
+      { id: 3, task_id: task.id, kind: "worktree", data: { branch: "crew/chief/notes" }, at },
+    ]);
+    expect(renderToStaticMarkup(<Thread crew={crew} task={task} onOpen={() => undefined} chat />)).toContain("Compacted its conversation · 1 update");
+  });
+});

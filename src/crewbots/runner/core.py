@@ -73,12 +73,13 @@ from crewbots.runner.reviews import Reviewing
 from crewbots.runner.rooms import Rooms
 from crewbots.runner.sessions import Sessions
 from crewbots.runner.wakes import Wakes
+from crewbots.runner.welcome import Welcome
 from crewbots.runner.work import Work
 from crewbots.store import Status, Store, Task
 
 IDLE_TIMEOUT_S = 600.0  # an idle session is closed after this; its next message resumes it from the stored id
 MAX_SESSIONS = 8  # open sessions at once; past this the least recently used idle one is closed
-ROLLOVER_PERCENT = 65.0  # past this much of its context window, a conversation is flushed to memory and compacted
+ROLLOVER_PERCENT = 70.0  # past this much of its context window, a conversation is flushed to memory and compacted
 COLD_S = 3600.0  # the prompt cache's life: a conversation idle this long reads back in at full price
 FLUSH_IDLE_S = 3000.0  # 50 minutes into idleness, while the cache is warm, a big conversation sets down its state
 # A turn that failed for a passing reason (the backend says which) is tried again after each of these waits, then
@@ -87,9 +88,10 @@ RETRY_WAITS_S = (30.0, 120.0, 300.0)
 STALL_S = 1200.0  # no event at all from a turn for this long: it's stuck, so it's stopped and tried again
 
 
-class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams, Checkins, Wakes):
+class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams, Checkins, Wakes, Welcome):
     """Runs the crew's tasks. Its parts are by area: sessions, rooms, delegation, reviews, work, files bots show the
-    user, holds, dreams (memory consolidated overnight), check-ins, and the chief's own looks around (wakes)."""
+    user, holds, dreams (memory consolidated overnight), check-ins, the chief's own looks around (wakes), and starting
+    a crew off (welcome)."""
 
     def __init__(
         self,
@@ -166,14 +168,16 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
     def submit(self, bot: str, goal: str, *, created_by: str = "user", parent_id: str | None = None,
                workspace: str | None = None, review_of: str | None = None, review_version: int | None = None,
                routine: str | None = None, budget: int | None = None, title: str | None = None,
-               pr: str | None = None, kind: str = "thread") -> Task:
+               pr: str | None = None, kind: str = "thread", said_by: str | None = None) -> Task:
+        """`said_by` is who its first message shows as, when that isn't who it was created by: "crewbots" keeps a
+        long prompt of crewbots' own out of view."""
         if bot not in self.crew.bots:
             raise UnknownBot(f"no bot named {bot!r}; the crew is {sorted(self.crew.bots)}")
         task = self.store.create_task(bot, goal, created_by=created_by, parent_id=parent_id, workspace=workspace,
                                       review_of=review_of, review_version=review_version, routine=routine,
                                       budget=budget, title=title, pr=pr, kind=kind)
         self.bus.publish({"type": "task", "task": task.to_json()})
-        self._message(task.id, created_by, goal)
+        self._message(task.id, said_by or created_by, goal)
         self._start(task.id, goal)
         return task
 

@@ -1,36 +1,20 @@
-import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type ReactNode, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Crew } from "../state";
-import { doing, limitText, oneLine } from "../state";
-import type { Attachment, StoredEvent, Task } from "../types";
+import { doing } from "../state";
+import type { Task } from "../types";
 import { ACTIVE } from "../types";
 import { Files } from "./Attachments";
 import { Boundary } from "./Boundary";
-import { Markdown, MessageMeta, TimeBreak, timeBreaks, tokens } from "./bits";
-import { Finding, Marked, count, shown, useCurrentHit } from "./Find";
+import { Markdown, MessageMeta, PageLinkTo, TimeBreak, timeBreaks } from "./bits";
+import { Finding, Marked, count, useCurrentHit } from "./Find";
 import { Icon } from "./Icon";
+import { Offer } from "./Offer";
 import { AskCard, Brief, Reactions, Steps, VerdictBlock } from "./ThreadParts";
+import { type Block, build, fold, said, summary } from "./threadBlocks";
 import { WorkCard } from "./WorkCard";
 import "../styles/chat.css";
 
 const PAGE = 80; // blocks drawn when a conversation opens, and added each time you scroll up near the top
-
-type Block =
-  | { kind: "you"; id: number; at: string; text: string; files: Attachment[] }
-  | { kind: "brief"; id: number; at: string; from: string; text: string }
-  | { kind: "say"; id: number; at: string; text: string; tag?: string; raised?: number; files?: Attachment[] }
-  | { kind: "steps"; id: number; calls: { call: StoredEvent; result?: StoredEvent }[] }
-  | { kind: "work"; id: number; task: Task }
-  | { kind: "asked"; id: number; bot: string; question: string; task?: Task }
-  | { kind: "line"; id: number; text: string; icon?: "check" | "merge" | "branch" | "alert" | "play" | "message"; tone?: string }
-  | { kind: "ask"; id: number; question: string }
-  | { kind: "held"; id: number; taskId: string; reason: string }
-  | { kind: "handoff"; id: number; data: Record<string, any> }
-  | { kind: "verdict"; id: number; data: Record<string, any> };
-
-// Crew tools that are shown as what they did (a card, a verdict, a question), not as steps.
-const SHOWN_ELSEWHERE = new Set(
-  ["delegate", "start_thread", "post", "share", "handoff", "review", "escalate", "propose_merge", "message", "ask"].map((t) => `mcp__crewbots__${t}`),
-);
 
 /** A task's conversation, as people would tell it: what was said and decided, with the mechanics folded away. */
 export function Thread(props: {
@@ -41,7 +25,6 @@ export function Thread(props: {
   chat?: boolean;
   working?: string;
   find?: { query: string; current: number; onFound: (n: number) => void }; // ⌘F, lowercased
-  after?: ReactNode; // shown at the end of the conversation, under its latest message
 }) {
   const { crew, task } = props;
   const events = crew.events.get(task.id);
@@ -51,7 +34,12 @@ export function Thread(props: {
   useEffect(() => crew.ensureEvents(task.id), [task.id, crew.ensureEvents]);
 
   const children = crew.children.get(task.id) ?? [];
-  const blocks = useMemo(() => build(events ?? [], children, crew.tasks), [events, children, crew.tasks]);
+  // In a chat, what a bot did between two messages (its steps, the notes it kept, the pages it wrote) folds into one
+  // row, so the conversation reads as one; a thread beside it shows it all.
+  const blocks = useMemo(() => {
+    const built = build(events ?? [], children, crew.tasks);
+    return props.chat ? fold(built) : built;
+  }, [events, children, crew.tasks, props.chat]);
   const active = ACTIVE.includes(task.status);
   // Where time has passed between messages, a centred day and time goes over the next one.
   const breaks = useMemo(() => timeBreaks(blocks.map((b) => ({ at: b.kind === "you" || b.kind === "say" ? b.at : undefined }))), [blocks]);
@@ -126,187 +114,9 @@ export function Thread(props: {
             <span className="shimmer">{(props.working && task.status !== "running" ? "" : doing(crew.latest.get(task.id))) || props.working || `${task.bot} is working`}</span>
           </div>
         )}
-        {props.after}
       </div>
     </div>
   );
-}
-
-/** What a block says, as it's drawn: where ⌘F looks. */
-function said(block: Block): string {
-  switch (block.kind) {
-    case "you":
-    case "brief":
-    case "line":
-      return block.text;
-    case "say":
-      return shown(block.text);
-    case "ask":
-      return block.question;
-    case "asked":
-      return block.question;
-    case "handoff":
-      return [block.data.done, block.data.open ? `Open: ${block.data.open}` : ""].join("\n");
-    case "verdict":
-      return block.data.summary ?? "";
-    default:
-      return "";
-  }
-}
-
-function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>): Block[] {
-  const out: Block[] = [];
-  const delegated = children.filter((c) => !c.review_of && c.kind !== "review" && c.kind !== "ask"); // in the order they were delegated, like the calls; a review's reviewers show in its pane
-  const asked = children.filter((c) => c.kind === "ask");
-  const results = new Map(events.filter((e) => e.kind === "tool_result").map((e) => [e.data.id, e]));
-  let steps: { call: StoredEvent; result?: StoredEvent }[] = [];
-  const flush = () => {
-    if (steps.length) out.push({ kind: "steps", id: steps[0].call.id, calls: steps });
-    steps = [];
-  };
-
-  for (const e of events) {
-    const d = e.data;
-    if (e.kind === "tool_call") {
-      const result = results.get(d.id);
-      if (d.name === "mcp__crewbots__delegate" || d.name === "mcp__crewbots__start_thread") {
-        flush();
-        if (d.input?.review_of) continue; // a review shows inside the card of the work it reviews
-        if (result?.data.is_error) out.push({ kind: "line", id: e.id, text: `Couldn't delegate: ${oneLine(result.data.output, 160)}`, icon: "alert", tone: "bad" });
-        else if (delegated.length) out.push({ kind: "work", id: e.id, task: delegated.shift()! });
-      } else if (d.name === "mcp__crewbots__ask") {
-        flush();
-        if (result?.data.is_error) out.push({ kind: "line", id: e.id, text: `Couldn't ask: ${oneLine(result.data.output, 160)}`, icon: "alert", tone: "bad" });
-        else out.push({ kind: "asked", id: e.id, bot: d.input?.bot ?? "", question: d.input?.question ?? "", task: asked.shift() });
-      } else if (d.name === "mcp__crewbots__post") {
-        flush();
-        out.push({ kind: "line", id: e.id, text: `Said in a group chat: ${oneLine(d.input?.text ?? "", 160)}`, icon: "message" });
-      } else if (d.name === "mcp__crewbots__share" && d.input?.room) {
-        flush(); // shared in a group chat, it shows there; here, a line says so
-        if (result?.data.is_error) out.push({ kind: "line", id: e.id, text: `Couldn't share: ${oneLine(result.data.output, 160)}`, icon: "alert", tone: "bad" });
-        else out.push({ kind: "line", id: e.id, text: `Shared in a group chat: ${(d.input.files ?? []).map((f: string) => f.split("/").at(-1)).join(", ")}`, icon: "message" });
-      } else if (d.name === "mcp__crewbots__share" && result?.data.is_error) {
-        flush();
-        out.push({ kind: "line", id: e.id, text: `Couldn't share: ${oneLine(result.data.output, 160)}`, icon: "alert", tone: "bad" });
-      } else if (d.name === "mcp__crewbots__message") {
-        flush();
-        const to = tasks.get(d.input?.task_id)?.bot ?? "the task";
-        out.push({ kind: "line", id: e.id, text: `Sent to ${to}: ${oneLine(d.input?.text ?? "", 160)}` });
-      } else if (!SHOWN_ELSEWHERE.has(d.name)) {
-        steps.push({ call: e, result });
-      }
-      continue;
-    }
-    switch (e.kind) {
-      case "message":
-        flush();
-        if (d.from === "user") out.push({ kind: "you", id: e.id, at: e.at, text: d.text, files: d.attachments ?? [] });
-        else if (String(d.from).startsWith("routine:")) out.push({ kind: "brief", id: e.id, at: e.at, from: `the ${String(d.from).slice(8)} routine`, text: String(d.text).replace(/^\[routine: [^\]]+\]\s*/, "") });
-        else if (d.from === "room") continue;
-        else if (d.from === "routine") out.push({ kind: "brief", id: e.id, at: e.at, from: `the ${tasks.get(e.task_id)?.routine ?? ""} routine`, text: d.text });
-        else if (d.from !== "crewbots") out.push({ kind: "brief", id: e.id, at: e.at, from: d.from, text: d.text });
-        break;
-      case "text":
-        flush();
-        out.push({ kind: "say", id: e.id, at: e.at, text: d.text, tag: d.digest ? "Morning digest" : d.level === "needs_you" ? "Needs you" : d.checkin ? "Checked in on its own" : undefined, raised: d.proactive_id, files: d.files });
-        break;
-      case "shared":
-        flush();
-        out.push({ kind: "say", id: e.id, at: e.at, text: d.text ?? "", files: d.attachments ?? [] });
-        break;
-      case "escalation":
-        flush();
-        out.push({ kind: "ask", id: e.id, question: d.question });
-        break;
-      case "handoff":
-        flush();
-        out.push({ kind: "handoff", id: e.id, data: d });
-        break;
-      case "review":
-        flush();
-        out.push({ kind: "verdict", id: e.id, data: d });
-        break;
-      case "worktree":
-        out.push({ kind: "line", id: e.id, text: `Working on its own branch, ${d.branch}`, icon: "branch" });
-        break;
-      case "merge_proposed":
-        flush();
-        out.push({ kind: "line", id: e.id, text: `${d.by} proposed it for merging`, icon: "merge" });
-        break;
-      case "memory":
-        flush();
-        out.push({
-          kind: "line",
-          id: e.id,
-          text: d.action === "state" ? "Kept this task's state" : d.by === "user" ? `You gave it a note: ${d.title}` : `${d.action === "remember" ? "Remembered" : "Forgot"}${d.scope === "crew" ? " for the crew" : ""}: ${d.title}`,
-          icon: "check",
-        });
-        break;
-      case "held":
-        flush();
-        out.push({ kind: "held", id: e.id, taskId: e.task_id, reason: d.reason });
-        break;
-      case "released":
-        flush();
-        out.push({ kind: "line", id: e.id, text: "You let it go ahead", icon: "play" });
-        break;
-      case "rate_limit":
-        if (d.status !== "ok") {
-          flush();
-          out.push({ kind: "line", id: e.id, text: limitText(d as Parameters<typeof limitText>[0]), icon: "alert", tone: d.status === "limited" ? "bad" : "warn" });
-        }
-        break;
-      case "restarted":
-        flush();
-        out.push(
-          d.again
-            ? { kind: "line", id: e.id, text: "Cut off by a restart again while carrying on. Send a message to carry on.", icon: "alert", tone: "warn" }
-            : { kind: "line", id: e.id, text: "The crew restarted mid-turn, so it carried on where it left off", icon: "play" },
-        );
-        break;
-      case "rollover":
-        flush();
-        out.push({ kind: "line", id: e.id, text: `Continued in a fresh session from a briefing (the conversation had used ${d.percent}% of its context)` });
-        break;
-      case "flushed":
-        flush();
-        out.push({ kind: "line", id: e.id, text: d.logged ? `Set down where things stand, and ${d.logged} line${d.logged === 1 ? "" : "s"} in today's log` : "Set down where things stand" });
-        break;
-      case "compacted":
-        flush();
-        out.push({ kind: "line", id: e.id, text: `${d.trigger === "auto" ? "The CLI compacted" : "Compacted"} the conversation${d.before && d.after ? ` (${tokens(d.before)} → ${tokens(d.after)} tokens)` : ""}` });
-        break;
-      case "started_on_own":
-        flush();
-        out.push({ kind: "line", id: e.id, text: `Started on its own${d.why ? `: ${d.why}` : ""}`, icon: "play" });
-        break;
-      case "consolidated":
-        flush();
-        out.push({ kind: "line", id: e.id, text: `${d.text}${d.commit ? ` · memory commit ${d.commit}` : ""}`, icon: "check" });
-        break;
-      case "fresh_session":
-        flush();
-        out.push({ kind: "line", id: e.id, text: d.why === "idle" ? "Carried on in a fresh session from memory, since the conversation sat idle past its cache" : "Carried on in a fresh session from memory, since the conversation couldn't be compacted" });
-        break;
-      case "merged":
-        flush();
-        out.push({ kind: "line", id: e.id, text: `Merged as ${String(d.commit).slice(0, 7)}${d.forced ? ", without approval" : ""}`, icon: "check", tone: "good" });
-        break;
-      case "done":
-        if (d.is_error) {
-          flush();
-          out.push({ kind: "line", id: e.id, text: `Stopped: ${d.error}`, icon: "alert", tone: "bad" });
-        }
-        break;
-      case "notice":
-        out.push({ kind: "line", id: e.id, text: oneLine(d.message, 200) });
-        break;
-    }
-  }
-  flush();
-  for (const left of delegated) out.push({ kind: "work", id: Number.MAX_SAFE_INTEGER - out.length, task: left }); // no call seen
-  for (const left of asked) out.push({ kind: "asked", id: Number.MAX_SAFE_INTEGER - out.length, bot: left.bot, question: left.title, task: left });
-  return out;
 }
 
 function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id: string) => void; afterBreak: boolean }) {
@@ -338,6 +148,19 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
       );
     case "steps":
       return <Steps calls={block.calls} />;
+    case "page":
+      return (
+        <div className="line">
+          <Icon name="file" size={14} />
+          <span>
+            {block.changed ? "Changed" : "Wrote"} <PageLinkTo page={block.page} />
+          </span>
+        </div>
+      );
+    case "offer":
+      return <Offer bot={props.lead} outcome={block.outcome} />;
+    case "activity":
+      return <Folded items={block.items} render={(item) => <BlockView block={item} crew={props.crew} lead={props.lead} onOpen={props.onOpen} afterBreak={false} />} />;
     case "work":
       return <WorkCard crew={props.crew} task={block.task} onOpen={props.onOpen} />;
     case "asked":
@@ -388,4 +211,22 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
     case "verdict":
       return <VerdictBlock data={block.data} />;
   }
+}
+
+/** What a bot did between two messages, folded into a line that says it in short: open it to see each part. Open
+ * while ⌘F has a match inside. */
+function Folded({ items, render }: { items: Block[]; render: (item: Block) => ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const query = useContext(Finding);
+  const found = Boolean(query) && items.some((item) => count(said(item), query) > 0);
+  const shown = open || found;
+  return (
+    <div className="steps folded">
+      <button className="steps-head" onClick={() => setOpen(!open)}>
+        <Icon name={shown ? "chevronDown" : "chevronRight"} size={13} />
+        <span>{summary(items)}</span>
+      </button>
+      {shown && <div className="folded-body">{items.map((item) => <Fragment key={`${item.kind}-${item.id}`}>{render(item)}</Fragment>)}</div>}
+    </div>
+  );
 }

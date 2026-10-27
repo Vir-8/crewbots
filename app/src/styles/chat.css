@@ -862,33 +862,31 @@ button.chat-head-who:hover {
   border-bottom-color: color-mix(in srgb, var(--faint) 50%, transparent);
 }
 
-/* The chief's first word, until the crew's been started off */
-.first-meeting {
+/* The chief's offer under its greeting, and how it was answered */
+.offer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-top: 8px;
 }
 
-.first-meeting .room-group-body {
-  gap: 6px;
+.offer-outcome {
+  margin-top: 6px;
+  padding-left: 4px;
+  font-size: 12.5px;
 }
 
-.first-meeting-card {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 14px;
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--accent, var(--blue)) 16%, var(--raised));
-  color: var(--text);
-  font-size: 14px;
-}
-
-.first-meeting-card:hover {
-  background: color-mix(in srgb, var(--accent, var(--blue)) 24%, var(--raised));
-}
-
-.first-meeting-actions {
+/* What a bot did between two messages, folded into one line in a chat */
+.folded-body {
+  margin: 8px 0 0 6px;
+  padding-left: 13px;
+  border-left: 1px solid var(--line);
   display: flex;
+  flex-direction: column;
   gap: 8px;
-  margin-top: 4px;
+}
+
+.folded-body > .line,
+.folded-body > .steps {
+  margin: 0;
 }
