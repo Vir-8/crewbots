@@ -44,4 +44,15 @@ describe("opening a long chat", () => {
     expect(Math.min(...times)).toBeLessThan(150);
     console.log(`2,000-event chat rendered in ${Math.min(...times).toFixed(0)}ms (best of 3)`);
   });
+
+  it("draws only its latest messages, with a way to earlier ones", () => {
+    const { crew, task } = chat(2000);
+    const html = renderToStaticMarkup(<Thread crew={crew} task={task} onOpen={() => undefined} chat />);
+    expect(html).toContain("issue 1995");
+    expect(html).not.toContain("issue 5?");
+    expect(html).toContain("Earlier messages");
+    expect(html.match(/class="you"/g)!.length).toBeLessThan(40); // of 400
+    const short = chat(20);
+    expect(renderToStaticMarkup(<Thread crew={short.crew} task={short.task} onOpen={() => undefined} chat />)).not.toContain("Earlier messages");
+  });
 });

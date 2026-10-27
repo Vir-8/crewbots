@@ -219,7 +219,7 @@ async function request(method: string, path: string, body?: any) {
   }
   if (parts[0] === "reviews" && parts.length >= 4) {
     const pr = reviewInbox.direct.find((p) => p.number === Number(parts[3])) ?? reviewInbox.direct[0];
-    if (parts[4] === "diff") return ok({ diff: (demo.diffs.get("t_csv0000002") ?? "") + "diff --git a/web/public/export-icon.png b/web/public/export-icon.png\nindex 1111111..2222222 100644\nBinary files a/web/public/export-icon.png and b/web/public/export-icon.png differ\n" });
+    if (parts[4] === "diff") return ok({ diff: (demo.diffs.get("t_csv0000002") ?? "") + bigDiff() + "diff --git a/web/public/export-icon.png b/web/public/export-icon.png\nindex 1111111..2222222 100644\nBinary files a/web/public/export-icon.png and b/web/public/export-icon.png differ\n" });
     if (parts[4] === "review") return ok(demo.tasks.get("t_truncate03"));
     return ok({ ...pr, body: "Moves the export button into the toolbar and adds a test for the filters.\r\n\r\n1. Fixes part of #400.\r\n2. Moves the button:\r\n   - [x] Tests added\r\n   - [x] Screenshots updated\r\n", state: "OPEN", head: "toolbar-export", base: "main", head_sha: "abc", labels: [], files: [{ path: "web/src/reports/Toolbar.tsx", additions: 40, deletions: 12 }], checks: { total: 12, passed: 12, failed: 0 }, failing: [], issues: [], people: [pr.author, "lee", "kim"], checkout: null, reviews: pr.number === 412 ? demo.pullReviews : [] });
   }
@@ -298,6 +298,17 @@ async function request(method: string, path: string, body?: any) {
 }
 
 const MIMES: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml", mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm", mp3: "audio/mpeg", wav: "audio/wav", m4a: "audio/mp4", pdf: "application/pdf", html: "text/html", txt: "text/plain", md: "text/markdown", csv: "text/csv", json: "application/json", py: "text/x-python" };
+
+/** ?bigdiff=300 adds that many files of 60 lines each to a pull request's diff, to see how a long one opens. */
+function bigDiff(): string {
+  const files = Number(new URLSearchParams(location.search).get("bigdiff") ?? 0);
+  let out = "";
+  for (let f = 0; f < files; f++) {
+    const rows = Array.from({ length: 60 }, (_, i) => `${i % 3 === 0 ? "+" : i % 7 === 0 ? "-" : " "}    value_${f}_${i} = compute(${i}, "row ${i} of file ${f}")`);
+    out += `diff --git a/gen/file_${f}.py b/gen/file_${f}.py\n--- a/gen/file_${f}.py\n+++ b/gen/file_${f}.py\n@@ -1,50 +1,60 @@\n${rows.join("\n")}\n`;
+  }
+  return out;
+}
 
 /** A file the preview draws: a demo file, or one you attached here. */
 function previewFileSrc(path: string): string {

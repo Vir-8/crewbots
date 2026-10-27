@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import type { Draft } from "../types";
 import { Markdown } from "./bits";
 import { Icon } from "./Icon";
+import { Later } from "./Later";
 import { MentionArea } from "./Mentions";
 import "../styles/pull-diff.css";
 
@@ -60,6 +61,16 @@ export function PullDiff(props: {
     return parts;
   };
   const at = (path: string, side: Side, line: number) => props.drafts.filter((d) => d.path === path && d.side === side && d.line === line);
+  // A long diff draws its first files at once, and the rest as you come to them (`Later`); a file with drafts, the one
+  // with what find is on, or the one you're commenting in is drawn whatever its place.
+  const first = useMemo(() => {
+    let rows = 0;
+    let n = 0;
+    while (n < files.length && rows < BUDGET) rows += files[n++].rows.length;
+    return n;
+  }, [files]);
+  const drafted = new Set(props.drafts.map((d) => d.path));
+  const found = hits[props.current ?? 0]?.file;
 
   return (
     <div className="diff pull-diff">
@@ -74,6 +85,7 @@ export function PullDiff(props: {
           {file.binary ? (
             IMAGE.test(file.path) ? <ImageChange file={file} image={props.image} /> : <p className="faint small pad-x pd-binary">A binary file: nothing to show line by line.</p>
           ) : (
+            <Later height={file.rows.length * ROW + 8} now={f < first || drafted.has(file.path) || f === found || open?.path === file.path}>{() => (
             <div className="pd-rows">
               {file.rows.map((row, i) => {
                 if (row.kind === "hunk") return <div key={i} className="pd-row hunk"><span className="pd-hunk">{marked(row.text, f, i)}</span></div>;
@@ -111,6 +123,7 @@ export function PullDiff(props: {
                 );
               })}
             </div>
+            )}</Later>
           )}
         </div>
       ))}
@@ -228,6 +241,9 @@ function ImageChange({ file, image }: { file: File; image: (path: string, side: 
     </div>
   );
 }
+
+const ROW = 19.8; // a row's height when its line doesn't wrap: 12px at 1.65
+const BUDGET = 400; // rows drawn when a diff opens; the rest as you scroll to them
 
 // Past this many, find stops marking: a one-letter search of a big diff would otherwise take seconds to draw.
 export const MAX_HITS = 5000;

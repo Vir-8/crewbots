@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Crew } from "../state";
 import { doing, limitText, oneLine } from "../state";
 import type { Attachment, StoredEvent, Task } from "../types";
@@ -11,6 +11,8 @@ import { Icon } from "./Icon";
 import { AskCard, Brief, Reactions, Steps, VerdictBlock } from "./ThreadParts";
 import { WorkCard } from "./WorkCard";
 import "../styles/chat.css";
+
+const PAGE = 80; // blocks drawn when a conversation opens, and added each time you scroll up near the top
 
 type Block =
   | { kind: "you"; id: number; text: string; files: Attachment[] }
@@ -51,17 +53,41 @@ export function Thread(props: {
   const blocks = useMemo(() => build(events ?? [], children, crew.tasks), [events, children, crew.tasks]);
   const active = ACTIVE.includes(task.status);
 
-  // ⌘F: each match, found in what the blocks say, and which mark of its block's it is.
+  // A long conversation draws only its latest blocks, and more as you scroll up to them, keeping your place: opening
+  // one costs the same however long it is. `start` is the first block drawn; null follows the latest PAGE.
+  const [start_, setStart] = useState<number | null>(null);
+  useEffect(() => setStart(null), [task.id]);
+  const start = start_ ?? Math.max(0, blocks.length - PAGE);
+  const fromBottom = useRef<number | null>(null); // where you were, from the bottom, as earlier blocks went in above
+  const earlier = (to: number) => {
+    const el = box.current;
+    if (to >= start || !el) return;
+    fromBottom.current = el.scrollHeight - el.scrollTop;
+    setStart(Math.max(0, to));
+  };
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (el && fromBottom.current !== null) el.scrollTop = el.scrollHeight - fromBottom.current;
+    fromBottom.current = null;
+  }, [start]);
+  const drawn = (i: number) => (i >= start ? col.current?.children[i - start + (start > 0 ? 1 : 0)] : undefined);
+
+  // ⌘F: each match, found in what the blocks say (drawn or not), and which mark of its block's it is.
   const query = props.find?.query ?? "";
   const hits = useMemo(() => {
-    const out: { el: () => Element | undefined; nth: number }[] = [];
+    const out: { block: number; el: () => Element | undefined; nth: number }[] = [];
     if (query) blocks.forEach((block, i) => {
-      for (let nth = 0, n = count(said(block), query); nth < n; nth++) out.push({ el: () => col.current?.children[i], nth });
+      for (let nth = 0, n = count(said(block), query); nth < n; nth++) out.push({ block: i, el: () => drawn(i), nth });
     });
     return out;
-  }, [blocks, query]);
+  }, [blocks, query, start]);
+  const current = props.find?.current ?? 0;
   useEffect(() => props.find?.onFound(hits.length), [hits.length, Boolean(props.find)]);
-  useCurrentHit(col, hits, props.find?.current ?? 0, query);
+  useEffect(() => {
+    const hit = hits[current];
+    if (hit && hit.block < start) earlier(hit.block - 10); // draw back to it first
+  }, [current, hits]);
+  useCurrentHit(col, hits, current, query);
 
   useEffect(() => {
     if (stuck.current && box.current) box.current.scrollTop = box.current.scrollHeight;
@@ -74,12 +100,18 @@ export function Thread(props: {
       onScroll={(e) => {
         const el = e.currentTarget;
         stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+        if (el.scrollTop < 600 && start > 0) earlier(start - PAGE);
       }}
     >
       <div className={`thread-col ${props.compact ? "compact" : ""} ${props.chat ? "chat" : ""}`} ref={col}>
         <Finding.Provider value={query}>
         {!events && <div className="thread-loading" />}
-        {blocks.map((block) => (
+        {start > 0 && (
+          <button className="thread-earlier text-button" onClick={() => earlier(start - PAGE)}>
+            Earlier messages
+          </button>
+        )}
+        {blocks.slice(start).map((block) => (
           <Boundary key={`${block.kind}-${block.id}`} where={`a message (${block.kind} ${block.id} in ${task.id})`}>
             <BlockView block={block} crew={crew} lead={task.bot} onOpen={props.onOpen} />
           </Boundary>

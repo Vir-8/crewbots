@@ -780,3 +780,10 @@ button.chat-head-who:hover {
   background: var(--raised);
   color: var(--text);
 }
+
+/* A long conversation's earlier messages, drawn as you scroll up to them */
+.thread-earlier {
+  align-self: center;
+  margin: 4px 0 8px;
+  font-size: 12.5px;
+}

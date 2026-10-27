@@ -438,9 +438,13 @@ Speed is a feature, so it's measured, with budgets that fail a check when someth
   `/tasks?limit=1000` 32ms (120), `/chats` 23ms (60), a group chat's messages 5ms (60), a 2,000-event chat's events
   16ms (80), `/events/recent` 5ms (40), two-word search 2ms (60), a search for a word in everything 67ms (250), a
   profile 4ms (60), and a message reaching a `/v1/live` client 7ms (30).
-- **The window** (`npm test`): a 2,000-event chat renders in about 33ms in Node (budget 150), before layout. In the
-  design preview (`?big=2000`, React's slower development build) opening it takes about 110 to 125ms with about 6,600
-  elements; windowing long lists comes next.
+- **The window** (`npm test`): a 2,000-event chat renders in about 33ms in Node (budget 150), before layout. Long
+  lists are windowed by hand, with no dependency: a conversation draws its latest 80 blocks and more as you scroll up
+  to them, keeping your place, and find draws back to an older match; a diff draws its first 400 rows' worth of files
+  and the rest as they come within two screens (`Later`, an IntersectionObserver), keeping what you're reading in
+  place when one draws above it (the same in WebKit, which has no scroll anchoring, and Chromium, whose own is turned
+  off there). In the design preview, opening a 2,000-event chat went from about 6,600 elements to 430 (about 22-50ms
+  to commit in React's development build), and a 300-file, 18,000-row diff from about 165,000 elements to 5,700.
 - **The app** (`CREWBOTS_SELFTEST=1`): the self-test reports how long the window took to draw its first chat, to open
   another, and for a word from the daemon to reach it.
 

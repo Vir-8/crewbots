@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { Later } from "./Later";
 import type { Task } from "../types";
 import "../styles/panels.css";
 
@@ -18,7 +19,9 @@ export function DiffView({ task }: { task: Task }) {
   return <DiffText diff={diff} />;
 }
 
-/** A unified diff, a file at a time. */
+const LINE = 19.8; // a line's height when it doesn't wrap (12px at 1.65): the room a file not drawn yet keeps
+
+/** A unified diff, a file at a time; files further down are drawn as you come to them. */
 export function DiffText({ diff }: { diff: string }) {
   const files = diff.split(/^(?=diff --git )/m).filter(Boolean);
   return (
@@ -36,13 +39,15 @@ export function DiffText({ diff }: { diff: string }) {
               <span className="add">+{added}</span>
               <span className="del">−{removed}</span>
             </div>
-            <pre>
-              {lines.slice(Math.max(firstHunk, 0)).map((line, j) => (
-                <div key={j} className={lineClass(line)}>
-                  {line || " "}
-                </div>
-              ))}
-            </pre>
+            <Later height={(lines.length - Math.max(firstHunk, 0)) * LINE} now={i < 3}>{() => (
+              <pre>
+                {lines.slice(Math.max(firstHunk, 0)).map((line, j) => (
+                  <div key={j} className={lineClass(line)}>
+                    {line || " "}
+                  </div>
+                ))}
+              </pre>
+            )}</Later>
           </div>
         );
       })}
