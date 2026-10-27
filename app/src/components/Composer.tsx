@@ -15,6 +15,10 @@ import "../styles/composer.css";
  * anywhere, typing / offers the app's own commands. */
 /** Asks the open chat's message box to show one of its panels, as typing its command there would. */
 export const PANEL_EVENT = "crewbots:panel";
+// The mic is one for the whole app: what's heard goes into the box whose mic is on, of all the boxes open (a chat's,
+// and a thread's beside it). Turning on another's tells the one before to stop listening.
+const DICTATING_EVENT = "crewbots:dictating";
+let dictating: object | null = null;
 export const showPanel = (name: string) => window.dispatchEvent(new CustomEvent(PANEL_EVENT, { detail: name }));
 
 export function Composer(props: {
@@ -57,6 +61,7 @@ export function Composer(props: {
   const uploading = files.some((f) => !f.id && !f.error);
   const ready = files.filter((f) => f.id);
   const [listening, setListening] = useState(false);
+  const me = useRef({}).current; // this box, for the mic to tell it from the others
   const area = useRef<HTMLTextAreaElement>(null);
   const before = useRef(""); // what was typed before dictation started; what's heard goes after it
 
@@ -100,29 +105,41 @@ export function Composer(props: {
 
   const [micError, setMicError] = useState<string | null>(null);
   useEffect(() => {
+    const taken = (e: Event) => (e as CustomEvent<object>).detail !== me && setListening(false);
+    window.addEventListener(DICTATING_EVENT, taken);
     const offs = [
-      bridge.dictation.onHeard((heard) => setText(joined(before.current, heard))),
+      bridge.dictation.onHeard((heard) => dictating === me && setText(joined(before.current, heard))),
       bridge.dictation.onStopped((error) => {
+        if (dictating !== me) return;
+        dictating = null;
         setListening(false);
         setMicError(error);
       }),
     ];
-    return () => offs.forEach((off) => off());
+    return () => {
+      window.removeEventListener(DICTATING_EVENT, taken);
+      offs.forEach((off) => off());
+      if (dictating === me) dictating = null;
+    };
   }, []);
   const dictate = async () => {
     if (listening) {
       setListening(false);
+      dictating = null;
       await bridge.dictation.stop();
       area.current?.focus();
       return;
     }
     before.current = text;
     setMicError(null);
+    dictating = me;
+    window.dispatchEvent(new CustomEvent(DICTATING_EVENT, { detail: me }));
     try {
       setListening(true);
       await bridge.dictation.start();
     } catch (e) {
       setListening(false);
+      dictating = null;
       setMicError(String(e).replace(/^Error: /, ""));
     }
   };
@@ -142,6 +159,7 @@ export function Composer(props: {
     if ((!value && !ready.length) || sending || uploading) return;
     if (listening) {
       setListening(false);
+      dictating = null;
       bridge.dictation.stop();
     }
     setSending(true);

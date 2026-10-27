@@ -224,7 +224,15 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
         <div className="handoff">
           <div className="handoff-head">Handed back</div>
           <div><Marked text={block.data.done} /></div>
-          {block.data.output?.length > 0 && <div className="handoff-files">{block.data.output.join(" · ")}</div>}
+          {block.data.output?.length > 0 && (
+            <ul className="handoff-files">
+              {block.data.output.map((out: string) => (
+                <li key={out} title={out}>
+                  {out.replace(/^\/Users\/[^/]+/, "~")}
+                </li>
+              ))}
+            </ul>
+          )}
           {block.data.open && <div className="handoff-open"><Marked text={`Open: ${block.data.open}`} /></div>}
         </div>
       );
