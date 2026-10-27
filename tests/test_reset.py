@@ -45,6 +45,7 @@ def home(tmp_path):
     store.create_task("engineer", "Fix the build", parent_id=chat.id)
     review = store.create_task("reviewer:claude:sonnet:high", "Review acme/web#1", kind="review", pr="acme/web#1")
     store.update_task(review.id, session_id="review-session")
+    store.append_event(review.id, kind="message", data={"from": "user", "text": "Review acme/web#1"})
     store.append_event(review.id, kind="text", data={"text": "An off-by-one in the pager"})
     store.add_draft("acme/web", 1, "pager.py", 3, "RIGHT", "Off by one", "user", review.id)
     room = store.create_room("Launch", "chief", ["chief", "engineer"])
@@ -115,7 +116,7 @@ def test_the_setup_and_code_review_stay(home):
 
     store = Store(home / "crewbots.db")
     [review] = store.list_tasks()
-    assert review.kind == "review" and [e.kind for e in store.events(review.id)] == ["text"]
+    assert review.kind == "review" and [e.kind for e in store.events(review.id)] == ["message", "text"]
     assert len(store.drafts("acme/web", 1)) == 1
     assert store.rooms() == [] and store.pins() == ["bot:chief"]
     assert store.routine_state(STARTED) is None

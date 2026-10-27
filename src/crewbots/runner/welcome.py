@@ -41,7 +41,7 @@ class Welcome:
         chief = self.coordinator()
         if chief is None or self.started():
             return None
-        if self.store.last_user_message():
+        if self.store.talked_with_crew():
             self.store.routine_ran(STARTED, _now(), "")
             return None
         chat = self.chat(chief.name)

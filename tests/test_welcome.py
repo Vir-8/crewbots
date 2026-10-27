@@ -56,6 +56,13 @@ def test_the_chief_carries_on_from_its_hello(store, tmp_path):
     assert "rather than introducing yourself again" in briefing and "`set_name`" in briefing
 
 
+def test_code_review_alone_isnt_meeting_the_crew(store, tmp_path):
+    review = store.create_task("reviewer:claude:sonnet:high", "Review acme/web#1", kind="review")
+    store.append_event(review.id, kind="message", data={"from": "user", "text": "Review acme/web#1"})
+
+    assert runner_for(store, tmp_path).greet() is not None
+
+
 def test_a_crew_the_user_has_talked_with_isnt_greeted(store, tmp_path):
     runner = runner_for(store, tmp_path)
     chat = runner.chat("chief")

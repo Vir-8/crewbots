@@ -149,6 +149,12 @@ class Events:
         posted = self.db.execute("select max(at) from room_messages where author = 'user'").fetchone()[0]
         return max(filter(None, (said, posted)), default=None)
 
+    def talked_with_crew(self) -> bool:
+        """Whether the user has written to the crew yet: in a chat, a thread or a group chat (code review aside)."""
+        said = self.db.execute("select 1 from events e join tasks t on t.id = e.task_id where e.kind = 'message'"
+                               " and t.kind != 'review' and json_extract(e.data, '$.from') = 'user' limit 1").fetchone()
+        return bool(said or self.db.execute("select 1 from room_messages where author = 'user' limit 1").fetchone())
+
     def last_events(self, task_id: str, kinds: tuple[str, ...], limit: int) -> list[StoredEvent]:
         """A task's last `limit` events of these kinds, oldest first."""
         rows = self.db.execute(f"select * from events where task_id = ? and kind in ({','.join('?' * len(kinds))}) "
