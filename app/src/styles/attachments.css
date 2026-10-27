@@ -68,7 +68,6 @@
   color: var(--text);
 }
 
-
 .message-files {
   margin-top: 6px;
   align-items: flex-start;
@@ -362,6 +361,3 @@
   color: #fff;
 }
 
-.icon-button.attach {
-  margin-left: -4px;
-}

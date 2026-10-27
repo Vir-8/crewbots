@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { Markdown, MessageMeta, stamp } from "./bits";
+import { Markdown, MessageMeta, dayAndTime, stamp, timeBreaks } from "./bits";
 
 const html = (text: string) => renderToStaticMarkup(<Markdown text={text} onSelect={() => undefined} />);
 
@@ -81,6 +81,21 @@ describe("when a message was sent", () => {
     const last = stamp(at(2025, 9, 22, 9, 0), now);
     expect(last).toContain("2025");
     expect(last).not.toContain(time(at(2025, 9, 22, 9, 0)));
+  });
+
+  it("breaks a conversation where an hour has passed or the day has changed", () => {
+    const messages = [
+      { at: at(2026, 9, 26, 15, 29) }, // the first: a break
+      { at: at(2026, 9, 26, 15, 50) },
+      {}, // no time (a step, a card): passed over
+      { at: at(2026, 9, 26, 16, 49) }, // 59 minutes on
+      { at: at(2026, 9, 26, 17, 49) }, // an hour on: a break
+      { at: at(2026, 9, 26, 23, 59) }, // six hours on: a break
+      { at: at(2026, 9, 27, 0, 1) }, // two minutes on, but the next day: a break
+    ];
+    expect([...timeBreaks(messages)]).toEqual([0, 4, 5, 6]);
+    expect(dayAndTime(at(2026, 9, 26, 15, 29), now)).toEqual(["Yesterday", time(at(2026, 9, 26, 15, 29))]);
+    expect(dayAndTime(at(2026, 9, 27, 9, 0), now)[0]).toBe("Today");
   });
 
   it("shows the whole date on hover, and copies only when there's something to copy", () => {

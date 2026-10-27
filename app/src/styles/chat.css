@@ -50,6 +50,24 @@
   flex-direction: column;
 }
 
+/* Where time has passed between messages: the day and time, centred over the next one. */
+.time-break {
+  align-self: stretch;
+  text-align: center;
+  margin: 8px 0 12px;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.time-break b {
+  font-weight: 600;
+}
+
+.room-group-body + .time-break,
+.room-group + .time-break {
+  margin-top: 4px;
+}
+
 /* When a message was sent and a copy button, under it: shown on hover. */
 .message-meta {
   display: flex;

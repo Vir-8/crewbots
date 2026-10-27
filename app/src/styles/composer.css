@@ -77,12 +77,24 @@
   font-weight: 550;
 }
 
+/* The message box's round buttons, all one size: attach and dictate outlined, send filled. */
+.composer-bar .attach,
+.mic,
 .send {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   display: grid;
   place-items: center;
+}
+
+.composer-bar .attach,
+.mic {
+  border: 1px solid color-mix(in srgb, var(--soft) 32%, var(--raised)); /* the line colour is lost on the box's own */
+  color: var(--soft);
+}
+
+.send {
   background: var(--primary);
   color: var(--primary-ink);
 }
@@ -272,15 +284,6 @@
   background: var(--hover);
 }
 
-.mic {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  color: var(--soft);
-}
-
 .mic:hover {
   background: var(--hover);
   color: var(--text);
@@ -288,6 +291,7 @@
 
 .mic.on {
   background: var(--red);
+  border-color: var(--red);
   color: #fff;
   animation: breathe 1.6s ease-in-out infinite;
 }

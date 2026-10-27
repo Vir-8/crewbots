@@ -60,18 +60,63 @@ export function ago(iso: string, short = false): string {
   return `${Math.floor(seconds / 86400)}d${suffix}`;
 }
 
+const BREAK_AFTER_MS = 60 * 60_000; // a centred time goes over a message this long after the one before it
+
+const clock = (d: Date) => d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+// Calendar days from `d` to `now`, rounded: a day with a clock change isn't 24 hours.
+const daysBefore = (d: Date, now: Date) => Math.round((dayStart(now) - dayStart(d)) / 86_400_000);
+
+/** The day a time fell on: "Today", "Yesterday", "Monday" this week, "Oct 22" this year, "Oct 22, 2025" before. */
+function dayName(d: Date, now: Date): string {
+  const days = daysBefore(d, now);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return d.toLocaleDateString(undefined, { weekday: "long" });
+  const year = d.getFullYear() === now.getFullYear() ? {} : { year: "numeric" as const };
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", ...year });
+}
+
 /** When a message was sent, the way chat apps say it: "15:29" today, "Yesterday 15:29", "Monday 15:29" this week,
  * "Oct 22, 15:29" this year, and "Oct 22, 2025" before. */
 export function stamp(iso: string, now = new Date()): string {
   const d = new Date(iso);
-  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  const day = (t: Date) => new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime();
-  const days = Math.round((day(now) - day(d)) / 86_400_000); // rounded: a day with a clock change isn't 24 hours
-  if (days <= 0) return time;
-  if (days === 1) return `Yesterday ${time}`;
-  if (days < 7) return `${d.toLocaleDateString(undefined, { weekday: "long" })} ${time}`;
-  if (d.getFullYear() === now.getFullYear()) return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${time}`;
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  const day = dayName(d, now);
+  if (day === "Today") return clock(d);
+  if (d.getFullYear() !== now.getFullYear()) return day;
+  return daysBefore(d, now) < 7 ? `${day} ${clock(d)}` : `${day}, ${clock(d)}`;
+}
+
+/** The day and the time, for a break in a conversation: ["Yesterday", "15:29"]. */
+export function dayAndTime(iso: string, now = new Date()): [string, string] {
+  const d = new Date(iso);
+  return [dayName(d, now), clock(d)];
+}
+
+/** Which of a conversation's messages, in order, get a centred time over them: the first, and any that came an hour
+ * or more after the one before it, or on another day. Those without a time are passed over. */
+export function timeBreaks(items: { at?: string }[]): Set<number> {
+  const out = new Set<number>();
+  let before: Date | null = null;
+  items.forEach((item, i) => {
+    if (!item.at) return;
+    const at = new Date(item.at);
+    if (!before || at.getTime() - before.getTime() >= BREAK_AFTER_MS || daysBefore(before, at) !== 0) out.add(i);
+    before = at;
+  });
+  return out;
+}
+
+/** A break in a conversation where time has passed, centred over the message after it: "**Yesterday** 15:29". */
+export function TimeBreak({ at }: { at: string }) {
+  const [day, time] = dayAndTime(at);
+  return (
+    <div className="time-break">
+      <time dateTime={at} title={fullDate(at)}>
+        <b>{day}</b> {time}
+      </time>
+    </div>
+  );
 }
 
 /** The whole date and time, for a tooltip: "Oct 22, 2026, 5:55 PM". */

@@ -279,7 +279,7 @@ export function Composer(props: {
           }}
           title="Attach images or files (or paste, or drop them here)"
         >
-          <Icon name="plus" size={15} />
+          <Icon name="plus" size={16} />
         </button>
         {props.bots && props.onBot && (
           <label className="chip select" onClick={(e) => e.stopPropagation()}>
@@ -326,10 +326,10 @@ export function Composer(props: {
           }}
           title={listening ? "Stop dictating" : "Dictate"}
         >
-          <Icon name="mic" size={15} />
+          <Icon name="mic" size={16} />
         </button>
         <button className="send" disabled={(!text.trim() && !ready.length) || sending || uploading} onClick={send} title={uploading ? "Waiting for attachments to finish" : "Send"}>
-          <Icon name="arrowUp" size={15} />
+          <Icon name="arrowUp" size={16} />
         </button>
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { Fragment, useEffect, useMemo, useRef } from "react";
 import type { Crew } from "../state";
 import { doing, oneLine } from "../state";
 import type { Chat, Room, RoomMessage } from "../types";
@@ -6,7 +6,7 @@ import { ACTIVE } from "../types";
 import { Files } from "./Attachments";
 import { Avatar, GroupAvatar, labelOf } from "./Avatar";
 import { Boundary } from "./Boundary";
-import { Markdown, MessageMeta, ago, fullDate } from "./bits";
+import { Markdown, MessageMeta, TimeBreak, ago, fullDate, timeBreaks } from "./bits";
 import { crewCommands } from "./CommandPreview";
 import { Composer } from "./Composer";
 import { FindBar, Finding, Marked, count, shown, useCurrentHit, useFind } from "./Find";
@@ -107,7 +107,9 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
     const seat = [...crew.tasks.values()].find((t) => t.kind === "seat" && t.room_id === room.id && t.bot === m);
     return seat && ACTIVE.includes(seat.status);
   });
-  const groups = useMemo(() => byAuthor(messages ?? []), [messages]);
+  // Where time has passed, a centred day and time goes over the next message, which starts a group of its own.
+  const breaks = useMemo(() => new Set([...timeBreaks(messages ?? [])].map((i) => messages![i].id)), [messages]);
+  const groups = useMemo(() => byAuthor(messages ?? [], breaks), [messages, breaks]);
   const find = useFind();
   const hits = useMemo(() => {
     const out: { el: () => Element | null | undefined; nth: number }[] = [];
@@ -156,6 +158,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
                 group.messages.map((m) => (
                   <Boundary key={m.id} where={`a group chat message (${m.id})`}>
                     <div className="you" data-msg={m.id}>
+                      {breaks.has(m.id) && <TimeBreak at={m.at} />}
                       {m.text && <div className="you-text">{withMentions(m.text)}</div>}
                       <Files items={m.attachments ?? []} mine />
                       <MessageMeta at={m.at} text={m.text} />
@@ -163,28 +166,31 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
                   </Boundary>
                 ))
               ) : (
-                <div key={group.messages[0].id} className="room-group">
-                  <Avatar name={group.author} size={28} />
-                  <div className="room-group-body">
-                    <div className="room-author">
-                      {labelOf(group.author)}
-                      <span className="faint" title={fullDate(group.messages[0].at)}> · {ago(group.messages[0].at)}</span>
+                <Fragment key={group.messages[0].id}>
+                  {breaks.has(group.messages[0].id) && <TimeBreak at={group.messages[0].at} />}
+                  <div className="room-group">
+                    <Avatar name={group.author} size={28} />
+                    <div className="room-group-body">
+                      <div className="room-author">
+                        {labelOf(group.author)}
+                        <span className="faint" title={fullDate(group.messages[0].at)}> · {ago(group.messages[0].at)}</span>
+                      </div>
+                      {group.messages.map((m) => (
+                        <Boundary key={m.id} where={`a group chat message (${m.id})`}>
+                          <div className="room-message" data-msg={m.id}>
+                            {m.text && (
+                              <div className="room-bubble">
+                                <Markdown text={m.text} onSelect={props.onOpen} />
+                              </div>
+                            )}
+                            <Files items={m.attachments ?? []} />
+                            <MessageMeta at={m.at} text={m.text} />
+                          </div>
+                        </Boundary>
+                      ))}
                     </div>
-                    {group.messages.map((m) => (
-                      <Boundary key={m.id} where={`a group chat message (${m.id})`}>
-                        <div className="room-message" data-msg={m.id}>
-                          {m.text && (
-                            <div className="room-bubble">
-                              <Markdown text={m.text} onSelect={props.onOpen} />
-                            </div>
-                          )}
-                          <Files items={m.attachments ?? []} />
-                          <MessageMeta at={m.at} text={m.text} />
-                        </div>
-                      </Boundary>
-                    ))}
                   </div>
-                </div>
+                </Fragment>
               ),
             )}
             {typing.length > 0 && (
@@ -293,11 +299,11 @@ function useMarkRead(crew: Crew, chat: Chat, length?: number) {
   }, [chat.key, chat.unread, length]);
 }
 
-function byAuthor(messages: RoomMessage[]): { author: string; messages: RoomMessage[] }[] {
+function byAuthor(messages: RoomMessage[], breaks: Set<number>): { author: string; messages: RoomMessage[] }[] {
   const groups: { author: string; messages: RoomMessage[] }[] = [];
   for (const m of messages) {
     const last = groups.at(-1);
-    if (last && last.author === m.author) last.messages.push(m);
+    if (last && last.author === m.author && !breaks.has(m.id)) last.messages.push(m);
     else groups.push({ author: m.author, messages: [m] });
   }
   return groups;

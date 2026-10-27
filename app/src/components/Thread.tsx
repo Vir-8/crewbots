@@ -5,7 +5,7 @@ import type { Attachment, StoredEvent, Task } from "../types";
 import { ACTIVE } from "../types";
 import { Files } from "./Attachments";
 import { Boundary } from "./Boundary";
-import { Markdown, MessageMeta, tokens } from "./bits";
+import { Markdown, MessageMeta, TimeBreak, timeBreaks, tokens } from "./bits";
 import { Finding, Marked, count, shown, useCurrentHit } from "./Find";
 import { Icon } from "./Icon";
 import { AskCard, Brief, Reactions, Steps, VerdictBlock } from "./ThreadParts";
@@ -52,6 +52,8 @@ export function Thread(props: {
   const children = crew.children.get(task.id) ?? [];
   const blocks = useMemo(() => build(events ?? [], children, crew.tasks), [events, children, crew.tasks]);
   const active = ACTIVE.includes(task.status);
+  // Where time has passed between messages, a centred day and time goes over the next one.
+  const breaks = useMemo(() => timeBreaks(blocks.map((b) => ({ at: b.kind === "you" || b.kind === "say" ? b.at : undefined }))), [blocks]);
 
   // A long conversation draws only its latest blocks, and more as you scroll up to them, keeping your place: opening
   // one costs the same however long it is. `start` is the first block drawn; null follows the latest PAGE.
@@ -111,9 +113,9 @@ export function Thread(props: {
             Earlier messages
           </button>
         )}
-        {blocks.slice(start).map((block) => (
+        {blocks.slice(start).map((block, i) => (
           <Boundary key={`${block.kind}-${block.id}`} where={`a message (${block.kind} ${block.id} in ${task.id})`}>
-            <BlockView block={block} crew={crew} lead={task.bot} onOpen={props.onOpen} />
+            <BlockView block={block} crew={crew} lead={task.bot} onOpen={props.onOpen} afterBreak={breaks.has(start + i)} />
           </Boundary>
         ))}
         </Finding.Provider>
@@ -305,12 +307,13 @@ function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>
   return out;
 }
 
-function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id: string) => void }) {
+function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id: string) => void; afterBreak: boolean }) {
   const { block } = props;
   switch (block.kind) {
     case "you":
       return (
         <div className="you">
+          {props.afterBreak && <TimeBreak at={block.at} />}
           {block.text && <div className="you-text"><Marked text={block.text} /></div>}
           <Files items={block.files} mine />
           <MessageMeta at={block.at} text={block.text} />
@@ -321,6 +324,7 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
     case "say":
       return (
         <div className="said">
+          {props.afterBreak && <TimeBreak at={block.at} />}
           <div className="say">
             {block.tag && <div className={`say-tag ${block.tag === "Needs you" ? "urgent" : ""}`}>{block.tag}</div>}
             {block.text && <Markdown text={block.text} onSelect={props.onOpen} />}
