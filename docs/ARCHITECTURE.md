@@ -377,7 +377,7 @@ Each step leaves the system working.
   name the ones their bot gets. Codex takes them as `-c mcp_servers.<name>.*` (a `url` and `http_headers` for HTTP;
   it can't do SSE), Claude as the Agent SDK's `mcp_servers`. The app can copy a server from Claude Code's,
   Claude's desktop app's or Codex's config, add one from the official registry (`registry.modelcontextprotocol.io`:
-  a package becomes `npx`, `uvx` or `docker run`; a remote becomes a URL), and check one by starting it and listing
+  a package becomes `npx`, `uvx` or `docker run`, at its version, with what it depends on held to what was out the day it was added by npm's `--before` or uv's `--exclude-newer`, since a package's dependencies are worked out afresh at every start; a remote becomes a URL), and check one by starting it and listing
   its tools with the MCP client. The file can hold keys, so it's the user's alone (0600), and the API reports only
   which env and header names a server has, never their values.
 - **Skills** come from the crew's `skills/` and the user's global folders; a global one that can't be read, or one a

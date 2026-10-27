@@ -2,6 +2,7 @@
 
 import json
 import sys
+from datetime import UTC, datetime
 
 import pytest
 from fakes import FakeBackend
@@ -110,10 +111,12 @@ def test_a_registry_server_becomes_an_entry_the_crew_can_start():
     entry = mcp_catalog._entry(REGISTRY_SERVER)
 
     assert [o["id"] for o in entry["options"]] == ["package:0", "package:1", "remote:0"]  # not one that opens a port
-    assert mcp_catalog.from_registry(entry, "package:0", {"BLENDER_PORT": "9876"}) == {
-        "command": "npx", "args": ["-y", "@someone/blender-mcp@1.2.0"], "env": {"BLENDER_PORT": "9876"}}
-    assert mcp_catalog.from_registry(entry, "package:1", {"scene": "a.blend"}) == {
-        "command": "uvx", "args": ["blender-mcp==0.4", "--scene", "a.blend"]}
+    added = datetime(2026, 10, 27, 9, 30, tzinfo=UTC)  # what it depends on is held to what was out then
+    assert mcp_catalog.from_registry(entry, "package:0", {"BLENDER_PORT": "9876"}, added) == {
+        "command": "npx", "args": ["-y", "--before=2026-10-27T09:30:00Z", "@someone/blender-mcp@1.2.0"],
+        "env": {"BLENDER_PORT": "9876"}}
+    assert mcp_catalog.from_registry(entry, "package:1", {"scene": "a.blend"}, added) == {
+        "command": "uvx", "args": ["--exclude-newer", "2026-10-27T09:30:00Z", "blender-mcp==0.4", "--scene", "a.blend"]}
     assert mcp_catalog.from_registry(entry, "remote:0", {"Authorization": "Bearer k"}) == {
         "type": "http", "url": "https://mcp.blender.example/mcp", "headers": {"Authorization": "Bearer k"}}
     with pytest.raises(CrewError, match="needs BLENDER_PORT"):

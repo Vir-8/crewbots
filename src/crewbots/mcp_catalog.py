@@ -12,6 +12,7 @@ import contextlib
 import json
 import os
 import tomllib
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -166,8 +167,12 @@ def _field(raw: dict[str, Any], kind: str) -> dict[str, Any]:
             "default": raw.get("default") or raw.get("value") or None}
 
 
-def from_registry(entry: dict[str, Any], option: str, values: dict[str, str]) -> dict[str, Any]:
-    """The mcp.json entry for one of a registry server's ways to run, with what the user filled in."""
+def from_registry(entry: dict[str, Any], option: str, values: dict[str, str], now: datetime | None = None) -> dict[str, Any]:
+    """The mcp.json entry for one of a registry server's ways to run, with what the user filled in. A package is pinned
+    to its version, and what it depends on to what was out when it was added (npm's `--before`, uv's
+    `--exclude-newer`): its dependencies are worked out afresh at every start, and a new release of one of them could
+    be anyone's."""
+    added = (now or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%SZ")
     kind, _, index = option.partition(":")
     server = entry["raw"]
     chosen = next((o for o in entry["options"] if o["id"] == option), None)
@@ -190,9 +195,9 @@ def from_registry(entry: dict[str, Any], option: str, values: dict[str, str]) ->
     runtime = [a.get("value") for a in package.get("runtimeArguments") or [] if a.get("value")]
     match package.get("registryType"):
         case "npm":
-            command, args = "npx", [*(runtime or ["-y"]), f"{ident}@{version}" if version else ident]
+            command, args = "npx", [*(runtime or ["-y"]), f"--before={added}", f"{ident}@{version}" if version else ident]
         case "pypi":
-            command, args = "uvx", [*runtime, f"{ident}=={version}" if version else ident]
+            command, args = "uvx", [*runtime, "--exclude-newer", added, f"{ident}=={version}" if version else ident]
         case "oci":
             command, args = "docker", ["run", "-i", "--rm", *runtime,
                                        *(a for f in chosen["fields"] if f["kind"] == "env" for a in ("-e", f["key"])),
