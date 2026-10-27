@@ -59,6 +59,11 @@ async function request(method: string, path: string, body?: any) {
   if (method === "GET" && url.pathname === "/events/cursor") return ok({ id: allEvents.at(-1)?.id ?? 0 });
   if (parts[0] === "bot") return { ok: false, status: 0, data: { detail: "not an app path" } };
   if (method === "GET" && url.pathname === "/crew") return ok(crewState);
+  if (method === "POST" && (url.pathname === "/crew/pause" || url.pathname === "/crew/resume")) {
+    crewState.paused = url.pathname === "/crew/pause";
+    setTimeout(() => publish({ type: "crew", crew: { ...crewState } as never }), 0);
+    return ok({ ...crewState });
+  }
   if (method === "GET" && url.pathname === "/version") return ok({ api: API_VERSION, schema_hash: API_SCHEMA, build: "preview", source_changed: false });
   if (url.pathname === "/crew/restart") {
     crewState.restarting = method === "POST" && body?.when_idle !== false;
@@ -71,6 +76,17 @@ async function request(method: string, path: string, body?: any) {
       setTimeout(() => publish({ type: "pins", pins }), 0);
     }
     return ok({ pins });
+  }
+  if (method === "POST" && parts[0] === "chats" && parts[1] === "bot" && parts[3] === "threads") {
+    const thread = demo.task(`t_new${Date.now().toString(16).slice(-7)}`, parts[2], body.goal, { parent_id: demo.chatIds[parts[2]], status: "running", reported: false });
+    say(thread.id, "message", { from: "user", text: body.goal });
+    publishTask(thread);
+    return ok(thread);
+  }
+  if (method === "POST" && parts[0] === "chats" && parts[1] === "bot" && parts[3] === "notes") {
+    const title = String(body.text).split("\n")[0].slice(0, 80);
+    say(demo.chatIds[parts[2]], "memory", { action: "remember", scope: parts[2], title, body: body.text, by: "user" });
+    return ok({ title, path: `~/.crewbots/crew/memory/${parts[2]}/notes/${title}.md` });
   }
   if (method === "POST" && parts[0] === "chats" && parts[1] === "bot") {
     const chat = demo.chatIds[parts[2]];

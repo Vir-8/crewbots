@@ -4,6 +4,7 @@ import type { Crew } from "../state";
 import { oneLine } from "../state";
 import type { ReviewState, Task } from "../types";
 import { ACTIVE } from "../types";
+import { crewCommands } from "./CommandPreview";
 import { Composer } from "./Composer";
 import { DiffView } from "./DiffView";
 import { FindBar, useFind } from "./Find";
@@ -91,6 +92,7 @@ export function Panel(props: { crew: Crew; task: Task; onOpen: (id: string) => v
           asking={task.status === "needs_input"}
           onSend={(text, files) => crew.send(task.id, text, files)}
           task={task.id}
+          actions={{ stop: ACTIVE.includes(task.status) ? () => crew.cancel(task.id) : undefined, ...crewCommands(crew) }}
         />
       </div>
     </aside>

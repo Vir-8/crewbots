@@ -54,7 +54,7 @@ export function App() {
   // The profile beside a bot's chat, or a group's beside its chat: on unless you turn it off, and remembered, wherever
   // you go in between.
   const [profileOn, setProfileOn] = useRemembered("crewbots.profile", true);
-  const [newGroup, setNewGroup] = useState(false);
+  const [newGroup, setNewGroup] = useState<{ title: string; members: string[] } | null>(null); // the dialog, and what it starts with
   const [palette, setPalette] = useState(false);
   const [pull, setPull] = useState<{ repo: string; number: number } | null>(null); // one the palette went to
   const [sideOff, setSideOff] = useRemembered("crewbots.sidebar-hidden", false);
@@ -107,7 +107,7 @@ export function App() {
       setPull({ repo, number });
       setCurrent("review");
     },
-    newGroup: () => setNewGroup(true),
+    newGroup: () => setNewGroup({ title: "", members: [] }),
     editBot: (name: string) => setEditing(name),
     panel: (name: string) => setTimeout(() => showPanel(name), 0), // once the palette has closed and focus is back
     sidebar: () => setSideHidden(!sideHidden),
@@ -149,7 +149,7 @@ export function App() {
           setThread(null);
         }}
         onOpen={openTask}
-        onNewGroup={() => setNewGroup(true)}
+        onNewGroup={() => setNewGroup({ title: "", members: [] })}
         onExpand={() => setSideHidden(false)}
         edge={
           sideHidden ? (
@@ -177,7 +177,7 @@ export function App() {
         ) : current === "review" ? (
           <CodeReview crew={crew} onSettings={() => setCurrent("page:settings")} pick={pull} />
         ) : chat?.kind === "direct" ? (
-          <DirectChat crew={crew} chat={chat} onOpen={openTask} profileOpen={Boolean(profile)} onProfile={() => setProfileOn(!profileOn)} />
+          <DirectChat crew={crew} chat={chat} onOpen={openTask} profileOpen={Boolean(profile)} onProfile={() => setProfileOn(!profileOn)} onNewGroup={(title, members) => setNewGroup({ title, members })} />
         ) : chat?.kind === "group" ? (
           <GroupChat crew={crew} chat={chat} onOpen={openTask} panelOpen={Boolean(room)} onPanel={() => setProfileOn(!profileOn)} />
         ) : (
@@ -225,9 +225,10 @@ export function App() {
       {newGroup && (
         <NewGroup
           crew={crew}
-          onClose={() => setNewGroup(false)}
+          start={newGroup}
+          onClose={() => setNewGroup(null)}
           onCreated={(id) => {
-            setNewGroup(false);
+            setNewGroup(null);
             setCurrent(`room:${id}`);
             setThread(null);
           }}
@@ -245,9 +246,9 @@ export function App() {
   );
 }
 
-function NewGroup({ crew, onClose, onCreated }: { crew: Crew; onClose: () => void; onCreated: (roomId: string) => void }) {
-  const [title, setTitle] = useState("");
-  const [members, setMembers] = useState<string[]>([]);
+function NewGroup({ crew, start, onClose, onCreated }: { crew: Crew; start: { title: string; members: string[] }; onClose: () => void; onCreated: (roomId: string) => void }) {
+  const [title, setTitle] = useState(start.title);
+  const [members, setMembers] = useState<string[]>(start.members);
   const [lead, setLead] = useState("");
   const leader = members.includes(lead) ? lead : members[0] ?? "";
   return (

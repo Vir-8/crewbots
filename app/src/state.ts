@@ -176,6 +176,8 @@ export function useCrew() {
     react: (id: number, reaction: "up" | "down") => act(api.react(id, reaction)),
     changeRoom: (roomId: string, change: RoomChange) => act(api.changeRoom(roomId, change)),
     deleteRoom: (roomId: string) => act(api.deleteRoom(roomId)),
+    threadFor: (bot: string, goal: string) => act(api.threadFor(bot, goal)),
+    rememberFor: (bot: string, text: string) => act(api.rememberFor(bot, text)),
     /** Pins these chats to the top of the sidebar, in this order, at once here and then in the daemon. */
     setPins: (keys: string[]) => {
       setChats((current) => current.map((c) => ({ ...c, pinned: keys.includes(c.key) ? keys.indexOf(c.key) : null })));

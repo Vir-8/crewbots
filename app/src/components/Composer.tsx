@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { bridge } from "../api";
 import { readDraft, writeDraft } from "../drafts";
-import { commandsFor, finishMention, mentionTyped } from "../typing";
+import { argumentOf, commandsFor, finishMention, mentionTyped } from "../typing";
+import { type Actions, CommandPreview } from "./CommandPreview";
 import type { Bot } from "../types";
 import { labelOf } from "./Avatar";
 import { Icon } from "./Icon";
@@ -30,6 +31,7 @@ export function Composer(props: {
   task?: string; // the chat or thread this box talks to, for /status
   draft?: string; // where what's typed but not sent is kept, so a reload or relaunch loses nothing
   main?: boolean; // the open chat's box: it shows what the command palette asks for (Usage, Status)
+  actions?: Actions; // what its commands can do here: /new, /group, /remember, /stop, /pause, /resume
 }) {
   const kept = useState(() => readDraft<Draft>(props.draft))[0];
   const [text, setText] = useState(kept?.text ?? "");
@@ -65,16 +67,30 @@ export function Composer(props: {
     area.current?.focus();
   };
 
-  // "/" and a command's start, nothing else: Tab or Enter runs the one picked, instead of sending.
-  const commands = commandsFor(text, Boolean(props.task));
+  // "/" and a command's start (or a whole one and what it takes): Tab or Enter shows the one picked above the box,
+  // instead of sending. /usage and /status are shown at once; the others say what they'll do, and ↩ again does it.
+  const actions = props.actions ?? {};
+  const can = (name: string) => name === "usage" || (name === "status" ? Boolean(props.task) : Boolean(actions[name as keyof Actions]));
+  const commands = commandsFor(text, can);
   const [pick, setPick] = useState(0);
   const [panel, setPanel] = useState<string | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [confirmed, setConfirmed] = useState(0);
   const run = (name: string) => {
-    setText("");
     setPick(0);
-    setPanel(name);
     area.current?.focus();
+    if (name === "usage" || name === "status") {
+      setText("");
+      setPanel(name);
+    } else {
+      setPanel(null);
+      setPreview(name);
+      setConfirmed(0);
+    }
   };
+  useEffect(() => {
+    if (preview && !text.startsWith(`/${preview}`)) setPreview(null); // typed something else
+  }, [text, preview]);
   useEffect(() => {
     if (!props.main) return;
     const asked = (e: Event) => setPanel((e as CustomEvent<string>).detail);
@@ -162,9 +178,22 @@ export function Composer(props: {
         attach(e.dataTransfer.files);
       }}
     >
+      {preview && (
+        <CommandPreview
+          name={preview}
+          arg={argumentOf(text)}
+          actions={actions}
+          confirmed={confirmed}
+          onDone={() => {
+            setPreview(null);
+            setText("");
+          }}
+          onCancel={() => setPreview(null)}
+        />
+      )}
       {panel === "usage" && <UsagePanel onClose={() => setPanel(null)} />}
       {panel === "status" && props.task && <StatusPanel taskId={props.task} onClose={() => setPanel(null)} />}
-      {commands.length > 0 && (
+      {commands.length > 0 && !preview && (
         <div className="commands" role="listbox">
           {commands.map((c, i) => (
             <button
@@ -206,7 +235,13 @@ export function Composer(props: {
         placeholder={props.placeholder}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
-          if (commands.length > 0 && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) {
+          if (preview && e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            setConfirmed((n) => n + 1);
+          } else if (preview && e.key === "Escape") {
+            e.preventDefault();
+            setPreview(null);
+          } else if (commands.length > 0 && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) {
             e.preventDefault();
             run(commands[Math.min(pick, commands.length - 1)].name);
           } else if (commands.length > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {

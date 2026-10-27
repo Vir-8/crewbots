@@ -7,6 +7,7 @@ import { Files } from "./Attachments";
 import { Avatar, GroupAvatar, labelOf } from "./Avatar";
 import { Boundary } from "./Boundary";
 import { Markdown, ago } from "./bits";
+import { crewCommands } from "./CommandPreview";
 import { Composer } from "./Composer";
 import { FindBar, Finding, Marked, count, shown, useCurrentHit, useFind } from "./Find";
 import { Icon } from "./Icon";
@@ -15,7 +16,7 @@ import { settle } from "./ui";
 import "../styles/chat.css";
 
 /** Your ongoing chat with one bot. Work it takes on shows as thread cards, which open beside the chat. */
-export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) => void; onProfile: () => void; profileOpen: boolean }) {
+export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) => void; onProfile: () => void; profileOpen: boolean; onNewGroup: (title: string, members: string[]) => void }) {
   const { crew, chat } = props;
   const task = chat.task_id ? crew.tasks.get(chat.task_id) : undefined;
   const bot = crew.bots.find((b) => b.name === chat.bot);
@@ -76,6 +77,14 @@ export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string)
           draft={chat.key}
           autoFocus
           main
+          actions={{
+            who: labelOf(chat.bot!),
+            new: (goal) => crew.threadFor(chat.bot!, goal),
+            group: (title) => props.onNewGroup(title, [chat.bot!]),
+            remember: (note) => crew.rememberFor(chat.bot!, note),
+            stop: task && ACTIVE.includes(task.status) ? () => crew.cancel(task.id) : undefined,
+            ...crewCommands(crew),
+          }}
         />
       </div>
     </>
@@ -206,7 +215,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
             </button>
           </div>
         )}
-        <Composer key={chat.key} placeholder={`Message ${room.title}`} mentions={[...room.members, "everyone"]} onSend={(text, files) => crew.post(room.id, text, files)} draft={chat.key} autoFocus main />
+        <Composer key={chat.key} placeholder={`Message ${room.title}`} mentions={[...room.members, "everyone"]} onSend={(text, files) => crew.post(room.id, text, files)} draft={chat.key} autoFocus main actions={crewCommands(crew)} />
       </div>
     </>
   );

@@ -230,9 +230,11 @@ The app works like a messaging app:
 - **Attachments:** attach images and files to any message, with +, by pasting, or by dropping them on the box. They're
   kept in the crew's `attachments/` folder, show under your message, and the bot gets their paths with it: Claude
   reads images and PDFs itself, and Codex views images.
-- **Commands:** typing / in any message box offers the app's own commands; Tab or Enter runs one without sending
-  anything. `/usage` shows what's left on your Claude and Codex plans, above the box. `/status` shows the chat's model
-  and effort, its session, how full its context is, and its plan's limits.
+- **Commands:** typing / in any message box offers the app's own commands; Tab or Enter shows one above the box
+  without sending anything, and Enter again runs it. `/usage` shows what's left on your Claude and Codex plans.
+  `/status` shows the chat's model and effort, its session, how full its context is, and its plan's limits.
+  `/new <goal>` starts a thread for the bot beside its chat; `/group <name>` starts a group chat with it; `/remember
+  <note>` gives it a note to keep; `/stop` stops what's running there; `/pause` and `/resume` pause the crew.
 - **Pinned chats** stay at the top of the sidebar in your order, above the rest by recent activity: right-click a chat
   to pin or unpin it, drag a pinned one (or drop another among them) to move it, or ⌥↑ ⌥↓ on it. The daemon keeps the
   order, so a reinstalled app has it too.

@@ -6,7 +6,19 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 
 from crewbots.api.context import Context
-from crewbots.api.schemas import ChatOut, Message, NewRoom, Pins, RoomChange, RoomMessageOut, RoomOut, TaskOut
+from crewbots.api.schemas import (
+    ChatOut,
+    Message,
+    NewNote,
+    NewRoom,
+    NewThread,
+    NoteOut,
+    Pins,
+    RoomChange,
+    RoomMessageOut,
+    RoomOut,
+    TaskOut,
+)
 from crewbots.store import Status
 
 MAX_PINS = 50
@@ -73,6 +85,23 @@ def routes(c: Context) -> APIRouter:
         pins = store.set_pins(keys)
         runner.bus.publish({"type": "pins", "pins": pins})
         return {"pins": pins}
+
+    @v1.post("/chats/bot/{bot}/threads", status_code=201, response_model=TaskOut)
+    async def thread_from_chat(bot: str, body: NewThread):
+        """A thread you start from a bot's chat (`/new`): it hangs from the chat, and its result comes back there."""
+        if bot not in runner.crew.bots:
+            raise HTTPException(404, f"no bot named {bot!r}")
+        if not body.goal.strip():
+            raise HTTPException(422, "a thread needs a goal")
+        return runner.thread_for(bot, body.goal.strip()).to_json()
+
+    @v1.post("/chats/bot/{bot}/notes", status_code=201, response_model=NoteOut)
+    async def note_for_bot(bot: str, body: NewNote):
+        """A note you give a bot (`/remember`), in its memory; its first line is the title."""
+        if bot not in runner.crew.bots:
+            raise HTTPException(404, f"no bot named {bot!r}")
+        note = runner.remember_for(bot, body.text)
+        return {"title": note.title, "path": str(note.path)}
 
     @v1.post("/chats/bot/{bot}/messages", response_model=TaskOut)
     async def message_bot(bot: str, body: Message):

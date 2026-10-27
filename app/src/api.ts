@@ -67,6 +67,8 @@ export const api = {
   routines: () => call<Routines>("GET", "/routines"),
   budgets: () => call<Budget[]>("GET", "/budgets"),
   chats: () => call<Chat[]>("GET", "/chats"),
+  threadFor: (bot: string, goal: string) => call<Task>("POST", `/chats/bot/${encodeURIComponent(bot)}/threads`, { goal }),
+  rememberFor: (bot: string, text: string) => call<{ title: string; path: string }>("POST", `/chats/bot/${encodeURIComponent(bot)}/notes`, { text }),
   /** Pins chats to the top of the sidebar, in this order; the rest are unpinned. */
   setPins: (pins: string[]) => call<{ pins: string[] }>("PUT", "/pins", { pins }),
   say: (bot: string, text: string, attachments: string[] = []) => call<Task>("POST", `/chats/bot/${encodeURIComponent(bot)}/messages`, { text, attachments }),

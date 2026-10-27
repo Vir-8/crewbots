@@ -60,6 +60,19 @@ class ChatOut(BaseModel):
     pinned: int | None = None  # its place among the chats pinned to the top of the sidebar
 
 
+class NewThread(BaseModel):
+    goal: str
+
+
+class NewNote(BaseModel):
+    text: str
+
+
+class NoteOut(BaseModel):
+    title: str
+    path: str
+
+
 class Pins(BaseModel):
     pins: list[str]  # chats' keys, in the order they're pinned
 

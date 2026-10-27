@@ -1,21 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { commandsFor, finishMention, insertMention, mentionAt, mentionTyped } from "./typing";
+import { argumentOf, commandsFor, finishMention, insertMention, mentionAt, mentionTyped } from "./typing";
 
 describe("slash commands", () => {
-  const names = (text: string, hasTask = true) => commandsFor(text, hasTask).map((c) => c.name);
+  const all = () => true;
+  const names = (text: string, can: (name: string) => boolean = all) => commandsFor(text, can).map((c) => c.name);
 
   it("offers commands for a slash and the start of a name", () => {
-    expect(names("/")).toEqual(["status", "usage"]);
-    expect(names("/st")).toEqual(["status"]);
+    expect(names("/")).toEqual(["new", "group", "remember", "stop", "pause", "resume", "status", "usage"]);
+    expect(names("/st")).toEqual(["stop", "status"]);
     expect(names("/US")).toEqual(["usage"]);
     expect(names("/nope")).toEqual([]);
   });
 
-  it("offers /status only where there's a chat or thread to report on", () => {
-    expect(names("/", false)).toEqual(["usage"]);
+  it("offers only what the box can do: no /status without a chat or thread to report on", () => {
+    expect(names("/", (n) => n === "usage" || n === "pause")).toEqual(["pause", "usage"]);
   });
 
-  it("offers nothing once it isn't just a command", () => {
+  it("keeps offering a command that takes something while you type it, and nothing else after a name", () => {
+    expect(names("/new fix the flaky login test")).toEqual(["new"]);
+    expect(argumentOf("/remember  we ship on Tuesdays ")).toBe("we ship on Tuesdays");
     expect(names("/status now")).toEqual([]);
     expect(names("see /usage")).toEqual([]);
     expect(names(" /usage")).toEqual([]);

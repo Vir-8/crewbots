@@ -24,6 +24,21 @@ class Work:
                                                    "body": note.body, "path": str(note.path)})
         return note
 
+    def remember_for(self, bot: str, text: str) -> Note:
+        """A note the user gives a bot (`/remember`): its first line is the title. It's in the bot's chat as remembered,
+        and reaches its session with its other notes."""
+        lines = text.strip().splitlines() or [""]
+        title = lines[0].strip()[:80]
+        note = self.crew.memory.remember(bot, title, text.strip(), source="the user")
+        self._record(self.chat(bot).id, kind="memory", data={"action": "remember", "scope": bot, "title": note.title,
+                                                           "body": note.body, "path": str(note.path), "by": "user"})
+        return note
+
+    def thread_for(self, bot: str, goal: str) -> Task:
+        """A thread the user starts from a bot's chat (`/new`): under the chat, where its result comes back."""
+        chat = self.chat(bot)
+        return self.submit(bot, goal, parent_id=chat.id, workspace=chat.workspace)
+
     def forget(self, task_id: str, name: str, shared: bool = False) -> Note:
         task = self.store.get_task(task_id)
         scope = CREW_SCOPE if shared else task.bot

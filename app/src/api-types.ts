@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "117ba06c98c0";
+export const API_SCHEMA = "c1e28bcf31d8";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -495,6 +495,10 @@ export interface NewBot {
   name: string;
 }
 
+export interface NewNote {
+  text: string;
+}
+
 export interface NewRoom {
   title?: string;
   members: string[];
@@ -518,6 +522,15 @@ export interface NewTask {
   bot: string;
   goal: string;
   workspace?: string | null;
+}
+
+export interface NewThread {
+  goal: string;
+}
+
+export interface NoteOut {
+  title: string;
+  path: string;
 }
 
 export interface OpenGroup {

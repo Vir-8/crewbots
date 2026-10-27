@@ -299,3 +299,11 @@
 .listening-hint {
   color: var(--red);
 }
+
+/* A command, shown before it runs: what it will do */
+.command-preview-text {
+  margin: 2px 2px 4px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--soft);
+}
