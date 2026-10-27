@@ -15,7 +15,8 @@ RELEASE = """#!/bin/bash
 # stands in for scripts/release: says it's done, as the real one does at the end
 printf '{"state": "done", "step": "Released", "commit": "%s", "pid": %d, "started_at": 1, "at": 2}' \\
   "$(git rev-parse --short=12 HEAD)" $$ > "$HOME/.crewbots/release.json"
-echo "from the app: ${CREWBOTS_RELEASE_FROM_APP:-no}, building in ${CARGO_TARGET_DIR:-the checkout}, the app: ${CREWBOTS_RELEASE_APP:-?}"
+echo "from the app: ${CREWBOTS_RELEASE_FROM_APP:-no}, building in ${CARGO_TARGET_DIR:-the checkout}"
+echo "the app: ${CREWBOTS_RELEASE_APP:-?}"
 """
 
 
