@@ -246,8 +246,9 @@ The app works like a messaging app:
   older messages are found too.
 - **Updates:** Settings → Updates says what's new since the app was built (in its checkout, or on GitHub when it comes
   in as a fast-forward), and checks again every half hour; the banner says when there's an update. Update and restart
-  runs `scripts/release` apart from the daemon (checks, build, install, the daemon restarted once the crew is idle),
-  then the app restarts itself into the new build. It waits while the checkout has uncommitted changes.
+  has the daemon run the checks and build the app (`scripts/release`, in `~/.crewbots/build`); the app then installs
+  the build over itself, the daemon restarts once the crew is idle, and the app restarts. It waits while the checkout
+  has uncommitted changes.
 - **The mic** dictates into any message box with macOS's own speech recognizer, on this Mac when it can, across
   pauses and past the recognizer's one-minute limit. The first time, macOS asks to allow the microphone and speech
   recognition.
