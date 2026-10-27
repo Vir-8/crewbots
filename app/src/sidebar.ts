@@ -30,7 +30,16 @@ export function archivedApart(chats: Chat[], query: string): [Chat[], Chat[]] {
   return [chats.filter((c) => !c.room?.archived_at), chats.filter((c) => c.room?.archived_at)];
 }
 
-/** The conversation to open when none is: the most recent one, leaving archived group chats out. */
+/** The most recent conversation, leaving archived group chats out: one with something said in it before an empty one,
+ * however new (a bot's chat is made, empty, the first time the app lists it). */
 export function latestChat(chats: Chat[]): string | null {
-  return [...archivedApart(chats, "")[0]].sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0]?.key ?? null;
+  return [...archivedApart(chats, "")[0]].sort((a, b) => Number(Boolean(b.last)) - Number(Boolean(a.last)) || b.updated_at.localeCompare(a.updated_at))[0]?.key ?? null;
+}
+
+/** The conversation to open at start: the one you had open last time, if it's still there; else your first pinned
+ * one; else the latest. */
+export function chatToOpen(chats: Chat[], last: string | null): string | null {
+  const open = archivedApart(chats, "")[0];
+  if (last && open.some((c) => c.key === last)) return last;
+  return pinsOf(open)[0] ?? latestChat(open);
 }

@@ -21,12 +21,23 @@ import { Activity } from "./pages/Activity";
 import { Analytics } from "./pages/Analytics";
 import { Tools } from "./pages/Tools";
 import { bridge } from "./api";
-import { latestChat } from "./sidebar";
+import { chatToOpen, latestChat } from "./sidebar";
 import type { Crew } from "./state";
 import { useCrew } from "./state";
 import { settle } from "./components/ui";
 import type { ConnectionStatus, Task } from "./types";
 import "./styles/dialogs.css";
+
+const LAST_CHAT = "crewbots.chat"; // the chat you had open, opened again at start
+
+/** The chat you had open when the app last ran, if this browser profile kept it. */
+function lastChat(): string | null {
+  try {
+    return localStorage.getItem(LAST_CHAT);
+  } catch {
+    return null;
+  }
+}
 
 /** A preference kept in this browser profile, surviving restarts; a storage that won't work just forgets. */
 function useRemembered(key: string, initial: boolean): [boolean, (value: boolean) => void] {
@@ -135,12 +146,20 @@ export function App() {
     updates: () => setUpdates(true),
   };
 
-  // Open on the most recent conversation, or the task asked for in the URL.
+  // Open where you were: the chat you had open (or the task asked for in the URL), else your first pinned one.
   useEffect(() => {
     if (current || crew.chats.length === 0) return;
     if (initial && crew.tasks.has(initial)) openTask(initial);
-    else setCurrent(latestChat(crew.chats));
+    else setCurrent(chatToOpen(crew.chats, lastChat()));
   }, [crew.chats.length, crew.tasks.size]);
+  useEffect(() => {
+    if (!current?.startsWith("bot:") && !current?.startsWith("room:")) return;
+    try {
+      localStorage.setItem(LAST_CHAT, current);
+    } catch {
+      // not remembered: the next start opens your first pinned chat
+    }
+  }, [current]);
 
   if (crew.status.state !== "connected" && !crew.connectedOnce) return <Connecting status={crew.status} />;
   const chat = crew.chats.find((c) => c.key === current);

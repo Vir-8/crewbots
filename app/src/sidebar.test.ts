@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { archivedApart, latestChat, movePin, orderChats, pinsOf } from "./sidebar";
+import { archivedApart, chatToOpen, latestChat, movePin, orderChats, pinsOf } from "./sidebar";
 import type { Chat } from "./types";
 
 const chat = (key: string, updated: string, fields: Partial<Chat> = {}): Chat => ({
@@ -71,6 +71,15 @@ describe("pinned chats", () => {
     expect(orderChats(chats, "").map((c) => c.key)).toEqual(["engineer", "chief", "reviewer", "critic"]);
     expect(pinsOf(chats)).toEqual(["engineer", "chief"]);
     expect(latestChat(chats)).toBe("reviewer");
+  });
+
+  it("open at start where you were, else at your first pinned chat, else the latest to have anything in it", () => {
+    expect(chatToOpen(chats, "critic")).toBe("critic");
+    expect(chatToOpen(chats, "room:gone")).toBe("engineer");
+    expect(chatToOpen(chats, null)).toBe("engineer");
+    const unpinned = chats.map((c) => ({ ...c, pinned: null }));
+    unpinned[0] = { ...unpinned[0], last: { author: "chief", text: "Hey!", at: "" } }; // the chief has said something
+    expect(chatToOpen(unpinned, null)).toBe("chief"); // ahead of newer, empty chats
   });
 
   it("move, pin and unpin", () => {
