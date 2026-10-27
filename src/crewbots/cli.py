@@ -15,7 +15,7 @@ from typing import Any
 
 import httpx
 
-from crewbots import api, crew, doctor, paths, typescript, worktree
+from crewbots import api, crew, doctor, paths, reset, typescript, worktree
 from crewbots import routines as routines_module
 from crewbots import service as svc
 from crewbots.backends import BACKENDS, Access, RunSpec
@@ -100,6 +100,9 @@ def main(argv: list[str] | None = None) -> int:
     memory.add_argument("bots", nargs="*", help="which bots (default: every one)")
     memory.add_argument("--weekly", action="store_true", help="also merge duplicate notes")
     sub.add_parser("doctor", help="check the CLIs, the daemon, the database and the disk, and say how to fix or clean up")
+    over = sub.add_parser("reset", help="start the crew over: its chats, sessions, memory, pages and projects move into a "
+                                        "backup, and its bots and setup stay (the daemon stopped)")
+    over.add_argument("--yes", action="store_true", help="don't ask first")
     restart = sub.add_parser("restart", help="restart the daemon; turns it cuts off carry on by themselves after")
     restart.add_argument("--when-idle", action="store_true",
                          help="start no new turn, and restart once the ones running have finished")
@@ -369,6 +372,20 @@ def _doctor(args: argparse.Namespace) -> int:
     return 1 if any(f.ok is False for f in findings) else 0
 
 
+def _reset(args: argparse.Namespace) -> int:
+    if not args.yes:
+        if not sys.stdin.isatty():
+            raise reset.ResetError("starting the crew over asks first: say --yes to skip that")
+        answer = input("Start the crew over? Its chats, sessions, memory, pages and projects move into a backup; its "
+                       "bots and setup stay. [y/N] ")
+        if answer.strip().lower() not in ("y", "yes"):
+            return 1
+    done = reset.reset(args.home)
+    print(f"started the crew over: {done.tasks} chats and threads, and {len(done.moved)} files and folders, are in "
+          f"{done.backup}")
+    return 0
+
+
 def _watch(args: argparse.Namespace) -> int:
     return _follow(_client(args), args.task_id)
 
@@ -454,7 +471,7 @@ COMMANDS = {
     "cancel": _cancel, "diff": _diff, "review": _review, "merge": _merge, "skills": _skills, "service": _service,
     "openapi": _openapi, "run": _run, "routines": _routines, "budgets": _budgets, "log": _log, "memory": _memory,
     "checkin": _checkin, "digest": _digest, "events": _events, "intents": _intents, "release": _release, "reload": _reload,
-    "restart": _restart, "doctor": _doctor,
+    "restart": _restart, "doctor": _doctor, "reset": _reset,
 }
 
 
