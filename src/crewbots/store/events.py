@@ -32,8 +32,8 @@ class Events:
     def append_event(self, task_id: str, event: Event | None = None, *, kind: str | None = None,
                      data: dict[str, Any] | None = None) -> StoredEvent:
         """Stores a backend event, or a crewbots one (`kind` and `data`, e.g. a user message)."""
-        if event is not None:
-            kind, data = event.kind, {k: v for k, v in asdict(event).items() if k != "kind"}
+        if event is not None:  # a tool result's images only when it had some, as nearly none do
+            kind, data = event.kind, {k: v for k, v in asdict(event).items() if k != "kind" and (v or k != "images")}
         assert kind is not None
         now = _now()
         cur = self.db.execute(

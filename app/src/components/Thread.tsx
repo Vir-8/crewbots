@@ -126,7 +126,7 @@ function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>
         break;
       case "text":
         flush();
-        out.push({ kind: "say", id: e.id, text: d.text, tag: d.digest ? "Morning digest" : d.level === "needs_you" ? "Needs you" : d.checkin ? "Checked in on its own" : undefined, raised: d.proactive_id });
+        out.push({ kind: "say", id: e.id, text: d.text, tag: d.digest ? "Morning digest" : d.level === "needs_you" ? "Needs you" : d.checkin ? "Checked in on its own" : undefined, raised: d.proactive_id, files: d.files });
         break;
       case "shared":
         flush();

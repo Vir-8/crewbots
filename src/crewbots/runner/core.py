@@ -48,6 +48,7 @@ from crewbots.events import (
     Notice,
     RateLimit,
     SessionStarted,
+    Text,
     ToolCall,
     ToolResult,
     Usage,
@@ -157,6 +158,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         self.limits: dict[str, dict[str, RateLimit]] = {}  # plan → window → the latest the CLI reported
         self._seat_depth: dict[str, int] = {}  # seat task → the depth of the room message that woke it
         self._owed: set[str] = set()  # seats @mentioned by name since their last reply, which owe the room one
+        self._shared_now: dict[str, set[Path]] = {}  # task → files it shared this turn, which its reply needn't show
         # A code review's tools (reading the repo on GitHub), given its task; None where it has your local copy.
         self.review_tools: Callable[[Task], Any] | None = None
 
@@ -405,6 +407,8 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
             done: Done | None = None
             stalled = False
             looked_at: dict[str, str] = {}
+            started = time.time()  # a text file a reply names counts as made by it if it changed since
+            self._shared_now[task_id] = set()
             try:
                 if open_session:
                     stream = open_session.session.turn(prompt)
@@ -434,6 +438,9 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
                             elif isinstance(event, ToolResult) and event.images:  # as files, not in the database
                                 kept = await asyncio.to_thread(self._kept_images, event.images, looked_at.get(event.id))
                                 event = replace(event, images=kept)
+                            elif isinstance(event, Text) and (named := self._mentioned(task, cwd, event.text, started)):
+                                self._record(task_id, kind="text", data={"text": event.text, "files": named})
+                                continue
                             self._record(task_id, event)
                         match event:
                             case SessionStarted(session_id=sid):
@@ -472,7 +479,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
                 self._set(task_id, status=Status.NEEDS_INPUT, result=done.final_text, turns=task.turns + 1)
             else:
                 if task.kind == "seat" and task.room_id:
-                    self._seat_replied(task, done.final_text)
+                    self._seat_replied(task, done.final_text, self._mentioned(task, cwd, done.final_text, started))
                 await self._maybe_compact(task_id, open_session, bot)
                 # Not idle yet if messages are waiting: the next turn starts right away, and watchers should not stop.
                 next_status = Status.QUEUED if self._waiting.get(task_id) else Status.IDLE

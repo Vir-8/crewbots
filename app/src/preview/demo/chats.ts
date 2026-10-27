@@ -1,6 +1,6 @@
 // Chats: one ongoing chat with each bot. The chief's opened the work above as threads, so they hang from it.
 
-import { files } from "./files";
+import { files, made } from "./files";
 import { bots, done, emit, message, say, task, tasks, tick, tool } from "./make";
 import type { Attachment, Room } from "../../types";
 
@@ -25,6 +25,8 @@ for (const b of bots) {
   message(chief, "user", "Merge the login fix. Then add CSV export to the reports page; exports should respect the filters.");
   tool(chief, "mcp__crewbots__start_thread", { title: "Add CSV export", goal: "…" }, "Opened thread");
   say(chief, "Merged. The CSV export is with the engineer now, and the reviewer and critic will check it before it comes to you.");
+  message(chief, "user", "Write up the Q3 retro and a Q4 plan from it.");
+  emit(chief, "text", { text: "Done: the retro is `docs/retro/q3-retro.pdf`, and the plan it led to is `docs/retro/q4-plan.md`.", files: [made.retro, made.plan] });
   done(chief);
 
 

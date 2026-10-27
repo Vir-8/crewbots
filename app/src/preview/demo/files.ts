@@ -15,6 +15,12 @@ export function shared(name: string, mime: string, url: string, size: number): A
   return { id, name, path, mime, size, kind: mime.startsWith("image/") ? "image" : "file" };
 }
 
+/** A file a bot named in its reply, shown where it made it rather than copied. */
+export function named(path: string, mime: string, url: string, size: number): Attachment {
+  demoFiles.set(path, url);
+  return { id: "", name: path.split("/").at(-1)!, path, mime, size, kind: mime.startsWith("image/") ? "image" : "file" };
+}
+
 const text = (body: string, mime = "text/plain") => `data:${mime};charset=utf-8,${encodeURIComponent(body)}`;
 
 /** A render, as a 3D tool would make one: a lit sphere on a floor. */
@@ -125,3 +131,9 @@ export const files = {
   viewport: shared("image.png", "image/png", render(), 96_000), // Blender's screenshot of its viewport, over MCP
 };
 demoFiles.set(`${files.notes.path}.png`, text(firstPage, "image/svg+xml")); // Quick Look's first page of it
+
+export const made = {
+  retro: named("~/code/acme-web/docs/retro/q3-retro.pdf", "application/pdf", "", 96_000),
+  plan: named("~/code/acme-web/docs/retro/q4-plan.md", "text/markdown", text("# Q4 plan\n\n- Ship the filtered export to everyone\n- Cut the test suite to 15 seconds\n- Try recharts behind a flag\n"), 140),
+};
+demoFiles.set(`${made.retro.path}.png`, text(firstPage.replace("Release notes 2.4", "Q3 retro"), "image/svg+xml"));

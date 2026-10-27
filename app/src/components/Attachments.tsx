@@ -86,7 +86,18 @@ export function shownAs(file: { name: string; mime: string }): Shown {
  * the start of a text file; anything else as a chip that opens it. */
 export function Files({ items, mine, compact }: { items: Attachment[]; mine?: boolean; compact?: boolean }) {
   const [enlarged, setEnlarged] = useState<Attachment | null>(null);
-  if (!items.length) return null;
+  // A file a bot named where it made it (no attachment id) is opened to the window before it's drawn.
+  const elsewhere = items.filter((f) => !f.id).map((f) => f.path).join("\n");
+  const [ready, setReady] = useState(!elsewhere);
+  useEffect(() => {
+    if (!elsewhere) return;
+    let live = true;
+    bridge.showFiles(elsewhere.split("\n")).finally(() => live && setReady(true));
+    return () => {
+      live = false;
+    };
+  }, [elsewhere]);
+  if (!items.length || !ready) return null;
   return (
     <div className={`message-files ${mine ? "mine" : ""} ${compact ? "compact" : ""}`}>
       {items.map((file) => (

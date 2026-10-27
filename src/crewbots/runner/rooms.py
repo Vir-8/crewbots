@@ -233,7 +233,7 @@ class Rooms:
         self.send(seat.id, "\n\n".join(f"[{m['author']}]: {m['text']}{attachments_module.listing(m['attachments'])}"
                                        for m in unseen), sender="room")
 
-    def _seat_replied(self, seat: Task, text: str) -> None:
+    def _seat_replied(self, seat: Task, text: str, files: list[dict[str, Any]] | None = None) -> None:
         text = text.strip()
         owed = seat.id in self._owed
         self._owed.discard(seat.id)
@@ -241,4 +241,4 @@ class Rooms:
             if owed:  # asked by name, it says something: once, so a bot that really has nothing can still pass
                 self.send(seat.id, prompts.text("mentioned", self.crew.home, no_reply=NO_REPLY), sender="crewbots")
             return
-        self.post(seat.room_id, seat.bot, text, depth=self._seat_depth.get(seat.id, 0) + 1)
+        self.post(seat.room_id, seat.bot, text, depth=self._seat_depth.get(seat.id, 0) + 1, attachments=files or None)
