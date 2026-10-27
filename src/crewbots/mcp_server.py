@@ -14,7 +14,7 @@ import httpx
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
-from crewbots.crew_tools import describe, recall_text
+from crewbots.crew_tools import describe, recall_text, shared_text
 
 INSTRUCTIONS = "Tools for working in a crewbots crew: hand work back, escalate decisions, and (for coordinators) delegate."
 
@@ -92,6 +92,10 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
     def post(text: str, room: str | None = None) -> str:
         message = call("POST", "/bot/post", {"text": text, "room": room})
         return f"Posted in the group chat ({message['room_id']})."
+
+    @server.tool(description=describe("share"))
+    def share(files: list[str], text: str = "", room: str | None = None) -> str:
+        return shared_text(call("POST", "/bot/share", {"files": files, "text": text, "room": room}))
 
     @server.tool(description=describe("open_group"))
     def open_group(title: str, members: list[str], lead: str | None = None) -> str:

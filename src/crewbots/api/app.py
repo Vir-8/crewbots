@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from crewbots import crew as crew_module
 from crewbots.api.context import API_VERSION, Context
 from crewbots.api.routes import attachments, bot, bots, chats, crew, events, mcp, reviews, routines, tasks, usage
+from crewbots.attachments import AttachmentError
 from crewbots.memory import MemoryError
 from crewbots.reviews import Reviews, ReviewTools
 from crewbots.routines import RoutineError
@@ -75,6 +76,10 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
 
     @app.exception_handler(MemoryError)
     async def memory_error(request: Request, e: MemoryError):
+        return JSONResponse({"detail": str(e)}, status_code=422)
+
+    @app.exception_handler(AttachmentError)
+    async def attachment_error(request: Request, e: AttachmentError):
         return JSONResponse({"detail": str(e)}, status_code=422)
 
     @app.exception_handler(RoutineError)

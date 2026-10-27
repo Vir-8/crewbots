@@ -356,7 +356,7 @@ async def test_workers_cant_reach_coordinator_tools(store, tmp_path):
 
     assert {d.name for d in tools.definitions()} == {
         "handoff", "escalate", "review", "remember", "forget", "recall", "start_thread", "post", "delegate", "tasks",
-        "message", "ask", "open_group", "add_to_group", "update_state", "remind_on", "propose_routine"}
+        "message", "ask", "open_group", "add_to_group", "update_state", "remind_on", "propose_routine", "share"}
     with pytest.raises(ToolRefused, match="not one of this bot's crew tools"):
         await tools.call("propose_merge", {"task_id": "t_x", "summary": "x"})
     reply = await tools.call("handoff", {"done": "built", "output": ["a.py"]})

@@ -17,6 +17,7 @@ REPORT_RESULT_CHARS = 3000
 SUBSCRIBER_QUEUE = 10_000
 MCP_SERVER_NAME = "crewbots"
 MCP_COMMAND = (sys.executable, "-m", "crewbots.mcp_server")
+WORK = "work"  # in the crew's folder: where each writing bot with no folder of its own works
 
 
 class UnknownBot(KeyError):

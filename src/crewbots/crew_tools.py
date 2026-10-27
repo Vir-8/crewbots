@@ -56,6 +56,7 @@ SPECS: dict[str, Spec] = {
                                      "on": STRING, "repo": STRING}, ["name", "description", "goal"])),
     "start_thread": Spec(_object({"title": STRING, "goal": STRING}, ["title", "goal"])),
     "post": Spec(_object({"text": STRING, "room": STRING}, ["text"])),
+    "share": Spec(_object({"files": STRINGS, "text": STRING, "room": STRING}, ["files"])),
     "ask": Spec(_object({"bot": STRING, "question": STRING}, ["bot", "question"])),
     "open_group": Spec(_object({"title": STRING, "members": STRINGS, "lead": STRING}, ["title", "members"])),
     "add_to_group": Spec(_object({"bot": STRING, "room": STRING}, ["bot"])),
@@ -99,6 +100,7 @@ class CrewTools:
 
     async def call(self, name: str, args: dict[str, Any]) -> str:
         """Runs one tool and returns its result for the bot; raises ToolRefused with the reason it can't."""
+        from crewbots.attachments import AttachmentError
         from crewbots.crew import CrewError
         from crewbots.memory import MemoryError
         from crewbots.runner import NotAllowed, UnknownBot
@@ -180,13 +182,23 @@ class CrewTools:
                 case "post":
                     message = r.post_from(me, args["text"], args.get("room") or None)
                     return f"Posted in the group chat ({message['room_id']})."
+                case "share":
+                    files = [args["files"]] if isinstance(args["files"], str) else [str(f) for f in args["files"]]
+                    return shared_text(await r.share(me, files, args.get("text") or "", args.get("room") or None))
         except NotAllowed as e:  # logged with what bots do to each other, as the API logs it
             self.runner.store.log_agent("refused", self.runner.store.get_task(self.task_id).bot, task_id=self.task_id,
                                         text=f"{name}: {e}")
             raise ToolRefused(str(e)) from None
-        except (UnknownBot, MemoryError, CrewError) as e:
+        except (UnknownBot, MemoryError, CrewError, AttachmentError) as e:
             raise ToolRefused(str(e.args[0] if e.args else e)) from None
         raise ToolRefused(f"{name} is not implemented")
+
+
+def shared_text(shared: dict[str, Any]) -> str:
+    names = ", ".join(f["name"] for f in shared["files"])
+    where = f"in the group chat ({shared['room_id']})" if shared.get("room_id") else "with the user, here"
+    them = "it" if len(shared["files"]) == 1 else "them"
+    return f"Shared {names} {where}. They see {them} under your message; no need to repeat the path."
 
 
 def recall_text(hits: list[dict[str, Any]]) -> str:

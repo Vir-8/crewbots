@@ -14,7 +14,7 @@ import "../styles/chat.css";
 type Block =
   | { kind: "you"; id: number; text: string; files: Attachment[] }
   | { kind: "brief"; id: number; from: string; text: string }
-  | { kind: "say"; id: number; text: string; tag?: string; raised?: number }
+  | { kind: "say"; id: number; text: string; tag?: string; raised?: number; files?: Attachment[] }
   | { kind: "steps"; id: number; calls: { call: StoredEvent; result?: StoredEvent }[] }
   | { kind: "work"; id: number; task: Task }
   | { kind: "asked"; id: number; bot: string; question: string; task?: Task }
@@ -26,7 +26,7 @@ type Block =
 
 // Crew tools that are shown as what they did (a card, a verdict, a question), not as steps.
 const SHOWN_ELSEWHERE = new Set(
-  ["delegate", "start_thread", "post", "handoff", "review", "escalate", "propose_merge", "message", "ask"].map((t) => `mcp__crewbots__${t}`),
+  ["delegate", "start_thread", "post", "share", "handoff", "review", "escalate", "propose_merge", "message", "ask"].map((t) => `mcp__crewbots__${t}`),
 );
 
 /** A task's conversation, as people would tell it: what was said and decided, with the mechanics folded away. */
@@ -99,6 +99,13 @@ function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>
       } else if (d.name === "mcp__crewbots__post") {
         flush();
         out.push({ kind: "line", id: e.id, text: `Said in a group chat: ${oneLine(d.input?.text ?? "", 160)}`, icon: "message" });
+      } else if (d.name === "mcp__crewbots__share" && d.input?.room) {
+        flush(); // shared in a group chat, it shows there; here, a line says so
+        if (result?.data.is_error) out.push({ kind: "line", id: e.id, text: `Couldn't share: ${oneLine(result.data.output, 160)}`, icon: "alert", tone: "bad" });
+        else out.push({ kind: "line", id: e.id, text: `Shared in a group chat: ${(d.input.files ?? []).map((f: string) => f.split("/").at(-1)).join(", ")}`, icon: "message" });
+      } else if (d.name === "mcp__crewbots__share" && result?.data.is_error) {
+        flush();
+        out.push({ kind: "line", id: e.id, text: `Couldn't share: ${oneLine(result.data.output, 160)}`, icon: "alert", tone: "bad" });
       } else if (d.name === "mcp__crewbots__message") {
         flush();
         const to = tasks.get(d.input?.task_id)?.bot ?? "the task";
@@ -120,6 +127,10 @@ function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>
       case "text":
         flush();
         out.push({ kind: "say", id: e.id, text: d.text, tag: d.digest ? "Morning digest" : d.level === "needs_you" ? "Needs you" : d.checkin ? "Checked in on its own" : undefined, raised: d.proactive_id });
+        break;
+      case "shared":
+        flush();
+        out.push({ kind: "say", id: e.id, text: d.text ?? "", files: d.attachments ?? [] });
         break;
       case "escalation":
         flush();
@@ -232,7 +243,8 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
       return (
         <div className="say">
           {block.tag && <div className={`say-tag ${block.tag === "Needs you" ? "urgent" : ""}`}>{block.tag}</div>}
-          <Markdown text={block.text} onSelect={props.onOpen} />
+          {block.text && <Markdown text={block.text} onSelect={props.onOpen} />}
+          {block.files && <MessageFiles items={block.files} />}
           {block.raised && <Reactions crew={props.crew} id={block.raised} />}
         </div>
       );

@@ -14,6 +14,8 @@ You have crewbots tools, from the MCP server named crewbots:
   and can read, and the answer arrives as your next message, so end your turn after asking.
 - `post(text, room?)`: say something in a group chat, by default the crew's own. @mention a teammate by name to bring
   them in.
+- `share(files, text?, room?)`: show the user files you made (a render, a chart, a PDF, a page, a recording), under
+  your message, rather than only naming their paths.
 - `open_group(title, members, lead?)` and `add_to_group(bot, room?)`: open a group chat with teammates, or bring one
   into a group chat you're in, when something needs several of you at once.
 - `propose_routine(name, description, goal, schedule? or on?, repo?)`: when the user asks for something recurring, a

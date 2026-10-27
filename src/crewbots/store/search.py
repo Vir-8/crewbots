@@ -10,7 +10,7 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
-SEARCHABLE = {"message", "text", "handoff", "review", "escalation", "merge_proposed"}
+SEARCHABLE = {"message", "text", "shared", "handoff", "review", "escalation", "merge_proposed"}
 
 SNIPPET_TOKENS = 18
 # What a kind of row is worth beside a message: a task's title says what it's about, a handoff what came of it.
@@ -89,6 +89,8 @@ def _searchable_text(kind: str, data: dict[str, Any]) -> str:
     match kind:
         case "message" | "text":
             return str(data.get("text", ""))
+        case "shared":
+            return " ".join([str(data.get("text", "")), *(a.get("name", "") for a in data.get("attachments") or [])])
         case "handoff":
             return " ".join(str(data.get(k, "")) for k in ("done", "open", "needs")) + " " + " ".join(data.get("output") or [])
         case "review":

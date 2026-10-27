@@ -194,9 +194,15 @@ class Rooms:
         said = [m.lower() for m in MENTION.findall(text)]
         return list(dict.fromkeys(members[m] for m in said if m in members)), EVERYONE in said
 
-    def post_from(self, task_id: str, text: str, room_id: str | None = None) -> dict[str, Any]:
+    def post_from(self, task_id: str, text: str, room_id: str | None = None,
+                  attachments: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         """The `post` tool: a bot says something in a room, from wherever it's working."""
         task = self.store.get_task(task_id)
+        room = self._room_to_post(task, room_id)
+        return self.post(room["id"], task.bot, text, depth=self._seat_depth.get(task_id, 0) + 1, attachments=attachments)
+
+    def _room_to_post(self, task: Task, room_id: str | None) -> dict[str, Any]:
+        """Where a bot's post goes: the room it names, else the one it's in, else the crew's; one it's a member of."""
         if room_id is None:
             room_id = task.room_id if task.kind == "seat" else self.crew_room()["id"]
         try:
@@ -207,7 +213,7 @@ class Rooms:
             raise NotAllowed(f"{task.bot} isn't in the group chat {room['title']!r}")
         if room["archived_at"]:
             raise NotAllowed(f"the group chat {room['title']!r} is archived")
-        return self.post(room_id, task.bot, text, depth=self._seat_depth.get(task_id, 0) + 1)
+        return room
 
     def _wake_seat(self, room: dict[str, Any], bot: str, depth: int, owes_reply: bool = False) -> None:
         if bot not in self.crew.bots:

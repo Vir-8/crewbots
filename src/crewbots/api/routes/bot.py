@@ -23,6 +23,7 @@ from crewbots.api.schemas import (
     ReviewBody,
     RoomOut,
     SearchHit,
+    ShareBody,
     StateBody,
     ThreadBody,
 )
@@ -119,6 +120,10 @@ def routes(c: Context) -> APIRouter:
     @v1.post("/bot/post", status_code=201)
     async def bot_post(request: Request, body: PostBody):
         return runner.post_from(request.state.task.id, body.text, body.room or None)
+
+    @v1.post("/bot/share", status_code=201)
+    async def bot_share(request: Request, body: ShareBody):
+        return await runner.share(request.state.task.id, body.files, body.text, body.room or None)
 
     @v1.post("/bot/review/{tool}")
     async def bot_review_tool(request: Request, tool: str, body: dict[str, Any]):

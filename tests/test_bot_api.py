@@ -149,7 +149,7 @@ async def test_workers_delegate_but_only_coordinators_add_bots_and_propose_merge
 
     assert worker == {"handoff", "escalate", "review", "remember", "forget", "recall", "start_thread", "post",
                       "delegate", "tasks", "message", "ask", "open_group", "add_to_group", "update_state", "remind_on",
-                      "propose_routine"}
+                      "propose_routine", "share"}
     assert coordinator == worker | {"add_bot", "propose_merge"}
 
 

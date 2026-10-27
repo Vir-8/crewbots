@@ -47,6 +47,7 @@ from crewbots.runner.checkins import Checkins
 from crewbots.runner.common import (
     MCP_COMMAND,
     MCP_SERVER_NAME,
+    WORK,
     Bus,
     NotAllowed,
     OpenSession,
@@ -56,6 +57,7 @@ from crewbots.runner.common import (
 )
 from crewbots.runner.delegation import MAX_CHILDREN, MAX_DEPTH, MAX_OUT, Delegation
 from crewbots.runner.dreams import Dreams
+from crewbots.runner.files import Files
 from crewbots.runner.holds import Holds
 from crewbots.runner.reviews import Reviewing
 from crewbots.runner.rooms import Rooms
@@ -73,12 +75,10 @@ FLUSH_IDLE_S = 3000.0  # 50 minutes into idleness, while the cache is warm, a bi
 RETRY_WAITS_S = (30.0, 120.0, 300.0)
 STALL_S = 1200.0  # no event at all from a turn for this long: it's stuck, so it's stopped and tried again
 
-WORK = "work"  # in the crew's folder: where each writing bot with no folder of its own works
 
-
-class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Holds, Dreams, Checkins):
-    """Runs the crew's tasks. Its parts are by area: sessions, rooms, delegation, reviews, work, holds, dreams (memory
-    consolidated overnight) and check-ins."""
+class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams, Checkins):
+    """Runs the crew's tasks. Its parts are by area: sessions, rooms, delegation, reviews, work, files bots show the
+    user, holds, dreams (memory consolidated overnight) and check-ins."""
 
     def __init__(
         self,

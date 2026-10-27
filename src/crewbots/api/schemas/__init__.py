@@ -18,6 +18,7 @@ from crewbots.api.schemas.bot import (
     RemindOn,
     ReviewBody,
     SearchHit,
+    ShareBody,
     StateBody,
     ThreadBody,
 )
@@ -231,6 +232,7 @@ __all__ = [
     "RoutineOut",
     "RoutinesOut",
     "SearchHit",
+    "ShareBody",
     "ProposedRoutine",
     "RemindOn",
     "StateBody",

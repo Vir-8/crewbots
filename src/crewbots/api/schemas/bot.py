@@ -68,6 +68,12 @@ class PostBody(BaseModel):
     text: str
     room: str | None = None
 
+
+class ShareBody(BaseModel):
+    files: list[str]
+    text: str = ""
+    room: str | None = None
+
 class Recall(BaseModel):
     query: str
 

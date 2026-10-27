@@ -381,6 +381,8 @@ export function describeCall(name: string, input: Record<string, any>): string {
       return `Reading ${oneLine(String(input.url ?? ""), 60)}`;
     case "delegate":
       return `Handing work to ${input.bot}`;
+    case "share":
+      return `Sharing ${(input.files ?? []).map(file).join(", ")}`;
     case "tasks":
       return "Checking on the crew";
     default:
