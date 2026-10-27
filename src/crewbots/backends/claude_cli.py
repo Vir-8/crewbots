@@ -12,7 +12,9 @@ from crewbots.backends.credentials import private_paths, without_credentials
 from crewbots.backends.process import JsonlProcess, stream_jsonl
 from crewbots.events import Compacted, Done, Event, Notice, RateLimit, SessionStarted, Text, ToolCall, ToolResult, Usage
 
-READ_ONLY_TOOLS = "Read,Glob,Grep"
+# ToolSearch loads an MCP tool's definition when it's needed. Left out, Claude Code puts every MCP tool's definition in
+# every request instead: four creative-tool servers took a read-only bot's turns from 9K tokens to 91K.
+READ_ONLY_TOOLS = "Read,Glob,Grep,ToolSearch"
 WEB_TOOLS = "WebFetch,WebSearch"  # with network on; this backend can't check a fetch's host, so a host list is off
 # Claude Code's OS sandbox for a writing bot's shell commands: writes kept to the working folder, no opting out.
 SANDBOX = {"enabled": True, "autoAllowBashIfSandboxed": False, "allowUnsandboxedCommands": False}

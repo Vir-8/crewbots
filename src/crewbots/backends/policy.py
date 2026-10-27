@@ -35,6 +35,7 @@ READ_TOOLS = {"Read", "Glob", "Grep", "LS", "NotebookRead", "TodoWrite"}
 # Claude Code runs these itself, outside the shell's sandbox, so they follow the network setting on their own.
 WEB_TOOLS = {"WebFetch", "WebSearch"}
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
+LOOKUP_TOOLS = {"ToolSearch"}  # finds an MCP tool's definition; using the tool is checked on its own
 # A guardrail, not a boundary: a determined command can always get around a pattern (containers are the real one).
 OUTWARD = re.compile(
     r"\bgit\b(?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*\s+(push|merge|rebase|reset\s+--hard|branch\s+-D|tag)\b"
@@ -69,6 +70,8 @@ class Policy:
             return None
         if name in READ_TOOLS:
             return self.check_read(args)
+        if name in LOOKUP_TOOLS:
+            return None
         if name in WEB_TOOLS:
             return self.check_web(name, args)
         if self.access is Access.READ_ONLY:

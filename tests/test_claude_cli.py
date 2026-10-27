@@ -59,8 +59,8 @@ def test_read_only_allows_reading_tools_and_crewbots_mcp_only():
     argv = ClaudeCLI().argv(spec)
 
     assert argv[argv.index("--permission-mode") + 1] == "dontAsk"
-    assert argv[argv.index("--tools") + 1] == "Read,Glob,Grep"
-    assert argv[argv.index("--allowedTools") + 1] == "Read,Glob,Grep,mcp__crew"
+    assert argv[argv.index("--tools") + 1] == "Read,Glob,Grep,ToolSearch"  # MCP tools load when they're needed
+    assert argv[argv.index("--allowedTools") + 1] == "Read,Glob,Grep,ToolSearch,mcp__crew"
     assert "--strict-mcp-config" in argv
     config = json.loads(argv[argv.index("--mcp-config") + 1])
     assert config == {"mcpServers": {"crew": {"type": "stdio", "command": "crewbots-mcp", "args": [], "env": {}}}}

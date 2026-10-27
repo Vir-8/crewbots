@@ -48,6 +48,7 @@ def test_read_only_bots_read_and_nothing_else(worktree):
     policy = ClaudePolicy(Access.READ_ONLY, worktree, {"crewbots"})
 
     assert policy.check_tool("Read", {"file_path": "/etc/hosts"}) is None
+    assert policy.check_tool("ToolSearch", {"query": "select:mcp__blender__get_scene"}) is None  # loads a definition
     assert policy.check_tool("Grep", {"pattern": "x"}) is None
     assert "read-only" in policy.check_tool("Edit", {"file_path": str(worktree / "a.py")})
     assert "read-only" in policy.check_tool("Bash", {"command": "ls"})
@@ -133,8 +134,8 @@ def test_a_read_only_bot_gets_the_web_tools_only_with_network(worktree):
         spec = RunSpec(prompt="x", cwd=worktree, access=Access.READ_ONLY, network=network)
         return ClaudeAgent(cli_path="claude").options(spec, ClaudeAgentSession(spec)).tools
 
-    assert tools(False) == ["Read", "Glob", "Grep"]
-    assert tools(True) == ["Read", "Glob", "Grep", "WebFetch", "WebSearch"]
+    assert tools(False) == ["Read", "Glob", "Grep", "ToolSearch"]
+    assert tools(True) == ["Read", "Glob", "Grep", "ToolSearch", "WebFetch", "WebSearch"]
 
 
 async def test_a_refusal_is_reported_and_tells_claude_why(worktree):
@@ -215,7 +216,7 @@ def test_the_cli_gets_only_crewbots_tools_and_the_repos_settings(tmp_path, monke
 
     assert options.strict_mcp_config and options.setting_sources == ["project", "local"]
     assert options.system_prompt == {"type": "preset", "preset": "claude_code", "append": "You review."}
-    assert options.tools == ["Read", "Glob", "Grep"] and options.permission_mode == "default"
+    assert options.tools == ["Read", "Glob", "Grep", "ToolSearch"] and options.permission_mode == "default"
     assert options.can_use_tool is session.policy
     assert set(options.mcp_servers) == {"resolve"}  # no crew tools without a CrewTools
     assert options.env == {"ANTHROPIC_API_KEY": "", "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
