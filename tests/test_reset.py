@@ -3,16 +3,18 @@ stay, and the chief greets the user again."""
 
 import json
 import os
+import subprocess
+import sys
 from datetime import datetime
 
 import pytest
 from fakes import FakeBackend
 
+from crewbots import cards, paths, reset
 from crewbots import crew as crew_module
-from crewbots import paths, reset
 from crewbots.runner import Runner
 from crewbots.runner.welcome import STARTED
-from crewbots.store import Store
+from crewbots.store import Status, Store
 
 WHEN = datetime(2026, 10, 27, 14, 5)
 
@@ -38,12 +40,13 @@ def home(tmp_path):
     bots', code review's, and the user's own."""
     home = crew_module.init(tmp_path / "crew")
     store = Store(home / "crewbots.db")
-    chat = store.create_task("chief", "Chat with chief", kind="chat")
+    chat = store.create_task("chief", "Chat with chief", kind="chat", status=Status.IDLE)
     store.update_task(chat.id, session_id="chat-now")
     store.append_event(chat.id, kind="message", data={"from": "user", "text": "I make cozy games"})
     store.append_event(chat.id, kind="session_started", data={"session_id": "chat-before"})
-    store.create_task("engineer", "Fix the build", parent_id=chat.id)
-    review = store.create_task("reviewer:claude:sonnet:high", "Review acme/web#1", kind="review", pr="acme/web#1")
+    store.create_task("engineer", "Fix the build", parent_id=chat.id, status=Status.IDLE)
+    review = store.create_task("reviewer:claude:sonnet:high", "Review acme/web#1", kind="review", pr="acme/web#1",
+                               status=Status.IDLE)
     store.update_task(review.id, session_id="review-session")
     store.append_event(review.id, kind="message", data={"from": "user", "text": "Review acme/web#1"})
     store.append_event(review.id, kind="text", data={"text": "An off-by-one in the pager"})
@@ -144,3 +147,61 @@ def test_not_while_the_daemon_runs(home):
     with pytest.raises(reset.ResetError, match="daemon is running"):
         reset.reset(home, WHEN)
     assert (home / "memory").is_dir() and not (paths.root() / "backups").exists()
+
+
+def test_the_names_given_to_bots_come_off(home):
+    cards.save_card(home, "chief", {"display_name": "Roger"}, None)
+
+    done = reset.reset(home, WHEN)
+
+    assert done.unnamed == ["chief"] and crew_module.load(home).bots["chief"].display_name is None
+    assert "display_name: Roger" in (done.backup / "bots" / "chief.md").read_text()
+
+
+FAKE_LAUNCHCTL = """
+import json, os, signal, sys
+with open(os.environ["LAUNCHCTL_LOG"], "a") as f:
+    f.write(json.dumps(sys.argv[1:]) + "\\n")
+if sys.argv[1] == "print":
+    print("state = running\\n\\tpid = " + os.environ["DAEMON_PID"])
+elif sys.argv[1] == "bootout":  # the daemon shuts down, and takes its daemon.json with it
+    os.remove(os.environ["DAEMON_FILE"])
+    os.kill(int(os.environ["DAEMON_PID"]), signal.SIGTERM)
+"""
+
+
+@pytest.fixture
+def service(home, tmp_path, monkeypatch):
+    """The crew's daemon as the login service, stood in for: a process, its daemon.json, and a launchctl that stops it
+    and records what it was asked."""
+    daemon = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    (home / "daemon.json").write_text(json.dumps({"url": "http://127.0.0.1:1", "token": "t", "pid": daemon.pid}))
+    script, log = tmp_path / "launchctl.py", tmp_path / "launchctl.log"
+    script.write_text(FAKE_LAUNCHCTL)
+    for key, value in (("LAUNCHCTL_LOG", log), ("DAEMON_PID", daemon.pid), ("DAEMON_FILE", home / "daemon.json")):
+        monkeypatch.setenv(key, str(value))
+    yield (sys.executable, str(script)), lambda: [json.loads(line)[0] for line in log.read_text().splitlines()]
+    daemon.kill()
+    daemon.wait()
+
+
+def test_starting_over_stops_the_service_and_brings_it_back(home, service):
+    launchctl, asked = service
+
+    done = reset.start_over(home, launchctl=launchctl, when=WHEN)
+
+    assert done.tasks == 2 and asked() == ["print", "bootout", "bootstrap"]
+
+
+def test_not_while_the_crew_is_busy_or_the_daemon_isnt_the_service(home, service, monkeypatch):
+    launchctl, asked = service
+    store = Store(home / "crewbots.db")
+    store.create_task("engineer", "build it", status=Status.RUNNING)
+    store.close()
+
+    with pytest.raises(reset.ResetError, match="running, queued or held"):
+        reset.start_over(home, launchctl=launchctl, when=WHEN)
+    monkeypatch.setenv("DAEMON_PID", "1")  # the service is some other process
+    with pytest.raises(reset.ResetError, match="not as the login service"):
+        reset.start_over(home, launchctl=launchctl, when=WHEN)
+    assert asked() == ["print", "print"] and (home / "memory").is_dir()  # nothing stopped, nothing moved

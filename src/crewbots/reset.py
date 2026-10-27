@@ -3,29 +3,35 @@ and its setup stays as it is, so the chief greets the user again as it did the f
 
 Moved: every chat, thread and group chat with what was said in them, and the bots' sessions of them (their Claude
 Code and Codex session files); the bots' memory, and their folders in Documents, pages and all; the projects; and the
-files shared in chats. Kept: the bots and their role cards, the team's files, the routines, the skills, the MCP
-servers, and code review, which keeps its own reviews, drafts and sessions.
+files shared in chats. The names the user gave bots come off too (the chief asks again). Kept: the bots and the rest
+of their role cards, the team's files, the routines, the skills, the MCP servers, and code review, which keeps its
+own reviews, drafts and sessions.
 
-Nothing is deleted: the backup has the database as it was, and every file moved, by where it came from. The daemon
-mustn't be running, since it holds the database and the sessions.
+Nothing is deleted: the backup has the database as it was, every file moved, by where it came from, and the role
+cards that had names. `reset` needs the daemon stopped, since it holds the database and the sessions; `start_over`
+stops the login service for it, once the crew is idle, and brings it back.
 """
 
 import json
 import os
 import shutil
+import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from crewbots import cards, paths
 from crewbots import crew as crew_module
-from crewbots import paths
+from crewbots import service as svc
 from crewbots.discovery import _claude_cwd
 from crewbots.runner.welcome import STARTED
-from crewbots.store import Store
+from crewbots.store import Status, Store
 
 DB = "crewbots.db"
 DAEMON_FILE = "daemon.json"
 KEPT = "kind = 'review'"  # code review's own tasks, which stay with their events
+STOP_S = 30.0  # for the daemon to shut down once its service is stopped
 FOLDERS = ("memory", "projects", "attachments")  # in the crew's folder
 # Tables of the crew's conversations, and of what was brought in for it, cleared whole. The rest stay: code review's
 # drafts, the routines' state, what triggers have started on, the digests sent and what the crew noticed around it, so
@@ -43,6 +49,7 @@ class Reset:
     backup: Path
     tasks: int = 0  # chats, threads and group chats' seats cleared
     moved: list[Path] = field(default_factory=list)  # where each file or folder moved was
+    unnamed: list[str] = field(default_factory=list)  # bots whose names came off
 
 
 def reset(home: Path, when: datetime | None = None) -> Reset:
@@ -70,7 +77,43 @@ def reset(home: Path, when: datetime | None = None) -> Reset:
     codex = paths.codex_home() / "sessions"
     for path in _codex_sessions(codex, sessions, own):
         _move(path, done.backup / "sessions" / "codex" / path.relative_to(codex), done)
+    for bot in crew.bots.values():
+        if bot.display_name and bot.path:
+            (done.backup / "bots").mkdir(exist_ok=True)
+            shutil.copy2(bot.path, done.backup / "bots" / bot.path.name)
+            cards.save_card(home, bot.name, {"display_name": None}, None)
+            done.unnamed.append(bot.name)
     return done
+
+
+def start_over(home: Path, label: str = svc.LABEL, launchctl: Sequence[str] = ("launchctl",),
+               when: datetime | None = None) -> Reset:
+    """`reset`, with the crew's daemon running as the login service: once nothing is running, queued or held, stops
+    the service, resets, and loads it again, so the app reconnects to a fresh crew. A daemon run another way (by the
+    app itself, or `crewbots serve`) has to be stopped first."""
+    home = home.expanduser()
+    pid = _daemon_pid(home)
+    if pid is None:
+        return reset(home, when)
+    if svc.status(label, launchctl).pid != pid:
+        raise ResetError(f"the crew's daemon is running (pid {pid}), but not as the login service: stop it first")
+    store = Store(home / DB)
+    try:
+        busy = sum(len(store.list_tasks(status=s)) for s in (Status.RUNNING, Status.QUEUED, Status.HELD))
+    finally:
+        store.close()
+    if busy:
+        raise ResetError(f"{busy} task(s) are running, queued or held: start over once the crew is idle")
+    svc.stop(label, launchctl)
+    try:
+        deadline = time.monotonic() + STOP_S
+        while _daemon_pid(home) == pid and time.monotonic() < deadline:
+            time.sleep(0.2)
+        if _daemon_pid(home) == pid:
+            raise ResetError("the daemon didn't stop; nothing was reset")
+        return reset(home, when)
+    finally:
+        svc.load(label, launchctl)
 
 
 def _clear(store: Store, done: Reset) -> set[str]:

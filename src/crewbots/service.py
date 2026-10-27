@@ -2,7 +2,8 @@
 keeps running when the app is closed. The app attaches to it and never owns it.
 
 `crewbots service install` writes ~/Library/LaunchAgents/<label>.plist and loads it; `uninstall` unloads and removes
-it; `status` says whether it's installed and running.
+it; `status` says whether it's installed and running. `stop` and `load` take it down and bring it back as installed,
+for starting a crew over (reset.py).
 """
 
 import os
@@ -75,6 +76,17 @@ def uninstall(label: str = LABEL, launchctl: Sequence[str] = ("launchctl",)) -> 
     _launchctl(launchctl, "bootout", f"{_domain()}/{label}", check=False)  # SIGTERM: the daemon shuts down cleanly
     plist_path(label).unlink(missing_ok=True)
     return status(label, launchctl)
+
+
+def stop(label: str = LABEL, launchctl: Sequence[str] = ("launchctl",)) -> None:
+    """Unloads the service, keeping it installed: SIGTERM, so the daemon shuts down cleanly, and nothing starts it
+    again until `load`."""
+    _launchctl(launchctl, "bootout", f"{_domain()}/{label}", check=False)
+
+
+def load(label: str = LABEL, launchctl: Sequence[str] = ("launchctl",)) -> None:
+    """Loads the installed service again, as it was installed (it starts at once), rather than writing it anew."""
+    _launchctl(launchctl, "bootstrap", _domain(), str(plist_path(label)))
 
 
 def start(label: str = LABEL, launchctl: Sequence[str] = ("launchctl",)) -> None:
