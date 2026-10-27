@@ -2,14 +2,14 @@ import subprocess
 
 import pytest
 
-from crewbots import worktree
+from crewbots import paths, worktree
 
 
 @pytest.fixture
 def repo(tmp_path):
     path = tmp_path / "repo"
     path.mkdir()
-    git = lambda *a: subprocess.run(["git", *a], cwd=path, check=True, capture_output=True)  # noqa: E731
+    git = lambda *a: subprocess.run([paths.git(), *a], cwd=path, check=True, capture_output=True)  # noqa: E731
     git("init", "-q", "-b", "main")
     (path / "README.md").write_text("hello\n")
     git("add", ".")
@@ -49,7 +49,7 @@ def test_remove_deletes_the_checkout_and_optionally_the_branch(repo, tmp_path):
     worktree.remove(wt, delete_branch=True)
 
     assert not wt.path.exists()
-    branches = subprocess.run(["git", "branch"], cwd=repo, capture_output=True, text=True).stdout
+    branches = subprocess.run([paths.git(), "branch"], cwd=repo, capture_output=True, text=True).stdout
     assert "crewbots/task-4" not in branches
 
 

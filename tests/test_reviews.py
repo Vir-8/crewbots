@@ -9,7 +9,7 @@ import pytest
 from fakes import FakeBackend, bot, git_repo, make_crew
 from fastapi.testclient import TestClient
 
-from crewbots import github
+from crewbots import github, paths
 from crewbots.api import create_app
 from crewbots.github import GitHubError
 from crewbots.reviews import ReviewError, Reviews
@@ -94,7 +94,7 @@ def test_the_inbox_and_a_pull_request_come_from_gh_and_are_cached(tmp_path):
 def origin_with_pr(tmp_path: Path) -> tuple[Path, str]:
     """A repository standing in for GitHub's, with pull request 7's head published where GitHub publishes it."""
     origin = git_repo(tmp_path / "origin")
-    run = lambda *a: subprocess.run(["git", *a], cwd=origin, check=True, capture_output=True, text=True)  # noqa: E731
+    run = lambda *a: subprocess.run([paths.git(), *a], cwd=origin, check=True, capture_output=True, text=True)  # noqa: E731
     run("checkout", "-q", "-b", "csv")
     (origin / "export.py").write_text("def export(): ...\n")
     run("add", ".")
@@ -109,7 +109,7 @@ def origin_with_pr(tmp_path: Path) -> tuple[Path, str]:
 def test_a_review_reads_the_prs_own_code_when_the_repo_has_a_local_copy(tmp_path):
     origin, head = origin_with_pr(tmp_path)
     local = tmp_path / "local"
-    subprocess.run(["git", "clone", "-q", str(origin), str(local)], check=True)
+    subprocess.run([paths.git(), "clone", "-q", str(origin), str(local)], check=True)
     gh = FakeGh()
     gh.detail["headRefOid"] = head
     reviews = Reviews(tmp_path, gh=gh, worktrees=tmp_path / "worktrees", snapshots=tmp_path / "reviews",
@@ -138,11 +138,11 @@ def test_without_a_local_copy_crewbots_clones_the_repo_once_and_checks_out_each_
     assert whole and folder.parent == tmp_path / "reviews" / "checkouts" and not reviews.is_snapshot(str(folder))
     assert (folder / "export.py").read_text() == "def export(): ...\n" and (folder / "README.md").exists()
     clone = tmp_path / "reviews" / "repos" / "vir__app"
-    assert subprocess.run(["git", "-C", str(clone), "config", "remote.origin.partialclonefilter"],
+    assert subprocess.run([paths.git(), "-C", str(clone), "config", "remote.origin.partialclonefilter"],
                           capture_output=True, text=True).stdout.strip() == "blob:none"
     assert reviews.cached_checkout("vir/app", 7, head) == folder  # kept
     monkeypatch.setattr(reviews_module, "KEEP_CHECKOUTS", 1)
-    main = subprocess.run(["git", "-C", str(origin), "rev-parse", "main"], capture_output=True, text=True).stdout.strip()
+    main = subprocess.run([paths.git(), "-C", str(origin), "rev-parse", "main"], capture_output=True, text=True).stdout.strip()
     time.sleep(0.01)
     other = reviews.cached_checkout("vir/app", 8, main)  # another pull request: the same clone, no fetch needed
     assert other.exists() and not folder.exists()  # the oldest checkout makes way

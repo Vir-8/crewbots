@@ -68,7 +68,7 @@ def without_credentials(folder: Path | None = None) -> dict[str, str]:
 
 def _git_global(key: str) -> str | None:
     try:
-        done = subprocess.run(["git", "config", "--global", "--get", key], capture_output=True, text=True, timeout=10)
+        done = subprocess.run([paths.git(), "config", "--global", "--get", key], capture_output=True, text=True, timeout=10)
     except (OSError, subprocess.TimeoutExpired):
         return None
     return done.stdout.strip() or None

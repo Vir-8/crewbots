@@ -16,10 +16,10 @@ def run(argv, env, cwd):
 def test_git_and_gh_find_no_credentials_but_keep_your_name(tmp_path):
     env = without_credentials(tmp_path / "creds")
 
-    helpers = run(["git", "config", "--get-all", "credential.helper"], env, tmp_path)
+    helpers = run([paths.git(), "config", "--get-all", "credential.helper"], env, tmp_path)
     assert helpers.stdout.strip() == ""  # Apple's built-in osxkeychain helper is cleared too
-    assert run(["git", "config", "user.name"], env, tmp_path).stdout.strip() == run(
-        ["git", "config", "--global", "user.name"], {}, tmp_path).stdout.strip()
+    assert run([paths.git(), "config", "user.name"], env, tmp_path).stdout.strip() == run(
+        [paths.git(), "config", "--global", "user.name"], {}, tmp_path).stdout.strip()
     assert "IdentityFile=/dev/null" in env["GIT_SSH_COMMAND"] and env["SSH_AUTH_SOCK"] == ""
     assert list((tmp_path / "creds" / "gh").iterdir()) == []  # gh sees an empty config: not logged in
     assert env["GH_TOKEN"] == "" and env["GITHUB_TOKEN"] == ""

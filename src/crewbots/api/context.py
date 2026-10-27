@@ -2,6 +2,7 @@
 more than one group needs."""
 
 import asyncio
+import functools
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -12,6 +13,7 @@ from fastapi import FastAPI, HTTPException
 
 from crewbots import attachments as attachments_module
 from crewbots import crew as crew_module
+from crewbots import paths
 from crewbots.api.schemas import Message
 from crewbots.reviews import Reviews
 from crewbots.runner import Runner
@@ -27,11 +29,18 @@ def checkout_commit() -> str | None:
     if not (PROJECT / ".git").exists():
         return None
     try:
-        done = subprocess.run(["git", "-C", str(PROJECT), "rev-parse", "--short=12", "HEAD"], capture_output=True,
+        done = subprocess.run([paths.git(), "-C", str(PROJECT), "rev-parse", "--short=12", "HEAD"], capture_output=True,
                               text=True, timeout=5)
     except (OSError, subprocess.TimeoutExpired):
         return None
     return done.stdout.strip() or None
+
+
+@functools.cache
+def started_from() -> str | None:
+    """The commit the daemon's code came from: its checkout's when it first asked, as it started. What's committed
+    after that runs once it restarts."""
+    return checkout_commit()
 
 
 @dataclass

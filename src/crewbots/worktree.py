@@ -24,7 +24,7 @@ class Worktree:
 
 
 def is_repo(path: Path) -> bool:
-    result = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=path, capture_output=True, text=True)
+    result = subprocess.run([paths.git(), "rev-parse", "--is-inside-work-tree"], cwd=path, capture_output=True, text=True)
     return result.returncode == 0 and result.stdout.strip() == "true"
 
 
@@ -69,7 +69,7 @@ def merge(wt: Worktree, message: str) -> str:
     try:
         _git(wt.repo, "merge", "--no-ff", "--no-edit", "-m", message, wt.branch)
     except GitError as e:
-        subprocess.run(["git", "merge", "--abort"], cwd=wt.repo, capture_output=True)
+        subprocess.run([paths.git(), "merge", "--abort"], cwd=wt.repo, capture_output=True)
         raise GitError(f"merging {wt.branch} into {into} failed, and nothing was changed: {e}") from None
     return _git(wt.repo, "rev-parse", "HEAD")
 
@@ -81,7 +81,7 @@ def remove(wt: Worktree, delete_branch: bool = False) -> None:
 
 
 def _git(cwd: Path, *args: str, strip: bool = True) -> str:
-    result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+    result = subprocess.run([paths.git(), *args], cwd=cwd, capture_output=True, text=True)
     if result.returncode != 0:
         raise GitError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
     return result.stdout.strip() if strip else result.stdout

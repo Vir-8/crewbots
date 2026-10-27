@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from crewbots import crew as crew_module
 from crewbots import typescript
-from crewbots.api.context import API_VERSION, PROJECT, Context, checkout_commit
+from crewbots.api.context import API_VERSION, PROJECT, Context, checkout_commit, started_from
 from crewbots.api.schemas import (
     AgentLogOut,
     ClientError,
@@ -52,8 +52,8 @@ def routes(c: Context) -> APIRouter:
         runner.resume()
         return runner.state()
 
-    started_from = checkout_commit()
-    updates = Updates(PROJECT, started_from)
+    build = started_from()
+    updates = Updates(PROJECT, build)
 
     @v1.get("/update", response_model=UpdateOut)
     async def check_update(app: str | None = None, fetch: bool = False):
@@ -127,8 +127,8 @@ def routes(c: Context) -> APIRouter:
     @v1.get("/version", response_model=VersionOut)
     async def version():
         now = await asyncio.to_thread(checkout_commit)
-        return {"api": API_VERSION, "schema_hash": typescript.schema_hash(app.openapi()), "build": started_from,
-                "source_changed": bool(started_from and now and now != started_from)}
+        return {"api": API_VERSION, "schema_hash": typescript.schema_hash(app.openapi()), "build": build,
+                "source_changed": bool(build and now and now != build)}
 
     @v1.post("/crew/restart", response_model=CrewState)
     async def restart(body: RestartBody):

@@ -60,7 +60,7 @@ class Holds:
         on as they were."""
         return sum(1 for t in list(self._runs) if self.store.get_task(t).status == Status.RUNNING)
 
-    async def idle(self, timeout_s: float, poll_s: float = 1.0) -> bool:
+    async def idle(self, timeout_s: float, poll_s: float = 0.1) -> bool:
         """Waits until no turn is running, for at most `timeout_s`. Whether it got there."""
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout_s

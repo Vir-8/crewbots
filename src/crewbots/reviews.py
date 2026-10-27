@@ -313,7 +313,7 @@ class Reviews:
     def _git(self, args: list[str], repo: str, timeout: float = 600, check: bool = True) -> str:
         env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}  # a private repository without a login fails, never asks
         try:
-            done = subprocess.run(["git", *args], capture_output=True, text=True, timeout=timeout, env=env,
+            done = subprocess.run([paths.git(), *args], capture_output=True, text=True, timeout=timeout, env=env,
                                   stdin=subprocess.DEVNULL)
         except subprocess.TimeoutExpired:
             raise ReviewError(f"getting {repo}'s code took too long") from None
@@ -460,7 +460,7 @@ class Reviews:
         if path.exists():
             return path
         path.parent.mkdir(parents=True, exist_ok=True)
-        git = ["git", "-C", str(checkout)]
+        git = [paths.git(), "-C", str(checkout)]
         for args in ([*git, "fetch", "--no-tags", "--quiet", "origin", f"pull/{number}/head"],
                      [*git, "worktree", "add", "--detach", "--quiet", str(path), sha]):
             done = subprocess.run(args, capture_output=True, text=True, timeout=600, stdin=subprocess.DEVNULL)

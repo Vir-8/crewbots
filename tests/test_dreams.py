@@ -10,6 +10,7 @@ import pytest
 from fakes import FakeBackend, bot, make_crew, wait_until
 from fastapi.testclient import TestClient
 
+from crewbots import paths
 from crewbots.api import create_app
 from crewbots.events import Done, RateLimit, Usage
 from crewbots.memory import CREW_SCOPE, Memory
@@ -76,7 +77,7 @@ def test_the_memory_folder_is_its_own_repository_with_a_commit_per_change(memory
     assert first and memory.commit("nothing new") is None
     memory.write_core("engineer", "x" * 9000)
     assert memory.commit("Rewrote CORE.md") and len((tmp_path / "memory" / "engineer" / "CORE.md").read_text()) == 6001
-    log = subprocess.run(["git", "-C", str(tmp_path / "memory"), "log", "--format=%s %an"], capture_output=True,
+    log = subprocess.run([paths.git(), "-C", str(tmp_path / "memory"), "log", "--format=%s %an"], capture_output=True,
                          text=True).stdout.splitlines()
     assert log == ["Rewrote CORE.md crewbots", "Consolidated engineer's memory crewbots"]
 

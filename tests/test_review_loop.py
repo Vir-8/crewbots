@@ -5,6 +5,7 @@ import subprocess
 import pytest
 from fakes import ScriptedCrew, bot, git_repo, wait_until
 
+from crewbots import paths
 from crewbots.backends import Access
 from crewbots.events import Done
 from crewbots.runner import MAX_REVIEW_ROUNDS, MergeError, NotAllowed
@@ -40,7 +41,7 @@ async def review_round(crew, parent, work, verdict):
 
 
 def git(repo, *args):
-    return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
+    return subprocess.run([paths.git(), *args], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
 
 
 async def test_a_verdict_is_recorded_on_the_review_and_the_work(store, tmp_path):

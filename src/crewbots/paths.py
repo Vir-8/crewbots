@@ -5,7 +5,11 @@ So pointing HOME somewhere else (as the tests do) moves every one of them, and n
 home folder at import.
 """
 
+import functools
 import os
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -86,3 +90,20 @@ def claude_desktop_config() -> Path:
 
 def codex_config() -> Path:
     return codex_home() / "config.toml"
+
+
+@functools.cache
+def git() -> str:
+    """The git to run. On a Mac, /usr/bin/git is a shim that looks the developer tools' git up again on every run,
+    which takes longer than most runs themselves (18ms against 5ms), and crewbots runs git all the time: so the shim
+    is asked once."""
+    found = shutil.which("git") or "git"
+    if sys.platform == "darwin" and found == "/usr/bin/git":
+        try:
+            real = subprocess.run(["/usr/bin/xcrun", "--find", "git"], capture_output=True, text=True,
+                                  timeout=10).stdout.strip()
+        except (OSError, subprocess.TimeoutExpired):
+            real = ""
+        if real and os.access(real, os.X_OK):
+            return real
+    return found

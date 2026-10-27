@@ -23,8 +23,11 @@ from pathlib import Path
 
 import yaml
 
+from crewbots import paths
+
 CREW_SCOPE = "crew"
 INDEX_LIMIT = 60  # notes listed in a bot's instructions per scope; older ones stay in the folder
+SAFE_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)  # PyYAML's C one when it has it: notes are read often
 CORE_CHARS = 6000  # of each CORE.md, about 1.5K tokens: past that it's cut, since it's in every session
 STATE_CHARS = 8000  # of a task's state
 RECENT_DAYS = 2  # of daily logs a fresh session starts with: today's and yesterday's
@@ -126,7 +129,7 @@ class Memory:
         back on and undone. Returns the commit, or None if nothing changed."""
         if not self.root.is_dir():
             return None
-        git = ["git", "-C", str(self.root), "-c", "user.name=crewbots", "-c", "user.email=crewbots@localhost",
+        git = [paths.git(), "-C", str(self.root), "-c", "user.name=crewbots", "-c", "user.email=crewbots@localhost",
                "-c", "commit.gpgsign=false"]
         if not (self.root / ".git").exists():
             subprocess.run([*git, "init", "-q"], check=True, capture_output=True)
@@ -254,7 +257,7 @@ def _read(path: Path) -> Note | None:
     if text.startswith("---"):
         try:
             _, raw, body = text.split("---", 2)
-            meta = yaml.safe_load(raw) or {}
+            meta = yaml.load(raw, Loader=SAFE_LOADER) or {}
         except (ValueError, yaml.YAMLError):
             meta = {}
     return Note(name=path.stem, title=str(meta.get("title") or path.stem), body=body.strip(),

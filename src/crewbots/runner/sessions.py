@@ -240,7 +240,7 @@ class Sessions:
     async def _reap_idle(self) -> None:
         loop = asyncio.get_running_loop()
         while True:
-            await asyncio.sleep(max(1.0, min(60.0, self.idle_timeout_s / 4)))
+            await asyncio.sleep(max(0.05, min(60.0, self.idle_timeout_s / 4)))
             now = loop.time()
             for task_id, opened in list(self._sessions.items()):
                 if task_id not in self._runs and now - opened.last_used >= self.idle_timeout_s:

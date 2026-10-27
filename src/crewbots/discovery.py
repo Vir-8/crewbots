@@ -192,7 +192,7 @@ def _project_root(folder: Path) -> Path | None:
             or (folder.is_relative_to(home / "Documents" / "Codex") and any(DATED.fullmatch(p) for p in folder.parts))):
         return None
     try:
-        top = subprocess.run(["git", "-C", str(folder), "rev-parse", "--show-toplevel"], capture_output=True, text=True,
+        top = subprocess.run([paths.git(), "-C", str(folder), "rev-parse", "--show-toplevel"], capture_output=True, text=True,
                              timeout=10).stdout.strip()
     except (OSError, subprocess.TimeoutExpired):
         top = ""

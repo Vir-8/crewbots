@@ -10,7 +10,7 @@ import pytest
 from fakes import ScriptedCrew, bot, git_repo, wait_until
 from fastapi.testclient import TestClient
 
-from crewbots import checkins
+from crewbots import checkins, paths
 from crewbots.api import create_app
 from crewbots.crew_tools import CrewTools, ToolRefused
 from crewbots.events import Done
@@ -46,7 +46,7 @@ class Snapshot:
 
 
 def git(repo, *args):
-    subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+    subprocess.run([paths.git(), "-C", str(repo), *args], check=True, capture_output=True)
 
 
 def test_commits_and_branch_switches_are_seen_after_the_first_look(tmp_path):

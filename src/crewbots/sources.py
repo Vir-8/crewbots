@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from crewbots import worktree
+from crewbots import paths, worktree
 
 KINDS = ("commit", "branch", "file", "review_requested", "ci_failed", "ci_passed", "thread_done")
 MAX_FILES = 2000  # of a watched folder, two levels deep
@@ -54,7 +54,7 @@ class Sources:
             if before[0] != now[0]:
                 events.append(CrewEvent("branch", str(repo), f"{repo.name}: switched from {before[0]} to {now[0]}"))
             else:
-                log = subprocess.run(["git", "-C", str(repo), "log", "--format=%h %s", f"-{MAX_LISTED}",
+                log = subprocess.run([paths.git(), "-C", str(repo), "log", "--format=%h %s", f"-{MAX_LISTED}",
                                       f"{before[1]}..{now[1]}"], capture_output=True, text=True, timeout=10).stdout
                 commits = log.strip().splitlines() or [f"{now[1][:7]} (history rewritten)"]
                 events.append(CrewEvent("commit", str(repo), f"{repo.name} on {now[0]}: " + "; ".join(commits)))
@@ -111,7 +111,7 @@ def repos(folders: list[Path | None]) -> list[Path]:
 
 
 def _git(repo: Path, *args: str) -> str:
-    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, timeout=10,
+    return subprocess.run([paths.git(), "-C", str(repo), *args], capture_output=True, text=True, timeout=10,
                           check=True).stdout.strip()
 
 

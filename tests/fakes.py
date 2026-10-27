@@ -1,7 +1,12 @@
 import asyncio
+import atexit
+import functools
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
+from crewbots import paths
 from crewbots.backends import Access, RunSpec
 from crewbots.crew import Bot, Crew
 from crewbots.events import Done, SessionStarted, Text, Usage
@@ -55,13 +60,23 @@ def make_crew(home: Path, *bots: Bot, team: dict[str, str] | None = None) -> Cre
     return Crew(home=home, bots={b.name: b for b in bots}, team_files=team or {})
 
 
-def git_repo(path: Path) -> Path:
-    path.mkdir(parents=True, exist_ok=True)
-    run = lambda *a: subprocess.run(["git", *a], cwd=path, check=True, capture_output=True)  # noqa: E731
+@functools.cache
+def _first_commit() -> Path:
+    """A repository with a README in one commit, made once: git_repo copies it, which takes a few milliseconds where
+    git init and a commit take a tenth of a second."""
+    path = Path(tempfile.mkdtemp(prefix="crewbots-tests-repo-"))
+    atexit.register(shutil.rmtree, path, ignore_errors=True)
+    run = lambda *a: subprocess.run([paths.git(), *a], cwd=path, check=True, capture_output=True)  # noqa: E731
     run("init", "-q", "-b", "main")
     (path / "README.md").write_text("hello\n")
     run("add", ".")
     run("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init")
+    return path
+
+
+def git_repo(path: Path) -> Path:
+    """A repository at `path` with a README in one commit. Its files are new, as they'd be made."""
+    shutil.copytree(_first_commit(), path, dirs_exist_ok=True, copy_function=shutil.copy)
     return path
 
 

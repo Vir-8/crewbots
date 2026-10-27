@@ -8,11 +8,12 @@ everything but /v1/bot/. A run token is minted for one run of one task and opens
 that is what a bot's crewbots MCP server holds, so a bot can never act for another task, or for the user.
 """
 
+import functools
 import secrets
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from crewbots import crew as crew_module
@@ -99,15 +100,15 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
         return JSONResponse({"detail": str(e.args[0])}, status_code=422)
 
     c = Context(runner=runner, store=store, scheduler=scheduler, reviews=reviews, app=app, allowed=allowed)
-    v1 = APIRouter(prefix="/v1")
-    for area in AREAS:
-        v1.include_router(area.routes(c))
-    app.include_router(v1)
+    for area in AREAS:  # straight into the app: a router in a router builds each route once more
+        app.include_router(area.routes(c), prefix="/v1")
     return app
 
 
+@functools.cache
 def openapi_schema() -> dict[str, Any]:
-    """The API's schema, without a crew or a database: what app/src/api-types.ts is generated from."""
+    """The API's schema, without a crew or a database: what app/src/api-types.ts is generated from. Made once, since
+    it changes only with the code."""
     from crewbots.crew import Crew
 
     runner = Runner(Store(":memory:"), Crew(home=Path("."), bots={}, team_files={}))

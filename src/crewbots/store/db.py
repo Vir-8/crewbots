@@ -417,8 +417,9 @@ MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] =
 def migrate(db: Connection, index_history: Callable[[], None]) -> None:
     """Brings the database up to date. `index_history` fills the search index from the events already stored."""
     if not db.execute("select 1 from sqlite_master where name = 'tasks'").fetchone():
-        db.executescript(SCHEMA + SEARCH)  # a new database: today's layout, so every step is already done
-        db.execute(f"pragma user_version = {len(MIGRATIONS)}")
+        # A new database: today's layout, so every step is already done. Made in one transaction, so it's all there or
+        # none of it is, and written once rather than once a table.
+        db.executescript(f"begin;\n{SCHEMA}{SEARCH}\npragma user_version = {len(MIGRATIONS)};\ncommit;")
         return
     done = db.execute("pragma user_version").fetchone()[0]
     for number, (_, step) in enumerate(MIGRATIONS, start=1):
