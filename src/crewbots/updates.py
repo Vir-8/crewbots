@@ -6,9 +6,9 @@ relaunched. It runs apart from the daemon (its own session), since it restarts t
 started from, and says how far it got in a status file the daemon reads back for the app.
 
 An update does only what it needs, part by part. The daemon runs from the checkout itself, so a change to it needs only
-a restart; the app is built again only when its own code changed, and its build is incremental. A change to neither
-(tests, docs) isn't an update at all. The checks are the quick ones, that the daemon loads and the app compiles: a
-change was checked when it was made.
+a restart (and its dependencies brought up to date); the app is built again only when its own code changed, and its
+build is incremental. A change to neither (tests, docs) isn't an update at all. No tests run: what's in the checkout
+passed them before it got there.
 """
 
 import json
@@ -62,34 +62,49 @@ class Updates:
             self._fetched = time.time()
             done = self._git("fetch", "--quiet", timeout=60)
             self._fetch_error = None if done is not None else "Couldn't reach GitHub just now."
-        head = self._git("rev-parse", "--short=12", "HEAD")
-        out["head"] = head
-        if self._git("status", "--porcelain", "--untracked-files=no"):
+        # One look at the branch: its commit, whether anything's uncommitted, how far it is from GitHub's.
+        status = (self._git("status", "--porcelain=v2", "--branch", "--untracked-files=no") or "").splitlines()
+        branch = dict(line[2:].split(" ", 1) for line in status if line.startswith("# ") and " " in line[2:])
+        out["head"] = branch["branch.oid"][:12] if branch.get("branch.oid", "(initial)") != "(initial)" else None
+        if any(not line.startswith("#") for line in status):
             return {**out, "note": "The checkout has changes in progress: update once they're committed."}
-        behind = int(self._git("rev-list", "--count", "HEAD..@{u}") or 0)
-        ahead = int(self._git("rev-list", "--count", "@{u}..HEAD") or 0)
+        ahead, behind = (int(n[1:]) for n in branch.get("branch.ab", "+0 -0").split())
         out["pull"] = behind > 0 and ahead == 0  # it comes in as a fast-forward
         target = "@{u}" if out["pull"] else "HEAD"
-        out["needs"] = {"app": self._behind(app, target, APP), "daemon": self._behind(self.running, target, DAEMON)}
+        at, app_at, daemon_at = self._resolve(target, app, self.running)
+        new: dict[str, dict[str, str]] = {}  # what each part doesn't have, of what it runs
+        for part, built, built_at, where in (("app", app, app_at, APP), ("daemon", self.running, daemon_at, DAEMON)):
+            out["needs"][part] = self._behind(built, built_at, at, target, where)
+            if out["needs"][part] and built_at:
+                new.update((c["sha"], c) for c in self._commits(target, built_at, where))
         out["available"] = any(out["needs"].values())
-        new = {c["sha"]: c for base, where in ((app, APP), (self.running, DAEMON)) if self._known(base)
-               for c in self._commits(target, base, where)}  # what each part doesn't have, of what it runs
         out["commits"] = sorted(new.values(), key=lambda c: c["at"], reverse=True)[:MAX_COMMITS]
         if self._fetch_error and not out["available"]:
             out["note"] = self._fetch_error
         return out
 
-    def _behind(self, built: str | None, target: str, where: tuple[str, ...]) -> bool:
-        """Whether what a part runs (`where`) changed after it was built from `built`. One built from a commit this
-        checkout doesn't have is behind; one that doesn't say what it was built from isn't."""
+    def _behind(self, built: str | None, built_at: str | None, at: str | None, target: str,
+                where: tuple[str, ...]) -> bool:
+        """Whether what a part runs (`where`) changed after it was built from `built` (`built_at` is that commit,
+        when this checkout has it). One built from a commit this checkout doesn't have is behind; one that doesn't say
+        what it was built from isn't."""
         if not built:
             return False
-        if not self._known(built):
+        if not built_at:
             return True
-        return self._git("diff", "--quiet", built, target, "--", *where) is None
+        return built_at != at and self._git("diff", "--quiet", built_at, target, "--", *where) is None
 
-    def _known(self, commit: str | None) -> bool:
-        return bool(commit) and self._git("cat-file", "-e", f"{commit}^{{commit}}") is not None
+    def _resolve(self, *names: str | None) -> list[str | None]:
+        """The commit each name is, looked up at once: None for one this checkout doesn't have."""
+        asked = [name for name in names if name and not any(ch.isspace() for ch in name)]
+        found: dict[str, str] = {}
+        if asked:
+            listed = self._git("cat-file", "--batch-check", input="".join(f"{name}^{{commit}}\n" for name in asked))
+            for name, line in zip(asked, (listed or "").splitlines(), strict=False):
+                sha, _, kind = line.partition(" ")
+                if kind.startswith("commit "):
+                    found[name] = sha
+        return [found.get(name) if name else None for name in names]
 
     def _commits(self, target: str, base: str, where: tuple[str, ...]) -> list[dict[str, str]]:
         listed = self._git("log", f"--max-count={MAX_COMMITS}", "--format=%h%x09%cI%x09%s", target, "--not", base, "--",
@@ -99,7 +114,7 @@ class Updates:
 
     def start(self, app: str | None = None) -> dict[str, Any]:
         """Starts the update, after bringing in what GitHub has if that's a fast-forward: the app built again if its
-        code changed, and the quick checks. One already under way is the app's to follow."""
+        code changed, the daemon's dependencies brought up to date. One already under way is the app's to follow."""
         found = self.check(app)
         if found["release"].get("state") == "running":
             return found
@@ -146,10 +161,10 @@ class Updates:
                 pass
         return state
 
-    def _git(self, *args: str, timeout: float = 15) -> str | None:
+    def _git(self, *args: str, timeout: float = 15, input: str | None = None) -> str | None:
         try:
-            done = subprocess.run(["git", "-C", str(self.project), *args], capture_output=True, text=True,
-                                  timeout=timeout)
+            done = subprocess.run([paths.git(), "-C", str(self.project), *args], capture_output=True, text=True,
+                                  timeout=timeout, input=input)
         except (OSError, subprocess.TimeoutExpired):
             return None
         return done.stdout.strip() if done.returncode == 0 else None

@@ -2,13 +2,14 @@
 brings it in, run apart from the daemon."""
 
 import json
+import shutil
 import subprocess
 import time
 
 import pytest
 from fakes import git_repo
 
-from crewbots import updates
+from crewbots import paths, updates
 from crewbots.updates import UpdateError, Updates
 
 RELEASE = """#!/bin/bash
@@ -21,7 +22,7 @@ echo "the app: ${CREWBOTS_RELEASE_APP:-?}"
 
 
 def run(path, *args):
-    return subprocess.run(["git", *args], cwd=path, check=True, capture_output=True, text=True).stdout.strip()
+    return subprocess.run([paths.git(), *args], cwd=path, check=True, capture_output=True, text=True).stdout.strip()
 
 
 def commit(path, message, file="src/crewbots/notes.py", text=None):
@@ -32,18 +33,28 @@ def commit(path, message, file="src/crewbots/notes.py", text=None):
     return run(path, "rev-parse", "--short=12", "HEAD")
 
 
-@pytest.fixture
-def checkout(tmp_path):
-    """A checkout of crewbots with a release script, cloned from an upstream (GitHub, here a bare repository)."""
-    origin = git_repo(tmp_path / "work")
+@pytest.fixture(scope="session")
+def made(tmp_path_factory):
+    """A checkout of crewbots with a release script, cloned from an upstream (GitHub, here a bare repository), and
+    the repository it was pushed from: made once, and copied for each test."""
+    root = tmp_path_factory.mktemp("checkout")
+    origin = git_repo(root / "work")
     (origin / "scripts").mkdir()
     (origin / "scripts" / "release").write_text(RELEASE)
     (origin / "scripts" / "release").chmod(0o755)
     run(origin, "add", ".")
     run(origin, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "Add the release script")
-    subprocess.run(["git", "clone", "-q", "--bare", str(origin), str(tmp_path / "upstream.git")], check=True)
-    subprocess.run(["git", "clone", "-q", str(tmp_path / "upstream.git"), str(tmp_path / "crewbots")], check=True)
-    return tmp_path / "crewbots", origin
+    subprocess.run([paths.git(), "clone", "-q", "--bare", str(origin), str(root / "upstream.git")], check=True)
+    subprocess.run([paths.git(), "clone", "-q", str(root / "upstream.git"), str(root / "crewbots")], check=True)
+    return root
+
+
+@pytest.fixture
+def checkout(made, tmp_path):
+    shutil.copytree(made, tmp_path, dirs_exist_ok=True)
+    config = tmp_path / "crewbots" / ".git" / "config"
+    config.write_text(config.read_text().replace(str(made), str(tmp_path)))  # its upstream is the copy's
+    return tmp_path / "crewbots", tmp_path / "work"
 
 
 def test_what_an_update_brings_and_which_parts_it_needs(checkout):
