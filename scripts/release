@@ -44,6 +44,9 @@ did "Checks passed: ruff, pytest, tsc, the app's tests"
 
 if ! $daemon_only; then
   step "Building the app"
+  # Made again by every build. macOS won't let one app overwrite files another left (they carry its provenance),
+  # so a release from the app (run by the daemon) and one from a terminal would trip on each other's copies.
+  rm -rf app/src-tauri/gen/schemas
   (cd app && npx tauri build --bundles app)
   did "Built the app at $commit"
 
