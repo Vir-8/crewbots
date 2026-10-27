@@ -103,7 +103,7 @@ export function Files({ items, mine, compact }: { items: Attachment[]; mine?: bo
       {items.map((file) => (
         <FileView key={file.id || file.path} file={file} onEnlarge={() => setEnlarged(file)} />
       ))}
-      {enlarged && <Lightbox file={enlarged} onClose={() => setEnlarged(null)} />}
+      {enlarged && <Lightbox file={enlarged} pictures={items.filter((f) => shownAs(f) === "image")} onPick={setEnlarged} onClose={() => setEnlarged(null)} />}
     </div>
   );
 }
@@ -244,18 +244,26 @@ function TextCard({ file, src }: { file: Attachment; src: string }) {
   );
 }
 
-/** A picture, big, over the window: Escape or a click outside closes it. */
-function Lightbox({ file, onClose }: { file: Attachment; onClose: () => void }) {
+/** A picture, big, over the window: ← and → go to the others it came with; Escape or a click outside closes it. */
+function Lightbox({ file, pictures, onPick, onClose }: { file: Attachment; pictures: Attachment[]; onPick: (f: Attachment) => void; onClose: () => void }) {
+  const at = pictures.findIndex((p) => p.path === file.path);
   useEffect(() => {
-    const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      else if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && pictures.length > 1) {
+        e.preventDefault();
+        onPick(pictures[(at + (e.key === "ArrowRight" ? 1 : pictures.length - 1)) % pictures.length]);
+      }
+    };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [onClose]);
+  }, [onClose, at, pictures]);
   return (
     <div className="lightbox" onClick={onClose} role="dialog" aria-label={file.name}>
       <div className="lightbox-bar" onClick={(e) => e.stopPropagation()}>
         <span className="file-card-name">{file.name}</span>
         <span className="faint small">{size(file.size)}</span>
+        {pictures.length > 1 && <span className="faint small">{at + 1} of {pictures.length} · ← →</span>}
         <span className="grow" />
         <button className="button small" onClick={() => bridge.openFile(file.path)}>
           Open

@@ -57,6 +57,7 @@ export function useFind(where = "main", onOpen?: () => void) {
   const [current, setCurrent] = useState(0);
   const [found, setFound] = useState(0);
   const input = useRef<HTMLInputElement>(null);
+  const before = useRef<Element | null>(null); // what had the keyboard when find opened: it has it back after
   const lookFor = useDeferredValue(finding ? query.toLowerCase() : ""); // a big diff or chat marks behind your typing
   const step = (by: number) => found && setCurrent((c) => (c + by + found) % found);
   useEffect(() => {
@@ -69,6 +70,7 @@ export function useFind(where = "main", onOpen?: () => void) {
       if (e.key.toLowerCase() === "f") {
         e.preventDefault();
         onOpen?.();
+        if (!finding) before.current = document.activeElement;
         setFinding(true);
         setTimeout(() => input.current?.select(), 0);
       } else if (e.key.toLowerCase() === "g" && finding) {
@@ -89,7 +91,10 @@ export function useFind(where = "main", onOpen?: () => void) {
       setQuery(q);
       setCurrent(0);
     },
-    close: () => setFinding(false),
+    close: () => {
+      setFinding(false);
+      (before.current as HTMLElement | null)?.focus?.();
+    },
   };
 }
 

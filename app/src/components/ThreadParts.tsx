@@ -63,10 +63,18 @@ const KIND: [RegExp, string, string][] = [
   [/^(view_image|image_generation)$/, "Looked at", "image"],
 ];
 
+/** What a step did, as a verb and what it did it to; another app's MCP tool is named by its app ("Used Blender"). */
+function kindOf(name: string): [string, string] {
+  const known = KIND.find(([pattern]) => pattern.test(name));
+  if (known) return [known[1], known[2]];
+  const server = name.startsWith("mcp__") ? name.split("__")[1] : "";
+  return server ? [`Used ${server.charAt(0).toUpperCase()}${server.slice(1)}`, ""] : ["Used", "tool"];
+}
+
 function summary(calls: { call: StoredEvent }[]): string {
   const counts = new Map<string, [string, string, number]>(); // verb, noun, how many
   for (const { call } of calls) {
-    const [, verb, noun] = KIND.find(([pattern]) => pattern.test(call.data.name)) ?? [null, "Used", "tool"];
+    const [verb, noun] = kindOf(call.data.name);
     const n = call.data.name === "apply_patch" ? call.data.input?.changes?.length ?? 1 : 1;
     const key = `${verb}|${noun}`;
     counts.set(key, [verb, noun, (counts.get(key)?.[2] ?? 0) + n]);
