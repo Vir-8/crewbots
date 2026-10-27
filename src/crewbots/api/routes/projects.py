@@ -15,9 +15,11 @@ from crewbots.api.context import Context
 from crewbots.api.schemas import BringIn, BroughtIn, FoundOut, ProjectBody, ProjectOut, ProjectsOut
 from crewbots.projects import Project, ProjectError
 
+STARTED = "started"  # in the routines table: when the crew was started off, which happens once
+
 
 def routes(c: Context) -> APIRouter:
-    runner = c.runner
+    runner, store = c.runner, c.store
     v1 = APIRouter()
 
     def home() -> Path:
@@ -31,7 +33,13 @@ def routes(c: Context) -> APIRouter:
     @v1.get("/projects", response_model=ProjectsOut)
     async def projects():
         loaded, errors = projects_module.load(home())
-        return {"projects": [_project_out(p) for p in loaded.values()], "errors": errors}
+        return {"projects": [_project_out(p) for p in loaded.values()], "errors": errors,
+                "started": bool(loaded) or store.routine_state(STARTED) is not None}
+
+    @v1.post("/projects/started", status_code=204)
+    async def started():
+        """The user started the crew off themselves, or said not now: the offer to bring things in isn't made again."""
+        store.routine_ran(STARTED, datetime.now().astimezone().isoformat(timespec="seconds"), "")
 
     @v1.put("/projects/{name}", response_model=ProjectOut)
     async def put_project(name: str, body: ProjectBody):
@@ -80,13 +88,14 @@ def routes(c: Context) -> APIRouter:
                 text = prompts.text("bring-in", home(), memories=discovery.digest(memories))
                 task_id = runner.send(runner.chat(chief.name).id, text, sender="crewbots").id
             picked = {str(m.path) for m in memories}
+        store.routine_ran(STARTED, datetime.now().astimezone().isoformat(timespec="seconds"), task_id or "")
         return {"projects": [_project_out(p) for p in added], "memories": len(picked), "task_id": task_id}
 
     return v1
 
 
 def _project_out(project: Project) -> dict[str, Any]:
-    return {"name": project.name, "folder": _shown(project.folder), "about": project.about,
+    return {"name": project.name, "folder": str(project.folder), "about": project.about,
             "missing": not project.folder.is_dir()}
 
 
@@ -98,7 +107,3 @@ def _found_out(folder: discovery.FoundFolder, project: str | None) -> dict[str, 
 
 def _memory_out(memory: discovery.FoundMemory) -> dict[str, Any]:
     return {"path": str(memory.path), "source": memory.source, "title": memory.title}
-
-
-def _shown(path: Path) -> str:
-    return str(path).replace(str(Path.home()), "~", 1) if path.is_relative_to(Path.home()) else str(path)

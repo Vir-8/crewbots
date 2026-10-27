@@ -24,8 +24,9 @@ const NEED_ICON: Record<InboxItem["reason"], "merge" | "question" | "pause" | "a
   interrupted: "alert",
 };
 
-const PAGES: [string, string, "users" | "repeat" | "chart" | "settings" | "tool" | "handoff"][] = [
+const PAGES: [string, string, "users" | "repeat" | "chart" | "settings" | "tool" | "handoff" | "folder"][] = [
   ["page:crew", "Crew", "users"],
+  ["page:projects", "Projects", "folder"],
   ["page:activity", "Activity", "handoff"],
   ["page:tools", "Tools", "tool"],
   ["page:routines", "Routines", "repeat"],

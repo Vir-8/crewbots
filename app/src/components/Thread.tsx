@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Crew } from "../state";
 import { doing, limitText, oneLine } from "../state";
 import type { Attachment, StoredEvent, Task } from "../types";
@@ -41,6 +41,7 @@ export function Thread(props: {
   chat?: boolean;
   working?: string;
   find?: { query: string; current: number; onFound: (n: number) => void }; // ⌘F, lowercased
+  after?: ReactNode; // shown at the end of the conversation, under its latest message
 }) {
   const { crew, task } = props;
   const events = crew.events.get(task.id);
@@ -125,6 +126,7 @@ export function Thread(props: {
             <span className="shimmer">{(props.working && task.status !== "running" ? "" : doing(crew.latest.get(task.id))) || props.working || `${task.bot} is working`}</span>
           </div>
         )}
+        {props.after}
       </div>
     </div>
   );

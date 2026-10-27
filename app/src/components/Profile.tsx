@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { api } from "../api";
 import type { Crew } from "../state";
 import { oneLine } from "../state";
+import type { PageOut } from "../api-types";
 import type { Profile as ProfileData, Room, RoomChange } from "../types";
 import { ACTIVE } from "../types";
 import { Avatar, GroupAvatar, labelOf } from "./Avatar";
@@ -13,17 +14,23 @@ import "../styles/panels.css";
 const ACCESS: Record<string, string> = { read_only: "Reads only", workspace_write: "Writes in its task's folder", full: "Full access" };
 const SHOWN = 6;
 
-/** A bot, beside your chat with it: what it's doing, what runs on its own, the work it has done, and how it's set up. */
-export function Profile(props: { crew: Crew; bot: string; onOpen: (id: string) => void; onClose: () => void; onEdit: () => void; edge?: ReactNode }) {
+/** A bot, beside your chat with it: what it's doing, its pages, what runs on its own, the work it has done, and how
+ * it's set up. */
+export function Profile(props: { crew: Crew; bot: string; onOpen: (id: string) => void; onPage: (page: string) => void; onClose: () => void; onEdit: () => void; edge?: ReactNode }) {
   const { crew } = props;
   const bot = crew.bots.find((b) => b.name === props.bot);
   const [data, setData] = useState<ProfileData | null>(null);
-  const [all, setAll] = useState({ threads: false, outputs: false });
+  const [pages, setPages] = useState<PageOut[]>([]);
+  const [all, setAll] = useState({ threads: false, outputs: false, pages: false });
+  const stamp = crew.pageStamp(props.bot);
+  useEffect(() => {
+    api.pages(props.bot).then(setPages, () => setPages([]));
+  }, [props.bot, stamp]);
   const changed = [...crew.tasks.values()].filter((t) => t.bot === props.bot).map((t) => t.updated_at).sort().at(-1);
   useEffect(() => {
     api.profile(props.bot).then(setData, () => setData(null));
   }, [props.bot, changed]);
-  useEffect(() => setAll({ threads: false, outputs: false }), [props.bot]);
+  useEffect(() => setAll({ threads: false, outputs: false, pages: false }), [props.bot]);
   if (!bot) return null;
 
   const routines = (crew.routines?.routines ?? []).filter((r) => r.bot === bot.name);
@@ -54,6 +61,29 @@ export function Profile(props: { crew: Crew; bot: string; onOpen: (id: string) =
             Edit
           </button>
         </div>
+
+        <section>
+          <h3>Pages</h3>
+          {!pages.some((p) => p.name === "Scratchpad") && (
+            <button className="profile-item link" onClick={() => props.onPage("Scratchpad")}>
+              <Icon name="file" size={14} />
+              <span className="profile-item-text">Scratchpad</span>
+              <span className="faint">Not started</span>
+            </button>
+          )}
+          {pages.slice(0, all.pages ? undefined : SHOWN).map((p) => (
+            <button key={p.name} className="profile-item link" onClick={() => props.onPage(p.name)} title={p.path}>
+              <Icon name="file" size={14} />
+              <span className="profile-item-text">{p.name}</span>
+              <span className="faint">{ago(p.updated, true)}</span>
+            </button>
+          ))}
+          {pages.length > SHOWN && !all.pages && (
+            <button className="text-button show-more" onClick={() => setAll({ ...all, pages: true })}>
+              Show {pages.length - SHOWN} more
+            </button>
+          )}
+        </section>
 
         {routines.length > 0 && (
           <section>

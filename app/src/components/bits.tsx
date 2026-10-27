@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import type { Status } from "../types";
 import { Marked } from "./Find";
 import { Icon } from "./Icon";
@@ -258,9 +258,29 @@ function list(lines: string[], start: number, inline: (s: string) => ReactNode, 
   return [ordered ? <ol key={key} start={first === 1 ? undefined : first}>{body}</ol> : <ul key={key}>{body}</ul>, Math.max(i, start + 1)];
 }
 
+/** Opens one of a bot's pages from a [[link]] in what it wrote: whatever shows the text knows whose pages they are. */
+export const PageOpener = createContext<((page: string) => void) | null>(null);
+
+/** A [[Page]] link (or [[Page|what it says]]), as in Obsidian: it opens the page where something can. */
+function PageLink({ raw }: { raw: string }) {
+  const open = useContext(PageOpener);
+  const [target, label] = raw.slice(2, -2).split("|");
+  const page = target.split("#")[0].trim();
+  const text = (label ?? target).trim();
+  return open ? (
+    <a className="page-link" onClick={() => open(page)} title={`Open ${page}`}>
+      <Marked text={text} />
+    </a>
+  ) : (
+    <span className="page-link off">
+      <Marked text={text} />
+    </span>
+  );
+}
+
 export function Inline({ text, onSelect }: { text: string; onSelect: (id: string) => void }) {
   const parts: ReactNode[] = [];
-  const pattern = /(`[^`]+`|\*\*[^*]+\*\*)/g;
+  const pattern = /(`[^`]+`|\*\*[^*]+\*\*|\[\[[^\]\n]+\]\])/g;
   let last = 0;
   for (const match of text.matchAll(pattern)) {
     parts.push(<Linked key={`t${last}`} text={text.slice(last, match.index)} onSelect={onSelect} />);
@@ -268,6 +288,8 @@ export function Inline({ text, onSelect }: { text: string; onSelect: (id: string
     parts.push(
       token.startsWith("`") ? (
         <code key={`c${match.index}`}><Marked text={token.slice(1, -1)} /></code>
+      ) : token.startsWith("[[") ? (
+        <PageLink key={`p${match.index}`} raw={token} />
       ) : (
         <strong key={`b${match.index}`}>
           <Linked text={token.slice(2, -2)} onSelect={onSelect} />

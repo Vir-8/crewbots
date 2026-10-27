@@ -17,6 +17,7 @@ class ProjectOut(BaseModel):
 class ProjectsOut(BaseModel):
     projects: list[ProjectOut]
     errors: dict[str, str]  # project files that couldn't be read, and why
+    started: bool  # the crew has been started off: from what Claude Code and Codex know, or the user said not now
 
 class FoundMemoryOut(BaseModel):
     path: str

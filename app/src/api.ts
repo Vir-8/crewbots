@@ -30,7 +30,7 @@ import type {
   Submitted,
   Attachment,
 } from "./types";
-import type { UpdateOut, VersionOut } from "./api-types";
+import type { BroughtIn, FoundOut, PageOut, ProjectOut, ProjectsOut, UpdateOut, VersionOut } from "./api-types";
 
 import { bridge } from "./bridge";
 
@@ -135,4 +135,23 @@ export const api = {
   addStarter: (name: string) => call<Routine>("POST", `/routines/starters/${encodeURIComponent(name)}`),
   runRoutine: (name: string) => call<Task>("POST", `/routines/${encodeURIComponent(name)}/run`),
   confirmRoutine: (name: string) => call<Task | null>("POST", `/routines/${encodeURIComponent(name)}/confirm`),
+  projects: () => call<ProjectsOut>("GET", "/projects"),
+  saveProject: (name: string, folder: string, about: string) =>
+    call<ProjectOut>("PUT", `/projects/${encodeURIComponent(name)}`, { folder, about }),
+  removeProject: (name: string) => call<null>("DELETE", `/projects/${encodeURIComponent(name)}`),
+  /** The folders the user worked in lately with Claude Code or Codex, and the memories those keep. */
+  foundProjects: () => call<FoundOut>("GET", "/projects/found"),
+  bringIn: (projects: { name: string; folder: string; about: string }[], memories: string[]) =>
+    call<BroughtIn>("POST", "/projects/bring-in", { projects, memories }),
+  /** The user started the crew off, or said not now: the offer isn't made again. */
+  started: () => call<null>("POST", "/projects/started"),
+  pages: (bot: string) => call<PageOut[]>("GET", `/bots/${encodeURIComponent(bot)}/pages`),
+  page: (bot: string, name: string) => call<PageOut>("GET", `/bots/${encodeURIComponent(bot)}/pages/${pagePath(name)}`),
+  savePage: (bot: string, name: string, text: string) =>
+    call<PageOut>("PUT", `/bots/${encodeURIComponent(bot)}/pages/${pagePath(name)}`, { text }),
 };
+
+/** A page's name in a URL: each part encoded, its folders kept. */
+function pagePath(name: string): string {
+  return name.split("/").map(encodeURIComponent).join("/");
+}

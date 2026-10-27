@@ -3,6 +3,7 @@ import { DirectChat, GroupChat } from "./components/ChatView";
 import { Boundary } from "./components/Boundary";
 import { CrewBanner } from "./components/CrewBanner";
 import { Icon } from "./components/Icon";
+import { PagePanel } from "./components/PagePanel";
 import { Panel } from "./components/Panel";
 import { Palette } from "./components/Palette";
 import { UpdatesDialog } from "./components/UpdatesDialog";
@@ -13,6 +14,7 @@ import { RailEdge, Resizer, useWidth } from "./components/Resizer";
 import { Sidebar } from "./components/Sidebar";
 import { CodeReview } from "./pages/CodeReview";
 import { BotEditor, CrewBots } from "./pages/CrewBots";
+import { Projects } from "./pages/Projects";
 import { Routines } from "./pages/Routines";
 import { Settings } from "./pages/Settings";
 import { Activity } from "./pages/Activity";
@@ -53,6 +55,7 @@ export function App() {
   const [current, setCurrent] = useState<string | null>(null); // a chat's key, "review", or a page ("page:crew", ...)
   const [editing, setEditing] = useState<string | null>(null); // a bot being edited, over whatever's open; "" for a new one
   const [thread_, setThread] = useState<string | null>(null); // a thread open beside its chat
+  const [page_, setPage] = useState<{ bot: string; page: string } | null>(null); // one of a bot's pages, open beside its chat
   // The profile beside a bot's chat, or a group's beside its chat: on unless you turn it off, and remembered, wherever
   // you go in between.
   const [profileOn, setProfileOn] = useRemembered("crewbots.profile", true);
@@ -87,6 +90,11 @@ export function App() {
     if (root.kind === "chat") setCurrent(`bot:${root.bot}`);
     else if (root.kind === "seat" && root.room_id) setCurrent(`room:${root.room_id}`);
     setThread(task.kind === "thread" || task.kind === "ask" ? id : null);
+    setPage(null);
+  };
+  const openPage = (bot: string, page: string) => {
+    setThread(null);
+    setPage({ bot, page });
   };
 
   // ⌘K: the command palette, from anywhere.
@@ -113,6 +121,7 @@ export function App() {
     chat: (key: string) => {
       setCurrent(key);
       setThread(null);
+      setPage(null);
     },
     task: (id: string) => openTask(id),
     pull: (repo: string, number: number) => {
@@ -135,12 +144,13 @@ export function App() {
 
   if (crew.status.state !== "connected" && !crew.connectedOnce) return <Connecting status={crew.status} />;
   const chat = crew.chats.find((c) => c.key === current);
-  const thread = thread_ ? crew.tasks.get(thread_) : undefined;
-  const profile = !thread && profileOn && chat?.kind === "direct" && current === chat.key ? chat.bot : null;
+  const page = page_ && chat?.kind === "direct" && chat.bot === page_.bot ? page_ : null; // only beside its own bot's chat
+  const thread = thread_ && !page ? crew.tasks.get(thread_) : undefined;
+  const profile = !thread && !page && profileOn && chat?.kind === "direct" && current === chat.key ? chat.bot : null;
   const room = !thread && profileOn && chat?.kind === "group" && current === chat.key ? chat.room : null;
 
   return (
-    <div ref={shell} className={`app ${thread || profile || room ? "with-panel" : ""} ${profile || room ? "with-profile" : ""} ${current === "review" ? "reviewing" : ""} ${sideHidden ? "side-hidden" : ""}`}>
+    <div ref={shell} className={`app ${thread || page || profile || room ? "with-panel" : ""} ${profile || room ? "with-profile" : ""} ${current === "review" ? "reviewing" : ""} ${sideHidden ? "side-hidden" : ""}`}>
       {/* One place in both states, beside the window's buttons, so it's always under your pointer. */}
       <button
         className="icon-button side-toggle"
@@ -160,6 +170,7 @@ export function App() {
         onChat={(key) => {
           setCurrent(key);
           setThread(null);
+          setPage(null);
         }}
         onOpen={openTask}
         onNewGroup={() => setNewGroup({ title: "", members: [] })}
@@ -181,6 +192,8 @@ export function App() {
           <Activity crew={crew} onOpen={openTask} />
         ) : current === "page:routines" ? (
           <Routines crew={crew} onOpen={openTask} />
+        ) : current === "page:projects" ? (
+          <Projects crew={crew} onChat={(bot) => setCurrent(`bot:${bot}`)} />
         ) : current === "page:tools" ? (
           <Tools crew={crew} />
         ) : current === "page:analytics" ? (
@@ -190,7 +203,19 @@ export function App() {
         ) : current === "review" ? (
           <CodeReview crew={crew} onSettings={() => setCurrent("page:settings")} pick={pull} />
         ) : chat?.kind === "direct" ? (
-          <DirectChat crew={crew} chat={chat} onOpen={openTask} profileOpen={Boolean(profile)} onProfile={() => setProfileOn(!profileOn)} onNewGroup={(title, members) => setNewGroup({ title, members })} />
+          <DirectChat
+            crew={crew}
+            chat={chat}
+            onOpen={openTask}
+            onPage={(p) => openPage(chat.bot!, p)}
+            onCustomize={() => setEditing(chat.bot!)}
+            profileOpen={Boolean(profile)}
+            onProfile={() => {
+              setProfileOn(!profileOn || Boolean(page));
+              setPage(null);
+            }}
+            onNewGroup={(title, members) => setNewGroup({ title, members })}
+          />
         ) : chat?.kind === "group" ? (
           <GroupChat crew={crew} chat={chat} onOpen={openTask} panelOpen={Boolean(room)} onPanel={() => setProfileOn(!profileOn)} />
         ) : (
@@ -209,12 +234,26 @@ export function App() {
         />
         </Boundary>
       )}
+      {page && (
+        <Boundary where="the page" as="aside" className="panel" key={page.bot}>
+        <PagePanel
+          crew={crew}
+          bot={page.bot}
+          page={page.page}
+          onPage={(p) => setPage({ bot: page.bot, page: p })}
+          onOpen={openTask}
+          onClose={() => setPage(null)}
+          edge={<Resizer label="Resize the page" edge="left" width={panelWidth} min={320} max={960} cssVar="--panel-user" host={host} pane={part(".panel")} flexible={part(".main")} onChange={setPanelWidth} />}
+        />
+        </Boundary>
+      )}
       {profile && (
         <Boundary where="the profile" as="aside" className="panel profile" key={profile}>
         <Profile
           crew={crew}
           bot={profile}
           onOpen={openTask}
+          onPage={(p) => openPage(profile, p)}
           onClose={() => setProfileOn(false)}
           onEdit={() => setEditing(profile)}
           edge={<Resizer label="Resize the profile" edge="left" width={profileWidth} min={260} max={560} cssVar="--profile-user" host={host} pane={part(".panel")} flexible={part(".main")} onChange={setProfileWidth} />}

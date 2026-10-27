@@ -41,6 +41,7 @@ export function shown(markdown: string): string {
     .filter((line) => !line.startsWith("```"))
     .map((line) => line.replace(/^#{1,6}\s+/, "").replace(/^\s*([-*+]|\d+[.)])\s+/, ""))
     .join("\n")
+    .replace(/\[\[([^\]|#\n]+)(?:#[^\]|\n]*)?(?:\|([^\]\n]+))?\]\]/g, (_, page: string, label?: string) => (label ?? page).trim())
     .replace(/\*\*|`/g, "");
 }
 

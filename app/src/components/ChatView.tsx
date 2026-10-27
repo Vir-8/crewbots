@@ -1,4 +1,5 @@
-import { Fragment, useEffect, useMemo, useRef } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { api } from "../api";
 import type { Crew } from "../state";
 import { doing, oneLine } from "../state";
 import type { Chat, Room, RoomMessage } from "../types";
@@ -6,7 +7,8 @@ import { ACTIVE } from "../types";
 import { Files } from "./Attachments";
 import { Avatar, GroupAvatar, labelOf } from "./Avatar";
 import { Boundary } from "./Boundary";
-import { Markdown, MessageMeta, TimeBreak, ago, fullDate, timeBreaks } from "./bits";
+import { BringIn } from "./BringIn";
+import { Markdown, MessageMeta, PageOpener, TimeBreak, ago, fullDate, timeBreaks } from "./bits";
 import { crewCommands } from "./CommandPreview";
 import { Composer } from "./Composer";
 import { FindBar, Finding, Marked, count, shown, useCurrentHit, useFind } from "./Find";
@@ -16,12 +18,18 @@ import { settle } from "./ui";
 import "../styles/chat.css";
 
 /** Your ongoing chat with one bot. Work it takes on shows as thread cards, which open beside the chat. */
-export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) => void; onProfile: () => void; profileOpen: boolean; onNewGroup: (title: string, members: string[]) => void }) {
+export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) => void; onPage: (page: string) => void; onCustomize: () => void; onProfile: () => void; profileOpen: boolean; onNewGroup: (title: string, members: string[]) => void }) {
   const { crew, chat } = props;
   const task = chat.task_id ? crew.tasks.get(chat.task_id) : undefined;
   const bot = crew.bots.find((b) => b.name === chat.bot);
   const find = useFind();
   useMarkRead(crew, chat);
+  // The chief's first word, until the crew's been started off (or you said not now).
+  const [started, setStarted] = useState(true);
+  useEffect(() => {
+    if (bot?.can_delegate) api.projects().then((p) => setStarted(p.started), () => undefined);
+  }, [bot?.name, bot?.can_delegate]);
+  const first = !started && bot?.can_delegate ? <FirstMeeting crew={crew} bot={bot.name} onCustomize={props.onCustomize} onStarted={() => setStarted(true)} /> : null;
   useEffect(() => {
     if (task) crew.ensureEvents(task.id); // the conversation, or nothing yet: either way it's known
   }, [task?.id, crew.ensureEvents]);
@@ -60,13 +68,18 @@ export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string)
         </button>
       </header>
       {find.finding && <FindBar find={find} placeholder={`Find in your chat with ${labelOf(chat.bot!)}`} />}
-      {task && isEmpty(crew, task.id) ? (
-        <Welcome crew={crew} bot={chat.bot!} onSay={(text) => crew.say(chat.bot!, text)} />
-      ) : task ? (
-        <Thread crew={crew} task={task} onOpen={props.onOpen} chat find={{ query: find.lookFor, current: find.current, onFound: find.setFound }} />
-      ) : (
-        <div className="thread" />
-      )}
+      <PageOpener.Provider value={props.onPage}>
+        {(task && isEmpty(crew, task.id)) || (!task && first) ? (
+          <div className="thread">
+            <Welcome crew={crew} bot={chat.bot!} onSay={(text) => crew.say(chat.bot!, text)} />
+            {first && <div className="thread-col chat">{first}</div>}
+          </div>
+        ) : task ? (
+          <Thread crew={crew} task={task} onOpen={props.onOpen} chat find={{ query: find.lookFor, current: find.current, onFound: find.setFound }} after={first} />
+        ) : (
+          <div className="thread" />
+        )}
+      </PageOpener.Provider>
       <div className="dock">
         <Composer
           key={chat.key}
@@ -267,6 +280,42 @@ function GroupWelcome({ crew, room, onSay }: { crew: Crew; room: Room; onSay: (t
 function isEmpty(crew: Crew, taskId: string): boolean {
   const events = crew.events.get(taskId);
   return events !== undefined && events.length === 0;
+}
+
+/** The chief's first word, like the rest of its chat but the app's own rather than a message: who it is, that it keeps
+ * things moving while you're away, and an offer to start from what Claude Code and Codex already know. Gone once the
+ * crew's been started off, or you've said not now. */
+function FirstMeeting({ crew, bot, onCustomize, onStarted }: { crew: Crew; bot: string; onCustomize: () => void; onStarted: () => void }) {
+  const card = crew.bots.find((b) => b.name === bot);
+  const [bringing, setBringing] = useState(false);
+  const named = Boolean(card?.display_name);
+  return (
+    <div className="room-group first-meeting">
+      <Avatar name={bot} size={28} />
+      <div className="room-group-body">
+        <div className="room-bubble">Hey! I'm {named ? labelOf(bot) : `your ${(card?.title ?? "chief of staff").toLowerCase()}`}.</div>
+        <div className="room-bubble">Message me anytime. I'll keep things moving, even when we're not talking, and check in with updates or questions.</div>
+        {!named && <div className="room-bubble">Want to give me a name?</div>}
+        <button className="first-meeting-card" onClick={onCustomize}>
+          <Icon name="profile" size={15} />
+          Customize {named ? labelOf(bot) : "me"}
+        </button>
+        <div className="room-bubble">
+          To get started, I can bring in what Claude Code and Codex already know: the folders you've worked in, as projects, and what they
+          remember about you and your work.
+        </div>
+        <div className="first-meeting-actions">
+          <button className="button small primary" onClick={() => setBringing(true)}>
+            Bring in context
+          </button>
+          <button className="button small" onClick={() => api.started().then(onStarted, onStarted)}>
+            Not now
+          </button>
+        </div>
+      </div>
+      {bringing && <BringIn chief={labelOf(bot)} onClose={() => setBringing(false)} onDone={() => onStarted()} />}
+    </div>
+  );
 }
 
 /** The first time you open a bot's chat: who it is, and a few ways to start. */

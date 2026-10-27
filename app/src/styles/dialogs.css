@@ -233,3 +233,77 @@
   font: 11.5px/1.5 var(--mono);
   white-space: pre-wrap;
 }
+
+/* Bringing in what Claude Code and Codex know */
+
+.dialog.bring-in {
+  width: 640px;
+  max-height: calc(100vh - 80px);
+}
+
+.dialog.bring-in > p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.found-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+}
+
+.found-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.found-row:first-child {
+  border-top: 0;
+}
+
+.found-row input[type="checkbox"] {
+  margin-top: 3px;
+}
+
+.found-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.found-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13.5px;
+}
+
+.found-path,
+.found-about {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.found-about {
+  color: var(--soft);
+}
+
+.found-memories {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--soft);
+  cursor: pointer;
+  white-space: nowrap;
+}

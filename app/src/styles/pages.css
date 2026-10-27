@@ -257,3 +257,23 @@
   align-items: center;
   gap: 8px;
 }
+
+/* Projects */
+
+.project-about {
+  color: var(--soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-title .pill {
+  margin-left: 8px;
+}
+
+.folder-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+}

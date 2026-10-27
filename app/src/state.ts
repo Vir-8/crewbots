@@ -22,6 +22,7 @@ export function useCrew() {
   const [routines, setRoutines] = useState<Routines | null>(null);
   const [chats, setChats] = useState<Chat[]>([]);
   const [roomMessages, setRoomMessages] = useState<Map<string, RoomMessage[]>>(new Map()); // only rooms someone opened
+  const [pageStamps, setPageStamps] = useState<Map<string, number>>(new Map()); // bot → how many times its pages changed
 
   // The chat list's previews and unread counts come from the daemon; a burst of live updates reloads it once.
   const chatsTimer = useRef<number | undefined>(undefined);
@@ -87,6 +88,10 @@ export function useCrew() {
         }
         if (message.type === "pins") {
           reloadChats();
+          return;
+        }
+        if (message.type === "page") {
+          setPageStamps((current) => new Map(current).set(message.bot, (current.get(message.bot) ?? 0) + 1));
           return;
         }
         if (message.type === "room_message") {
@@ -168,6 +173,8 @@ export function useCrew() {
     routines,
     chats,
     roomMessages,
+    /** Changes whenever one of the bot's pages does: what shows a page reads it again. */
+    pageStamp: (bot: string) => pageStamps.get(bot) ?? 0,
     ensureRoom,
     say: (bot: string, text: string, attachments: string[] = []) => act(api.say(bot, text, attachments)),
     post: (roomId: string, text: string, attachments: string[] = []) => act(api.post(roomId, text, attachments)),
