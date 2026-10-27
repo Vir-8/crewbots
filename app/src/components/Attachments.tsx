@@ -75,10 +75,7 @@ function BigPicture({ pending, onClose }: { pending: Pending | undefined; onClos
   if (!src) return null;
   return (
     <div className="lightbox" onClick={onClose} role="dialog" aria-label="The picture you're attaching">
-      <button className="icon-button lightbox-close" onClick={onClose} title="Close (Esc)">
-        <Icon name="x" size={18} />
-      </button>
-      <img className="lightbox-image" src={src} alt="" onClick={(e) => e.stopPropagation()} />
+      <Framed src={src} alt="" onClose={onClose} />
     </div>
   );
 }
@@ -293,22 +290,34 @@ function Lightbox({ file, pictures, onPick, onClose }: { file: Attachment; pictu
   }, [onClose, at, pictures]);
   return (
     <div className="lightbox" onClick={onClose} role="dialog" aria-label={file.name}>
+      <div className="lightbox-body">
+      <Framed src={bridge.fileSrc(file.path)} alt={file.name} onClose={onClose} />
       <div className="lightbox-bar" onClick={(e) => e.stopPropagation()}>
         <span className="file-card-name">{file.name}</span>
-        <span className="faint small">{size(file.size)}</span>
-        {pictures.length > 1 && <span className="faint small">{at + 1} of {pictures.length} · ← →</span>}
+        <span>{size(file.size)}</span>
+        {pictures.length > 1 && <span>{at + 1} of {pictures.length} · ← →</span>}
         <span className="grow" />
-        <button className="button small" onClick={() => bridge.openFile(file.path)}>
+        <button className="text-button" onClick={() => bridge.openFile(file.path)}>
           Open
         </button>
-        <button className="button small" onClick={() => bridge.reveal(file.path)}>
+        <button className="text-button" onClick={() => bridge.reveal(file.path)}>
           Show in Finder
         </button>
-        <button className="icon-button" onClick={onClose} title="Close (Esc)">
-          <Icon name="x" size={14} />
-        </button>
       </div>
-      <img className="lightbox-image" src={bridge.fileSrc(file.path)} alt={file.name} onClick={(e) => e.stopPropagation()} />
+      </div>
+    </div>
+  );
+}
+
+/** A picture in its frame, in the middle of the window, at its own size or the frame's, whichever is smaller; the ×
+ * sits just outside the frame's corner. */
+function Framed({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+  return (
+    <div className="lightbox-frame" onClick={(e) => e.stopPropagation()}>
+      <img className="lightbox-image" src={src} alt={alt} />
+      <button className="lightbox-close" onClick={onClose} title="Close (Esc)">
+        <Icon name="x" size={16} />
+      </button>
     </div>
   );
 }

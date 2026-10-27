@@ -68,12 +68,6 @@
   color: var(--text);
 }
 
-.lightbox-close {
-  position: absolute;
-  top: 18px;
-  right: 18px;
-  color: #e6e6e6;
-}
 
 .message-files {
   margin-top: 6px;
@@ -288,7 +282,7 @@
   color: var(--blue);
 }
 
-/* A picture, big, over the window */
+/* A picture, seen whole: in a frame in the middle of the window, over a soft dim */
 .lightbox {
   position: fixed;
   inset: 0;
@@ -297,30 +291,75 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 24px;
-  background: rgba(0, 0, 0, 0.82);
+  gap: 10px;
+  padding: 48px;
+  background: rgba(0, 0, 0, 0.7);
+}
+
+/* The frame and the line under it, as wide as the picture */
+.lightbox-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lightbox-frame {
+  position: relative;
+  display: flex;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: 0 24px 64px rgb(0 0 0 / 0.45);
+}
+
+.lightbox-image {
+  display: block;
+  max-width: min(880px, 58vw);
+  max-height: 62vh;
+  object-fit: contain;
+  border-radius: 13px;
+}
+
+.lightbox-close {
+  position: absolute;
+  top: 0;
+  right: -44px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: #e6e6e6;
+}
+
+.lightbox-close:hover {
+  background: rgb(255 255 255 / 0.12);
 }
 
 .lightbox-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: min(900px, 100%);
-  color: #e6e6e6;
-  font-size: 13px;
+  gap: 10px;
+  width: 0;
+  min-width: 100%; /* the picture's width, whatever the line holds */
+  color: #b8b8b8;
+  font-size: 12.5px;
 }
 
 .lightbox-bar .file-card-name {
   color: #f2f2f2;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.lightbox-image {
-  max-width: 100%;
-  max-height: calc(100vh - 110px);
-  object-fit: contain;
-  border-radius: 6px;
-  background: #fff1; /* a transparent picture still shows its edges */
+.lightbox-bar .text-button {
+  color: #d0d0d0;
+  font-size: 12.5px;
+}
+
+.lightbox-bar .text-button:hover {
+  color: #fff;
 }
 
 .icon-button.attach {
