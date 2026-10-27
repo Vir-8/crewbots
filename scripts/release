@@ -5,6 +5,10 @@
 #
 #   scripts/release              everything
 #   scripts/release --daemon     checks, then the daemon only: for changes that don't touch the app
+#
+# Started from the app (by the daemon, CREWBOTS_RELEASE_FROM_APP set), it checks and builds, then stops with the
+# build ready ("built"): the app installs it over itself, has the daemon restart once the crew is idle, and restarts.
+# macOS lets an app replace itself, but not the daemon (a launchd service) touch an app it didn't make.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export PATH="/opt/homebrew/bin:$HOME/.cargo/bin:$PATH" # an Apple silicon node and cargo before any Intel ones
@@ -13,6 +17,8 @@ APP=/Applications/crewbots.app
 BUILT=${CARGO_TARGET_DIR:-app/src-tauri/target}/release/bundle/macos/crewbots.app
 daemon_only=false
 [[ "${1:-}" == "--daemon" ]] && daemon_only=true
+from_app=false
+[[ -n "${CREWBOTS_RELEASE_FROM_APP:-}" ]] && from_app=true
 
 done_lines=()
 started=$SECONDS
@@ -20,10 +26,10 @@ began=$(date +%s)
 commit=$(git rev-parse --short=12 HEAD)
 STATUS="$HOME/.crewbots/release.json"
 current="Starting"
-status() { # state, step: for the app, written whole so it never reads half of it
+status() { # state, step[, the built app]: for the app, written whole so it never reads half of it
   mkdir -p "$(dirname "$STATUS")"
-  printf '{"state": "%s", "step": "%s", "commit": "%s", "pid": %d, "started_at": %d, "at": %d}\n' \
-    "$1" "$2" "$commit" $$ "$began" "$(date +%s)" >"$STATUS.tmp" && mv "$STATUS.tmp" "$STATUS"
+  printf '{"state": "%s", "step": "%s", "commit": "%s", "pid": %d, "started_at": %d, "at": %d, "bundle": "%s"}\n' \
+    "$1" "$2" "$commit" $$ "$began" "$(date +%s)" "${3:-}" >"$STATUS.tmp" && mv "$STATUS.tmp" "$STATUS"
 }
 trap 'status failed "$current"' ERR
 step() {
@@ -47,9 +53,26 @@ if ! $daemon_only; then
   # Made again by every build. macOS won't let one app overwrite files another left (they carry its provenance),
   # so a release from the app (run by the daemon) and one from a terminal would trip on each other's copies.
   rm -rf app/src-tauri/gen/schemas
-  (cd app && npx tauri build --bundles app)
+  icons=()
+  if $from_app; then
+    # Its own copies of the icons: this process can't copy the checkout's (they carry the provenance of whatever
+    # made them), but a copy it writes itself is its own.
+    own="$CARGO_TARGET_DIR/icons"
+    rm -rf "$own" && mkdir -p "$own"
+    for icon in 32x32.png 128x128.png 128x128@2x.png icon.icns icon.ico; do cat "app/src-tauri/icons/$icon" >"$own/$icon"; done
+    icons=(--config "{\"bundle\": {\"icon\": [\"$own/32x32.png\", \"$own/128x128.png\", \"$own/128x128@2x.png\", \"$own/icon.icns\", \"$own/icon.ico\"]}}")
+  fi
+  (cd app && npx tauri build --bundles app ${icons[@]+"${icons[@]}"})
   did "Built the app at $commit"
+fi
 
+if $from_app; then
+  status built "Built" "$(cd "$(dirname "$BUILT")" && pwd)/crewbots.app"
+  printf '\n\033[1mBuilt %s in %ss: the app installs it and restarts.\033[0m\n' "$commit" "$((SECONDS - started))"
+  exit 0
+fi
+
+if ! $daemon_only; then
   step "Installing it"
   ditto "$BUILT" "$APP"
   did "Installed it in $APP"
@@ -60,9 +83,7 @@ before=$(python3 -c "import json,os; print(json.load(open(os.path.expanduser('~/
 uv run crewbots restart --when-idle
 did "Restarted the daemon (pid $before before), from $commit"
 
-if ! $daemon_only && [[ -n "${CREWBOTS_RELEASE_FROM_APP:-}" ]]; then
-  did "Left the relaunch to the app, which restarts itself into the new build"
-elif ! $daemon_only; then
+if ! $daemon_only; then
   step "Relaunching the app"
   front=$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' 2>/dev/null || true)
   if pgrep -f "$APP/Contents/MacOS/crewbots" >/dev/null; then
