@@ -382,12 +382,17 @@ def _tool_call(item: dict[str, Any]) -> ToolCall | None:
                             input=item.get("arguments") or {})
         case "webSearch":
             return ToolCall(id=item["id"], name="web_search", input={"query": item.get("query", "")})
+        case "imageView":  # it looked at an image on disk
+            return ToolCall(id=item["id"], name="view_image", input={"path": item.get("path", "")})
+        case "imageGeneration":
+            return ToolCall(id=item["id"], name="image_generation", input={"prompt": item.get("revisedPrompt") or ""})
     return None
 
 
 def _tool_result(item: dict[str, Any]) -> ToolResult:
     status = item.get("status")
     failed = status in ("failed", "declined")
+    images: list[dict[str, Any]] = []
     match item.get("type"):
         case "commandExecution":
             failed = failed or item.get("exitCode") not in (0, None)
@@ -396,17 +401,31 @@ def _tool_result(item: dict[str, Any]) -> ToolResult:
             error = item.get("error")
             failed = failed or bool(error)
             output = error.get("message", "") if isinstance(error, dict) else _mcp_text(item.get("result"))
+            images = _mcp_images(item.get("result"))
+        case "imageView":
+            output, images = "", [{"path": item["path"]}] if item.get("path") else []
+        case "imageGeneration":
+            failed = failed or bool(item.get("failure"))
+            output = str(item.get("failure") or "")
+            images = [{"path": item["savedPath"]}] if item.get("savedPath") else []
         case _:
             output = status or ""
-    return ToolResult(id=item["id"], output=output, is_error=failed)
+    return ToolResult(id=item["id"], output=output, is_error=failed, images=images)
 
 
 def _mcp_text(result: Any) -> str:
     if isinstance(result, dict):
         texts = [c.get("text", "") for c in result.get("content") or [] if isinstance(c, dict) and c.get("type") == "text"]
-        if texts:
+        if texts or _mcp_images(result):  # an image is kept on its own, never as text
             return "\n".join(texts)
     return "" if result is None else json.dumps(result)
+
+
+def _mcp_images(result: Any) -> list[dict[str, Any]]:
+    """An MCP tool's images (a screenshot from Blender, GIMP or Resolve), as MCP sends them."""
+    content = result.get("content") or [] if isinstance(result, dict) else []
+    return [{"mime": c.get("mimeType") or "image/png", "data": c["data"]} for c in content
+            if isinstance(c, dict) and c.get("type") == "image" and c.get("data")]
 
 
 def _unwrap(command: str) -> str:

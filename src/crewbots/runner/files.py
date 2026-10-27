@@ -1,4 +1,5 @@
-"""Files a bot shows the user, under what it says in a chat, a thread or a group chat: ones it shares (`share`).
+"""Files a bot shows the user, under what it says in a chat, a thread or a group chat: ones it shares (`share`), and
+images its tools return (a file it looked at, a screenshot from Blender, GIMP or Resolve), shown in its steps.
 
 A bot shows only files from its own folders: the task's worktree or workspace, its own workspace or folder in the
 crew, the crew's attachments, and sessions' temp folders. A shared file is copied into the crew's attachments, so what
@@ -6,6 +7,9 @@ the user sees doesn't change when the bot's folder does.
 """
 
 import asyncio
+import base64
+import binascii
+import mimetypes
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +19,7 @@ from crewbots.runner.common import WORK, NotAllowed
 from crewbots.store import Task
 
 MAX_SHARED = 10  # files in one share
+MAX_TOOL_IMAGES = 8  # kept from one tool result
 
 
 class Files:
@@ -64,3 +69,24 @@ class Files:
         folders = [task.worktree_path, task.workspace, bot.workspace if bot else None, self.crew.home / WORK / task.bot,
                    self.crew.home / attachments.FOLDER, paths.temp()]
         return [Path(f).expanduser().resolve() for f in folders if f]
+
+    def _kept_images(self, images: list[dict[str, Any]], read: str | None = None) -> list[dict[str, Any]]:
+        """A tool result's images, kept in the crew's attachments (each once, by what's in it): what the result
+        stores in their place, named after the file the tool read, if it read one. One that can't be read or is too
+        big is left out."""
+        kept = []
+        for image in images[:MAX_TOOL_IMAGES]:
+            try:
+                if path := image.get("path"):
+                    source = Path(path).expanduser()
+                    if source.stat().st_size > attachments.TOOL_IMAGE_BYTES:
+                        continue
+                    data, name = source.read_bytes(), source.name
+                else:
+                    data = base64.b64decode(image["data"], validate=True)  # in the format the tool sent, whatever it read
+                    name = (Path(read).stem if read else "image") + (mimetypes.guess_extension(image.get("mime") or "") or ".png")
+                if len(data) <= attachments.TOOL_IMAGE_BYTES:
+                    kept.append(attachments.keep(self.crew.home, data, name))
+            except (OSError, KeyError, binascii.Error):
+                continue
+        return kept

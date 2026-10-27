@@ -30,7 +30,7 @@ import subprocess
 import time
 from collections.abc import Callable, Mapping
 from contextlib import aclosing
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
@@ -41,7 +41,17 @@ from crewbots.backends import BACKENDS, Access, Backend, McpServer, RunSpec
 from crewbots.capacity import Capacity
 from crewbots.crew import NO_REPLY, Bot, Crew
 from crewbots.crew_tools import CrewTools
-from crewbots.events import Compacted, Done, Event, Notice, RateLimit, SessionStarted, Usage
+from crewbots.events import (
+    Compacted,
+    Done,
+    Event,
+    Notice,
+    RateLimit,
+    SessionStarted,
+    ToolCall,
+    ToolResult,
+    Usage,
+)
 from crewbots.reviews import review_prompt, reviewer_bot
 from crewbots.runner.checkins import Checkins
 from crewbots.runner.common import (
@@ -394,6 +404,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
             self._tokens[token] = task_id
             done: Done | None = None
             stalled = False
+            looked_at: dict[str, str] = {}
             try:
                 if open_session:
                     stream = open_session.session.turn(prompt)
@@ -418,6 +429,11 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
                         if isinstance(event, Usage):  # kept with what spent it, for the usage page
                             self._record(task_id, kind="usage", data=_usage_data(event, bot))
                         else:
+                            if isinstance(event, ToolCall):  # what its result's images are called: the file read
+                                looked_at[event.id] = str(event.input.get("file_path") or event.input.get("path") or "")
+                            elif isinstance(event, ToolResult) and event.images:  # as files, not in the database
+                                kept = await asyncio.to_thread(self._kept_images, event.images, looked_at.get(event.id))
+                                event = replace(event, images=kept)
                             self._record(task_id, event)
                         match event:
                             case SessionStarted(session_id=sid):

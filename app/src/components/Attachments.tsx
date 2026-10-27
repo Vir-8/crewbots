@@ -84,11 +84,11 @@ export function shownAs(file: { name: string; mime: string }): Shown {
 
 /** Files under a message: what you attached, or what a bot shared. Pictures, players, a PDF's first page, a page,
  * the start of a text file; anything else as a chip that opens it. */
-export function Files({ items, mine }: { items: Attachment[]; mine?: boolean }) {
+export function Files({ items, mine, compact }: { items: Attachment[]; mine?: boolean; compact?: boolean }) {
   const [enlarged, setEnlarged] = useState<Attachment | null>(null);
   if (!items.length) return null;
   return (
-    <div className={`message-files ${mine ? "mine" : ""}`}>
+    <div className={`message-files ${mine ? "mine" : ""} ${compact ? "compact" : ""}`}>
       {items.map((file) => (
         <FileView key={file.id || file.path} file={file} onEnlarge={() => setEnlarged(file)} />
       ))}

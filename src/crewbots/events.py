@@ -31,6 +31,9 @@ class ToolResult:
     id: str
     output: str
     is_error: bool = False
+    # Images the tool returned: {"mime", "data"} (base64) from the backend, or {"path"} of one it viewed on disk. The
+    # runner keeps each in the crew's attachments and stores what it kept instead, so no image sits in the database.
+    images: list[dict[str, Any]] = field(default_factory=list)
     kind: str = field(default="tool_result", init=False)
 
 

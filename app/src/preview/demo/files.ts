@@ -122,5 +122,6 @@ export const files = {
   report: shared("export-usage.html", "text/html", text(page, "text/html"), 1_200),
   code: shared("export.py", "text/x-python", text(code), 2_300),
   scene: shared("hero.blend", "application/octet-stream", "", 8_400_000),
+  viewport: shared("image.png", "image/png", render(), 96_000), // Blender's screenshot of its viewport, over MCP
 };
 demoFiles.set(`${files.notes.path}.png`, text(firstPage, "image/svg+xml")); // Quick Look's first page of it

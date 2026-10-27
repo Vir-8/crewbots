@@ -37,7 +37,7 @@ from claude_agent_sdk import (
 )
 
 from crewbots.backends.base import CLAUDE_BOT_ENV, Access, RunSpec, claude_retry
-from crewbots.backends.claude_cli import READ_ONLY_TOOLS, _stringify, compacted, rate_limit
+from crewbots.backends.claude_cli import READ_ONLY_TOOLS, _images, _stringify, compacted, rate_limit
 from crewbots.backends.credentials import without_credentials
 from crewbots.backends.policy import WEB_TOOLS, Policy
 from crewbots.crew_tools import CrewTools, ToolRefused
@@ -297,8 +297,8 @@ class SdkMapper:
                         events.append(ToolCall(id=block.id, name=block.name, input=block.input or {}))
                 return events
             case UserMessage(content=blocks) if isinstance(blocks, list):
-                return [ToolResult(id=b.tool_use_id, output=_stringify(b.content), is_error=bool(b.is_error))
-                        for b in blocks if isinstance(b, ToolResultBlock)]
+                return [ToolResult(id=b.tool_use_id, output=_stringify(b.content), is_error=bool(b.is_error),
+                                   images=_images(b.content)) for b in blocks if isinstance(b, ToolResultBlock)]
             case ResultMessage():
                 self.done = True
                 usage = _usage(message)

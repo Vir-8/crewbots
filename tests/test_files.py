@@ -110,3 +110,54 @@ async def test_the_chat_list_names_files_shared_without_words(crew, store, tmp_p
     with TestClient(create_app(crew.runner, "t", 8765), base_url="http://127.0.0.1:8765/v1") as client:
         [chat] = [c for c in client.get("/chats", headers={"Authorization": "Bearer t"}).json() if c["bot"] == "artist"]
     assert chat["last"]["text"] == "cut.mp4" and chat["unread"] == 1
+
+
+def test_images_from_tools_come_apart_from_their_text():
+    import base64
+
+    from crewbots.backends.claude_cli import ClaudeParser
+    from crewbots.backends.codex_app_server import AppServerParser
+
+    png = base64.b64encode(PNG).decode()
+    image = {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": png}}
+    read = {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "content": [image]}]}}
+    [result] = ClaudeParser().feed(read)
+    assert result.output == "" and result.images == [{"mime": "image/png", "data": png}]  # no base64 as text
+
+    codex = AppServerParser()
+    viewed = codex.feed("item/completed", {"item": {"type": "imageView", "id": "v1", "path": "/w/shot.png"}})
+    assert [(e.kind, getattr(e, "name", None), getattr(e, "images", None)) for e in viewed] == [
+        ("tool_call", "view_image", None), ("tool_result", None, [{"path": "/w/shot.png"}])]
+    mcp = {"type": "mcpToolCall", "id": "m1", "server": "blender", "tool": "get_screenshot", "arguments": {},
+           "status": "completed", "result": {"content": [{"type": "text", "text": "the viewport"},
+                                                         {"type": "image", "data": png, "mimeType": "image/png"}]}}
+    *_, shot = codex.feed("item/completed", {"item": mcp})
+    assert shot.output == "the viewport" and shot.images == [{"mime": "image/png", "data": png}]
+    made = {"type": "imageGeneration", "id": "g1", "status": "completed", "revisedPrompt": "a logo",
+            "savedPath": "/w/logo.png"}
+    call, result = codex.feed("item/completed", {"item": made})
+    assert call.name == "image_generation" and result.images == [{"path": "/w/logo.png"}]
+
+
+async def test_a_turns_tool_images_are_kept_as_files_once_each(store, tmp_path):
+    import base64
+
+    from crewbots.events import ToolCall, ToolResult
+
+    (tmp_path / "seen.png").write_bytes(PNG + b"seen")
+    png = base64.b64encode(PNG).decode()
+    crew = ScriptedCrew(store, tmp_path, bot("artist"))
+    crew.script["artist"] = lambda spec, me: [
+        ToolCall(id="a", name="Read", input={"file_path": "renders/hero.png"}),
+        ToolResult(id="a", output="", images=[{"mime": "image/png", "data": png}, {"mime": "image/png", "data": png}]),
+        ToolResult(id="b", output="", images=[{"path": str(tmp_path / "seen.png")}, {"path": str(tmp_path / "gone.png")},
+                                              {"mime": "image/png", "data": "not base64!"}]),
+        Done(final_text="ok")]
+    task = crew.runner.say("artist", "screenshot it")
+    await wait_until(lambda: not crew.runner.running())
+    first, second = [e.data["images"] for e in store.events(task.id) if e.kind == "tool_result"]
+    assert [i["id"] for i in first][0] == [i["id"] for i in first][1]  # the same picture, kept once
+    assert [i["name"] for i in second] == ["seen.png"] and first[0]["name"] == "hero.png"
+    assert open(first[0]["path"], "rb").read() == PNG
+    raw = store.db.execute("select group_concat(data) from events where kind = 'tool_result'").fetchone()[0]
+    assert png not in raw  # the database holds where they are, not the pictures

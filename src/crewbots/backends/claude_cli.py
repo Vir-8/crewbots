@@ -170,7 +170,8 @@ class ClaudeParser:
                 if not isinstance(content, list):
                     return []
                 return [
-                    ToolResult(id=b["tool_use_id"], output=_stringify(b.get("content")), is_error=bool(b.get("is_error")))
+                    ToolResult(id=b["tool_use_id"], output=_stringify(b.get("content")), is_error=bool(b.get("is_error")),
+                               images=_images(b.get("content")))
                     for b in content
                     if b.get("type") == "tool_result"
                 ]
@@ -218,6 +219,15 @@ def _stringify(content: Any) -> str:
         return content
     if isinstance(content, list):
         texts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
-        if texts:
+        if texts or _images(content):  # an image is kept on its own (`_images`), never as text
             return "\n".join(texts)
     return json.dumps(content)
+
+
+def _images(content: Any) -> list[dict[str, Any]]:
+    """The images in a tool's result: a file Read, an MCP tool's screenshot."""
+    if not isinstance(content, list):
+        return []
+    sources = [b.get("source") or {} for b in content if isinstance(b, dict) and b.get("type") == "image"]
+    return [{"mime": s.get("media_type") or "image/png", "data": s["data"]} for s in sources
+            if s.get("type") == "base64" and s.get("data")]

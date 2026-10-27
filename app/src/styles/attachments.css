@@ -93,6 +93,16 @@
   object-fit: cover;
 }
 
+/* Images a bot's tools returned, small, under its steps */
+.message-files.compact {
+  margin: 4px 0 0 20px;
+}
+
+.message-files.compact .message-picture img {
+  max-width: 200px;
+  max-height: 120px;
+}
+
 /* A shared file with something to show: a player, a PDF's first page, a page, the start of a text file */
 .file-card {
   width: 380px;

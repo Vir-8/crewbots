@@ -6,6 +6,7 @@ views images. That works the same on both backends, in a chat, a thread or a gro
 behind a turn.
 """
 
+import hashlib
 import mimetypes
 import re
 import shutil
@@ -16,6 +17,7 @@ from typing import Any
 FOLDER = "attachments"
 MAX_BYTES = 25_000_000
 SHARED_MAX_BYTES = 200_000_000  # a bot's renders and recordings run bigger, and are copied, not sent through the API
+TOOL_IMAGE_BYTES = 20_000_000  # an image a tool returned or viewed, kept to show in the steps
 ID = re.compile(r"[0-9a-f]{12}")
 
 
@@ -41,6 +43,18 @@ def copy_in(home: Path, source: Path, max_bytes: int = MAX_BYTES) -> dict[str, A
         raise AttachmentError(f"{source.name} is over {max_bytes // 1_000_000} MB")
     path = _new(home, source.name)
     shutil.copyfile(source, path)
+    return info(path)
+
+
+def keep(home: Path, data: bytes, name: str) -> dict[str, Any]:
+    """Keeps an image a tool returned, once however often it comes back (a screenshot taken again, a file read twice):
+    its folder is named by what's in it."""
+    folder = home / FOLDER / hashlib.sha256(data).hexdigest()[:12]
+    if existing := next((p for p in folder.iterdir() if p.is_file()), None) if folder.is_dir() else None:
+        return info(existing)
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / _safe(name)
+    path.write_bytes(data)
     return info(path)
 
 
@@ -71,10 +85,13 @@ def listing(attachments: list[dict[str, Any]]) -> str:
 
 
 def _new(home: Path, name: str) -> Path:
-    safe = re.sub(r"[^\w.\- ]+", "_", Path(name).name).strip(" .") or "file"
     folder = home / FOLDER / uuid.uuid4().hex[:12]
     folder.mkdir(parents=True)
-    return folder / safe
+    return folder / _safe(name)
+
+
+def _safe(name: str) -> str:
+    return re.sub(r"[^\w.\- ]+", "_", Path(name).name).strip(" .") or "file"
 
 
 def _size(n: int) -> str:

@@ -383,6 +383,10 @@ export function describeCall(name: string, input: Record<string, any>): string {
       return `Handing work to ${input.bot}`;
     case "share":
       return `Sharing ${(input.files ?? []).map(file).join(", ")}`;
+    case "view_image":
+      return `Looking at ${file(input.path)}`;
+    case "image_generation":
+      return `Making an image${input.prompt ? `: ${oneLine(String(input.prompt), 60)}` : ""}`;
     case "tasks":
       return "Checking on the crew";
     default:

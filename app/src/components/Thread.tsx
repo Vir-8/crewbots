@@ -351,6 +351,7 @@ const KIND: [RegExp, string, string][] = [
   [/^(WebSearch|WebFetch|web_search)$/, "Searched the web", ""],
   [/^mcp__crewbots__pr_(overview|diff)$/, "Read the pull request", ""],
   [/^mcp__crewbots__draft_comment$/, "Drafted", "comment"],
+  [/^(view_image|image_generation)$/, "Looked at", "image"],
 ];
 
 function summary(calls: { call: StoredEvent }[]): string {
@@ -367,6 +368,7 @@ function summary(calls: { call: StoredEvent }[]): string {
 function Steps({ calls }: { calls: { call: StoredEvent; result?: StoredEvent }[] }) {
   const [open, setOpen] = useState(false);
   const failed = calls.some((c) => c.result?.data.is_error);
+  const images: Attachment[] = calls.flatMap((c) => c.result?.data.images ?? []); // a file it looked at, a screenshot
   return (
     <div className="steps">
       <button className="steps-head" onClick={() => setOpen(!open)}>
@@ -374,6 +376,7 @@ function Steps({ calls }: { calls: { call: StoredEvent; result?: StoredEvent }[]
         <span>{summary(calls)}</span>
         {failed && <span className="steps-failed">one failed</span>}
       </button>
+      {images.length > 0 && <Files items={images} compact />}
       {open && (
         <div className="steps-body">
           {calls.map(({ call, result }) => (

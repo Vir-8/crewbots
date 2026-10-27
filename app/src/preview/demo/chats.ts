@@ -30,6 +30,10 @@ for (const b of bots) {
 
   // What the engineer made for the release, shared under its messages: one of each kind of file.
   message(chatIds.engineer, "user", "Show me what you made for the export release.");
+  emit(chatIds.engineer, "tool_call", { id: "bl1", name: "mcp__blender__render_viewport_to_path", input: { path: "renders/hero-render.png" } });
+  emit(chatIds.engineer, "tool_result", { id: "bl1", output: "Rendered to renders/hero-render.png", is_error: false });
+  emit(chatIds.engineer, "tool_call", { id: "bl2", name: "mcp__blender__get_screenshot_of_area_as_image", input: { area: "VIEW_3D" } });
+  emit(chatIds.engineer, "tool_result", { id: "bl2", output: "", is_error: false, images: [files.viewport] });
   tool(chatIds.engineer, "mcp__crewbots__share", { files: ["renders/hero-render.png", "exports-by-format.svg"] }, "Shared");
   emit(chatIds.engineer, "shared", { text: "The hero render for the release page, and exports by format over the last 30 days.", attachments: [files.render, files.chart] });
   emit(chatIds.engineer, "shared", { text: "The launch cut, and the chime for a finished export:", attachments: [files.cut, files.jingle] });
