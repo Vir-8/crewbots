@@ -211,6 +211,7 @@ select {
 }
 
 .main {
+  position: relative; /* for the find bar floating over a chat */
   display: flex;
   flex-direction: column;
   min-width: 0;

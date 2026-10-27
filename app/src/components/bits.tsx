@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { Status } from "../types";
+import { Marked } from "./Find";
 
 const STATUS_LABEL: Record<Status, string> = {
   queued: "queued",
@@ -32,16 +33,16 @@ export function Linked({ text, onSelect }: { text: string; onSelect: (id: string
   const parts: ReactNode[] = [];
   let last = 0;
   for (const match of text.matchAll(TASK_ID)) {
-    parts.push(text.slice(last, match.index));
+    parts.push(<Marked key={`t${last}`} text={text.slice(last, match.index)} />);
     const id = match[0];
     parts.push(
       <a key={`${id}-${match.index}`} className="task-link" onClick={() => onSelect(id)}>
-        {id}
+        <Marked text={id} />
       </a>,
     );
     last = match.index! + id.length;
   }
-  parts.push(text.slice(last));
+  parts.push(<Marked key="end" text={text.slice(last)} />);
   return <>{parts}</>;
 }
 
@@ -74,7 +75,7 @@ export function Markdown({ text, onSelect }: { text: string; onSelect: (id: stri
       const code: string[] = [];
       for (i++; i < lines.length && !lines[i].startsWith("```"); i++) code.push(lines[i]);
       i++;
-      blocks.push(<pre key={blocks.length}>{code.join("\n")}</pre>);
+      blocks.push(<pre key={blocks.length}><Marked text={code.join("\n")} /></pre>);
     } else if (/^#{1,6}\s/.test(line)) {
       const Tag = line.startsWith("# ") || line.startsWith("## ") ? "h3" : "h4";
       blocks.push(<Tag key={blocks.length}>{inline(line.replace(/^#+\s*/, ""))}</Tag>);
@@ -158,7 +159,7 @@ export function Inline({ text, onSelect }: { text: string; onSelect: (id: string
     const token = match[0];
     parts.push(
       token.startsWith("`") ? (
-        <code key={`c${match.index}`}>{token.slice(1, -1)}</code>
+        <code key={`c${match.index}`}><Marked text={token.slice(1, -1)} /></code>
       ) : (
         <strong key={`b${match.index}`}>
           <Linked text={token.slice(2, -2)} onSelect={onSelect} />

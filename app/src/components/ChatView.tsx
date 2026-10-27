@@ -8,6 +8,7 @@ import { Avatar, GroupAvatar, labelOf } from "./Avatar";
 import { Boundary } from "./Boundary";
 import { Markdown, ago } from "./bits";
 import { Composer } from "./Composer";
+import { FindBar, Finding, Marked, count, shown, useCurrentHit, useFind } from "./Find";
 import { Icon } from "./Icon";
 import { Thread } from "./Thread";
 import { settle } from "./ui";
@@ -18,6 +19,7 @@ export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string)
   const { crew, chat } = props;
   const task = chat.task_id ? crew.tasks.get(chat.task_id) : undefined;
   const bot = crew.bots.find((b) => b.name === chat.bot);
+  const find = useFind();
   useMarkRead(crew, chat);
   useEffect(() => {
     if (task) crew.ensureEvents(task.id); // the conversation, or nothing yet: either way it's known
@@ -56,10 +58,11 @@ export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string)
           <Icon name="profile" size={16} />
         </button>
       </header>
+      {find.finding && <FindBar find={find} placeholder={`Find in your chat with ${labelOf(chat.bot!)}`} />}
       {task && isEmpty(crew, task.id) ? (
         <Welcome crew={crew} bot={chat.bot!} onSay={(text) => crew.say(chat.bot!, text)} />
       ) : task ? (
-        <Thread crew={crew} task={task} onOpen={props.onOpen} chat />
+        <Thread crew={crew} task={task} onOpen={props.onOpen} chat find={{ query: find.lookFor, current: find.current, onFound: find.setFound }} />
       ) : (
         <div className="thread" />
       )}
@@ -95,6 +98,17 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
     return seat && ACTIVE.includes(seat.status);
   });
   const groups = useMemo(() => byAuthor(messages ?? []), [messages]);
+  const find = useFind();
+  const hits = useMemo(() => {
+    const out: { el: () => Element | null | undefined; nth: number }[] = [];
+    for (const m of find.lookFor ? messages ?? [] : []) {
+      const text = m.author === "user" ? m.text : shown(m.text);
+      for (let nth = 0, n = count(text, find.lookFor); nth < n; nth++) out.push({ el: () => box.current?.querySelector(`[data-msg="${m.id}"]`), nth });
+    }
+    return out;
+  }, [messages, find.lookFor]);
+  useEffect(() => find.setFound(hits.length), [hits.length]);
+  useCurrentHit(box, hits, find.current, find.lookFor);
 
   return (
     <>
@@ -120,16 +134,18 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
           <Icon name="profile" size={16} />
         </button>
       </header>
+      {find.finding && <FindBar find={find} placeholder={`Find in ${room.title}`} />}
       {messages?.length === 0 ? (
         <GroupWelcome crew={crew} room={room} onSay={(text) => crew.post(room.id, text)} />
       ) : (
         <div className="thread" ref={box}>
+          <Finding.Provider value={find.lookFor}>
           <div className="thread-col chat room">
             {groups.map((group) =>
               group.author === "user" ? (
                 group.messages.map((m) => (
                   <Boundary key={m.id} where={`a group chat message (${m.id})`}>
-                    <div className="you">
+                    <div className="you" data-msg={m.id}>
                       {m.text && <div className="you-text">{withMentions(m.text)}</div>}
                       <Files items={m.attachments ?? []} mine />
                     </div>
@@ -145,12 +161,14 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
                     </div>
                     {group.messages.map((m) => (
                       <Boundary key={m.id} where={`a group chat message (${m.id})`}>
-                        {m.text && (
-                          <div className="room-bubble">
-                            <Markdown text={m.text} onSelect={props.onOpen} />
-                          </div>
-                        )}
-                        <Files items={m.attachments ?? []} />
+                        <div className="room-message" data-msg={m.id}>
+                          {m.text && (
+                            <div className="room-bubble">
+                              <Markdown text={m.text} onSelect={props.onOpen} />
+                            </div>
+                          )}
+                          <Files items={m.attachments ?? []} />
+                        </div>
                       </Boundary>
                     ))}
                   </div>
@@ -174,6 +192,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
               </div>
             )}
           </div>
+          </Finding.Provider>
         </div>
       )}
       <div className="dock">
@@ -273,5 +292,5 @@ function byAuthor(messages: RoomMessage[]): { author: string; messages: RoomMess
 }
 
 function withMentions(text: string) {
-  return text.split(/(@[\w-]+)/g).map((part, i) => (part.startsWith("@") ? <span key={i} className="mention">{part}</span> : part));
+  return text.split(/(@[\w-]+)/g).map((part, i) => (part.startsWith("@") ? <span key={i} className="mention"><Marked text={part} /></span> : <Marked key={i} text={part} />));
 }

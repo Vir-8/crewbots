@@ -1,0 +1,57 @@
+/* Find (⌘F), floating over the top right of what it searches, like a browser's */
+.find-bar {
+  position: absolute;
+  top: 64px;
+  right: 18px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: min(360px, calc(100% - 36px));
+  padding: 4px 4px 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+  color: var(--soft);
+}
+
+.find-bar input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 4px;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.find-count {
+  font-size: 12px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.find-bar .flip {
+  transform: rotate(180deg);
+}
+
+.find-hit {
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--amber) 35%, transparent);
+  color: inherit;
+}
+
+.find-hit.current {
+  background: var(--amber);
+  color: #1a1a1a;
+}
+
+/* In the thread beside a chat, at the top of its activity */
+.panel-body > .find-bar {
+  top: 8px;
+  right: 12px;
+}

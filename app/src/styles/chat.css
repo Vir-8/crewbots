@@ -608,6 +608,13 @@ button.chat-head-who:hover {
   padding-left: 4px;
 }
 
+.room-message {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: inherit;
+}
+
 .room-bubble {
   align-self: flex-start;
   padding: 9px 14px;

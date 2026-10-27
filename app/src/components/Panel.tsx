@@ -6,6 +6,7 @@ import type { ReviewState, Task } from "../types";
 import { ACTIVE } from "../types";
 import { Composer } from "./Composer";
 import { DiffView } from "./DiffView";
+import { FindBar, useFind } from "./Find";
 import { Icon } from "./Icon";
 import { ReviewPanel } from "./ReviewPanel";
 import { Thread } from "./Thread";
@@ -21,6 +22,7 @@ export function Panel(props: { crew: Crew; task: Task; onOpen: (id: string) => v
   const [review, setReview] = useState<ReviewState | null>(null);
   const bot = crew.bots.find((b) => b.name === task.bot);
   const reviewOf = task.review_of ? crew.tasks.get(task.review_of) : undefined;
+  const find = useFind("panel", () => setTab("activity")); // after a click in the thread, ⌘F finds in it
 
   useEffect(() => {
     api.review(task.id).then(setReview, () => setReview(null));
@@ -76,7 +78,8 @@ export function Panel(props: { crew: Crew; task: Task; onOpen: (id: string) => v
         )}
       </header>
       <div className="panel-body">
-        {tab === "activity" && <Thread crew={crew} task={task} onOpen={props.onOpen} compact />}
+        {find.finding && tab === "activity" && <FindBar find={find} placeholder="Find in this thread" />}
+        {tab === "activity" && <Thread crew={crew} task={task} onOpen={props.onOpen} compact find={{ query: find.lookFor, current: find.current, onFound: find.setFound }} />}
         {tab === "changes" && <DiffView task={task} />}
         {tab === "review" && <ReviewPanel task={task} review={review} tasks={crew.tasks} onSelect={props.onOpen} />}
       </div>

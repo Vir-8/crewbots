@@ -1,5 +1,6 @@
-import { useDeferredValue, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api, bridge } from "../../api";
+import { FindBar, useFind } from "../../components/Find";
 import { Icon } from "../../components/Icon";
 import { modelLabel } from "../../components/ModelPicker";
 import { MAX_HITS, PullDiff } from "../../components/PullDiff";
@@ -25,29 +26,7 @@ export function PullView({ crew, selected, onSettings }: { crew: Crew; selected:
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState<Submitted | null>(null);
   // Finding in the diff, with ⌘F: the webview has no find of its own.
-  const [finding, setFinding] = useState(false);
-  const [query, setQuery] = useState("");
-  const [current, setCurrent] = useState(0);
-  const [found, setFound] = useState(0);
-  const findInput = useRef<HTMLInputElement>(null);
-  const lookFor = useDeferredValue(finding ? query : ""); // a big diff marks its matches behind your typing
-  const step = (by: number) => found && setCurrent((c) => (c + by + found) % found);
-  useEffect(() => {
-    const keys = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
-      if (e.key.toLowerCase() === "f") {
-        e.preventDefault();
-        setTab("changes");
-        setFinding(true);
-        setTimeout(() => findInput.current?.select(), 0);
-      } else if (e.key.toLowerCase() === "g" && finding) {
-        e.preventDefault();
-        step(e.shiftKey ? -1 : 1);
-      }
-    };
-    window.addEventListener("keydown", keys);
-    return () => window.removeEventListener("keydown", keys);
-  }, [finding, found]);
+  const find = useFind("main", () => setTab("changes"));
   const loadDrafts = () => api.drafts(selected.repo, selected.number).then(setDrafts, () => undefined);
   // A kept one shows at once; the daemon's answer, kept there too, replaces it a moment later.
   const load = () =>
@@ -142,36 +121,7 @@ export function PullView({ crew, selected, onSettings }: { crew: Crew; selected:
             </button>
           </div>
         )}
-        {finding && tab === "changes" && (
-          <div className="find-bar" role="search">
-            <Icon name="search" size={13} />
-            <input
-              ref={findInput}
-              autoFocus
-              value={query}
-              placeholder="Find in the changes"
-              aria-label="Find in the changes"
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setCurrent(0);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") step(e.shiftKey ? -1 : 1);
-                if (e.key === "Escape") setFinding(false);
-              }}
-            />
-            <span className="find-count faint">{query ? (found ? `${current + 1} of ${found}${found >= MAX_HITS ? "+" : ""}` : "No matches") : ""}</span>
-            <button className="icon-button" onClick={() => step(-1)} disabled={!found} title="Previous (⇧↩)">
-              <Icon name="chevronDown" size={13} className="flip" />
-            </button>
-            <button className="icon-button" onClick={() => step(1)} disabled={!found} title="Next (↩)">
-              <Icon name="chevronDown" size={13} />
-            </button>
-            <button className="icon-button" onClick={() => setFinding(false)} title="Close (esc)">
-              <Icon name="x" size={13} />
-            </button>
-          </div>
-        )}
+        {find.finding && tab === "changes" && <FindBar find={find} placeholder="Find in the changes" max={MAX_HITS} />}
         <div className="pull-scroll">
           {tab === "summary" ? (
             <div className="pull-col">
@@ -224,12 +174,9 @@ export function PullView({ crew, selected, onSettings }: { crew: Crew; selected:
             <PullDiff
               diff={diff}
               people={people(pull)}
-              find={lookFor}
-              current={current}
-              onMatches={(n) => {
-                setFound(n);
-                setCurrent((c) => (c < n ? c : 0));
-              }}
+              find={find.lookFor}
+              current={find.current}
+              onMatches={find.setFound}
               drafts={drafts}
               author={authorOf}
               onAdd={async (spot, body) => {

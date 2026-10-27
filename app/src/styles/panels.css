@@ -92,6 +92,7 @@
 }
 
 .panel-body {
+  position: relative; /* for the find bar */
   flex: 1;
   min-height: 0;
   display: flex;
