@@ -10,7 +10,7 @@ cd "$(dirname "$0")/.."
 export PATH="/opt/homebrew/bin:$HOME/.cargo/bin:$PATH" # an Apple silicon node and cargo before any Intel ones
 
 APP=/Applications/crewbots.app
-BUILT=app/src-tauri/target/release/bundle/macos/crewbots.app
+BUILT=${CARGO_TARGET_DIR:-app/src-tauri/target}/release/bundle/macos/crewbots.app
 daemon_only=false
 [[ "${1:-}" == "--daemon" ]] && daemon_only=true
 

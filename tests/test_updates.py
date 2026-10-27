@@ -15,7 +15,7 @@ RELEASE = """#!/bin/bash
 # stands in for scripts/release: says it's done, as the real one does at the end
 printf '{"state": "done", "step": "Released", "commit": "%s", "pid": %d, "started_at": 1, "at": 2}' \\
   "$(git rev-parse --short=12 HEAD)" $$ > "$HOME/.crewbots/release.json"
-echo "from the app: ${CREWBOTS_RELEASE_FROM_APP:-no}"
+echo "from the app: ${CREWBOTS_RELEASE_FROM_APP:-no}, building in ${CARGO_TARGET_DIR:-the checkout}"
 """
 
 
@@ -76,7 +76,9 @@ def test_an_update_from_github_comes_in_as_a_fast_forward_and_runs_the_release(c
     while updates.Updates(project, built).release().get("state") != "done" and time.time() < end:
         time.sleep(0.05)
     assert Updates(project, built).release()["commit"] == pushed and started["release"]["state"] in ("running", "done")
-    assert "from the app: 1" in updates.log_file().read_text()  # it leaves the relaunch to the app
+    said = updates.log_file().read_text()
+    assert "from the app: 1" in said  # it leaves the relaunch to the app
+    assert f"building in {updates.build_dir()}" in said  # in a folder of its own
 
     with pytest.raises(UpdateError, match="up to date"):
         Updates(project, pushed).start(pushed)

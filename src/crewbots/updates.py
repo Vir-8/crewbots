@@ -31,6 +31,11 @@ def log_file() -> Path:
     return paths.logs() / "release.log"
 
 
+def build_dir() -> Path:
+    """Where an update builds the app (cargo's target folder)."""
+    return paths.root() / "build" / "app"
+
+
 class Updates:
     def __init__(self, project: Path, running: str | None):
         self.project = project  # the checkout the daemon runs from
@@ -82,10 +87,11 @@ class Updates:
                        "started_at": int(time.time()), "at": int(time.time())})
         with log_file().open("w") as log:
             # The app restarts itself once it's done: it's the one that may relaunch it, with no Apple Events asked of
-            # anyone.
+            # anyone. The build has a folder of its own: macOS doesn't let this process reuse what a build started
+            # elsewhere (a terminal) left in the checkout's, which carries that other app's provenance.
+            env = {**os.environ, "CREWBOTS_RELEASE_FROM_APP": "1", "CARGO_TARGET_DIR": str(build_dir())}
             subprocess.Popen([str(self.project / "scripts" / "release")], cwd=self.project, stdout=log, stderr=log,
-                             stdin=subprocess.DEVNULL, start_new_session=True,
-                             env={**os.environ, "CREWBOTS_RELEASE_FROM_APP": "1"})
+                             stdin=subprocess.DEVNULL, start_new_session=True, env=env)
         return self.check(app)
 
     def release(self) -> dict[str, Any]:
