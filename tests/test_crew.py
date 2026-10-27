@@ -88,7 +88,7 @@ def test_every_bot_sees_its_card_the_roster_and_the_team_files(tmp_path):
     prompt = loaded.system_prompt(loaded.bots["reviewer"])
 
     assert prompt.startswith("You are reviewer, the Reviewer")
-    assert "Catch what the author missed" in prompt
+    assert "the second pair of eyes on work before the user sees it" in prompt
     assert "- reviewer (@reviewer, Reviewer) ← you:" in prompt
     assert "- chief (@chief, Chief of Staff):" in prompt and "← you" not in prompt.split("- chief")[1].splitlines()[0]
     assert "# team/protocol.md" in prompt and "HANDOFF" in prompt
