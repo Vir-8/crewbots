@@ -68,8 +68,90 @@ export async function selftest() {
     // Live updates reach the window too: the pause and resume above arrive as crew messages.
     report.liveCrewMessages = (await until(() => (crewMessages.length >= 2 ? crewMessages.length : 0), 10_000)) ?? 0;
     off();
+    report.files = await checkFiles();
   } catch (error) {
     report.error = String(error);
   }
   await invoke("selftest_report", { report });
+}
+
+const PDF = "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n" +
+  "3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]/Contents 4 0 R/Resources<<>>>>endobj\n" +
+  "4 0 obj<</Length 28>>stream\n0 0 1 rg 20 20 160 160 re f\nendstream endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n";
+
+/** Files as a chat draws them, straight from disk through the asset protocol: a picture, a video, a PDF's first page
+ * from Quick Look, a text file; and a file outside the crew's attachments stays out of reach. The files are this
+ * check's own attachments. */
+async function checkFiles(): Promise<Record<string, unknown>> {
+  const base64 = (bytes: ArrayBuffer) => {
+    let binary = "";
+    new Uint8Array(bytes).forEach((b) => (binary += String.fromCharCode(b)));
+    return btoa(binary);
+  };
+  const drawn = (src: string) => new Promise<boolean>((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img.naturalWidth > 0);
+    img.onerror = () => resolve(false);
+    img.src = src;
+  });
+  const out: Record<string, unknown> = {};
+  const step = async (name: string, check: () => Promise<unknown>) => {
+    try {
+      out[name] = await check();
+    } catch (error) {
+      out[name] = `failed: ${error}`;
+    }
+  };
+  await step("image", async () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 8;
+    const png = canvas.toDataURL("image/png");
+    const image = await api.uploadAttachment("selftest.png", png.slice(png.indexOf(",") + 1));
+    return drawn(bridge.fileSrc(image.path));
+  });
+  await step("video", async () => {
+    const recorded = await record();
+    const video = await api.uploadAttachment(recorded.type.includes("mp4") ? "selftest.mp4" : "selftest.webm", base64(await recorded.arrayBuffer()));
+    return new Promise<string>((resolve) => {
+      const v = document.createElement("video");
+      v.preload = "metadata";
+      v.onloadedmetadata = () => resolve(`${v.videoWidth}x${v.videoHeight}`);
+      v.onerror = () => resolve(`failed: ${v.error?.message ?? v.error?.code}`);
+      v.src = bridge.fileSrc(video.path);
+    });
+  });
+  await step("pdfPage", async () => {
+    const pdf = await api.uploadAttachment("selftest.pdf", btoa(PDF));
+    const started = performance.now();
+    const thumb = await bridge.thumbnail(pdf.path, 200);
+    out.pdfPageMs = Math.round(performance.now() - started);
+    return thumb ? drawn(bridge.fileSrc(thumb)) : "no thumbnail";
+  });
+  await step("text", async () => {
+    const text = await api.uploadAttachment("selftest.py", btoa("print('hi')\n"));
+    return (await (await fetch(bridge.fileSrc(text.path))).text()) === "print('hi')\n";
+  });
+  await step("outsideRefused", async () => !(await fetch(bridge.fileSrc("/etc/hosts")).then((r) => r.ok, () => false)));
+  return out;
+}
+
+/** A second of video, recorded from a canvas, to play back from disk. */
+async function record(): Promise<Blob> {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 48;
+  const g = canvas.getContext("2d")!;
+  const recorder = new MediaRecorder(canvas.captureStream(15));
+  const chunks: Blob[] = [];
+  recorder.ondataavailable = (e) => chunks.push(e.data);
+  const stopped = new Promise((resolve) => (recorder.onstop = resolve));
+  recorder.start();
+  for (let frame = 0; frame < 15; frame++) {
+    g.fillStyle = `hsl(${frame * 24}, 70%, 50%)`;
+    g.fillRect(0, 0, 64, 48);
+    await sleep(66);
+  }
+  recorder.stop();
+  await stopped;
+  return new Blob(chunks, { type: recorder.mimeType });
 }

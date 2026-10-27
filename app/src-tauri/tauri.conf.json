@@ -30,15 +30,23 @@
         "default-src": "'self'",
         "script-src": "'self'",
         "style-src": "'self' 'unsafe-inline'",
-        "img-src": "'self' data:",
-        "connect-src": "ipc: http://ipc.localhost"
+        "img-src": "'self' data: asset: http://asset.localhost",
+        "connect-src": "ipc: http://ipc.localhost asset: http://asset.localhost",
+        "media-src": "'self' asset: http://asset.localhost",
+        "frame-src": "asset: http://asset.localhost"
       },
       "devCsp": {
         "default-src": "'self'",
         "script-src": "'self' 'unsafe-inline'",
         "style-src": "'self' 'unsafe-inline'",
-        "img-src": "'self' data:",
-        "connect-src": "ipc: http://ipc.localhost ws://localhost:5173 http://localhost:5173"
+        "img-src": "'self' data: asset: http://asset.localhost",
+        "connect-src": "ipc: http://ipc.localhost asset: http://asset.localhost ws://localhost:5173 http://localhost:5173",
+        "media-src": "'self' asset: http://asset.localhost",
+        "frame-src": "asset: http://asset.localhost"
+      },
+      "assetProtocol": {
+        "enable": true,
+        "scope": []
       }
     }
   },

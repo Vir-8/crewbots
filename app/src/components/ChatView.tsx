@@ -3,7 +3,7 @@ import type { Crew } from "../state";
 import { doing, oneLine } from "../state";
 import type { Chat, Room, RoomMessage } from "../types";
 import { ACTIVE } from "../types";
-import { MessageFiles } from "./Attachments";
+import { Files } from "./Attachments";
 import { Avatar, GroupAvatar, labelOf } from "./Avatar";
 import { Boundary } from "./Boundary";
 import { Markdown, ago } from "./bits";
@@ -131,7 +131,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
                   <Boundary key={m.id} where={`a group chat message (${m.id})`}>
                     <div className="you">
                       {m.text && <div className="you-text">{withMentions(m.text)}</div>}
-                      <MessageFiles items={m.attachments ?? []} />
+                      <Files items={m.attachments ?? []} mine />
                     </div>
                   </Boundary>
                 ))
@@ -145,9 +145,12 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
                     </div>
                     {group.messages.map((m) => (
                       <Boundary key={m.id} where={`a group chat message (${m.id})`}>
-                        <div className="room-bubble">
-                          <Markdown text={m.text} onSelect={props.onOpen} />
-                        </div>
+                        {m.text && (
+                          <div className="room-bubble">
+                            <Markdown text={m.text} onSelect={props.onOpen} />
+                          </div>
+                        )}
+                        <Files items={m.attachments ?? []} />
                       </Boundary>
                     ))}
                   </div>

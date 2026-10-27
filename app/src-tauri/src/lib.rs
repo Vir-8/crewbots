@@ -1,5 +1,6 @@
 mod crew;
 mod dictation;
+mod files;
 mod watch;
 
 use std::sync::{Arc, Mutex, OnceLock};
@@ -196,11 +197,15 @@ pub fn run() {
             app_info,
             restart_app,
             dictation::dictation_start,
-            dictation::dictation_stop
+            dictation::dictation_stop,
+            files::show_files,
+            files::open_file,
+            files::thumbnail
         ])
         .setup(move |app| {
             LAUNCHED_BUILD.get_or_init(executable_time);
             build_tray(app, &crew)?;
+            files::allow(app.handle(), crew.home());
             tauri::async_runtime::spawn(crew.clone().run(app.handle().clone()));
             Ok(())
         })

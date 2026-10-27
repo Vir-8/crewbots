@@ -5,3 +5,4 @@ export * from "./make";
 export * from "./stories";
 export * from "./reviews";
 export * from "./chats";
+export { demoFiles } from "./files";

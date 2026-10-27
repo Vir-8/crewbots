@@ -1,6 +1,4 @@
-/* Attachments: in the message box, and under a sent message. */
-
-/* Attachments: in the message box, and under a sent message */
+/* Attachments: in the message box, and files under a message: yours, or what a bot shared. */
 
 .composer.dropping {
   border-color: var(--blue);
@@ -19,8 +17,12 @@
 }
 
 .message-files {
-  justify-content: flex-end;
   margin-top: 6px;
+  align-items: flex-start;
+}
+
+.message-files.mine {
+  justify-content: flex-end;
 }
 
 .file-chip {
@@ -86,9 +88,170 @@
 
 .message-picture img {
   display: block;
-  max-width: 260px;
-  max-height: 220px;
+  max-width: 320px;
+  max-height: 240px;
   object-fit: cover;
+}
+
+/* A shared file with something to show: a player, a PDF's first page, a page, the start of a text file */
+.file-card {
+  width: 380px;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.file-card.page,
+.file-card.text {
+  width: 520px;
+}
+
+.file-card-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 6px 0 10px;
+  color: var(--soft);
+  font-size: 12.5px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.file-card-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text);
+  min-width: 0;
+}
+
+.file-card-head .text-button.small {
+  font-size: 12px;
+  padding: 0 4px;
+}
+
+.file-card-head .text-button.on {
+  color: var(--amber);
+}
+
+.file-card-head .icon-button.small {
+  width: 24px;
+  height: 24px;
+}
+
+.file-video {
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  background: #000;
+}
+
+.file-audio {
+  display: block;
+  width: calc(100% - 16px);
+  height: 36px;
+  margin: 8px;
+}
+
+.file-pdf-page {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 120px;
+  padding: 12px;
+  background: var(--raised);
+}
+
+.file-pdf-page img {
+  display: block;
+  max-width: 220px;
+  max-height: 280px;
+  border-radius: 3px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+}
+
+.file-page {
+  display: block;
+  width: 100%;
+  height: 300px;
+  border: 0;
+  background: #fff; /* a page without a background of its own is drawn on white, as a browser would */
+}
+
+.file-code {
+  margin: 0;
+  padding: 10px 12px;
+  font: 12px/1.5 var(--mono);
+  color: var(--text);
+  white-space: pre;
+  overflow-x: auto;
+  max-height: 260px;
+  overflow-y: hidden;
+}
+
+.file-code.all {
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+.file-more {
+  display: block;
+  padding: 4px 12px 8px;
+  font-size: 12px;
+}
+
+.tok-comment {
+  color: var(--faint);
+  font-style: italic;
+}
+
+.tok-string {
+  color: var(--green);
+}
+
+.tok-number {
+  color: var(--amber);
+}
+
+.tok-keyword {
+  color: var(--blue);
+}
+
+/* A picture, big, over the window */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.82);
+}
+
+.lightbox-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(900px, 100%);
+  color: #e6e6e6;
+  font-size: 13px;
+}
+
+.lightbox-bar .file-card-name {
+  color: #f2f2f2;
+}
+
+.lightbox-image {
+  max-width: 100%;
+  max-height: calc(100vh - 110px);
+  object-fit: contain;
+  border-radius: 6px;
+  background: #fff1; /* a transparent picture still shows its edges */
 }
 
 .icon-button.attach {

@@ -1,7 +1,8 @@
 // Chats: one ongoing chat with each bot. The chief's opened the work above as threads, so they hang from it.
 
+import { files } from "./files";
 import { bots, done, emit, message, say, task, tasks, tick, tool } from "./make";
-import type { Room } from "../../types";
+import type { Attachment, Room } from "../../types";
 
 export const chatIds: Record<string, string> = {};
 for (const b of bots) {
@@ -26,6 +27,16 @@ for (const b of bots) {
   say(chief, "Merged. The CSV export is with the engineer now, and the reviewer and critic will check it before it comes to you.");
   done(chief);
 
+
+  // What the engineer made for the release, shared under its messages: one of each kind of file.
+  message(chatIds.engineer, "user", "Show me what you made for the export release.");
+  tool(chatIds.engineer, "mcp__crewbots__share", { files: ["renders/hero-render.png", "exports-by-format.svg"] }, "Shared");
+  emit(chatIds.engineer, "shared", { text: "The hero render for the release page, and exports by format over the last 30 days.", attachments: [files.render, files.chart] });
+  emit(chatIds.engineer, "shared", { text: "The launch cut, and the chime for a finished export:", attachments: [files.cut, files.jingle] });
+  emit(chatIds.engineer, "shared", { text: "", attachments: [files.notes, files.report] });
+  emit(chatIds.engineer, "shared", { text: "The export code and its tests, and the scene the render came from.", attachments: [files.code, files.scene] });
+  say(chatIds.engineer, "That's everything for the release: the notes are ready for you to read, and the page has the numbers.");
+  done(chatIds.engineer);
 
   message(chatIds.engineer, "user", "Can you keep the test suite under 30 seconds?");
   say(chatIds.engineer, "It's at 18s now. The slowest file is `test_reports.py` (6s), mostly fixtures; I can trim that if it grows.");
@@ -64,7 +75,7 @@ export const rooms: DemoRoom[] = [
   { id: "r_naming0003", title: "Naming the export", lead: "engineer", members: ["engineer", "critic"], created_at: tick(), updated_at: tick(), stopped: { after: 4, waiting: ["engineer"], owed: ["engineer"] } },
   { id: "r_launch0004", title: "Launch prep", lead: "chief", members: ["chief", "engineer"], created_at: tick(), updated_at: tick(), archived_at: tick() },
 ];
-export const roomMessages = new Map<string, { id: number; room_id: string; author: string; text: string; depth: number; at: string }[]>();
+export const roomMessages = new Map<string, { id: number; room_id: string; author: string; text: string; depth: number; at: string; attachments?: Attachment[] }[]>();
 {
   let id = 1;
   const room = rooms[0].id;
@@ -74,6 +85,8 @@ export const roomMessages = new Map<string, { id: number; room_id: string; autho
     said("engineer", "Endpoint's in and its tests pass. Wiring the button now. @reviewer it'll be yours in a few minutes.", 1),
     said("reviewer", "Ready when you are. I'll check the filters reach the export.", 2),
     said("chief", "Thanks both. I'll propose it for merging once both reviews pass.", 1),
+    { ...said("engineer", "The launch cut, for anyone who wants a look before Friday:", 1), attachments: [files.cut] },
+    { ...said("user", "Here's the copy deck for it."), attachments: [files.notes] },
   ]);
   const naming = rooms[2].id;
   const argued = (author: string, text: string, depth: number) => ({ ...said(author, text, depth), room_id: naming });

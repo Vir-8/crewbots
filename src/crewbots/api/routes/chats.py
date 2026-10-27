@@ -19,14 +19,14 @@ def routes(c: Context) -> APIRouter:
 
     def direct(bot: str) -> dict[str, Any]:
         chat = runner.chat(bot)
-        said = store.last_event(chat.id, ("text",))
+        said = store.last_event(chat.id, ("text", "shared"))
         asked = store.last_event(chat.id, ("message",))
         last = None
         if asked and asked.data.get("from") not in ("crewbots", "room") and (not said or asked.id > said.id):
             last = {"author": asked.data.get("from", "user"), "text": asked.data.get("text", ""), "at": asked.at}
         elif said:
-            last = {"author": bot, "text": said.data.get("text", ""), "at": said.at}
-        unread = store.count_events_after(chat.id, store.seen(f"chat:{chat.id}"), ("text", "escalation"))
+            last = {"author": bot, "text": _said(said.data), "at": said.at}
+        unread = store.count_events_after(chat.id, store.seen(f"chat:{chat.id}"), ("text", "shared", "escalation"))
         return {"key": f"bot:{bot}", "kind": "direct", "title": runner.crew.bots[bot].title, "bot": bot,
                 "task_id": chat.id, "room": None, "last": last, "unread": unread, "working": busy(chat.id),
                 "updated_at": last["at"] if last else chat.created_at}
@@ -36,8 +36,9 @@ def routes(c: Context) -> APIRouter:
         seen = store.seen(f"room:{room['id']}")
         unread = sum(1 for m in store.room_messages(room["id"], after=seen) if m["author"] != "user")
         seats = [store.seat_of(room["id"], b) for b in room["members"]]
+        last = {"author": message["author"], "text": _said(message), "at": message["at"]} if message else None
         return {"key": f"room:{room['id']}", "kind": "group", "title": room["title"], "bot": None, "task_id": None,
-                "room": room, "last": {k: message[k] for k in ("author", "text", "at")} if message else None,
+                "room": room, "last": last,
                 "unread": unread, "working": any(s and busy(s.id) for s in seats), "updated_at": room["updated_at"]}
 
     def room_or_404(room_id: str) -> dict[str, Any]:
@@ -110,3 +111,8 @@ def routes(c: Context) -> APIRouter:
         return runner.carry_on(room_id)
 
     return v1
+
+
+def _said(message: dict[str, Any]) -> str:
+    """What a chat's latest message reads as in the list: its text, or the files it came with."""
+    return message.get("text") or ", ".join(a["name"] for a in message.get("attachments") or [])

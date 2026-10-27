@@ -98,3 +98,15 @@ def test_codex_bots_share_through_the_bot_api(crew_app, tmp_path):  # noqa: F811
     assert shared.status_code == 201 and shared.json()["files"][0]["mime"] == "image/svg+xml"
     assert client.post("/bot/share", json={"files": ["nope.svg"]}, headers=as_bot(token)).status_code == 422
     assert client.post("/bot/share", json={"files": ["/etc/hosts"]}, headers=as_bot(token)).status_code == 403
+
+
+async def test_the_chat_list_names_files_shared_without_words(crew, store, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from crewbots.api import create_app
+
+    (tmp_path / "studio" / "cut.mp4").write_bytes(b"\0" * 64)
+    await CrewTools(crew.runner, crew.runner.chat("artist").id, False).call("share", {"files": ["cut.mp4"]})
+    with TestClient(create_app(crew.runner, "t", 8765), base_url="http://127.0.0.1:8765/v1") as client:
+        [chat] = [c for c in client.get("/chats", headers={"Authorization": "Bearer t"}).json() if c["bot"] == "artist"]
+    assert chat["last"]["text"] == "cut.mp4" and chat["unread"] == 1

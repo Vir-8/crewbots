@@ -41,6 +41,11 @@ It listens on localhost only. Clients authenticate with the token in a file only
   - native notifications
   - a **menu bar item**: crew status, "needs you" count, pause all
   - opening folders and worktrees
+  - **files the window shows** (`files.rs`): drawn straight from disk through the asset protocol, which streams
+    video and passes nothing through the API as base64. The crew's attachments are open to it; a file a bot names
+    elsewhere is opened to it one at a time. A click opens a document or media file in its own app, and anything that
+    could run (a script, an app a bot wrote) only in Finder. A PDF's first page is Quick Look's thumbnail (`qlmanage`),
+    cached per version.
 - **The UI** is a sandboxed web view with no direct network access and no token. It gets data only from the Rust side, the same split the Electron prototype proved.
 - **The UI** is a messaging app: a chat with each bot and group chats, threads beside them, and each bot's profile.
 - **Speed:**

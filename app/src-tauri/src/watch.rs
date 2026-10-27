@@ -187,7 +187,12 @@ impl CrewView {
         if author == "user" || message["room_id"].as_str().is_some_and(|room| self.muted.contains(room)) {
             return None;
         }
-        Some(Alert::Said { author: author.to_string(), text: message["text"].as_str().unwrap_or_default().to_string() })
+        let mut text = message["text"].as_str().unwrap_or_default().to_string();
+        if text.is_empty() {
+            let files = message["attachments"].as_array().into_iter().flatten().filter_map(|f| f["name"].as_str());
+            text = files.collect::<Vec<_>>().join(", "); // it shared files and said nothing
+        }
+        Some(Alert::Said { author: author.to_string(), text })
     }
 
     pub fn summary(&self) -> Summary {
@@ -283,6 +288,8 @@ mod tests {
         view.set_rooms(&[json!({"id": "r1", "muted": true}), json!({"id": "r2", "muted": false})]);
         assert_eq!(view.said(&said), None);
         assert!(view.said(&json!({"room_id": "r2", "author": "engineer", "text": "done"})).is_some());
+        let shared = json!({"room_id": "r2", "author": "engineer", "text": "", "attachments": [{"name": "cut.mp4"}]});
+        assert!(matches!(view.said(&shared), Some(Alert::Said { text, .. }) if text == "cut.mp4"));
         view.set_rooms(&[json!({"id": "r1", "muted": false})]);
         assert!(view.said(&said).is_some());
     }

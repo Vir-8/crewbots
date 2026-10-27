@@ -1,6 +1,6 @@
 // The window's line to the Tauri shell (src-tauri/src/crew.rs), which holds the daemon's token and makes every call.
 
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -39,6 +39,14 @@ const tauriBridge = {
   /** Quits and opens the app again, from the build installed now. */
   restartApp: () => invoke<void>("restart_app"),
   openPath: (path: string) => openPath(path),
+  /** Where the window draws a file from: straight from disk, through the asset protocol (no base64, and video
+   * streams). The crew's attachments are open to it; a file elsewhere needs `showFiles` first. */
+  fileSrc: (path: string) => convertFileSrc(path),
+  showFiles: (paths: string[]) => invoke<void>("show_files", { paths }),
+  /** Opens a file in its own app; one that could run (a script, an app) is shown in Finder instead. */
+  openFile: (path: string) => invoke<void>("open_file", { path }),
+  /** Quick Look's thumbnail of a file (a PDF's first page), as a path to draw, or null. */
+  thumbnail: (path: string, size: number) => invoke<string | null>("thumbnail", { path, size }),
   /** A GitHub page, in your browser. */
   openUrl: (url: string) => openUrl(url),
   onStatus: (callback: (status: ConnectionStatus) => void) => subscribe("crew:status", callback),

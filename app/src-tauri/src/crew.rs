@@ -87,6 +87,10 @@ impl Crew {
         }
     }
 
+    pub fn home(&self) -> &std::path::Path {
+        &self.home
+    }
+
     pub async fn status(&self) -> ConnectionStatus {
         self.status.lock().await.clone()
     }

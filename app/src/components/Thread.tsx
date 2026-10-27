@@ -3,7 +3,7 @@ import type { Crew } from "../state";
 import { describeCall, doing, limitText, oneLine } from "../state";
 import type { Attachment, StoredEvent, Task } from "../types";
 import { ACTIVE } from "../types";
-import { MessageFiles } from "./Attachments";
+import { Files } from "./Attachments";
 import { labelOf } from "./Avatar";
 import { Boundary } from "./Boundary";
 import { Markdown, tokens } from "./bits";
@@ -234,7 +234,7 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
       return (
         <div className="you">
           {block.text && <div className="you-text">{block.text}</div>}
-          <MessageFiles items={block.files} />
+          <Files items={block.files} mine />
         </div>
       );
     case "brief":
@@ -244,7 +244,7 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
         <div className="say">
           {block.tag && <div className={`say-tag ${block.tag === "Needs you" ? "urgent" : ""}`}>{block.tag}</div>}
           {block.text && <Markdown text={block.text} onSelect={props.onOpen} />}
-          {block.files && <MessageFiles items={block.files} />}
+          {block.files && <Files items={block.files} />}
           {block.raised && <Reactions crew={props.crew} id={block.raised} />}
         </div>
       );

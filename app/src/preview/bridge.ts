@@ -163,7 +163,8 @@ async function request(method: string, path: string, body?: any) {
   }
   if (method === "POST" && url.pathname === "/attachments") {
     const id = Math.random().toString(16).slice(2, 14).padEnd(12, "0");
-    const mime = /\.(png|jpe?g|gif|webp)$/i.test(body.name) ? "image/png" : "application/octet-stream";
+    const ext = String(body.name).split(".").pop()!.toLowerCase();
+    const mime = MIMES[ext] ?? "application/octet-stream";
     previewFiles.set(id, { name: body.name, mime, data: body.data });
     return ok({ id, name: body.name, path: `~/.crewbots/crew/attachments/${id}/${body.name}`, mime, size: Math.round((body.data.length * 3) / 4), kind: mime.startsWith("image/") ? "image" : "file" });
   }
@@ -273,12 +274,31 @@ async function request(method: string, path: string, body?: any) {
   return missing(`${method} ${path}`);
 }
 
+const MIMES: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml", mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm", mp3: "audio/mpeg", wav: "audio/wav", m4a: "audio/mp4", pdf: "application/pdf", html: "text/html", txt: "text/plain", md: "text/markdown", csv: "text/csv", json: "application/json", py: "text/x-python" };
+
+/** A file the preview draws: a demo file, or one you attached here. */
+function previewFileSrc(path: string): string {
+  const demoFile = demo.demoFiles.get(path);
+  if (demoFile !== undefined) return demoFile;
+  const attached = /attachments\/([0-9a-f]{12})\//.exec(path);
+  const f = attached && previewFiles.get(attached[1]);
+  return f ? `data:${f.mime};base64,${f.data}` : "";
+}
+
+async function previewThumbnail(path: string): Promise<string | null> {
+  return demo.demoFiles.has(`${path}.png`) ? `${path}.png` : null;
+}
+
 export const previewBridge = {
   status: async () => status,
   request,
   pickFolder: async () => "~/code/acme-web",
   reveal: async (_path: string) => undefined,
   openPath: async (_path: string) => undefined,
+  fileSrc: (path: string) => previewFileSrc(path),
+  showFiles: async (_paths: string[]) => undefined,
+  openFile: async (_path: string) => undefined,
+  thumbnail: async (path: string, _size: number) => previewThumbnail(path),
   openUrl: async (url: string) => void window.open(url, "_blank"),
   startAtLogin: async (enabled?: boolean) => enabled ?? true,
   appInfo: async () => ({ installed_newer: new URLSearchParams(location.search).has("update") }), // ?update shows the banner
