@@ -51,7 +51,7 @@ def routes(c: Context) -> APIRouter:
     @v1.post("/tasks/{task_id}/messages", response_model=TaskOut)
     async def message(task_id: str, body: Message):
         task_or_404(task_id)
-        return runner.send(task_id, body.text, attachments=attached(body)).to_json()
+        return runner.send(task_id, body.text, attachments=attached(body), question_id=body.question_id).to_json()
 
     @v1.post("/tasks/{task_id}/cancel", response_model=TaskOut)
     async def cancel(task_id: str):

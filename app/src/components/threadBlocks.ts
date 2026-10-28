@@ -21,7 +21,7 @@ export type Block =
   | { kind: "offer"; id: number; outcome?: Record<string, any> } // the chief's, under its greeting: how it was answered
   // What a bot asks the user to allow: in its own thread, and in the chat its work came from (`here` false there).
   | { kind: "permission"; id: number; permission: number; bot: string; taskId: string; ask: string; what: string; why: string; folder?: string; here: boolean; allowed?: boolean }
-  | { kind: "ask"; id: number; taskId: string; question: string; choices?: Choice[]; multiple?: boolean; answer?: string }
+  | { kind: "ask"; id: number; taskId: string; question: string; choices?: Choice[]; multiple?: boolean; answer?: string; room?: string; closed?: boolean; questionId?: number }
   | { kind: "held"; id: number; taskId: string; reason: string }
   | { kind: "handoff"; id: number; data: Record<string, any> }
   | { kind: "verdict"; id: number; data: Record<string, any> };
@@ -203,6 +203,12 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
       case "escalation":
         flush();
         out.push({ kind: "ask", id: e.id, taskId: e.task_id, question: d.question, choices: d.choices, multiple: d.multiple, answer: answerTo(events, e.id) });
+        break;
+      case "seat_escalation":
+        flush();
+        out.push({ kind: "ask", id: e.id, taskId: d.task, question: d.question, choices: d.choices, multiple: d.multiple,
+          room: d.room, questionId: d.question_id, answer: events.find((x) => x.kind === "seat_escalation_answer" && x.data.question_id === d.question_id)?.data.text,
+          closed: events.some((x) => x.kind === "seat_escalation_closed" && x.data.question_id === d.question_id) });
         break;
       case "handoff":
         flush();

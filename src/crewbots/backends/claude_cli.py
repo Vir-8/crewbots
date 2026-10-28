@@ -52,7 +52,7 @@ class ClaudeCLI:
     def run(self, spec: RunSpec) -> AsyncIterator[Event]:
         return stream_jsonl(
             self.argv(spec), cwd=spec.cwd, env=self.env(spec), parser=ClaudeParser(), stdin_text=spec.prompt,
-            timeout_s=spec.timeout_s,
+            timeout_s=spec.timeout_s, on_prompt_sent=spec.on_prompt_sent,
         )
 
     async def open(self, spec: RunSpec) -> "ClaudeSession":
@@ -112,6 +112,7 @@ class ClaudeCLI:
 class ClaudeSession:
     def __init__(self, process: JsonlProcess, spec: RunSpec):
         self.process = process
+        self.on_prompt_sent = spec.on_prompt_sent
         self.timeout_s = spec.timeout_s
         self.session_id = spec.resume_session_id
         self._broken = False
@@ -125,6 +126,8 @@ class ClaudeSession:
         finished = False
         try:
             await self.process.send({"type": "user", "message": {"role": "user", "content": prompt}})
+            if self.on_prompt_sent:
+                self.on_prompt_sent()
             loop = asyncio.get_running_loop()
             deadline = loop.time() + self.timeout_s if self.timeout_s else None
             while True:

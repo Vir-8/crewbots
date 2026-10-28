@@ -43,7 +43,8 @@ def routes(c: Context) -> APIRouter:
             last = {"author": asked.data.get("from", "user"), "text": asked.data.get("text", ""), "at": asked.at}
         elif said:
             last = {"author": bot, "text": _said(said.data), "at": said.at}
-        unread = store.count_events_after(chat.id, store.seen(f"chat:{chat.id}"), ("text", "shared", "escalation"))
+        unread = store.count_events_after(chat.id, store.seen(f"chat:{chat.id}"),
+                                          ("text", "shared", "escalation", "seat_escalation"))
         return {"key": f"bot:{bot}", "kind": "direct", "title": runner.crew.bots[bot].title, "bot": bot,
                 "task_id": chat.id, "room": None, "last": last, "unread": unread,
                 "muted": store.chat_muted(bot), "working": busy(chat.id),

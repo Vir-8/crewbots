@@ -1,7 +1,7 @@
 """What every backend takes and returns."""
 
 import tempfile
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -81,6 +81,7 @@ class RunSpec:
     effort: str | None = None  # reasoning effort (low ... max); None leaves it to the CLI's own default
     context_window: int | None = None  # tokens before the CLI compacts; None leaves it to the model's whole window
     extra_args: list[str] = field(default_factory=list)  # passed through to the CLI unchanged
+    on_prompt_sent: Callable[[], None] | None = None  # called after the backend sends the prompt
 
 
 class Session(Protocol):

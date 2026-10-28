@@ -6,7 +6,7 @@ from fakes import FakeBackend, bot, git_repo, make_crew, wait_until
 from crewbots import paths
 from crewbots.backends import Access
 from crewbots.events import Done, SessionStarted, Text
-from crewbots.runner import Runner, UnknownBot
+from crewbots.runner import NotAllowed, Runner, UnknownBot
 from crewbots.store import Status, Store
 
 
@@ -163,6 +163,63 @@ async def test_cancel_stops_the_run(store, tmp_path):
 
     assert store.get_task(task.id).status is Status.CANCELLED
     assert backend.closed == 1 and runner.running() == []
+
+
+async def test_cancel_begin_failure_releases_guard_and_cancels_run(store, tmp_path, monkeypatch):
+    gate = asyncio.Event()
+    runner, backend = runner_for(store, tmp_path, backend=FakeBackend(gate=gate))
+    task = runner.submit("worker", "first")
+    await wait_until(lambda: backend.active == 1)
+    run = runner._runs[task.id]
+    clear_pending = store.clear_pending
+
+    def fail(_task_id):
+        raise OSError("storage failure")
+
+    monkeypatch.setattr(store, "clear_pending", fail)
+    with pytest.raises(OSError, match="storage failure"):
+        await runner.cancel(task.id)
+    with pytest.raises(asyncio.CancelledError):
+        await run
+    assert task.id not in runner._cancelling
+    monkeypatch.setattr(store, "clear_pending", clear_pending)
+    runner.send(task.id, "again")
+    await wait_until(lambda: backend.active == 1)
+    await runner.cancel(task.id)
+    assert store.get_task(task.id).status is Status.CANCELLED
+
+
+@pytest.mark.parametrize("active", [False, True])
+async def test_cancel_blocks_new_runs_until_cleanup_finishes(store, tmp_path, monkeypatch, active):
+    gate = asyncio.Event()
+    runner, backend = runner_for(store, tmp_path, backend=FakeBackend(gate=gate) if active else None)
+    task = runner.submit("worker", "first") if active else store.create_task("worker", "finished", status=Status.IDLE)
+    if active:
+        await wait_until(lambda: backend.active == 1)
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def blocked_close(_task_id):
+        entered.set()
+        await release.wait()
+
+    monkeypatch.setattr(runner.browser, "close_task", blocked_close)
+    cancelling = asyncio.create_task(runner.cancel(task.id))
+    await asyncio.wait_for(entered.wait(), 2)
+    try:
+        with pytest.raises(NotAllowed, match="being cancelled"):
+            runner.send(task.id, "start again")
+        with pytest.raises(NotAllowed, match="being cancelled"):
+            runner._start(task.id, "start again")
+        assert len(backend.specs) == int(active)
+        assert set(runner.running()) == ({task.id} if active else set())
+    finally:
+        release.set()
+        await cancelling
+    assert task.id not in runner.running()
+    gate.set()
+    runner.send(task.id, "start again")
+    await wait_until(settled(store, task.id))
+    assert backend.specs[-1].prompt == "start again"
 
 
 async def test_shutdown_interrupts_running_tasks(store, tmp_path):

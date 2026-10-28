@@ -7,7 +7,7 @@ You can hand work to a teammate. Every task has exactly one owner:
   reviewer reads that task's worktree. Not to yourself (open a thread for that), and not back to a bot that's already
   in this chain of work (hand back or escalate instead). crewbots stops a chain of delegations a few levels deep, and
   caps how many tasks you have out at once.
-- `tasks()`: the tasks you delegated, with their status, handoffs and results. For looking something up, never for
+- `tasks()`: your unfinished tasks and 20 most recent finished tasks across sessions, with their status, handoffs and results. For looking something up, never for
   waiting: results come to you.
 - `message(task_id, text)`: answer a task's escalation, or send it review objections to fix.
 

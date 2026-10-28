@@ -167,7 +167,7 @@ class CrewTools:
                 case "tasks":
                     import json
 
-                    return json.dumps(r.children_of(me), indent=1, default=str)
+                    return json.dumps(r.delegated_by(me), indent=1, default=str)
                 case "message":
                     task = r.message_child(me, args["task_id"], args["text"])
                     return f"Sent to {task.id} ({task.status})."

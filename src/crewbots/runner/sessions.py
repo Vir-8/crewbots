@@ -252,7 +252,8 @@ class Sessions:
         things stand, so a fresh session after the cache has gone (`_gone_cold`) loses nothing."""
         now = time.time()
         for task_id, ended in list(self._turn_ended.items()):
-            if (task_id in self._flushed or task_id in self._runs or not self.flush_idle_s <= now - ended < self.cold_s
+            if (task_id in self._flushed or task_id in self._runs or task_id in self._cancelling
+                    or not self.flush_idle_s <= now - ended < self.cold_s
                     or (self._context_seen.get(task_id) or 0) < COLD_PERCENT):
                 continue
             self._flushed.add(task_id)

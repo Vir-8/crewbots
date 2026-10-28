@@ -42,7 +42,8 @@ class CodexExec:
         env = dict(os.environ) | (without_credentials() | package_caches() if spec.access is Access.WORKSPACE_WRITE
                                   else {})
         async with aclosing(stream_jsonl(argv, cwd=spec.cwd, env=env, parser=CodexParser(),
-                                         stdin_text=self.prompt(spec), timeout_s=spec.timeout_s)) as stream:
+                                         stdin_text=self.prompt(spec), timeout_s=spec.timeout_s,
+                                         on_prompt_sent=spec.on_prompt_sent)) as stream:
             async for event in stream:
                 yield event
 

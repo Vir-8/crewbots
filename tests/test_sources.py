@@ -1,6 +1,7 @@
 """Event sources: commits, branches, watched folders, GitHub and finished threads, detected with no model call; and the
 standing intents and checklist items that wait for them."""
 
+import asyncio
 import os
 import subprocess
 from dataclasses import dataclass
@@ -115,6 +116,27 @@ async def test_a_standing_intent_tells_its_bot_when_its_event_happens(store, tmp
     assert store.intents()[0]["fires"] == 1 and len(store.crew_events()) == 4
     store.db.execute("update intents set fires = 3")
     assert store.intents() == []  # fired out
+
+
+async def test_standing_intent_during_cancel_is_delivered(store, tmp_path, monkeypatch):
+    crew = ScriptedCrew(store, tmp_path, bot("engineer"))
+    chat = crew.runner.chat("engineer")
+    crew.runner.remind_on(chat.id, "ci_passed", "acme/web#7", "Tell the user")
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def blocked_close(_task_id):
+        entered.set()
+        await release.wait()
+
+    monkeypatch.setattr(crew.runner.browser, "close_task", blocked_close)
+    cancelling = asyncio.create_task(crew.runner.cancel(chat.id))
+    await asyncio.wait_for(entered.wait(), 2)
+    crew.runner.happened("ci_passed", "acme/web#7", "checks passed")
+    assert store.intents()[0]["fires"] == 1
+    release.set()
+    await cancelling
+    await wait_until(lambda: not crew.runner.running())
+    assert any("Tell the user" in spec.prompt for spec in crew.specs_for("engineer"))
 
 
 async def test_a_thread_finishing_is_an_event(store, tmp_path):

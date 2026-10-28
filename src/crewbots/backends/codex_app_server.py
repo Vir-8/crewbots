@@ -55,6 +55,7 @@ class AppServerError(RuntimeError):
 class CodexSession:
     def __init__(self, process: JsonlProcess, spec: RunSpec):
         self.process = process
+        self.on_prompt_sent = spec.on_prompt_sent
         self.timeout_s = spec.timeout_s
         self.effort = spec.effort
         self.session_id: str | None = None
@@ -200,6 +201,8 @@ class CodexSession:
         self._next_id += 1
         request_id = self._next_id
         await self.process.send({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params})
+        if method == "turn/start" and self.on_prompt_sent:
+            self.on_prompt_sent()
         while True:
             message = await self._read(OPEN_TIMEOUT_S)
             if message is None:

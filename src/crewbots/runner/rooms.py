@@ -1,11 +1,12 @@
 """Group chats: posting and waking mentioned bots, the lead, or @everyone."""
 
+import logging
 import re
 from datetime import UTC, datetime
 from typing import Any
 
 from crewbots import attachments as attachments_module
-from crewbots import prompts
+from crewbots import prompts, working_state
 from crewbots.crew import NO_REPLY
 from crewbots.runner.common import NotAllowed, UnknownBot, _iso
 from crewbots.store import Status, Task
@@ -82,18 +83,26 @@ class Rooms:
         room = self.store.room(room_id)
         if room["crew"]:
             raise NotAllowed("the crew's own group chat can't be deleted")
-        for seat in self.store.seats_in(room_id):
-            if seat.active or seat.id in self._runs:
-                await self.cancel(seat.id)
-            await self._close_session(seat.id)
-            self.store.clear_pending(seat.id)
-            self._owed.discard(seat.id)
-            self._nudged.discard(seat.id)
-            self._seat_depth.pop(seat.id, None)
-            for child in self.store.children(seat.id):
-                self._set(child.id, parent_id=self.chat(seat.bot).id)
-        self.store.delete_room(room_id)
-        self.bus.publish({"type": "room_gone", "room_id": room_id})
+        seats = self.store.seats_in(room_id)
+        if any(seat.id in self._cancelling for seat in seats):
+            raise NotAllowed("A seat in this group chat is already being cancelled.")
+        try:
+            for seat in seats:
+                self._begin_cancel(seat.id)
+                for child in self.store.children(seat.id):
+                    self._set(child.id, parent_id=self.chat(seat.bot).id)
+            for seat in seats:
+                await self.cancel(seat.id, _begun=True)
+                await self._close_session(seat.id)
+                self._seat_depth.pop(seat.id, None)
+            self.store.delete_room(room_id)
+            for seat in seats:
+                self._cancel_messages.pop(seat.id, None)
+            for bot in set(self.crew.bots) | set(room["members"]) | {seat.bot for seat in seats}:
+                self._clear_room_mentions(bot, room_id)
+            self.bus.publish({"type": "room_gone", "room_id": room_id})
+        finally:
+            self._cancelling.difference_update(seat.id for seat in seats)
 
     def _join_crew_room(self, bots: set[str]) -> None:
         """Bots new to the crew join its own group chat, if it has one yet."""
@@ -140,26 +149,26 @@ class Rooms:
         return room
 
     def post(self, room_id: str, author: str, text: str, depth: int = 0,
-             attachments: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+             attachments: list[dict[str, Any]] | None = None, *, recipients: list[str] | None = None) -> dict[str, Any]:
         """A message in a room, from the user or a bot. It wakes the bots it mentions; one from the user that mentions
         no one wakes the lead, who answers it, hands it on or leaves it. Once the bots have replied to each other the
-        room's limit of times in a row, a bot's mention wakes no one: the room says they stopped, until the user carries
-        on (`carry_on`) or says something new."""
+        room's limit of times in a row, a bot's mentions wait for the user to continue."""
         room = self.store.room(room_id)
+        named, wake = self._recipients(room, author, text) if recipients is None else (recipients, recipients)
         message = self.store.add_room_message(room_id, author, text, depth, attachments)
         self.bus.publish({"type": "room_message", "message": message})
         if author in self.crew.bots:
             self.store.log_agent("post", author, room_id=room_id, text=text)
-        named, everyone = self._mentions(room, text)
+        everyone = recipients is None and self._mentions(room, text)[1]
+        for bot in (room["members"] if everyone else named):
+            if bot != author and bot in self.crew.bots:
+                self._room_mention(bot, room, message)
         if author == "user":
             if room["stopped"] or room["archived_at"]:  # saying something carries on, and brings it back
                 room = self._set_room(room_id, stopped=None, archived_at=None)
-            wake = room["members"] if everyone else named or [room["lead"]]
-        else:
-            wake = [m for m in (room["members"] if everyone else named) if m != author]
-            if wake and room["max_depth"] is not None and depth >= room["max_depth"]:
-                self._set_room(room_id, stopped={"after": depth, "waiting": wake, "owed": []})
-                wake = []
+        elif wake and room["max_depth"] is not None and depth >= room["max_depth"]:
+            self._set_room(room_id, stopped={"after": depth, "waiting": wake, "owed": []})
+            wake = []
         for bot in wake:
             self._wake_seat(room, bot, depth, owes_reply=author == "user" and bot in named)
         return message
@@ -168,11 +177,33 @@ class Rooms:
         """The user's "Continue" once the bots stopped: whoever was mentioned last is woken, with a fresh count."""
         room = self.store.room(room_id)
         if stopped := room["stopped"]:
-            room = self._set_room(room_id, stopped=None)
+            still_waiting = [bot for bot in stopped["waiting"] if (seat := self.store.seat_of(room_id, bot))
+                             and seat.id in self._cancelling]
+            remaining = {**stopped, "waiting": still_waiting,
+                         "owed": [bot for bot in stopped.get("owed", []) if bot in still_waiting]} if still_waiting else None
+            room = self._set_room(room_id, stopped=remaining)
             for bot in stopped["waiting"]:
-                if bot in room["members"]:
+                if bot in room["members"] and bot not in still_waiting:
                     self._wake_seat(room, bot, 0)
         return room
+
+    def _room_mention(self, bot: str, room: dict[str, Any], message: dict[str, Any]) -> None:
+        path = self.crew.memory.root / bot / "working-state" / "state.md"
+        try:
+            if working_state.room_mentions(path, room, [message], add=True):
+                notice = "State changed: 1 item needs you; older room mentions were trimmed."
+                chat = self.chat(bot)
+                self._record(chat.id, kind="state_notice", data={"message": notice})
+                self.send(chat.id, notice, sender="crewbots", _record_message=False)
+        except Exception:
+            logging.getLogger(__name__).exception("Could not record room mention for %s", bot)
+
+    def _clear_room_mentions(self, bot: str, room_id: str, through: int | None = None) -> None:
+        try:
+            working_state.room_mentions(self.crew.memory.root / bot / "working-state" / "state.md",
+                                        {"id": room_id, "title": ""}, [], through=through)
+        except Exception:
+            logging.getLogger(__name__).exception("Could not clear room mentions for %s", bot)
 
     def set_room_limit(self, room_id: str, max_depth: int | None) -> dict[str, Any]:
         """How many bot replies in a row the room allows before the bots stop; None means no limit."""
@@ -194,8 +225,14 @@ class Rooms:
         for m in room["members"]:  # a bot can also be mentioned by the name you gave it, written as one word
             if (bot := self.crew.bots.get(m)) and bot.display_name:
                 members.setdefault(bot.display_name.replace(" ", "").lower(), m)
-        said = [m.lower() for m in MENTION.findall(text)]
+        said = [m.lower() for m in MENTION.findall(_mentionable(text))]
         return list(dict.fromkeys(members[m] for m in said if m in members)), EVERYONE in said
+
+    def _recipients(self, room: dict[str, Any], author: str, text: str) -> tuple[list[str], list[str]]:
+        named, everyone = self._mentions(room, text)
+        if author == "user":
+            return named, room["members"] if everyone else named or [room["lead"]]
+        return named, [m for m in (room["members"] if everyone else named) if m != author]
 
     def _chief_room_item(self, room: dict[str, Any], author: str, kind: str, source: str) -> None:
         """Wake the main chat with metadata, keeping the room's conversation in the room."""
@@ -221,6 +258,8 @@ class Rooms:
         """The `post` tool: a bot says something in a room, from wherever it's working."""
         task = self.store.get_task(task_id)
         room = self._room_to_post(task, room_id)
+        if task.kind == "seat" and task.room_id == room["id"]:
+            self._clear_room_mentions(task.bot, room["id"], self._seat_turn_seen.get(task.id, 0))
         return self.post(room["id"], task.bot, text, depth=self._seat_depth.get(task_id, 0) + 1, attachments=attachments)
 
     def _room_to_post(self, task: Task, room_id: str | None) -> dict[str, Any]:
@@ -242,8 +281,11 @@ class Rooms:
             return  # a member since removed from the crew
         seat = self.store.seat_of(room["id"], bot) or self.store.create_task(
             bot, f"{room['title']} ({bot})", kind="seat", room_id=room["id"], status=Status.IDLE)
+        if seat.id in self._cancelling:
+            return
         key = f"seat:{seat.id}"
-        unseen = [m for m in self.store.room_messages(room["id"], after=self.store.seen(key)) if m["author"] != bot]
+        previous = self.store.seen(key)
+        unseen = [m for m in self.store.room_messages(room["id"], after=previous) if m["author"] != bot]
         if not unseen:
             return
         self.store.mark_seen(key, unseen[-1]["id"])
@@ -252,12 +294,28 @@ class Rooms:
         self._seat_depth[seat.id] = max(depth, self._seat_depth.get(seat.id, 0)) if running else depth
         if owes_reply:
             self._owed.add(seat.id)
-        self.send(seat.id, "\n\n".join(f"[{m['author']}]: {m['text']}{attachments_module.listing(m['attachments'])}"
-                                       for m in unseen), sender="room")
+        try:
+            self.send(seat.id, "\n\n".join(f"[{m['author']}]: {m['text']}{attachments_module.listing(m['attachments'])}"
+                                           for m in unseen), sender="room")
+            if running:
+                self._seat_queue_floor.setdefault(seat.id, previous)
+        except NotAllowed:
+            if owes_reply:
+                self._owed.discard(seat.id)
+
+    def _room_prompt_sent(self, task_id: str) -> None:
+        seen = self._seat_dispatch.pop(task_id, None)
+        floor = self._seat_queue_floor.get(task_id)
+        if seen is not None and floor is not None and floor < seen:
+            if self.store.seen(f"seat:{task_id}") > seen:
+                self._seat_queue_floor[task_id] = seen
+            else:
+                self._seat_queue_floor.pop(task_id, None)
 
     def _seat_replied(self, seat: Task, text: str, files: list[dict[str, Any]] | None = None,
                       owed: bool = False, nudged: bool = False) -> None:
         text = text.strip()
+        self._clear_room_mentions(seat.bot, seat.room_id, self._seat_turn_seen.get(seat.id, 0))
         if not text or text.strip("`*_. ") == NO_REPLY:
             if owed:
                 self._nudged.add(seat.id)
@@ -267,3 +325,24 @@ class Rooms:
                           depth=self._seat_depth.get(seat.id, 0) + 1)
             return
         self.post(seat.room_id, seat.bot, text, depth=self._seat_depth.get(seat.id, 0) + 1, attachments=files or None)
+
+def _mentionable(text: str) -> str:
+    lines, kept, i = text.splitlines(), [], 0
+    while i < len(lines):
+        line = lines[i]
+        if re.match(r"^\s*>", line):
+            i += 1
+            continue
+        mark = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
+        if mark:
+            fence = mark[1]
+            closing = re.compile(r"^ {0,3}" + re.escape(fence[0]) + "{" + str(len(fence)) + r",}\s*$")
+            end = next((j for j in range(i + 1, len(lines)) if closing.match(lines[j])), None)
+            if end is not None:
+                i = end + 1
+                continue
+            i += 1  # An unclosed fence doesn't hide the lines after it.
+            continue
+        kept.append(line)
+        i += 1
+    return re.sub(r"(`+)(?!`)[^\n]*?(?<!`)\1(?!`)", "", "\n".join(kept))

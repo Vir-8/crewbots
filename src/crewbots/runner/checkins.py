@@ -12,7 +12,7 @@ from crewbots.attention import BY_URGENCY
 from crewbots.backends import Access, RunSpec
 from crewbots.checkins import Item
 from crewbots.events import Done, Usage
-from crewbots.runner.common import UnknownBot, _plan, _usage_data
+from crewbots.runner.common import NotAllowed, UnknownBot, _plan, _usage_data
 from crewbots.store import Status, Task
 
 URGENCIES = ("low", "normal", "high")
@@ -32,6 +32,8 @@ class Checkins:
         if bot not in self.crew.bots:
             raise UnknownBot(f"no bot named {bot!r}; the crew is {sorted(self.crew.bots)}")
         task = self._checkin_task(bot)
+        if task.id in self._cancelling:
+            raise NotAllowed("This task is being cancelled. Please try again after cancellation finishes.")
         self._set(task.id, status=Status.QUEUED)
         self._runs[task.id] = asyncio.create_task(self._check_in(task, items, changes, now or datetime.now().astimezone()),
                                                   name=f"check-in {bot}")

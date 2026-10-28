@@ -3,10 +3,12 @@ keeps notes."""
 
 import re
 from datetime import datetime
+from html import escape
 from pathlib import Path
 from typing import Any
 
 from crewbots import cards, pages, prompts, worktree
+from crewbots.crew import NO_REPLY
 from crewbots.memory import CREW_SCOPE, MemoryError, Note
 from crewbots.pages import Page
 from crewbots.routines import RoutineError
@@ -22,6 +24,64 @@ OTHER = {"other", "something else", "other (specify)", "other (please specify)"}
 
 class Work:
     """The part of Runner that takes a bot's handoffs, questions, merge proposals and notes."""
+
+    def _setting(self, task: Task) -> str | None:
+        if task.kind == "chat":
+            return prompts.text("chat-setting", self.crew.home)
+        if task.created_by == "crewbots" and task.parent_id:  # work it started on its own, from a check-in
+            return prompts.text("own-setting", self.crew.home)
+        if task.kind == "ask":
+            return prompts.text("ask-setting", self.crew.home, asker=task.created_by)
+        if task.kind == "seat" and task.room_id:
+            room = self.store.room(task.room_id)
+            others = [m for m in room["members"] if m != task.bot]
+            lead = (f"You lead it: a message from the user that mentions no one comes to you. Answer it, hand it to the "
+                    f"one member best placed for it with a short handover that @mentions them, or reply {NO_REPLY} if "
+                    f"someone already has it." if room["lead"] == task.bot
+                    else f"{room['lead']} leads it; you're woken when someone mentions you.")
+            return prompts.text("seat-setting", self.crew.home, title=repr(escape(room["title"], quote=False)),
+                                lead=lead, no_reply=NO_REPLY, others=", ".join(others) or "no other bots")
+        return None
+
+    def _clear_room_need(self, task_id: str) -> None:
+        import logging
+
+        from crewbots import working_state
+
+        chief = self.coordinator()
+        if chief:
+            try:
+                working_state.clear_need(self.crew.memory.root / chief.name / "working-state" / "state.md", task_id)
+            except Exception:
+                logging.getLogger(__name__).exception("Could not clear a resolved room escalation")
+
+    def _close_questions(self, task_id: str) -> None:
+        asked = self.store.last_event(task_id, ("escalation", "permission"))
+        closed = self.store.last_event(task_id, ("questions_closed",))
+        if asked and (closed is None or asked.id > closed.id):
+            self._record(task_id, kind="questions_closed", data={})
+        self._close_seat_questions(task_id)
+        self._clear_room_need(task_id)
+
+    def _begin_cancel(self, task_id: str) -> None:
+        self.store.get_task(task_id)
+        if task_id in self._cancelling:
+            raise NotAllowed("This task is already being cancelled.")
+        self._cancelling.add(task_id)
+        try:
+            if (floor := self._seat_queue_floor.pop(task_id, None)) is not None:
+                self.store.rewind_seat_seen(task_id, floor)
+            if run := self._runs.get(task_id):
+                run.cancel()
+            self._waiting.pop(task_id, None)
+            self._owed.discard(task_id)
+            self._nudged.discard(task_id)
+            self._escalated.discard(task_id)
+            self.store.clear_pending(task_id)
+            self._set(task_id, status=Status.CANCELLED)  # close questions before cleanup can yield
+        except BaseException:
+            self._cancelling.discard(task_id)
+            raise
 
     def remember(self, task_id: str, title: str, body: str, shared: bool = False) -> Note:
         task = self.store.get_task(task_id)
@@ -217,6 +277,34 @@ class Work:
                              + (f" Open: {_short(open, 200)}" if open.strip() else ""))
         return handoff
 
+    def _check_seat_answer(self, task: Task, question_id: int | None) -> None:
+        asked = self.store.last_event(task.id, ("escalation",))
+        resolved = asked and self.store.db.execute(
+            "select 1 from events where task_id = ? and id > ? and "
+            "(kind = 'questions_closed' or (kind = 'message' and json_extract(data, '$.from') = 'user')) limit 1",
+            (task.id, asked.id)).fetchone()
+        room_exists = task.room_id and self.store.db.execute("select 1 from rooms where id = ?", (task.room_id,)).fetchone()
+        if question_id is None and (not asked or resolved) and room_exists:
+            return
+        if (not asked or question_id != asked.id or resolved or not room_exists
+                or task.status in (Status.FAILED, Status.CANCELLED)):
+            raise NotAllowed("This question is closed or has been replaced. Please use the current question.")
+
+    def _close_seat_questions(self, task_id: str) -> None:
+        task = self.store.get_task(task_id)
+        chat = self.store.chat_of(task.bot) if task.kind == "seat" else None
+        if not chat:
+            return
+        rows = self.store.db.execute(
+            "select json_extract(e.data, '$.question_id') as question_id from events e "
+            "where e.task_id = ? and e.kind = 'seat_escalation' and json_extract(e.data, '$.task') = ? "
+            "and not exists (select 1 from events a where a.task_id = e.task_id "
+            "and a.kind in ('seat_escalation_answer', 'seat_escalation_closed') "
+            "and json_extract(a.data, '$.question_id') = json_extract(e.data, '$.question_id'))",
+            (chat.id, task_id)).fetchall()
+        for row in rows:
+            self._record(chat.id, kind="seat_escalation_closed", data={"question_id": row["question_id"]})
+
     def _answer_decision(self, task: Task, text: str) -> tuple[bool, bool]:
         """Record only selected choices or an answer reference, and nudge the session for free text."""
         if task.status in (Status.FAILED, Status.CANCELLED):
@@ -241,7 +329,7 @@ class Work:
         if selected:
             answer = ", ".join(selected)
         else:
-            where = "room" if task.kind == "seat" else "chat" if task.kind == "chat" else "thread"
+            where = "chat" if task.kind in ("seat", "chat") else "thread"
             answer = f"answered in {where} on {datetime.now().astimezone().date()} (task {task.id})"
         try:
             from crewbots.working_state import edit
@@ -257,13 +345,34 @@ class Work:
         With `choices`, the user picks one (or several, if `multiple`), or answers in their own words. Its parent
         hears at once; a top-level task waits for the user."""
         task = self.store.get_task(task_id)
+        if task_id in self._cancelling or task.status is Status.CANCELLED:
+            raise NotAllowed("This task is cancelled or being cancelled.")
         offered = _choices(choices)
+        if task.kind == "seat" and task.room_id:
+            try:
+                room = self._room_to_post(task, task.room_id)
+            except NotAllowed:
+                room = None
+            self._close_questions(task_id)
+            chief = self.coordinator()
+            recipient = (chief.name if chief and chief.name in room["members"] else room["lead"]) if room else None
+            if room and not (chief and task.bot == chief.name) and task.bot != recipient:
+                listed = "".join(f"\n- {c['label']}" + (f": {c['description']}" if "description" in c else "")
+                                 for c in offered)
+                self.post(room["id"], task.bot, f"@{recipient} {question}"
+                          + (f"\n\nChoices{' (any of them)' if multiple else ''}:{listed}" if offered else "")
+                          + f"\n\nPlease reply to @{task.bot} in this room.",
+                          depth=-1, recipients=[recipient])
+                return
         self._escalated.add(task_id)
         self._record(task_id, kind="escalation", data={"question": question} | (
             {"choices": offered, "multiple": bool(multiple)} if offered else {}))
+        if task.kind == "seat" and task.room_id:
+            asked = self.store.last_event(task_id, ("escalation",))
+            self._record(self.chat(task.bot).id, kind="seat_escalation", data={
+                "task": task.id, "question_id": asked.id, "room": self.store.room(task.room_id)["title"],
+                "question": question, "choices": offered, "multiple": bool(multiple)})
         self._refresh_working_state(task.bot)
-        if task.kind == "seat" and task.room_id and (chief := self.coordinator()) and task.bot != chief.name:
-            self._chief_room_item(self.store.room(task.room_id), task.bot, "escalated", f"task {task.id}")
         if task.parent_id:
             parent = self.store.get_task(task.parent_id)
             chief = self.coordinator()

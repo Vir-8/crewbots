@@ -90,6 +90,15 @@ for (const b of bots) {
 // Questions in a chat: an answer kept in context, a single choice, and several choices with Send.
 {
   const reviewer = chatIds.reviewer;
+  task("t_seat000001", "reviewer", "Engineering seat", { kind: "seat", workspace: null, status: "needs_input" });
+  emit(reviewer, "seat_escalation", { task: "t_seat000001", question_id: 901, room: "Engineering",
+    question: "Which release should I review?", choices: [{ label: "Current release" }, { label: "Next release" }] });
+  task("t_seat000002", "reviewer", "Release seat", { kind: "seat", workspace: null, status: "needs_input" });
+  emit(reviewer, "seat_escalation", { task: "t_seat000002", question_id: 902, room: "Release",
+    question: "What should the review focus on?", choices: [] });
+  emit(reviewer, "seat_escalation", { task: "t_seat000001", question_id: 900, room: "Engineering",
+    question: "Review the earlier release?", choices: [{ label: "Yes" }, { label: "No" }] });
+  emit(reviewer, "seat_escalation_closed", { question_id: 900 });
   emit(reviewer, "escalation", {
     question: "How much detail should the review include?",
     choices: [{ label: "A short summary" }, { label: "Every finding" }],

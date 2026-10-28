@@ -38,6 +38,8 @@ class FakeBackend:
 
     async def run(self, spec: RunSpec):
         self.specs.append(spec)
+        if spec.on_prompt_sent:
+            spec.on_prompt_sent()
         self.active += 1
         self.max_active = max(self.max_active, self.active)
         try:

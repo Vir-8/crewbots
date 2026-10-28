@@ -90,6 +90,28 @@ it("opens and sends an Other answer from a question", () => {
   expect(send).toHaveBeenCalledWith("question", "My answer");
 });
 
+it("sends a free-text room question to its seat", () => {
+  const send = vi.fn().mockResolvedValue(undefined);
+  const block = { kind: "ask", taskId: "seat", room: "Engineering", question: "Which?", questionId: 42 } as any;
+  const draw = () => render(() => Question({ crew: { send } as any, block, onOpen: () => {} }));
+  (draw().props.children as any[])[2].props.children[1].props.onClick();
+  find(draw(), "input")!.props.onChange({ target: { value: "Use the existing design" } });
+  find(draw(), "input")!.props.onKeyDown({ key: "Enter", nativeEvent: { isComposing: false } });
+  expect(send).toHaveBeenCalledWith("seat", "Use the existing design", [], 42);
+});
+
+it("shows the stale question error on the card", async () => {
+  const send = vi.fn().mockRejectedValue(new Error("This question is closed or has been replaced."));
+  const block = { kind: "ask", taskId: "seat", room: "Engineering", question: "Which?", questionId: 42,
+    choices: [{ label: "No" }] } as any;
+  const draw = () => render(() => Question({ crew: { send } as any, block, onOpen: () => {} }));
+  (draw().props.children as any[])[2].props.children[0][0].props.onClick();
+  await Promise.resolve();
+  const message = (draw().props.children as any[])[1].props.children[3];
+  expect(message.props.role).toBe("alert");
+  expect(message.props.children).toBe("This question is closed or has been replaced.");
+});
+
 it("keeps the Other answer open while Escape is composing", () => {
   const block = { kind: "ask", taskId: "question", question: "Which?", choices: [{ label: "First" }], multiple: false } as any;
   const draw = () => render(() => Question({ crew: {} as any, block, onOpen: () => {} }));

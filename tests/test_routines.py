@@ -167,6 +167,30 @@ async def test_a_new_routine_waits_for_its_next_time_then_runs_once(crew, store,
     assert store.routine_state("standup")["last_task_id"] == task.id
 
 
+async def test_routine_during_cancel_is_delivered_after_cleanup(crew, store, tmp_path, monkeypatch):
+    write(tmp_path, "standup", STANDUP)
+    scheduler = Scheduler(crew.runner)
+    await scheduler.tick(at(26, 8, 59))
+    chat = crew.runner.chat("chief")
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def blocked_close(_task_id):
+        entered.set()
+        await release.wait()
+
+    monkeypatch.setattr(crew.runner.browser, "close_task", blocked_close)
+    cancelling = asyncio.create_task(crew.runner.cancel(chat.id))
+    await asyncio.wait_for(entered.wait(), 2)
+    [task] = await scheduler.tick(at(26, 9))
+    assert task.id == chat.id and not crew.specs_for("chief")
+    assert any("[routine: standup]" in text for text in crew.runner.queued(chat.id))
+    release.set()
+    await cancelling
+    await wait_until(crew.settled(chat.id))
+    assert any("[routine: standup]" in spec.prompt for spec in crew.specs_for("chief"))
+    assert store.routine_state("standup")["last_task_id"] == chat.id
+
+
 async def test_a_routine_still_waiting_in_a_busy_chat_is_skipped_rather_than_doubled(store, tmp_path):
     gate = asyncio.Event()
     busy = ScriptedCrew(store, tmp_path, bot("chief"), gate=gate)

@@ -94,6 +94,59 @@ def test_needs_me_is_capped_and_done_removes_entry(tmp_path):
     assert "item 12" not in read(path) and "handled" not in read(path)
 
 
+def test_clearing_room_mentions_preserves_other_entries(tmp_path):
+    from crewbots.working_state import room_mentions
+
+    path = tmp_path / "state.md"
+    room1, room2 = {"id": "r_abc", "title": "one"}, {"id": "r_def", "title": "two"}
+    msg = {"id": 1, "author": "engineer", "at": "2026-10-28T10:00"}
+    for i in range(12):
+        edit(path, "Needs me", "add", f"manual note {i}")
+    room_mentions(path, room1, [msg], add=True)
+    room_mentions(path, room1, [msg | {"id": 2, "author": "reviewer", "at": "2026-10-28T11:30"}], add=True)
+    room_mentions(path, room2, [msg], add=True)
+    assert "count 2" in read(path) and read(path).count("room mention r_abc") == 1
+    assert "2026-10-28T11:30 · reviewer" in read(path)
+    assert all(f"manual note {i}\n" in read(path) for i in range(12))
+    room_mentions(path, room1, [])
+    state = read(path)
+    assert "manual note 0" in state and "room mention r_abc" not in state
+    assert "room mention r_def" in state
+
+
+def test_room_mention_overflow_trims_only_room_entries_and_reports_it(tmp_path):
+    from crewbots.working_state import room_mentions, sync
+
+    path = tmp_path / "state.md"
+    edit(path, "Needs me", "add", "manual")
+    edit(path, "Decisions", "add", "keep this", done=True)
+    msg = {"id": 1, "author": "engineer", "at": "2026-10-28T10:00"}
+    pruned = False
+    for i in range(13):
+        pruned = room_mentions(path, {"id": f"r_{i:02x}", "title": "room"}, [msg], add=True)
+    sync(path, [], [])
+    assert pruned and "room mention r_00 " not in read(path) and "room mention r_0c " in read(path)
+    assert "manual" in read(path) and "keep this" in read(path)
+
+
+def test_room_mentions_fit_and_make_space_for_later_manual_edits(tmp_path):
+    from crewbots.working_state import room_mentions
+
+    path = tmp_path / "state.md"
+    edit(path, "User's rules", "add", "rule " + "x" * 3600)
+    room = {"id": "r_abc", "title": "R" * 1000}
+    msg = {"id": 1, "author": "A" * 1000, "at": "2026-10-28T10:00"}
+    assert not room_mentions(path, room, [msg], add=True)
+    state = read(path)
+    assert len(state) <= LIMIT and "R" * 80 in state and "R" * 81 not in state
+    assert "A" * 32 in state and "A" * 33 not in state
+    _, pruned = edit(path, "User's rules", "add", "new " + "y" * 180)
+    assert pruned and "room mention" not in read(path) and "rule " + "x" * 3600 in read(path)
+    assert len(read(path)) <= LIMIT
+    assert room_mentions(path, room, [msg], add=True)  # A full state drops the auto item, reporting it.
+    assert len(read(path)) <= LIMIT and "room mention" not in read(path)
+
+
 def test_contended_lock_times_out_and_can_be_retried(tmp_path):
     import fcntl
     import time

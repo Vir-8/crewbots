@@ -71,6 +71,10 @@ class Rooms:
         row = self.db.execute("select seen from reads where key = ?", (key,)).fetchone()
         return row["seen"] if row else 0
 
+    def rewind_seat_seen(self, task_id: str, seen: int) -> None:
+        """Keep messages queued behind a stopped seat turn unread until a later wake."""
+        self.db.execute("update reads set seen = min(seen, ?) where key = ?", (seen, f"seat:{task_id}"))
+
     def chat_muted(self, bot: str) -> bool:
         return bool(self.db.execute("select 1 from chat_mutes where bot = ?", (bot,)).fetchone())
 

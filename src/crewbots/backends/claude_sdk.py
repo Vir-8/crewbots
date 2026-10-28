@@ -138,6 +138,7 @@ class ClaudeAgentSession:
 
     def __init__(self, spec: RunSpec):
         self.client: ClaudeSDKClient | None = None
+        self.on_prompt_sent = spec.on_prompt_sent
         self.session_id = spec.resume_session_id
         self.timeout_s = spec.timeout_s
         self.policy = ClaudePolicy(spec.access, Path(spec.cwd), set(spec.mcp_servers) | {CREW_SERVER},
@@ -170,6 +171,8 @@ class ClaudeAgentSession:
 
         try:
             await self.client.query(prompt)
+            if self.on_prompt_sent:
+                self.on_prompt_sent()
         except Exception as e:
             self._broken = True
             yield Done(final_text="", is_error=True, error=f"claude: {e}", retry="transient")

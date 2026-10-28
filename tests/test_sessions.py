@@ -494,7 +494,8 @@ async def test_room_seat_records_multiple_selected_choices_only(store, tmp_path)
     room = runner.create_room("Engineering", ["worker", "helper"])
     seat = store.create_task("worker", "seat", kind="seat", room_id=room["id"], status=Status.IDLE)
     runner.escalate(seat.id, "Which databases?", [{"label": "SQLite"}, {"label": "Postgres"}], multiple=True)
-    runner.send(seat.id, "- SQLite\n- Postgres", sender="user")
+    runner.send(seat.id, "- SQLite\n- Postgres", sender="user",
+                question_id=store.last_event(seat.id, ("escalation",)).id)
     await wait_until(settled(store, runner, seat.id))
     state = (runner.crew.memory.root / "worker" / "working-state" / "state.md").read_text()
     assert "Which databases?" in state and "SQLite, Postgres" in state

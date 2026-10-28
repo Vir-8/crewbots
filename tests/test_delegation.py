@@ -3,6 +3,7 @@ crewbots MCP tools reach through the daemon, as the task its run token belongs t
 
 import asyncio
 import dataclasses
+import json
 
 import pytest
 from fakes import FakeBackend, ScriptedCrew, bot, git_repo, make_crew, wait_until
@@ -273,16 +274,51 @@ async def test_child_limit_only_counts_unfinished_work(store, tmp_path, action, 
     await crew.runner.shutdown()
 
 
-async def test_a_bot_can_only_touch_tasks_it_delegated(store, tmp_path):
+async def test_a_bot_can_message_its_delegations_from_another_session(store, tmp_path):
     crew = ScriptedCrew(store, tmp_path, chief(), bot("engineer"))
-    mine = store.create_task("chief", "mine")
-    theirs = store.create_task("chief", "theirs")
+    room = crew.runner.create_room("Engineering", ["chief", "engineer"], lead="chief")
+    mine = store.create_task("chief", "seat", kind="seat", room_id=room["id"])
+    theirs = crew.runner.chat("chief")
     other_child = store.create_task("engineer", "x", parent_id=theirs.id, created_by="chief")
 
-    with pytest.raises(NotAllowed, match="not delegated by this task"):
-        crew.runner.message_child(mine.id, other_child.id, "hi")
+    stranger = store.create_task("engineer", "other session")
+    seat_tools = CrewTools(crew.runner, mine.id, can_delegate=True)
+    other_tools = CrewTools(crew.runner, stranger.id, can_delegate=True)
+    assert other_child.id in [t["id"] for t in json.loads(await seat_tools.call("tasks", {}))]
+    assert other_child.id not in [t["id"] for t in json.loads(await other_tools.call("tasks", {}))]
+    with pytest.raises(ToolRefused, match="not delegated by this bot"):
+        await other_tools.call("message", {"task_id": other_child.id, "text": "hi"})
     with pytest.raises(NotAllowed, match="not delegated by this task"):
         crew.runner.delegate(mine.id, "engineer", "review", review_of=other_child.id)
+    await seat_tools.call("message", {"task_id": other_child.id, "text": "hi"})
+    assert messages(store, other_child.id)[-1] == {"from": "chief", "text": "hi"}
+    await crew.runner.shutdown()
+
+
+async def test_tasks_includes_user_and_checkin_threads_across_sessions(store, tmp_path):
+    crew = ScriptedCrew(store, tmp_path, chief(), bot("engineer"), gate=asyncio.Event())
+    chat = crew.runner.chat("engineer")
+    user_thread = crew.runner.thread_for("engineer", "User's /new thread")
+    checkin_thread = store.create_task("engineer", "Check-in work", created_by="crewbots", parent_id=chat.id,
+                                      status=Status.IDLE)
+    session = store.create_task("engineer", "other session", status=Status.IDLE)
+    tools = CrewTools(crew.runner, session.id, can_delegate=False)
+    ids = {t["id"] for t in json.loads(await tools.call("tasks", {}))}
+    assert {user_thread.id, checkin_thread.id} <= ids
+    await tools.call("message", {"task_id": checkin_thread.id, "text": "Continue"})
+    assert messages(store, checkin_thread.id)[-1] == {"from": "engineer", "text": "Continue"}
+    await crew.runner.shutdown()
+
+
+async def test_tasks_keeps_all_unfinished_and_only_twenty_recent_finished(store, tmp_path):
+    crew = ScriptedCrew(store, tmp_path, chief())
+    chat = crew.runner.chat("chief")
+    finished = [store.create_task("chief", f"finished {i}", parent_id=chat.id, status=Status.IDLE) for i in range(25)]
+    unfinished = [store.create_task("chief", f"unfinished {i}", parent_id=chat.id, status=Status.HELD) for i in range(25)]
+    ids = {item["id"] for item in crew.runner.delegated_by(chat.id)}
+    assert {task.id for task in unfinished} <= ids
+    assert len(ids & {task.id for task in finished}) == 20
+    assert len(ids) == 45
 
 
 async def test_an_escalation_reaches_the_chief_at_once_and_its_answer_resumes_the_worker(store, tmp_path):

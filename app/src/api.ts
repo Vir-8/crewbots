@@ -59,7 +59,7 @@ export const api = {
   changes: (taskId: string) => call<{ diff: string | null }>("GET", `/tasks/${taskId}/changes`),
   newTask: (bot: string, goal: string, workspace?: string) =>
     call<Task>("POST", "/tasks", { bot, goal, workspace: workspace || null }),
-  send: (taskId: string, text: string, attachments: string[] = []) => call<Task>("POST", `/tasks/${taskId}/messages`, { text, attachments }),
+  send: (taskId: string, text: string, attachments: string[] = [], questionId?: number) => call<Task>("POST", `/tasks/${taskId}/messages`, { text, attachments, question_id: questionId }),
   cancel: (taskId: string) => call<Task>("POST", `/tasks/${taskId}/cancel`),
   merge: (taskId: string, force = false) => call<Task>("POST", `/tasks/${taskId}/merge`, { force }),
   withdrawMerge: (taskId: string, reason: string) => call<Task>("POST", `/tasks/${taskId}/withdraw-merge`, { reason }),

@@ -298,6 +298,16 @@ async def test_a_turn_ends_with_done_and_the_session_stays_open():
     assert session.alive and session.session_id == "s-1"
 
 
+async def test_prompt_dispatch_follows_sdk_query():
+    client = FakeClient([result("hi")])
+    sent = []
+    session = ClaudeAgentSession(RunSpec(prompt="", cwd=Path("."),
+                                         on_prompt_sent=lambda: sent.append(list(client.queries))))
+    session.client = client
+    await collect(session.turn("hello"))
+    assert sent == [["hello"]]
+
+
 async def test_a_turn_waits_for_its_own_result_past_one_claude_code_started():
     client = FakeClient([result("background done", origin={"kind": "task-notification"}), result("hi")])
     session = session_with(client)

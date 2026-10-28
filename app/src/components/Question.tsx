@@ -15,12 +15,16 @@ export function Question({ crew, block, onOpen }: { crew: Crew; block: Asked; on
   const [picked, setPicked] = useState<string[]>([]);
   const [other, setOther] = useState<string | null>(null); // your own words, while answering with Other
   const [sending, setSending] = useState(false);
-  const answered = block.answer !== undefined;
-  const chosen = new Set(answered ? choices.filter((c) => picks(block.answer!, c.label)).map((c) => c.label) : picked);
+  const [error, setError] = useState("");
+  const answered = block.answer !== undefined || Boolean(block.closed);
+  const chosen = new Set(answered ? choices.filter((c) => picks(block.answer ?? "", c.label)).map((c) => c.label) : picked);
   const send = (text: string) => {
     if (!text.trim() || sending) return;
     setSending(true);
-    crew.send(block.taskId, text.trim()).catch(() => setSending(false));
+    setError("");
+    const request = block.questionId === undefined ? crew.send(block.taskId, text.trim()) :
+      crew.send(block.taskId, text.trim(), [], block.questionId);
+    request.catch((e) => { setSending(false); setError(String(e).replace(/^Error: /, "")); });
   };
   // Several picked: one a line, with your own words last.
   const several = () => send([...picked.map((p) => `- ${p}`), other?.trim() ? `- ${other.trim()}` : ""].filter(Boolean).join("\n"));
@@ -30,10 +34,15 @@ export function Question({ crew, block, onOpen }: { crew: Crew; block: Asked; on
     <div className={`ask ${answered ? "answered" : ""}`}>
       <div className="ask-head">
         <Icon name={answered ? "check" : "question"} size={15} />
-        {answered ? "Answered" : "Needs your answer"}
+        {block.answer !== undefined ? "Answered" : block.closed ? "Question closed" : "Needs your answer"}
       </div>
-      <div className="ask-text"><Markdown text={block.question} onSelect={onOpen} /></div>
-      {choices.length > 0 && (
+      <div className="ask-text">
+        <Markdown text={block.question} onSelect={onOpen} />
+        {block.room && <div>From {block.room}</div>}
+        {block.room && block.answer !== undefined && <Markdown text={block.answer} onSelect={onOpen} />}
+        {error && <div role="alert">{error}</div>}
+      </div>
+      {(choices.length > 0 || block.room) && (
         <div className="ask-choices">
           {choices.map((c) => (
             <button

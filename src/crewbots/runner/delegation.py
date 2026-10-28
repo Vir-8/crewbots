@@ -136,11 +136,20 @@ class Delegation:
     def children_of(self, parent_id: str) -> list[dict[str, Any]]:
         return [self._summary(c, include_result=True) for c in self.store.children(parent_id)]
 
+    def delegated_by(self, task_id: str) -> list[dict[str, Any]]:
+        bot = self.store.get_task(task_id).bot
+        return [self._summary(c, include_result=True) for c in self.store.delegated_by(bot)]
+
     def message_child(self, parent_id: str, task_id: str, text: str) -> Task:
-        child = self._own_child(parent_id, task_id)
+        parent = self.store.get_task(parent_id)
+        try:
+            child = self.store.get_task(task_id)
+        except KeyError:
+            raise NotAllowed(f"no task {task_id}") from None
+        if not child.parent_id or self.store.get_task(child.parent_id).bot != parent.bot:
+            raise NotAllowed(f"task {task_id} was not delegated by this bot")
         if child.status not in {Status.QUEUED, Status.RUNNING, Status.HELD, Status.NEEDS_INPUT}:
-            parent = self.store.get_task(parent_id)
-            if self.store.unfinished_children(parent_id) >= self.max_children:
+            if self.store.unfinished_children(child.parent_id) >= self.max_children:
                 raise NotAllowed(f"stop condition: this task already has {self.max_children} unfinished child tasks.")
             if child.bot != parent.bot and child.created_by == parent.bot:
                 out = self.store.delegated_out(parent.bot)

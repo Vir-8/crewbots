@@ -58,6 +58,15 @@ class Tasks:
         rows = self.db.execute("select * from tasks where parent_id = ? order by created_at, id", (parent_id,)).fetchall()
         return [_task(r) for r in rows]
 
+    def delegated_by(self, bot: str) -> list[Task]:
+        rows = self.db.execute(
+            "select t.* from tasks t join tasks p on p.id = t.parent_id "
+            "where p.bot = ? and (t.status in ('queued', 'running', 'held', 'needs_input', 'interrupted') "
+            "or t.id in (select recent.id from tasks recent join tasks parent on parent.id = recent.parent_id "
+            "where parent.bot = ? and recent.status not in ('queued', 'running', 'held', 'needs_input', 'interrupted') "
+            "order by recent.updated_at desc, recent.id desc limit 20)) order by t.created_at, t.id", (bot, bot)).fetchall()
+        return [_task(r) for r in rows]
+
     def unfinished_children(self, parent_id: str) -> int:
         """Children still running, waiting to run, held, or waiting for an answer."""
         return self.db.execute(

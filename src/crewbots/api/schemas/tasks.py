@@ -121,6 +121,7 @@ class NewTask(BaseModel):
 class Message(BaseModel):
     text: str = ""
     attachments: list[str] = []  # ids from POST /attachments
+    question_id: int | None = None  # original seat escalation event
 
 class MergeRequest(BaseModel):
     force: bool = False

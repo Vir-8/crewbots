@@ -1,6 +1,7 @@
 """Always on: the chief looks around on its own when there's something worth a look, at the times it picks, and says
 something only when there's something to say."""
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -43,6 +44,29 @@ def said(store, task_id):
 
 def prompted(store, task_id):
     return [e.data["text"] for e in store.events(task_id) if e.kind == "message"]
+
+
+async def test_due_wake_waits_for_cancellation_cleanup(store, tmp_path, monkeypatch):
+    crew, scheduler = crew_for(store, tmp_path)
+    chat = crew.runner.chat("chief")
+    looked(store, "chief", 60)
+    store.set_wake("chief", next_at=(datetime.now(UTC) - timedelta(minutes=1)).isoformat(), next_why="review work")
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def blocked_close(_task_id):
+        entered.set()
+        await release.wait()
+
+    monkeypatch.setattr(crew.runner.browser, "close_task", blocked_close)
+    cancelling = asyncio.create_task(crew.runner.cancel(chat.id))
+    await asyncio.wait_for(entered.wait(), 2)
+    assert scheduler._wake_due(later(0)).id == chat.id
+    assert await crew.runner.cancel(chat.id) == store.get_task(chat.id)
+    assert not prompted(store, chat.id)
+    release.set()
+    await cancelling
+    await wait_until(lambda: not crew.runner.running())
+    assert any("review work" in text for text in prompted(store, chat.id))
 
 
 async def test_news_wakes_the_chief_and_with_nothing_to_say_its_chat_shows_nothing(store, tmp_path):

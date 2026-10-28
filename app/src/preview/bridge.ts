@@ -280,11 +280,22 @@ async function request(method: string, path: string, body?: any) {
   if (method === "GET" && action === "changes") return ok({ diff: task.worktree_path ? demo.diffs.get(id) ?? "" : null });
   if (method === "GET" && action === "children") return ok(all.filter((t) => t.parent_id === id));
   if (method === "POST" && action === "messages") {
+    if (task.kind === "seat") {
+      const question = allEvents.find((e) => e.kind === "seat_escalation" && e.data.task === id && e.data.question_id === body.question_id);
+      const closed = allEvents.some((e) => ["seat_escalation_closed", "seat_escalation_answer"].includes(e.kind) && e.data.question_id === body.question_id);
+      if (!question || closed) return { ok: false, status: 403, data: { detail: "This question is closed or has been replaced. Please use the current question." } };
+    }
     const files = (body.attachments ?? []).map((a: string) => {
       const f = previewFiles.get(a)!;
       return { id: a, name: f.name, path: `~/.crewbots/crew/attachments/${a}/${f.name}`, mime: f.mime, size: Math.round((f.data.length * 3) / 4), kind: f.mime.startsWith("image/") ? "image" : "file" };
     });
     say(id, "message", { from: "user", text: body.text, ...(files.length ? { attachments: files } : {}) });
+    if (task.kind === "seat") {
+      for (const [chatId, events] of demo.events) {
+        const question = events.find((e) => e.kind === "seat_escalation" && e.data.task === id && e.data.question_id === body.question_id);
+        if (question) say(chatId, "seat_escalation_answer", { question_id: question.data.question_id, text: body.text });
+      }
+    }
     update(id, { status: "running" });
     setTimeout(() => {
       say(id, "text", { text: "Got it. (This is the design preview; in the app the bot would act on that.)" });

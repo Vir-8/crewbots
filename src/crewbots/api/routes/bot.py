@@ -70,7 +70,7 @@ def routes(c: Context) -> APIRouter:
 
     @v1.get("/bot/tasks")
     async def bot_tasks(request: Request):
-        return runner.children_of(request.state.task.id)
+        return runner.delegated_by(request.state.task.id)
 
     @v1.post("/bot/message")
     async def bot_message(request: Request, body: ChildMessage):

@@ -8,7 +8,7 @@ import json
 import os
 import signal
 from collections import deque
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -37,6 +37,7 @@ async def stream_jsonl(
     parser: LineParser,
     stdin_text: str = "",
     timeout_s: float | None = None,
+    on_prompt_sent: Callable[[], None] | None = None,
 ) -> AsyncIterator[Event]:
     """`stdin_text` is written and closed at once; the CLIs take the prompt this way, so no argument parsing can eat it."""
     proc = await asyncio.create_subprocess_exec(
@@ -53,6 +54,8 @@ async def stream_jsonl(
     try:
         proc.stdin.write(stdin_text.encode())
         await proc.stdin.drain()
+        if on_prompt_sent:
+            on_prompt_sent()
     except (BrokenPipeError, ConnectionResetError):
         pass  # the CLI exited without reading its input; its exit code and stderr say why
     finally:

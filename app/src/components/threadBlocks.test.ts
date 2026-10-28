@@ -78,3 +78,30 @@ it("keeps a question open after a teammate message until the user answers", () =
   events.push({ id: 3, task_id: "chat", kind: "message", data: { from: "user", text: "Yes" }, at: "" });
   expect(build(events, [], new Map())[0]).toMatchObject({ kind: "ask", answer: "Yes" });
 });
+
+it("routes a room question to its seat and pairs only its own answer", () => {
+  const events: StoredEvent[] = [
+    { id: 1, task_id: "chat", kind: "seat_escalation", data: { task: "seat", question_id: 42, room: "Engineering", question: "Which?" }, at: "" },
+    { id: 2, task_id: "chat", kind: "message", data: { from: "user", text: "Unrelated" }, at: "" },
+    { id: 3, task_id: "chat", kind: "seat_escalation_answer", data: { question_id: 43, text: "Other answer" }, at: "" },
+  ];
+  expect(build(events, [], new Map())[0]).toMatchObject({ kind: "ask", taskId: "seat", room: "Engineering", answer: undefined });
+  events.push({ id: 4, task_id: "chat", kind: "seat_escalation_answer", data: { question_id: 42, text: "Yes" }, at: "" });
+  expect(build(events, [], new Map())[0]).toMatchObject({ answer: "Yes" });
+  events.push({ id: 5, task_id: "chat", kind: "seat_escalation_closed", data: { question_id: 42 }, at: "" });
+  expect(build(events, [], new Map())[0]).toMatchObject({ answer: "Yes", closed: true });
+});
+
+it("closes the superseded and deleted-room cards without closing other questions", () => {
+  const events: StoredEvent[] = [
+    { id: 1, task_id: "chat", kind: "seat_escalation", data: { task: "seat", question_id: 10, room: "Engineering", question: "Use SQLite?" }, at: "" },
+    { id: 2, task_id: "chat", kind: "seat_escalation_closed", data: { question_id: 10 }, at: "" },
+    { id: 3, task_id: "chat", kind: "seat_escalation", data: { task: "seat", question_id: 11, room: "Engineering", question: "Release Friday?" }, at: "" },
+  ];
+  let asks = build(events, [], new Map()).filter((b) => b.kind === "ask");
+  expect(asks[0]).toMatchObject({ questionId: 10, closed: true, answer: undefined });
+  expect(asks[1]).toMatchObject({ questionId: 11, closed: false, answer: undefined });
+  events.push({ id: 4, task_id: "chat", kind: "seat_escalation_closed", data: { question_id: 11 }, at: "" });
+  asks = build(events, [], new Map()).filter((b) => b.kind === "ask");
+  expect(asks[1]).toMatchObject({ closed: true, answer: undefined });
+});

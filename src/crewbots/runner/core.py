@@ -31,12 +31,11 @@ import time
 from collections.abc import Callable, Mapping
 from contextlib import aclosing
 from dataclasses import asdict, replace
-from html import escape
 from pathlib import Path
 from typing import Any
 
 from crewbots import attachments as attachments_module
-from crewbots import prompts, working_state, worktree
+from crewbots import prompts, worktree
 from crewbots.attention import Attention
 from crewbots.backends import BACKENDS, Access, Backend, McpServer, RunSpec
 from crewbots.browser import Browser
@@ -132,6 +131,11 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         self.bus = Bus()
         self._slots = asyncio.Semaphore(max_parallel)
         self._runs: dict[str, asyncio.Task[None]] = {}
+        self._cancelling: set[str] = set()
+        self._cancel_messages: dict[str, list[tuple[str, str, list[dict[str, Any]] | None, bool, bool]]] = {}
+        self._seat_turn_seen: dict[str, int] = {}
+        self._seat_queue_floor: dict[str, int] = {}
+        self._seat_dispatch: dict[str, int] = {}
         self._waiting: dict[str, list[str]] = {}
         self._tokens: dict[str, str] = {}  # run or session token → task id, while that run or session lasts
         self._escalated: set[str] = set()
@@ -201,15 +205,30 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         return self.send(self.chat(bot).id, text, sender=sender, attachments=attachments)
 
     def send(self, task_id: str, text: str, sender: str = "user",
-             attachments: list[dict[str, Any]] | None = None, *, _record_message: bool = True) -> Task:
+             attachments: list[dict[str, Any]] | None = None, *, _record_message: bool = True,
+             question_id: int | None = None) -> Task:
         """A message to a task. Attachments are shown with it, and listed, with where they are, in what the bot gets.
         One from a teammate reaches the bot marked as a teammate's, so it isn't taken for the user's word."""
         task = self.store.get_task(task_id)
+        if task_id in self._cancelling:
+            if sender == "crewbots" or sender.startswith("routine:"):
+                self._cancel_messages.setdefault(task_id, []).append(
+                    (text, sender, attachments, _record_message, task_id in self._waking))
+                return task
+            raise NotAllowed("This task is being cancelled. Please try again after cancellation finishes.")
+        if sender == "user" and task.kind == "seat":
+            self._check_seat_answer(task, question_id)
+        elif question_id is not None:
+            raise NotAllowed("This question does not belong to a room seat.")
         answered_escalation, nudge_decision = self._answer_decision(task, text) if sender == "user" else (False, False)
         if _record_message:
             self._message(task_id, sender, text, attachments)
         if sender == "user":
             if answered_escalation:
+                if task.kind == "seat" and task.room_id:
+                    asked = self.store.last_event(task_id, ("escalation",))
+                    self._record(self.chat(task.bot).id, kind="seat_escalation_answer", data={
+                        "question_id": asked.id, "text": text})
                 self._clear_room_need(task_id)
             self._refresh_working_state(task.bot)
             self.attention.user_wrote = time.time()  # mid-conversation: questions wait for a break
@@ -233,28 +252,38 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         self._start(task_id, text)
         return task
 
-    async def cancel(self, task_id: str) -> Task:
-        self.store.get_task(task_id)
-        self._waiting.pop(task_id, None)
-        self._owed.discard(task_id)
-        self._nudged.discard(task_id)
-        self._escalated.discard(task_id)
-        self.store.clear_pending(task_id)  # what the user stopped isn't carried on after a restart
-        if run := self._runs.get(task_id):
-            run.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await run
-        opened = self._sessions.get(task_id)
-        if not (opened and opened.session.alive and getattr(opened.session, "interruptible", False)):
-            await self._close_session(task_id)  # an interruptible session stopped its turn and stays warm
-        await self.browser.close_task(task_id)
-        task = self._set(task_id, status=Status.CANCELLED)
-        if task.kind == "review" and task.parent_id is None:  # stopping a review stops its reviewers
-            for reviewer in self.store.children(task_id):
-                if reviewer.active or reviewer.id in self._runs:
-                    await self.cancel(reviewer.id)
-        self._report_up(task_id)
-        return task
+    async def cancel(self, task_id: str, *, _begun: bool = False) -> Task:
+        if not _begun and task_id in self._cancelling:
+            return self.store.get_task(task_id)
+        if not _begun:
+            self._begin_cancel(task_id)
+        try:
+            if run := self._runs.get(task_id):
+                with contextlib.suppress(asyncio.CancelledError):
+                    await run
+                if self._runs.get(task_id) is run:  # a task cancelled before its coroutine started has no finally
+                    self._runs.pop(task_id, None)
+                    self._seat_turn_seen.pop(task_id, None)
+                    self._waking.discard(task_id)
+                    self._stay_awake()
+            opened = self._sessions.get(task_id)
+            if not (opened and opened.session.alive and getattr(opened.session, "interruptible", False)):
+                await self._close_session(task_id)  # an interruptible session stopped its turn and stays warm
+            await self.browser.close_task(task_id)
+            task = self._set(task_id, status=Status.CANCELLED)
+            if task.kind == "review" and task.parent_id is None:  # stopping a review stops its reviewers
+                for reviewer in self.store.children(task_id):
+                    if reviewer.active or reviewer.id in self._runs:
+                        await self.cancel(reviewer.id)
+            self._report_up(task_id)
+            return task
+        finally:
+            if not _begun:
+                self._cancelling.discard(task_id)
+                for text, sender, attachments, record, waking in self._cancel_messages.pop(task_id, []):
+                    if waking:
+                        self._waking.add(task_id)
+                    self.send(task_id, text, sender, attachments, _record_message=record)
 
     async def shutdown(self) -> None:
         """Stops every run. Their tasks are marked interrupted, so a follow-up message picks them up again."""
@@ -314,7 +343,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
 
     def queued(self, task_id: str) -> list[str]:
         """Messages waiting for the task's current turn to finish."""
-        return list(self._waiting.get(task_id, []))
+        return [*self._waiting.get(task_id, []), *(item[0] for item in self._cancel_messages.get(task_id, []))]
 
     def state(self) -> dict[str, Any]:
         limits = [asdict(limit) for windows in self.limits.values() for limit in windows.values()]
@@ -356,26 +385,34 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         return None
 
     def _start(self, task_id: str, prompt: str, resumed: bool = False) -> None:
+        if task_id in self._cancelling:
+            raise NotAllowed("This task is being cancelled. Please try again after cancellation finishes.")
         owed, nudged = task_id in self._owed, task_id in self._nudged
         self._owed.discard(task_id)
         self._nudged.discard(task_id)
-        self._runs[task_id] = asyncio.create_task(self._turns(task_id, prompt, resumed, owed, nudged),
+        task = self.store.get_task(task_id)
+        seen = self.store.seen(f"seat:{task_id}") if task.kind == "seat" else 0
+        if task.kind == "seat":
+            self._seat_turn_seen[task_id] = seen
+        self._runs[task_id] = asyncio.create_task(self._turns(task_id, prompt, resumed, owed, nudged, seen),
                                                   name=f"task {task_id}")
         self._stay_awake()
         if self.use_sessions and (self._reaper is None or self._reaper.done()):
             self._reaper = asyncio.create_task(self._reap_idle(), name="session reaper")
 
     async def _turns(self, task_id: str, prompt: str | None, resumed: bool = False,
-                     owed: bool = False, nudged: bool = False) -> None:
+                     owed: bool = False, nudged: bool = False, seat_seen: int = 0) -> None:
         settled = False
         try:
             while prompt is not None:
+                self._seat_turn_seen[task_id] = seat_seen
                 if not resumed:  # a turn carried on after a restart keeps the request it carries on
                     self.store.set_pending(task_id, prompt)
                 resumed = False
                 await self._tries(task_id, prompt, owed, nudged)
                 waiting = self._waiting.pop(task_id, None)
                 prompt = "\n\n".join(waiting) if waiting else None
+                seat_seen = self.store.seen(f"seat:{task_id}")
                 owed, nudged = task_id in self._owed, task_id in self._nudged
                 self._owed.discard(task_id)
                 self._nudged.discard(task_id)
@@ -383,7 +420,9 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         finally:
             if settled:  # stopped by the daemon stopping, it's kept for the next start to carry on
                 self.store.clear_pending(task_id)
+                self._seat_queue_floor.pop(task_id, None)
             self._runs.pop(task_id, None)
+            self._seat_turn_seen.pop(task_id, None)
             self._waking.discard(task_id)
             self._stay_awake()
         self._report_up(task_id)
@@ -444,6 +483,8 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
             started = time.time()  # a text file a reply names counts as made by it if it changed since
             self._shared_now[task_id] = set()
             try:
+                if task.kind == "seat":
+                    self._seat_dispatch[task_id] = self._seat_turn_seen.get(task_id, 0)
                 if open_session:
                     stream = open_session.session.turn(prompt)
                 else:
@@ -461,6 +502,9 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
                                         error=f"nothing came back from {bot.backend} for {_duration(self.stall_s)}")
                             self._record(task_id, done)
                             break
+                        if (task.kind == "seat" and not isinstance(event, (SessionStarted, Notice, RateLimit))
+                                and not (isinstance(event, Done) and event.is_error)):
+                            self._room_prompt_sent(task_id)
                         if isinstance(event, RateLimit):
                             self._note_limit(task_id, event)
                             continue
@@ -498,6 +542,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
                 done = Done(final_text="", is_error=True, error=f"crewbots: {e}", retry="transient")
                 self._record(task_id, done)
             finally:
+                self._seat_dispatch.pop(task_id, None)
                 await self.browser.close_task(task_id)
                 if open_session is None:
                     self._tokens.pop(token, None)
@@ -546,6 +591,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         proactive = task.created_by == "crewbots" and task.parent_id is not None  # started on its own, from a check-in
         return RunSpec(
             prompt=prompt, cwd=cwd, model=bot.model,
+            on_prompt_sent=(lambda: self._room_prompt_sent(task.id)) if task.kind == "seat" else None,
             access=Access.READ_ONLY if task.kind == "ask" else bot.access,  # a question is answered, not worked on
             system_prompt=self.crew.system_prompt(bot, delegated_by=task.created_by if task.parent_id else None,
                                                   reviewing=self._review_brief(task), briefing=task.briefing,
@@ -573,16 +619,6 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         names = set(self.crew.bots) | {p.name for p in root.glob("*") if p.is_dir() and not p.name.startswith(".")}
         return [root / ".git", *[root / name / "working-state" for name in sorted(names) if name != bot]]
 
-    def _clear_room_need(self, task_id: str) -> None:
-        import logging
-
-        chief = self.coordinator()
-        if chief:
-            try:
-                working_state.clear_need(self.crew.memory.root / chief.name / "working-state" / "state.md", task_id)
-            except Exception:
-                logging.getLogger(__name__).exception("Could not clear a resolved room escalation")
-
     def _stay_awake(self) -> None:
         """Holds a power assertion while any task is running, and only then: work in progress shouldn't stall
         because the Mac went to sleep, but an idle crew shouldn't keep it awake."""
@@ -596,24 +632,6 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         elif not busy and self._awake is not None:
             self._awake.terminate()
             self._awake = None
-
-    def _setting(self, task: Task) -> str | None:
-        if task.kind == "chat":
-            return prompts.text("chat-setting", self.crew.home)
-        if task.created_by == "crewbots" and task.parent_id:  # work it started on its own, from a check-in
-            return prompts.text("own-setting", self.crew.home)
-        if task.kind == "ask":
-            return prompts.text("ask-setting", self.crew.home, asker=task.created_by)
-        if task.kind == "seat" and task.room_id:
-            room = self.store.room(task.room_id)
-            others = [m for m in room["members"] if m != task.bot]
-            lead = (f"You lead it: a message from the user that mentions no one comes to you. Answer it, hand it to the "
-                    f"one member best placed for it with a short handover that @mentions them, or reply {NO_REPLY} if "
-                    f"someone already has it." if room["lead"] == task.bot
-                    else f"{room['lead']} leads it; you're woken when someone mentions you.")
-            return prompts.text("seat-setting", self.crew.home, title=repr(escape(room["title"], quote=False)),
-                                lead=lead, no_reply=NO_REPLY, others=", ".join(others) or "no other bots")
-        return None
 
     def _crew_tools(self, token: str, bot: Bot, tools: str = "crew", flags: str = "") -> dict[str, McpServer]:
         if not self.api_url:
@@ -658,13 +676,6 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
                 data: dict[str, Any] | None = None) -> None:
         stored = self.store.append_event(task_id, event, kind=kind, data=data)
         self.bus.publish({"type": "event", "event": stored.to_json()})
-
-    def _close_questions(self, task_id: str) -> None:
-        asked = self.store.last_event(task_id, ("escalation", "permission"))
-        closed = self.store.last_event(task_id, ("questions_closed",))
-        if asked and (closed is None or asked.id > closed.id):
-            self._record(task_id, kind="questions_closed", data={})
-        self._clear_room_need(task_id)
 
     def _set(self, task_id: str, **fields: Any) -> Task:
         task = self.store.update_task(task_id, **fields)

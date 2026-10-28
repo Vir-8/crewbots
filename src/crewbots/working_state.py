@@ -21,6 +21,12 @@ AUTO_LIMIT = 12
 AUTO_CHARS = 1200
 LOCK_TIMEOUT = 0.1  # never wait indefinitely on the event loop
 ENTRY = re.compile(r"^- \[([ x])\] `([a-f0-9]+)` (.*)$")
+ROOM_NEED = re.compile(r" · room mention (r_[a-f0-9]+) · last (\d+) · count (\d+)$")
+
+
+def _room_need(line: str):
+    entry = ENTRY.match(line)
+    return ROOM_NEED.search(line) if entry and len(entry[2]) == 25 and entry[2].startswith("a") else None
 
 
 def prompt_data(text: str) -> str:
@@ -117,7 +123,10 @@ def _fit(sections: dict[str, list[str]], *, keep_generated: bool = False) -> boo
     """Generated lines give way to owned entries; never delete an active owned entry."""
     pruned = False
     while len(render(sections)) > LIMIT:
-        if _prune(sections):
+        if oldest := next((line for line in sections["Needs me"] if _room_need(line)), None):
+            sections["Needs me"].remove(oldest)
+            pruned = True
+        elif _prune(sections):
             pruned = True
         elif oldest := _oldest_auto(sections):
             sections["Decisions"].remove(oldest)
@@ -171,6 +180,34 @@ def clear_need(path: Path, task_id: str) -> None:
         _write(path, render(sections))
 
 
+def room_mentions(path: Path, room: dict, messages: list[dict], *, add: bool = False, through: int | None = None) -> bool:
+    """Update one bounded room entry; never evict a user-owned or unrelated entry."""
+    with _lock(path):
+        sections = _sections(path)
+        entries = sections["Needs me"]
+        index = next((i for i, line in enumerate(entries) if (m := _room_need(line)) and m[1] == room["id"]), None)
+        old = _room_need(entries[index]) if index is not None else None
+        if through is not None and old and int(old[2]) > through:
+            return False
+        count = len(messages) + (int(old[3]) if add and old else 0)
+        if index is not None:
+            entries.pop(index)
+        pruned = False
+        if messages:
+            message = messages[-1]
+            entry_id = "a" + f"{time.time_ns():016x}{uuid4().hex[:8]}"
+            title = " ".join(room["title"].split())[:80]
+            author = " ".join(message["author"].split())[:32]
+            entries.append(f"- [ ] `{entry_id}` {title} ({room['id']}) · {message['at'][:16]} · {author}"
+                           f" · room mention {room['id']} · last {message['id']} · count {count}")
+            automatic = [line for line in entries if _room_need(line)]
+            while automatic and (len(automatic) > AUTO_LIMIT or len(render(sections)) > LIMIT):
+                entries.remove(automatic.pop(0))
+                pruned = True
+        _write(path, render(sections))
+        return pruned
+
+
 def edit(path: Path, section: str, action: str, text: str = "", entry_id: str = "", done: bool = False,
          *, automatic: bool = False) -> tuple[str, bool]:
     if section not in EDITABLE:
@@ -202,8 +239,9 @@ def edit(path: Path, section: str, action: str, text: str = "", entry_id: str = 
         if section == "Decisions":
             pruned = _auto_budget(sections)
         if section == "Needs me":
-            while len(entries) > AUTO_LIMIT:
-                entries.pop(0)
+            manual = [line for line in entries if not _room_need(line)]
+            while len(manual) > AUTO_LIMIT:
+                entries.remove(manual.pop(0))
                 pruned = True
         pruned = _fit(sections) or pruned
         _write(path, render(sections))

@@ -10,7 +10,7 @@ import pytest
 from crewbots.backends import Access, RunSpec
 from crewbots.backends.codex_app_server import CodexSession
 from crewbots.backends.policy import NO_NETWORK, STAY_IN_SANDBOX, USERS_TO_DO
-from crewbots.events import Done, Notice
+from crewbots.events import Done, Notice, SessionStarted
 
 
 class FakeAppServer:
@@ -74,6 +74,19 @@ def session_on(server: FakeAppServer, access: Access, cwd: Path) -> CodexSession
 
 async def run_turn(session: CodexSession) -> list:
     return [e async for e in session.turn("go")]
+
+
+async def test_prompt_dispatch_follows_turn_start_not_session_announcement(tmp_path):
+    server = FakeAppServer([COMPLETED])
+    sent = []
+    session = CodexSession(server, RunSpec(prompt="", cwd=tmp_path, on_prompt_sent=lambda: sent.append(True)))
+    session.session_id = "th"
+    turn = session.turn("go")
+    assert isinstance(await anext(turn), SessionStarted)
+    assert not sent and not server.sent
+    assert isinstance(await anext(turn), Done)
+    assert sent == [True] and server.sent[0]["method"] == "turn/start"
+    await turn.aclose()
 
 
 @pytest.fixture

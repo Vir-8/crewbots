@@ -1,1 +1,1 @@
-The tasks you delegated: status, worktree, handoff and final message for each. For looking something up, never for waiting: results come to you.
+Your unfinished tasks and 20 most recent finished tasks across your sessions, including delegated work and your own threads: status, worktree, handoff and final message. For looking something up, never for waiting: results come to you.
