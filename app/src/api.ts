@@ -63,6 +63,7 @@ export const api = {
   cancel: (taskId: string) => call<Task>("POST", `/tasks/${taskId}/cancel`),
   merge: (taskId: string, force = false) => call<Task>("POST", `/tasks/${taskId}/merge`, { force }),
   push: (id: number) => call<{ ok: boolean; reason: string; pushed?: boolean }>("POST", `/push-proposals/${id}/push`),
+  replaceMain: (id: number) => call<{ ok: boolean; reason: string }>("POST", `/replace-main-proposals/${id}/replace`),
   mergeStatus: (taskId: string) => call<{ already_on: string | null }>("GET", `/tasks/${taskId}/merge-status`),
   withdrawMerge: (taskId: string, reason: string) => call<Task>("POST", `/tasks/${taskId}/withdraw-merge`, { reason }),
   release: (taskId: string) => call<Task>("POST", `/tasks/${taskId}/release`),

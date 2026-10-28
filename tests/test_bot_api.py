@@ -256,7 +256,7 @@ async def test_workers_delegate_but_only_coordinators_add_bots_and_propose_merge
                       "ask_permission", "browser_open", "browser_screenshot", "browser_click",
                       "browser_type", "browser_evaluate", "browser_console"}
     assert coordinator == worker | {"propose_merge", "withdraw_merge", "next_check", "room_status", "sweep_worktrees"}
-    assert chief == coordinator | {"add_bot", "propose_push"}
+    assert chief == coordinator | {"add_bot", "propose_push", "propose_replace_main"}
 
 
 def test_a_verdict_from_a_task_that_is_not_a_review_is_refused_with_a_reason(crew_app):

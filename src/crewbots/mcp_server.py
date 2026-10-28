@@ -222,6 +222,11 @@ def build_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = F
             result = call("POST", "/bot/propose_push", {"project": project, "summary": summary})
             return result["message"]
 
+        @server.tool(description=describe("propose_replace_main"))
+        def propose_replace_main(project: str, branch: str, summary: str) -> str:
+            result = call("POST", "/bot/propose_replace_main", {"project": project, "branch": branch, "summary": summary})
+            return result["message"]
+
     @server.tool(description=describe("propose_merge"))
     def propose_merge(task_id: str, summary: str) -> str:
         task = call("POST", "/bot/propose_merge", {"task_id": task_id, "summary": summary})

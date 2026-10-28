@@ -99,11 +99,16 @@ SPECS: dict[str, Spec] = {
     "room_status": Spec(_object({"room": STRING}, []), coordinator_only=True),
     "message": Spec(_object({"task_id": STRING, "text": STRING}, ["task_id", "text"])),
     "propose_push": Spec(_object({"project": STRING, "summary": STRING}, ["project", "summary"]), coordinator_only=True),
+    "propose_replace_main": Spec(_object({"project": STRING, "branch": STRING, "summary": STRING},
+                                         ["project", "branch", "summary"]), coordinator_only=True),
     "propose_merge": Spec(_object({"task_id": STRING, "summary": STRING}, ["task_id", "summary"]), coordinator_only=True),
     "withdraw_merge": Spec(_object({"task_id": STRING, "reason": STRING}, ["task_id", "reason"]), coordinator_only=True),
     "sweep_worktrees": Spec(_object({"dry_run": {"type": "boolean"}}, []), coordinator_only=True),
     "next_check": Spec(_object({"minutes": {"type": "number"}, "why": STRING}, ["minutes", "why"]), coordinator_only=True),
 }
+
+
+CHIEF_ONLY = {"add_bot", "propose_push", "propose_replace_main"}
 
 
 def describe(name: str, home: Path | None = None) -> str:
@@ -113,7 +118,7 @@ def describe(name: str, home: Path | None = None) -> str:
 
 def tools_for(can_delegate: bool, home: Path | None = None, *, is_chief: bool = False) -> list[ToolDef]:
     return [ToolDef(name, describe(name, home), spec.schema, spec.coordinator_only) for name, spec in SPECS.items()
-            if (can_delegate or not spec.coordinator_only) and (name not in {"add_bot", "propose_push"} or is_chief)]
+            if (can_delegate or not spec.coordinator_only) and (name not in CHIEF_ONLY or is_chief)]
 
 
 class ToolRefused(Exception):
@@ -150,9 +155,9 @@ class CrewTools:
         bot = self.runner.store.get_task(self.task_id).bot
         if (tool is None or (tool.coordinator_only and
                              not (self.can_delegate and self.runner.is_coordinator(bot))) or
-                (name in {"add_bot", "propose_push"} and not (self.can_delegate and self.runner.is_chief(bot)))):
-            if name == "propose_push":
-                raise ToolRefused("Only the chief can propose a push")
+                (name in CHIEF_ONLY and not (self.can_delegate and self.runner.is_chief(bot)))):
+            if name in {"propose_push", "propose_replace_main"}:
+                raise ToolRefused(f"Only the chief can use {name}")
             raise ToolRefused(f"{name} is not one of this bot's crew tools")
         missing = [k for k in tool.schema["required"] if args.get(k) in (None, "")]
         if missing:
@@ -205,6 +210,10 @@ class CrewTools:
                 case "propose_push":
                     from crewbots.push import proposal_message, propose
                     proposal = await propose(r, me, args["project"], args["summary"])
+                    return proposal_message(r, proposal)
+                case "propose_replace_main":
+                    from crewbots.replace_main import proposal_message, propose
+                    proposal = await propose(r, me, args["project"], args["branch"], args["summary"])
                     return proposal_message(r, proposal)
                 case "propose_merge":
                     task = r.propose_merge(me, args["task_id"], args["summary"])

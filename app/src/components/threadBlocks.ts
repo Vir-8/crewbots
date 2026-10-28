@@ -25,11 +25,12 @@ export type Block =
   | { kind: "held"; id: number; taskId: string; reason: string }
   | { kind: "handoff"; id: number; data: Record<string, any> }
   | { kind: "verdict"; id: number; data: Record<string, any> }
-  | { kind: "push"; id: number; data: Record<string, any>; started?: boolean; result?: Record<string, any> };
+  | { kind: "push"; id: number; data: Record<string, any>; started?: boolean; result?: Record<string, any> }
+  | { kind: "replace"; id: number; data: Record<string, any>; started?: boolean; result?: Record<string, any> };
 
 // Crew tools that are shown as what they did (a card, a verdict, a question, a note kept, a page), not as steps.
 const SHOWN_ELSEWHERE = new Set(
-  ["delegate", "start_thread", "post", "share", "handoff", "review", "escalate", "propose_merge", "propose_push", "withdraw_merge", "message", "ask", "remember",
+  ["delegate", "start_thread", "post", "share", "handoff", "review", "escalate", "propose_merge", "propose_push", "propose_replace_main", "withdraw_merge", "message", "ask", "remember",
     "forget", "update_state", "write_page", "edit_page", "next_check", "set_name"].map((t) => `mcp__crewbots__${t}`),
 );
 const COMPACTED = "compacted its conversation"; // the gist of the lines about a conversation grown long
@@ -54,6 +55,8 @@ export function said(block: Block): string {
       return block.data.summary ?? "";
     case "push":
       return [block.data.project, block.data.summary, block.data.branch, block.data.upstream, block.data.push_url_display, ...(block.data.commits ?? []), block.result?.reason].filter(Boolean).join("\n");
+    case "replace":
+      return [block.data.project, block.data.summary, block.data.target, block.data.branch, block.data.backup, ...(block.data.checks ?? []).map((c: any) => `${c.name} ${c.detail}`), block.result?.reason].filter(Boolean).join("\n");
     case "page":
       return block.page;
     case "permission":
@@ -231,6 +234,10 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
       case "push_proposed":
         flush();
         out.push({ kind: "push", id: e.id, data: d, started: events.some((x) => x.kind === "push_started" && x.data.proposal === e.id), result: events.find((x) => x.kind === "push_result" && x.data.proposal === e.id)?.data });
+        break;
+      case "replace_main_proposed":
+        flush();
+        out.push({ kind: "replace", id: e.id, data: d, started: events.some((x) => x.kind === "replace_main_started" && x.data.proposal === e.id), result: events.find((x) => x.kind === "replace_main_result" && x.data.proposal === e.id)?.data });
         break;
       case "merge_withdrawn":
         flush();

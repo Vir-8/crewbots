@@ -100,6 +100,13 @@ def routes(c: Context) -> APIRouter:
         proposal = await propose(runner, request.state.task.id, body.get("project", ""), body.get("summary", ""))
         return {"id": proposal, "message": proposal_message(runner, proposal)}
 
+    @v1.post("/bot/propose_replace_main")
+    async def bot_propose_replace_main(request: Request, body: dict[str, str]):
+        from crewbots.replace_main import proposal_message, propose
+        proposal = await propose(runner, request.state.task.id, body.get("project", ""), body.get("branch", ""),
+                                 body.get("summary", ""))
+        return {"id": proposal, "message": proposal_message(runner, proposal)}
+
     @v1.post("/bot/propose_merge")
     async def bot_propose_merge(request: Request, body: MergeProposal):
         task = runner.propose_merge(request.state.task.id, body.task_id, body.summary)
