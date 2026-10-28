@@ -298,6 +298,13 @@ async function request(method: string, path: string, body?: any) {
     say(id, "merged", { commit: "9f8e7d6c5b4a", into: task.repo ?? "~/code", forced: Boolean(body?.force) });
     return ok(update(id, { merge_state: "merged", merged_commit: "9f8e7d6c5b4a" }));
   }
+  if (method === "POST" && action === "withdraw-merge") {
+    const reason = String(body?.reason ?? "").trim();
+    if (!reason || task.merge_state !== "proposed") return { ok: false, status: 400, data: { detail: "A proposed merge and reason are required" } };
+    const updated = update(id, { merge_state: null });
+    say(id, "merge_withdrawn", { by: "user", reason });
+    return ok(updated);
+  }
   return missing(`${method} ${path}`);
 }
 
@@ -360,7 +367,7 @@ export const previewBridge = {
   startAtLogin: async (enabled?: boolean) => enabled ?? true,
   appInfo: async () => ({ installed_newer: new URLSearchParams(location.search).has("update") }), // ?update shows the banner
   restartApp: async () => location.assign(location.pathname),
-  installUpdate: async (_bundle: string) => "/Applications/crewbots.app",
+  installUpdate: async (_bundle: string) => ({ path: "/Applications/crewbots.app", warning: null }),
   dictation: browserDictation(),
   onStatus: (_callback: Listener<ConnectionStatus>) => () => undefined,
   onLive: (callback: Listener<Live>) => {

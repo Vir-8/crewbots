@@ -73,7 +73,7 @@ export async function selftest() {
       const update = await api.update();
       report.updateBuilt = update.release.state === "built" ? update.release.commit : update.release.state ?? "none";
       if (update.release.state === "built" && update.release.bundle) {
-        report.updateInstalled = await bridge.installUpdate(update.release.bundle).then((to) => `into ${to}`, (e) => `failed: ${e}`);
+        report.updateInstalled = await bridge.installUpdate(update.release.bundle).then((result) => `into ${result.path}${result.warning ? `; ${result.warning}` : ""}`, (e) => `failed: ${e}`);
       }
     }
   } catch (error) {

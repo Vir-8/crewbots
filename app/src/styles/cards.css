@@ -203,12 +203,37 @@
 
 .ask-other {
   display: flex;
+  align-items: center;
   gap: 6px;
 }
 
 .ask-other input {
   flex: 1;
   min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+}
+
+.ask-other input:focus {
+  border-color: color-mix(in srgb, var(--soft) 45%, var(--line));
+}
+
+.ask-other input::placeholder {
+  color: var(--faint);
+}
+
+.ask-other .button,
+.ask-send {
+  background: var(--bg);
+}
+
+.ask-other .button:hover:not(:disabled) {
+  background: var(--hover);
 }
 
 .ask-send {

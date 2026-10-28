@@ -26,7 +26,7 @@ describe("prepared updates", () => {
     vi.clearAllMocks();
     api.update.mockResolvedValue(update);
     api.restart.mockResolvedValue({});
-    bridge.installUpdate.mockResolvedValue("/Applications/crewbots.app");
+    bridge.installUpdate.mockResolvedValue({ path: "/Applications/crewbots.app", warning: null });
   });
 
   it("does not offer an older build after the checkout advances", () => {
@@ -83,8 +83,60 @@ describe("prepared updates", () => {
     await install();
     expect(error()).toContain("restart refused");
     expect(bridge.restartApp).not.toHaveBeenCalled();
+    api.update.mockRejectedValueOnce(new Error("offline"));
     await check();
     expect(error()).toContain("restart refused");
+    await check();
+    expect(error()).toBe("");
+  });
+
+  it("shows a note returned by the install recheck instead of a stale checkout warning", async () => {
+    for (const available of [false, true]) {
+      api.update.mockResolvedValue(update);
+      await check();
+      api.update.mockResolvedValue({ ...update, available, note: "The checkout has uncommitted changes.", release: {} });
+      await install();
+      expect(error()).toBe("");
+      const dialog = renderToStaticMarkup(<UpdatesDialog onClose={() => {}} />);
+      expect(dialog).toContain("The checkout has uncommitted changes.");
+      expect(dialog).not.toContain("checkout changed");
+    }
+    expect(bridge.installUpdate).not.toHaveBeenCalled();
+    expect(api.restart).not.toHaveBeenCalled();
+  });
+
+  it("shows a note even when an update is still available", async () => {
+    api.update.mockResolvedValue({ ...update, note: "The checkout has uncommitted changes." });
+    await check();
+    const dialog = renderToStaticMarkup(<UpdatesDialog onClose={() => {}} />);
+    expect(dialog).toContain("The checkout has uncommitted changes.");
+    expect(dialog).not.toContain("Restart to Update");
+  });
+
+  it("does not offer another daemon restart while one is pending", async () => {
+    for (const release of [update.release, {}]) {
+      api.update.mockResolvedValue({ ...update, needs: { app: false, daemon: true }, release });
+      await check();
+      const dialog = renderToStaticMarkup(<UpdatesDialog onClose={() => {}} restarting />);
+      expect(dialog).toContain("The daemon is waiting to restart");
+      expect(dialog).not.toContain("Restart Daemon");
+    }
+  });
+
+  it("logs an installed update's warning and still restarts the daemon and app", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      bridge.installUpdate.mockResolvedValue({ path: "/Applications/crewbots.app", warning: "old contents remain" });
+      bridge.restartApp.mockResolvedValue(undefined);
+      await check();
+      await install();
+      expect(warn).toHaveBeenCalledWith("crewbots update: old contents remain");
+      expect(api.restart).toHaveBeenCalledWith(true);
+      expect(bridge.restartApp).toHaveBeenCalledOnce();
+      expect(api.restart.mock.invocationCallOrder[0]).toBeLessThan(bridge.restartApp.mock.invocationCallOrder[0]);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("reports a restart that leaves the app open", async () => {

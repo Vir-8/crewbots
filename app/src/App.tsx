@@ -311,7 +311,7 @@ export function App() {
         />
       )}
       {palette && <Palette items={paletteItems(crew, current, go)} onClose={() => setPalette(false)} />}
-      {updates && <UpdatesDialog onClose={() => setUpdates(false)} />}
+      {updates && <UpdatesDialog onClose={() => setUpdates(false)} restarting={crew.crewState?.restarting} />}
       <CrewBanner crew={crew} onUpdates={() => setUpdates(true)} />
       {crew.error && (
         <div className="toast" onClick={crew.clearError}>

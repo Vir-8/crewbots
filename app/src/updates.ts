@@ -32,7 +32,7 @@ export async function check(fetch = false) {
   set({ checking: true });
   try {
     const update = await api.update(fetch);
-    set({ update, checking: false, error: state.error === CHECKOUT_CHANGED ? null : state.error });
+    set({ update, checking: false, error: null });
     if (state.following && ready(update)) {
       set({ following: false });
       await install();
@@ -95,14 +95,17 @@ export async function install() {
   try {
     const current = await api.update();
     set({ update: current });
-    if (!current.available && !current.note) {
+    if (current.note || !current.available) {
       set({ installing: false, following: false });
       return;
     }
     if (!ready(current) || current.release.commit !== update.release.commit) {
       throw new Error(CHECKOUT_CHANGED);
     }
-    if (newApp(current)) await bridge.installUpdate(current.release.bundle!);
+    if (newApp(current)) {
+      const result = await bridge.installUpdate(current.release.bundle!);
+      if (result.warning) console.warn(`crewbots update: ${result.warning}`);
+    }
     if (current.needs?.daemon) await api.restart(true); // the daemon's own turn: once no turn runs
     if (newApp(current)) await restartApp();
     else set({ installing: false }); // the app stays open, and reconnects when the daemon's back

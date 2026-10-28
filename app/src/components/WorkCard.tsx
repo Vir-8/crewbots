@@ -90,7 +90,7 @@ export function MergeButton({ crew, task }: { crew: Crew; task: Task }) {
   useEffect(() => {
     if (!withdrawing || busy) return;
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") { setWithdrawing(false); setReason(""); }
+      if (e.key === "Escape" && !e.isComposing) { setWithdrawing(false); setReason(""); }
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);

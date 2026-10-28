@@ -69,18 +69,18 @@ export function Question({ crew, block, onOpen }: { crew: Crew; block: Asked; on
                 onChange={(e) => setOther(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.nativeEvent.isComposing) (block.multiple ? several() : send(other));
-                  else if (e.key === "Escape") setOther(null);
+                  else if (e.key === "Escape" && !e.nativeEvent.isComposing) setOther(null);
                 }}
               />
               {!block.multiple && (
-                <button className="button small primary" disabled={!other.trim() || sending} onClick={() => send(other)}>
+                <button className="button small" disabled={!other.trim() || sending} onClick={() => send(other)}>
                   Send
                 </button>
               )}
             </div>
           )}
           {!answered && block.multiple && (
-            <button className="button small primary ask-send" disabled={!ready || sending} onClick={several}>
+            <button className="button small ask-send" disabled={!ready || sending} onClick={several}>
               Send
             </button>
           )}

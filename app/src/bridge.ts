@@ -37,7 +37,7 @@ const tauriBridge = {
   /** Whether a newer build of the app is installed over this one. */
   appInfo: () => invoke<{ installed_newer: boolean }>("app_info"),
   /** Puts the build an update made in this app's place (the app restarts after). */
-  installUpdate: (bundle: string) => invoke<string>("install_update", { bundle }),
+  installUpdate: (bundle: string) => invoke<{ path: string; warning: string | null }>("install_update", { bundle }),
   /** Quits and opens the app again, from the build installed now. */
   restartApp: () => invoke<void>("restart_app"),
   openPath: (path: string) => openPath(path),

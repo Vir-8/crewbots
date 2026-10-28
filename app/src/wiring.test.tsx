@@ -17,6 +17,7 @@ vi.mock("react", async (original) => {
       return hooks.values[i] ??= { current: initial };
     },
     useEffect: (effect: () => any) => { hooks.effects.push(effect); },
+    useSyncExternalStore: (_subscribe: any, getSnapshot: () => any) => getSnapshot(),
   };
 });
 vi.mock("./state", async (original) => ({ ...await original<typeof import("./state")>(), useCrew: () => hooks.crew }));
@@ -28,6 +29,8 @@ import { Panel } from "./components/Panel";
 import { Profile, RoomProfile } from "./components/Profile";
 import { Sidebar } from "./components/Sidebar";
 import { MergeButton, WorkCard } from "./components/WorkCard";
+import { Question } from "./components/Question";
+import { UpdatesDialog } from "./components/UpdatesDialog";
 
 function find(node: any, type: any): ReactElement<any> | undefined {
   if (!node || typeof node !== "object") return undefined;
@@ -37,6 +40,55 @@ function find(node: any, type: any): ReactElement<any> | undefined {
 }
 function render(component: () => ReactElement<any>) { hooks.index = 0; return component(); }
 beforeEach(() => { hooks.values = []; hooks.effects = []; localStorage.clear(); });
+
+it("opens and sends an Other answer from a question", () => {
+  const send = vi.fn().mockResolvedValue(undefined);
+  const block = { kind: "ask", taskId: "question", question: "Which?", choices: [{ label: "First" }], multiple: false } as any;
+  const draw = () => render(() => Question({ crew: { send } as any, block, onOpen: () => {} }));
+  let tree = draw();
+  const choices = (tree.props.children as any[])[2];
+  choices.props.children[1].props.onClick();
+  tree = draw();
+  const input = find(tree, "input")!;
+  expect(input.props.autoFocus).toBe(true);
+  input.props.onChange({ target: { value: "My answer" } });
+  tree = draw();
+  const other = (tree.props.children as any[])[2].props.children[2];
+  const button = other.props.children[1];
+  expect(button.props.className).toBe("button small");
+  expect(button.props.disabled).toBe(false);
+  button.props.onClick();
+  expect(send).toHaveBeenCalledWith("question", "My answer");
+});
+
+it("keeps the Other answer open while Escape is composing", () => {
+  const block = { kind: "ask", taskId: "question", question: "Which?", choices: [{ label: "First" }], multiple: false } as any;
+  const draw = () => render(() => Question({ crew: {} as any, block, onOpen: () => {} }));
+  let tree = draw();
+  (tree.props.children as any[])[2].props.children[1].props.onClick();
+  find(draw(), "input")!.props.onChange({ target: { value: "Draft" } });
+  find(draw(), "input")!.props.onKeyDown({ key: "Escape", nativeEvent: { isComposing: true } });
+  expect(find(draw(), "input")!.props.value).toBe("Draft");
+  find(draw(), "input")!.props.onKeyDown({ key: "Escape", nativeEvent: { isComposing: false } });
+  expect(find(draw(), "input")).toBeUndefined();
+});
+
+it("ignores Escape during composition in the update dialog", () => {
+  const onClose = vi.fn();
+  const add = vi.fn();
+  const remove = vi.fn();
+  vi.stubGlobal("addEventListener", add);
+  vi.stubGlobal("removeEventListener", remove);
+  render(() => UpdatesDialog({ onClose }));
+  const cleanup = hooks.effects.at(-1)!();
+  const keydown = add.mock.calls[0][1];
+  keydown({ key: "Escape", isComposing: true });
+  expect(onClose).not.toHaveBeenCalled();
+  keydown({ key: "Escape", isComposing: false });
+  expect(onClose).toHaveBeenCalledOnce();
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 it("offers no room reply limit by default and lets a room opt in", () => {
   const changeRoom = vi.fn().mockResolvedValue(undefined);
@@ -85,7 +137,13 @@ it("withdraws through the in-app dialog and allows cancellation", async () => {
   vi.stubGlobal("removeEventListener", remove);
   const cleanup = hooks.effects.at(-1)!();
   expect(add).toHaveBeenCalledWith("keydown", expect.any(Function));
-  add.mock.calls[0][1]({ key: "Escape" });
+  const keydown = add.mock.calls[0][1];
+  expect(find(draw(), "form")).toBeDefined();
+  keydown({ key: "Escape", isComposing: true });
+  expect(find(draw(), "form")).toBeDefined();
+  expect(find(draw(), "input")!.props.value).toBe("Draft");
+  keydown({ key: "Escape", isComposing: false });
+  expect(find(draw(), "form")).toBeUndefined();
   cleanup();
   expect(remove).toHaveBeenCalledWith("keydown", add.mock.calls[0][1]);
   vi.unstubAllGlobals();

@@ -27,6 +27,14 @@ h2 {
   letter-spacing: -0.012em;
 }
 
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: inherit;
+}
+
 button {
   font: inherit;
   color: inherit;
