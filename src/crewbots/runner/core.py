@@ -53,16 +53,8 @@ from crewbots.events import (
 from crewbots.reviews import review_prompt, reviewer_bot
 from crewbots.runner.branches import Branches
 from crewbots.runner.checkins import Checkins
-from crewbots.runner.common import (
-    MCP_COMMAND,
-    MCP_SERVER_NAME,
-    Bus,
-    NotAllowed,
-    OpenSession,
-    UnknownBot,
-    _duration,
-    _usage_data,
-)
+from crewbots.runner.chief_events import ChiefEvents
+from crewbots.runner.common import MCP_COMMAND, MCP_SERVER_NAME, Bus, NotAllowed, OpenSession, UnknownBot, _duration, _usage_data
 from crewbots.runner.delegation import MAX_CHILDREN, MAX_DEPTH, MAX_OUT, Delegation
 from crewbots.runner.dreams import Dreams
 from crewbots.runner.files import Files
@@ -73,6 +65,7 @@ from crewbots.runner.reviews import Reviewing
 from crewbots.runner.rooms import Rooms
 from crewbots.runner.sessions import Sessions
 from crewbots.runner.wakes import Wakes
+from crewbots.runner.watchdog import Watchdog
 from crewbots.runner.welcome import Welcome
 from crewbots.runner.work import Work
 from crewbots.store import Status, Store, Task
@@ -88,8 +81,8 @@ RETRY_WAITS_S = (30.0, 120.0, 300.0)
 STALL_S = 1200.0  # no event at all from a turn for this long: it's stuck, so it's stopped and tried again
 
 
-class Runner(Branches, Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams, Checkins, Wakes,
-             Welcome, Permissions):
+class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams, Checkins, Wakes,
+             Welcome, Permissions, Watchdog):
     """Runs the crew's tasks. Its parts are by area: sessions, rooms, delegation, reviews, work, files bots show the
     user, holds, dreams (memory consolidated overnight), check-ins, the chief's own looks around (wakes), starting a
     crew off (welcome), and what bots ask the user to allow (permissions)."""

@@ -48,6 +48,15 @@ class Store(Tasks, Events, Rooms, Search, Drafts, Routines, Happenings, Permissi
         self.db.execute("insert into crew_settings (key, value) values ('auto_merge', ?) "
                         "on conflict(key) do update set value = excluded.value", (int(enabled),))
 
+    def stall_minutes(self) -> int:
+        """How long a bot with open work may sit idle before the daemon wakes it."""
+        row = self.db.execute("select value from crew_settings where key = 'stall_minutes'").fetchone()
+        return int(row[0]) if row and int(row[0]) > 0 else 15
+
+    def set_stall_minutes(self, minutes: int) -> None:
+        self.db.execute("insert into crew_settings (key, value) values ('stall_minutes', ?) "
+                        "on conflict(key) do update set value = excluded.value", (int(minutes),))
+
     def timezone(self) -> str | None:
         """The crew's chosen time zone; None until one is chosen, when the machine's own is used."""
         row = self.db.execute("select value from crew_settings where key = 'timezone'").fetchone()

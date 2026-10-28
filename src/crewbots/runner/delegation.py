@@ -198,8 +198,10 @@ class Delegation:
         self._record(task_id, Notice(message=f"Added {added.label} (@{added.name}), {added.title}, to the crew."))
         return added
 
-    def _report_up(self, task_id: str) -> None:
-        """Once none of a parent's children are running, sends it everything they finished since its last report."""
+    def _report_up(self, task_id: str, now: bool = False) -> None:
+        """Sends a parent what its children finished since its last report, once none of them is running. Not waited for
+        by `now` or a failure (a late handoff, which can't wait), nor by siblings of another kind: reviews of one work
+        report together, and the rest report apart from them."""
         task = self.store.get_task(task_id)
         if not task.parent_id or task.active or task_id in self._runs:
             return
@@ -207,9 +209,14 @@ class Delegation:
         if parent.status is Status.CANCELLED:
             return
         siblings = self.store.children(task.parent_id)
-        if any(s.active or s.id in self._runs for s in siblings):
+        busy = [s for s in siblings if s.active or s.id in self._runs]
+        review = bool(task.review_of) or parent.kind == "review"
+        blockers = [s for s in busy if bool(s.review_of) or parent.kind == "review"] if review else (
+            [] if now or task.status is Status.FAILED else busy)
+        if blockers:
             return
-        finished = [s for s in siblings if not s.reported]
+        finished = [s for s in siblings if not s.reported and s not in busy and (
+            not busy or (bool(s.review_of) or parent.kind == "review") == review)]
         if not finished:
             return
         for s in finished:

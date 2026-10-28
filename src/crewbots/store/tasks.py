@@ -67,6 +67,35 @@ class Tasks:
             "order by recent.updated_at desc, recent.id desc limit 20)) order by t.created_at, t.id", (bot, bot)).fetchall()
         return [_task(r) for r in rows]
 
+    def last_activity(self, bot: str) -> str | None:
+        """When any task of the bot's last changed."""
+        return self.db.execute("select max(updated_at) from tasks where bot = ?", (bot,)).fetchone()[0]
+
+    def has_pending_permission(self, task_id: str) -> bool:
+        """Whether the task asked the user for a permission that is still unanswered."""
+        return bool(self.db.execute(
+            "select 1 from permissions p where p.task_id = ? and p.allowed is null and not exists (select 1 from events c "
+            "where c.task_id = p.task_id and c.kind = 'questions_closed' and c.at >= p.asked_at)", (task_id,)).fetchone())
+
+    def owed_by_delegator(self, bot: str) -> list[Task]:
+        """Code tasks other bots finished for `bot` that it still owes an action on: idle, and the latest of their handoff,
+        review verdict, merge, withdrawal and drop is a handoff or a passing review (a failing review hands the work back to
+        the worker, and the other three close it). One waiting on the user to merge it isn't owed."""
+        rows = self.db.execute(
+            "select t.* from tasks t join tasks p on p.id = t.parent_id where p.bot = ? and t.bot != p.bot "
+            "and t.status = 'idle' and t.branch is not null and t.review_of is null "
+            "and coalesce(t.merge_state, '') not in ('merged', 'merging', 'proposed') and (select e.kind || ':' || "
+            "coalesce(json_extract(e.data, '$.verdict'), '') from events e where e.task_id = t.id and e.kind in "
+            "('handoff', 'review', 'merged', 'merge_withdrawn', 'worktree_dropped') order by e.id desc limit 1) "
+            "in ('handoff:', 'review:pass') order by t.created_at, t.id", (bot,)).fetchall()
+        return [_task(r) for r in rows]
+
+    def stuck_tasks(self, bot: str) -> list[Task]:
+        """Tasks of the bot's own that wait to run: held, queued, or interrupted by a daemon stop."""
+        rows = self.db.execute("select * from tasks where bot = ? and status in ('held', 'queued', 'interrupted') "
+                               "and kind not in ('chat', 'seat') order by created_at, id", (bot,)).fetchall()
+        return [_task(r) for r in rows]
+
     def unfinished_children(self, parent_id: str) -> int:
         """Children still running, waiting to run, held, or waiting for an answer."""
         return self.db.execute(

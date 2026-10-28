@@ -101,7 +101,7 @@ def test_previous_version_gains_merged_tip_without_changing_tasks(tmp_path):
     task = store.create_task("worker", "merged task")
     store.update_task(task.id, merge_state="merged", merged_commit="old-merge")
     store.db.execute("alter table tasks drop column merged_tip")
-    store.db.execute(f"pragma user_version = {len(db_module.MIGRATIONS) - 5}")
+    store.db.execute(f"pragma user_version = {len(db_module.MIGRATIONS) - 6}")
     store.close()
 
     migrated = Store(path)

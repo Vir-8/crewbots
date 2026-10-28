@@ -251,6 +251,17 @@ create table if not exists chat_mutes (
 """
 SCHEMA += CHAT_MUTES
 
+CHIEF_BATCH = """
+create table if not exists chief_batch (  -- crew activity waiting for the chief's next notice (runner/chief_events.py)
+    id      integer primary key autoincrement,
+    at      text not null,
+    kind    text not null,
+    subject text not null,   -- a task id, or empty
+    who     text not null    -- the bot
+);
+"""
+SCHEMA += CHIEF_BATCH
+
 WAKES = """
 create table if not exists wakes (  -- an always-on bot's own looks around (runner/wakes.py)
     bot       text primary key,
@@ -454,6 +465,7 @@ MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] =
     ("remember branch checkout and merge lock intent", _add_columns("tasks", {
         "checkout_state": "text", "merge_marker": "text"})),
     ("remember which backend made a task's session", _add_columns("tasks", {"session_backend": "text"})),
+    ("crew activity waiting for the chief's next notice", lambda db, _: db.executescript(CHIEF_BATCH)),
 ]
 
 

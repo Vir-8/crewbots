@@ -86,6 +86,7 @@ class Reviewing:
                                        findings)
         self._record(task_id, kind="review", data=review.to_json())
         self._record(task.review_of, kind="review", data=review.to_json())
+        self._report_late(task_id)  # a verdict given after the review task's turn ended still reaches its lead
         return review
 
     def review_state(self, work_id: str) -> ReviewState:

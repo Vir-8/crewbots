@@ -496,6 +496,7 @@ class Work(MergeStatus):
             log.exception("Could not clean up worktree for %s", task.id)
             return result | {"status": "kept" if wt.path.exists() else "error", "reason": str(e)}
         self._removed_worktrees.add(task.id)
+        self._record(task.id, kind="worktree_dropped", data={"path": result["path"]})
         log.info("Removed worktree for %s; branch %s", task.id, "deleted" if deleted else "kept")
         return result | {"status": "removed", "branch_status": "deleted" if deleted else "kept"}
 
@@ -546,6 +547,7 @@ class Work(MergeStatus):
                 except worktree.GitError as e:
                     raise NotAllowed(str(e)) from None
             self._set(task.id, worktree_path=None)
+            self._record(task.id, kind="worktree_dropped", data={"path": task.worktree_path})
             return {"task_id": task.id, "path": task.worktree_path, "branch": task.branch, "status": "removed",
                     "reason": "project released without switching or committing" if unchanged else (
                         f"switched back to {task.base_branch}" if task.merge_state == "merged" else "branch saved")}
@@ -559,6 +561,7 @@ class Work(MergeStatus):
         self._refresh_working_state(task.bot)
         self.crew.memory.log(task.bot, f"{task_id} {task.title}: {_short(done, 300)}"
                              + (f" Open: {_short(open, 200)}" if open.strip() else ""))
+        self._report_late(task_id)
         return handoff
 
     def _check_seat_answer(self, task: Task, question_id: int | None) -> None:

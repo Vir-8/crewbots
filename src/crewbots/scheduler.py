@@ -25,6 +25,7 @@ from crewbots.runner.wakes import NEWS_GAP, URGENT_GAP
 from crewbots.store import Store, Task
 
 TICK_S = 30.0
+STALL_EVERY_S = 180.0  # how often bots with open work and nothing running are looked for
 GITHUB_EVERY_S = 300.0
 MAX_STARTS_PER_POLL = 3  # per trigger; the rest wait for the next poll
 FIRST_SINCE = timedelta(days=1)  # what a routine's first run looks back over
@@ -67,6 +68,7 @@ class Scheduler:
         self.sources = sources.Sources()
         self.sources_every_s = sources_every_s
         self._watched: float | None = None
+        self._stall_checked: float | None = None
         self._first_seen: dict[str, str] = {}  # bot → when its checklist was first looked at, since this start
         self._stamp = crew_module.stamp(runner.crew.home)
 
@@ -118,6 +120,10 @@ class Scheduler:
             self._watched = loop.time()
             for event in await asyncio.to_thread(self._look_around):
                 self.runner.happened(event.kind, event.subject, event.text)
+        if self._stall_checked is None or loop.time() - self._stall_checked >= STALL_EVERY_S:
+            self._stall_checked = loop.time()
+            self.runner.stall_check(now)
+        self.runner.flush_chief_events(now)
         if not away:
             self._check_in_due(now)
             self._wake_due(now)

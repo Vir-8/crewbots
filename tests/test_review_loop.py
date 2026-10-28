@@ -295,7 +295,7 @@ async def test_withdraw_proposal_saves_work_and_records_reason(store, tmp_path):
     assert task.merge_state is None and task.worktree_path == path
     assert not Path(path).exists()
     assert git(repo, "show", f"{task.branch}:new.txt") == "preserved"
-    assert store.events(work.id)[-1].data == {"by": "chief", "reason": "Superseded"}
+    assert store.last_event(work.id, ("merge_withdrawn",)).data == {"by": "chief", "reason": "Superseded"}
     with pytest.raises(NotAllowed, match="no merge proposal"):
         crew.runner.withdraw_merge(work.id, "again")
     crew.runner.propose_merge(parent.id, work.id, "Try again")

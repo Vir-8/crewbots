@@ -24,6 +24,16 @@ class Happenings:
         rows = self.db.execute("select * from crew_events where at >= ? order by id desc limit ?", (since, limit))
         return [dict(r) for r in reversed(rows.fetchall())]
 
+    def add_chief_event(self, kind: str, subject: str, who: str) -> None:
+        self.db.execute("insert into chief_batch (at, kind, subject, who) values (?, ?, ?, ?)", (_now(), kind, subject, who))
+
+    def chief_events(self) -> list[dict[str, Any]]:
+        """Crew activity not yet sent to the chief, oldest first."""
+        return [dict(r) for r in self.db.execute("select * from chief_batch order by id").fetchall()]
+
+    def clear_chief_events(self, through: int) -> None:
+        self.db.execute("delete from chief_batch where id <= ?", (through,))
+
     def add_intent(self, bot: str, task_id: str | None, kind: str, match: str, text: str) -> dict[str, Any]:
         now = datetime.now(UTC)
         cur = self.db.execute(
