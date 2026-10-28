@@ -84,6 +84,22 @@ def settled(store, runner, task_id):
     return lambda: not store.get_task(task_id).active and task_id not in runner.running()
 
 
+@pytest.mark.parametrize("old_primed", [None, {"role": "old"}])
+def test_existing_room_session_receives_updated_setting(store, tmp_path, old_primed):
+    runner, _ = make(store, tmp_path, None, bot("worker"), bot("helper"))
+    room = runner.create_room("Discussion", ["worker", "helper"])
+    seat = store.create_task("worker", "Discussion (worker)", kind="seat", room_id=room["id"], status=Status.IDLE)
+    store.update_task(seat.id, session_id="existing-session")
+    if old_primed is not None:
+        store.set_primed(seat.id, old_primed)
+
+    prompt, primed = runner._with_updates(store.get_task(seat.id), runner.crew.bots["worker"], "[helper]: thanks")
+    assert "## Group chat setting" in prompt and '"thanks"' in prompt and "NO_REPLY" in prompt
+    assert primed is not None and "room-setting" in primed
+    store.set_primed(seat.id, primed)
+    assert runner._with_updates(store.get_task(seat.id), runner.crew.bots["worker"], "next") == ("next", None)
+
+
 async def test_follow_ups_reuse_the_same_session(store, tmp_path):
     runner, backend = make(store, tmp_path)
     task = runner.submit("worker", "first")

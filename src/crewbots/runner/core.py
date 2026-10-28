@@ -15,8 +15,8 @@ never waits or polls. Each run gets a token that lets its MCP server act for tha
 
 Chats and rooms: each bot has one ongoing chat with the user, which never ends; real work goes into threads opened
 from it. A room is a group chat. A message there wakes the bots it @mentions, or the room's lead if it mentions no
-one; a bot's reply is posted back to the room and wakes whoever it mentions in turn, up to a few replies deep, so bots
-can talk to each other without talking forever.
+one; a bot's reply is posted back to the room and wakes whoever it mentions in turn. Bots can stay silent when they
+have nothing to add, and rooms can optionally limit replies.
 
 Budgets: before a turn starts, the runner checks the bot's budget, the budget of the routine run it belongs to, and
 the plan's usage limit. If any is spent, the task is held: the turn waits (holding no run slot), and goes ahead by
@@ -163,7 +163,8 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         self._recheck = asyncio.Event()  # set when a hold may be over: a release, or a reloaded crew
         self.limits: dict[str, dict[str, RateLimit]] = {}  # plan → window → the latest the CLI reported
         self._seat_depth: dict[str, int] = {}  # seat task → the depth of the room message that woke it
-        self._owed: set[str] = set()  # seats @mentioned by name since their last reply, which owe the room one
+        self._owed: set[str] = set()  # seats with a pending user mention
+        self._nudged: set[str] = set()  # seats with a pending reminder to answer the user
         self._shared_now: dict[str, set[Path]] = {}  # task → files it shared this turn, which its reply needn't show
         # A code review's tools (reading the repo on GitHub), given its task; None where it has your local copy.
         self.review_tools: Callable[[Task], Any] | None = None
@@ -227,6 +228,8 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
     async def cancel(self, task_id: str) -> Task:
         self.store.get_task(task_id)
         self._waiting.pop(task_id, None)
+        self._owed.discard(task_id)
+        self._nudged.discard(task_id)
         self.store.clear_pending(task_id)  # what the user stopped isn't carried on after a restart
         if run := self._runs.get(task_id):
             run.cancel()
@@ -344,21 +347,29 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         return None
 
     def _start(self, task_id: str, prompt: str, resumed: bool = False) -> None:
-        self._runs[task_id] = asyncio.create_task(self._turns(task_id, prompt, resumed), name=f"task {task_id}")
+        owed, nudged = task_id in self._owed, task_id in self._nudged
+        self._owed.discard(task_id)
+        self._nudged.discard(task_id)
+        self._runs[task_id] = asyncio.create_task(self._turns(task_id, prompt, resumed, owed, nudged),
+                                                  name=f"task {task_id}")
         self._stay_awake()
         if self.use_sessions and (self._reaper is None or self._reaper.done()):
             self._reaper = asyncio.create_task(self._reap_idle(), name="session reaper")
 
-    async def _turns(self, task_id: str, prompt: str | None, resumed: bool = False) -> None:
+    async def _turns(self, task_id: str, prompt: str | None, resumed: bool = False,
+                     owed: bool = False, nudged: bool = False) -> None:
         settled = False
         try:
             while prompt is not None:
                 if not resumed:  # a turn carried on after a restart keeps the request it carries on
                     self.store.set_pending(task_id, prompt)
                 resumed = False
-                await self._tries(task_id, prompt)
+                await self._tries(task_id, prompt, owed, nudged)
                 waiting = self._waiting.pop(task_id, None)
                 prompt = "\n\n".join(waiting) if waiting else None
+                owed, nudged = task_id in self._owed, task_id in self._nudged
+                self._owed.discard(task_id)
+                self._nudged.discard(task_id)
             settled = True
         finally:
             if settled:  # stopped by the daemon stopping, it's kept for the next start to carry on
@@ -371,11 +382,11 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         if settled and task.kind == "thread" and not task.active and not self._background(task_id):
             self.happened("thread_done", task_id, f"{task.bot}'s thread {task.title!r} is {task.status.value}")
 
-    async def _tries(self, task_id: str, prompt: str) -> None:
+    async def _tries(self, task_id: str, prompt: str, owed: bool = False, nudged: bool = False) -> None:
         """Runs a turn, and again when it failed for a passing reason: after a wait, or for a plan's limit, once the
         limit resets (the hold sees to that). A turn that had started a session picks up where it stopped."""
         for attempt in range(len(self.retry_waits_s) + 1):
-            done = await self._run(task_id, prompt)
+            done = await self._run(task_id, prompt, owed, nudged)
             if done is None:
                 return  # settled: finished, or failed for good
             task = self.store.get_task(task_id)
@@ -393,7 +404,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
             if task.session_id:
                 prompt = prompts.text("retry", self.crew.home, error=done.error)
 
-    async def _run(self, task_id: str, prompt: str) -> Done | None:
+    async def _run(self, task_id: str, prompt: str, owed: bool = False, nudged: bool = False) -> Done | None:
         """One turn. Returns its Done if it failed, for `_tries` to settle; None once the task is settled."""
         async with self._turn_slot(task_id):
             task = self._set(task_id, status=Status.RUNNING, error=None)
@@ -498,7 +509,8 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
                 self._set(task_id, status=Status.NEEDS_INPUT, result=done.final_text, turns=task.turns + 1)
             else:
                 if task.kind == "seat" and task.room_id:
-                    self._seat_replied(task, done.final_text, self._mentioned(task, cwd, done.final_text, started))
+                    self._seat_replied(task, done.final_text, self._mentioned(task, cwd, done.final_text, started),
+                                       owed, nudged)
                 await self._maybe_compact(task_id, open_session, bot)
                 # Not idle yet if messages are waiting: the next turn starts right away, and watchers should not stop.
                 next_status = Status.QUEUED if self._waiting.get(task_id) else Status.IDLE

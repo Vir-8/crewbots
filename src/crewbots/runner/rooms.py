@@ -1,4 +1,4 @@
-"""Group chats: posting and waking mentioned bots, the lead, or @everyone. A bot mentioned by name owes a reply."""
+"""Group chats: posting and waking mentioned bots, the lead, or @everyone."""
 
 import re
 from datetime import UTC, datetime
@@ -88,6 +88,7 @@ class Rooms:
             await self._close_session(seat.id)
             self.store.clear_pending(seat.id)
             self._owed.discard(seat.id)
+            self._nudged.discard(seat.id)
             self._seat_depth.pop(seat.id, None)
             for child in self.store.children(seat.id):
                 self._set(child.id, parent_id=self.chat(seat.bot).id)
@@ -157,10 +158,10 @@ class Rooms:
         else:
             wake = [m for m in (room["members"] if everyone else named) if m != author]
             if wake and room["max_depth"] is not None and depth >= room["max_depth"]:
-                self._set_room(room_id, stopped={"after": depth, "waiting": wake, "owed": [m for m in wake if m in named]})
+                self._set_room(room_id, stopped={"after": depth, "waiting": wake, "owed": []})
                 wake = []
         for bot in wake:
-            self._wake_seat(room, bot, depth, owes_reply=bot in named)
+            self._wake_seat(room, bot, depth, owes_reply=author == "user" and bot in named)
         return message
 
     def carry_on(self, room_id: str) -> dict[str, Any]:
@@ -170,7 +171,7 @@ class Rooms:
             room = self._set_room(room_id, stopped=None)
             for bot in stopped["waiting"]:
                 if bot in room["members"]:
-                    self._wake_seat(room, bot, 0, owes_reply=bot in stopped["owed"])
+                    self._wake_seat(room, bot, 0)
         return room
 
     def set_room_limit(self, room_id: str, max_depth: int | None) -> dict[str, Any]:
@@ -235,12 +236,15 @@ class Rooms:
         self.send(seat.id, "\n\n".join(f"[{m['author']}]: {m['text']}{attachments_module.listing(m['attachments'])}"
                                        for m in unseen), sender="room")
 
-    def _seat_replied(self, seat: Task, text: str, files: list[dict[str, Any]] | None = None) -> None:
+    def _seat_replied(self, seat: Task, text: str, files: list[dict[str, Any]] | None = None,
+                      owed: bool = False, nudged: bool = False) -> None:
         text = text.strip()
-        owed = seat.id in self._owed
-        self._owed.discard(seat.id)
         if not text or text.strip("`*_. ") == NO_REPLY:
-            if owed:  # asked by name, it says something: once, so a bot that really has nothing can still pass
-                self.send(seat.id, prompts.text("mentioned", self.crew.home, no_reply=NO_REPLY), sender="crewbots")
+            if owed:
+                self._nudged.add(seat.id)
+                self.send(seat.id, prompts.text("mentioned", self.crew.home), sender="crewbots")
+            elif nudged:
+                self.post(seat.room_id, seat.bot, "I don't have an answer yet.",
+                          depth=self._seat_depth.get(seat.id, 0) + 1)
             return
         self.post(seat.room_id, seat.bot, text, depth=self._seat_depth.get(seat.id, 0) + 1, attachments=files or None)

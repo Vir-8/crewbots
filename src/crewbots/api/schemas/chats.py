@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 class RoomStop(BaseModel):
     after: int  # bot replies in a row, the room's limit
     waiting: list[str]  # who the last reply mentioned: "Continue" wakes them
-    owed: list[str] = []  # of those, the ones mentioned by name, who owe a reply
+    owed: list[str] = []  # retained for older stopped rooms
 
 
 class RoomOut(BaseModel):

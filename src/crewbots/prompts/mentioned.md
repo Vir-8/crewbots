@@ -1,1 +1,1 @@
-You were @mentioned by name, so the room is waiting on your reply: say something, even if only that you have nothing to add or who should take it. Reply with exactly {no_reply} only if you really have nothing at all.
+The user @mentioned you by name and is waiting for your answer. Respond to the user; if you cannot answer yet, explain that briefly.

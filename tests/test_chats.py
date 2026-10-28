@@ -1,5 +1,7 @@
 """Chats, threads and group chats: each bot's one ongoing conversation, the work it opens, and bots talking together."""
 
+import asyncio
+
 import pytest
 from fakes import ScriptedCrew, bot, wait_until
 from fastapi.testclient import TestClient
@@ -118,7 +120,7 @@ async def test_explicit_room_limit_stops_until_carried_on_or_removed(crew, store
 
     bot_messages = [m for m in store.room_messages(room["id"]) if m["author"] != "user"]
     assert [m["depth"] for m in bot_messages] == [1, 2]
-    assert store.room(room["id"])["stopped"] == {"after": 2, "waiting": ["engineer"], "owed": ["engineer"]}
+    assert store.room(room["id"])["stopped"] == {"after": 2, "waiting": ["engineer"], "owed": []}
 
     crew.runner.carry_on(room["id"])  # the user's "Continue": the one waiting is woken, with a fresh count
     await wait_until(idle(crew), timeout=10)
@@ -165,6 +167,20 @@ async def test_removing_limit_does_not_wake_an_archived_room(crew, store):
     assert not crew.runner.running()
 
 
+async def test_old_stopped_bot_mention_can_still_stay_silent(crew, store):
+    room = crew.runner.create_room("Old stop", ["engineer", "reviewer"])
+    crew.runner.set_room_limit(room["id"], 1)
+    crew.runner.post(room["id"], "engineer", "@reviewer thanks", depth=1)
+    # Old versions recorded bot mentions as owing replies in stopped rooms.
+    store.update_room(room["id"], stopped={"after": 1, "waiting": ["reviewer"], "owed": ["reviewer"]})
+    crew.script["reviewer"] = lambda spec, me: [Done(final_text=NO_REPLY)]
+    count = len(crew.specs_for("reviewer"))
+    crew.runner.carry_on(room["id"])
+    await wait_until(idle(crew))
+    assert len(crew.specs_for("reviewer")) == count + 1
+    assert [m["text"] for m in store.room_messages(room["id"])] == ["@reviewer thanks"]
+
+
 async def test_everyone_wakes_the_whole_room_and_a_mention_gets_a_reply(crew, store):
     room = crew.runner.create_room("All", ["chief", "engineer", "reviewer"], lead="chief")
     replies(crew, {"chief": "Here.", "engineer": "Here too."})  # the reviewer has nothing to say
@@ -179,13 +195,111 @@ async def test_everyone_wakes_the_whole_room_and_a_mention_gets_a_reply(crew, st
     crew.runner.post(room["id"], "user", "@reviewer anything?")  # asked by name, it's asked again rather than silent
     await wait_until(idle(crew))
     assert store.room_messages(room["id"])[-1]["text"] == "Nothing from me." and len(nudged) == 2
-    assert "@mentioned by name" in [e.data["text"] for e in store.events(store.seat_of(room["id"], "reviewer").id)
+    assert "user @mentioned you by name" in [e.data["text"] for e in store.events(store.seat_of(room["id"], "reviewer").id)
                                     if e.kind == "message"][-1]
 
     crew.script["reviewer"] = lambda spec, me: [Done(final_text=NO_REPLY)]
     crew.runner.post(room["id"], "user", "@reviewer anything else?")
     await wait_until(idle(crew))
-    assert store.room_messages(room["id"])[-1]["author"] == "user"  # asked once more, a bot can still pass
+    assert store.room_messages(room["id"])[-1]["text"] == "I don't have an answer yet."
+
+
+@pytest.mark.parametrize("answer", [NO_REPLY, "", "  **NO_REPLY**  "])
+async def test_bot_mention_can_end_silently_without_waking_anyone(crew, store, answer):
+    room = crew.runner.create_room("Handover", ["engineer", "reviewer", "chief"])
+    crew.script["reviewer"] = lambda spec, me: [Done(final_text=answer)]
+    crew.runner.post(room["id"], "engineer", "@reviewer can you take a look?")
+    await wait_until(idle(crew))
+
+    assert [(m["author"], m["text"]) for m in store.room_messages(room["id"])] == [
+        ("engineer", "@reviewer can you take a look?")]
+    assert len(crew.specs_for("reviewer")) == 1
+    assert not crew.specs_for("chief") and not crew.specs_for("engineer")
+
+
+async def test_thanks_mention_does_not_cause_an_acknowledgement_chain(crew, store):
+    room = crew.runner.create_room("Thanks", ["engineer", "reviewer"])
+    crew.script["reviewer"] = lambda spec, me: [Done(final_text=NO_REPLY)]
+    crew.runner.post(room["id"], "engineer", "Thanks, @reviewer.")
+    await wait_until(idle(crew))
+
+    assert [m["text"] for m in store.room_messages(room["id"])] == ["Thanks, @reviewer."]
+    assert len(crew.specs_for("reviewer")) == 1 and not crew.specs_for("engineer")
+    setting = crew.specs_for("reviewer")[0].system_prompt
+    assert '"thanks"' in setting and "don't @mention someone just to acknowledge them" in setting
+
+
+@pytest.mark.parametrize("text", [
+    "@chief I don't see a new question from you in the room.",
+    "@chief the composer hint was already like that on main.",
+])
+async def test_bot_post_does_not_turn_into_a_user_mention(crew, store, text):
+    room = crew.runner.create_room("Engineering", ["chief", "engineer"])
+    crew.script["chief"] = lambda spec, me: [Done(final_text=NO_REPLY)]
+    sender = crew.runner.chat("engineer")
+    posted = crew.runner.post_from(sender.id, text, room["id"])
+    await wait_until(idle(crew))
+
+    seat = store.seat_of(room["id"], "chief")
+    messages = [e.data for e in store.events(seat.id) if e.kind == "message"]
+    assert posted["author"] == "engineer"
+    assert [(m["author"], m["text"]) for m in store.room_messages(room["id"])] == [("engineer", text)]
+    assert len(crew.specs_for("chief")) == 1
+    assert [(m["from"], m["text"]) for m in messages] == [("room", f"[engineer]: {text}")]
+
+
+async def test_silent_reply_to_bot_acknowledgement_does_not_get_a_reminder(crew, store):
+    room = crew.runner.create_room("Engineering", ["chief", "engineer"], lead="engineer")
+    replies(crew, {"engineer": "Thanks, @chief."})
+    crew.runner.post(room["id"], "user", "Please check the update.")
+    await wait_until(idle(crew))
+
+    seat = store.seat_of(room["id"], "chief")
+    assert [m["text"] for m in store.room_messages(room["id"])] == [
+        "Please check the update.", "Thanks, @chief."]
+    assert len(crew.specs_for("chief")) == 1
+    assert not [e for e in store.events(seat.id) if e.kind == "message" and e.data["from"] == "crewbots"]
+    assert seat.id not in crew.runner._owed and seat.id not in crew.runner._nudged
+
+
+async def test_user_mention_arriving_during_a_bot_turn_is_answered(crew, store):
+    room = crew.runner.create_room("Concurrent", ["engineer", "reviewer"])
+    crew.backend.gate = asyncio.Event()
+    crew.script["reviewer"] = lambda spec, me: [Done(final_text=NO_REPLY)]
+    crew.runner.post(room["id"], "engineer", "@reviewer FYI")
+    await wait_until(lambda: crew.backend.active == 1)
+    crew.runner.post(room["id"], "user", "@reviewer what happened?")
+    crew.backend.gate.set()
+    await wait_until(idle(crew))
+
+    assert [m["text"] for m in store.room_messages(room["id"])] == [
+        "@reviewer FYI", "@reviewer what happened?", "I don't have an answer yet."]
+    assert len(crew.specs_for("reviewer")) == 3
+
+
+@pytest.mark.parametrize("pending", ["mention", "reminder"])
+async def test_cancelling_a_seat_discards_pending_reply_obligations(crew, store, pending):
+    room = crew.runner.create_room("Cancelled", ["engineer", "reviewer"])
+    crew.backend.gate = asyncio.Event()
+    crew.script["reviewer"] = lambda spec, me: [Done(final_text=NO_REPLY)]
+    crew.runner.post(room["id"], "engineer", "@reviewer FYI")
+    await wait_until(lambda: crew.backend.active == 1)
+    seat = store.seat_of(room["id"], "reviewer")
+    if pending == "mention":
+        crew.runner.post(room["id"], "user", "@reviewer question")
+        assert seat.id in crew.runner._owed
+    else:
+        crew.runner._seat_replied(seat, NO_REPLY, owed=True)
+        assert seat.id in crew.runner._nudged
+
+    await crew.runner.cancel(seat.id)
+    crew.backend.gate.set()
+    crew.runner.post(room["id"], "engineer", "@reviewer another FYI")
+    await wait_until(idle(crew))
+
+    assert store.room_messages(room["id"])[-1]["text"] == "@reviewer another FYI"
+    assert len(crew.specs_for("reviewer")) == 2
+    assert seat.id not in crew.runner._owed and seat.id not in crew.runner._nudged
 
 
 async def test_a_bot_posts_to_the_crews_room_from_its_own_chat(crew, store):

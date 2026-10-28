@@ -309,8 +309,9 @@ Each step leaves the system working.
   `stopped` on the room (who was waiting), and the app shows "The bots
   stopped after N replies" with Continue (`POST /rooms/{id}/continue`, waking them with a fresh count), and the
   user's next message clears it. Removing the limit wakes the waiting bots unless the room is archived. A migration clears stops caused by the old
-  default limit; a new message can continue those rooms. A bot @mentioned by name owes a reply: a `NO_REPLY` from it gets one nudge
-  (`mentioned.md`), and a second is accepted. The user manages a room with `PATCH /rooms/{id}` (title, lead, members,
+  default limit; a new message can continue those rooms. A bot named by the user gets one nudge (`mentioned.md`) if it
+  returns `NO_REPLY`; if it still gives no answer, the room receives a short fallback. Bot mentions can stay silent.
+  The user manages a room with `PATCH /rooms/{id}` (title, lead, members,
   `max_depth`, muted, archived): a change to its title, lead or members closes its seats' idle sessions, so each
   bot's next turn starts from the room as it is (resuming its session with the new setting). Muted rooms aren't
   notified (the app's `CrewView` keeps them from `/rooms` and `room` messages). Archived ones wake no one; bots can't

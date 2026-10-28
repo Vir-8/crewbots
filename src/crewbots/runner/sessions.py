@@ -88,9 +88,14 @@ class Sessions:
         if task.kind == "review":  # its own instructions, none of the crew's
             return prompt, None
         living = self.crew.living_parts(bot)
+        if task.kind == "seat" and (setting := self._setting(task)):
+            living["room-setting"] = ("Group chat setting", setting)
         now = {key: hashlib.sha256(text.encode()).hexdigest()[:16] for key, (_, text) in living.items()}
         seen = self.store.primed(task.id) if task.session_id else None
         if seen is None:
+            if task.session_id and "room-setting" in living:
+                return prompts.text("crew-updates", self.crew.home,
+                                    updates=f"## Group chat setting\n\n{living['room-setting'][1]}", message=prompt), now
             return prompt, now  # a new session starts from these (or one from before they were kept: from now on)
         changed = [key for key in now if seen.get(key) != now[key]] + [key for key in seen if key not in now]
         if not changed:
