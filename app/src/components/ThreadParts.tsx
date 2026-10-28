@@ -1,14 +1,14 @@
 // The pieces of a thread that are more than a line of text: a brief, a verdict, a bot's steps (with the images its
 // tools returned), a question to a teammate with its answer, and reactions to what a bot raised on its own.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Crew } from "../state";
-import { describeCall, oneLine } from "../state";
+import { describeCall } from "../state";
 import type { Attachment, StoredEvent, Task } from "../types";
 import { ACTIVE } from "../types";
 import { Files } from "./Attachments";
 import { labelOf } from "./Avatar";
-import { fullDate, stamp } from "./bits";
+import { fullDate, Markdown, stamp } from "./bits";
 import { Marked } from "./Find";
 import { Icon } from "./Icon";
 
@@ -130,14 +130,42 @@ export function AskCard({ bot, question, task, onOpen }: { bot: string; question
   const answering = !task || ACTIVE.includes(task.status) || task.status === "held";
   const answer = task && !answering ? (task.status === "idle" ? task.result : task.error ?? task.status) : null;
   return (
-    <div className={`ask-card ${task ? "" : "pending"}`} onClick={() => task && onOpen(task.id)} role="button" tabIndex={0}>
-      <span className="ask-line">
-        <Icon name="question" size={13} />
-        <span className="ask-who">Asked {labelOf(bot)}:</span> <Marked text={oneLine(question, 220)} />
-      </span>
-      <span className="ask-line answer">
-        {answering ? <span className="shimmer">Answering…</span> : <><span className="ask-who">Answer:</span> {oneLine(answer ?? "", 320)}</>}
-      </span>
+    <div className={`ask-card ${task ? "" : "pending"}`} onClick={(event) => {
+      if (task && !(event.target as HTMLElement).closest("button, a")) onOpen(task.id);
+    }}>
+      <div className="ask-card-content">
+        {task ? <button type="button" className="ask-who ask-card-open" onClick={() => onOpen(task.id)}>Asked {labelOf(bot)}</button> : <div className="ask-who">Asked {labelOf(bot)}</div>}
+        <div className="ask-card-question">
+          <Icon name="question" size={15} />
+          <AskMarkdown text={question} onOpen={onOpen} />
+        </div>
+        <div className="ask-who">Answer</div>
+        {answering ? <div className="shimmer">Answering…</div> : <AskMarkdown text={answer ?? ""} onOpen={onOpen} />}
+      </div>
+    </div>
+  );
+}
+
+export function AskMarkdown({ text, onOpen }: { text: string; onOpen: (id: string) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const [long, setLong] = useState(false);
+  const content = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const node = content.current;
+    if (!node) return;
+    const measure = () => {
+      const lineHeight = parseFloat(getComputedStyle(node).lineHeight);
+      setLong(node.scrollHeight > lineHeight * 4 + 1);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [text]);
+  return (
+    <div className="ask-card-section">
+      <div className={`ask-card-markdown ${expanded ? "" : "clamped"} ${long && !expanded ? "overflowing" : ""}`}><div ref={content}><Markdown text={text} onSelect={onOpen} /></div></div>
+      {long && <button type="button" className="text-button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? "Show less" : "Show more"}</button>}
     </div>
   );
 }

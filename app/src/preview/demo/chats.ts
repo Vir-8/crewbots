@@ -94,6 +94,12 @@ for (const b of bots) {
 // Questions in a chat: an answer kept in context, a single choice, and several choices with Send.
 {
   const reviewer = chatIds.reviewer;
+  const longQuestion = "Did the **filtered export** pass your break-it tests, including an empty filter?";
+  tool(reviewer, "mcp__crewbots__ask", { bot: "critic", question: longQuestion }, "Asked critic (t_asklong001).");
+  task("t_asklong001", "critic", longQuestion, { kind: "ask", parent_id: reviewer, created_by: "reviewer", workspace: null, result: "Yes. The export passed the checks:\n\n- **Empty filter:** every row is exported.\n- **Combined filters:** exported rows match the page.\n- **Stress test:** 2,000 runs found no failures.\n- **Dates:** boundaries include the expected rows.\n- **Columns:** headers and values match the report.\n\nThe release is ready for review." });
+  const shortQuestion = "Is the release note ready?";
+  tool(reviewer, "mcp__crewbots__ask", { bot: "critic", question: shortQuestion }, "Asked critic (t_askshort01).");
+  task("t_askshort01", "critic", shortQuestion, { kind: "ask", parent_id: reviewer, created_by: "reviewer", workspace: null, result: "Yes, **ready**." });
   task("t_seat000001", "reviewer", "Engineering seat", { kind: "seat", workspace: null, status: "needs_input" });
   emit(reviewer, "seat_escalation", { task: "t_seat000001", question_id: 901, room: "Engineering",
     question: "Which release should I review?", choices: [{ label: "Current release" }, { label: "Next release" }] });

@@ -377,48 +377,77 @@
 
 /* A question asked of a teammate, and its answer: quieter than work, since nothing is being built */
 .ask-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px 14px;
+  width: 85%;
+  align-self: flex-start;
+  padding: 10px 12px;
   border-radius: 12px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
+  background: var(--raised);
   cursor: pointer;
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .ask-card:hover {
   border-color: var(--line);
-  background: color-mix(in srgb, var(--raised) 40%, transparent);
+  background: var(--raised);
 }
 
 .ask-card.pending {
   cursor: default;
 }
 
-.ask-line {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
+.ask-card-content {
+  padding-left: 21px;
   min-width: 0;
 }
 
-.ask-line .icon {
-  flex: none;
-  align-self: center;
+.ask-card-question {
+  position: relative;
+}
+
+.ask-card-question > .icon {
+  position: absolute;
+  top: 2px;
+  left: -21px;
   color: var(--soft);
 }
 
-.ask-line.answer {
-  padding-left: 19px;
-  color: var(--soft);
+.ask-card-section + .ask-who,
+.ask-card-question + .ask-who {
+  margin-top: 8px;
 }
 
 .ask-who {
-  flex: none;
+  margin-bottom: 3px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--soft);
 }
+
+.ask-card-open {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ask-card-markdown.clamped {
+  max-height: 5.6em;
+  overflow: hidden;
+}
+
+.ask-card-markdown.overflowing {
+  mask-image: linear-gradient(to bottom, black 70%, transparent);
+}
+
+.ask-card .md > :first-child { margin-top: 0; }
+.ask-card .md p, .ask-card .md ul, .ask-card .md ol { margin-bottom: 6px; }
+.ask-card .md > :last-child { margin-bottom: 0; }
+.ask-card .md code, .ask-card .md .code-block { background: var(--bg); }
 
 .work-head {
   display: flex;
