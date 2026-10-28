@@ -1,5 +1,4 @@
-"""What a bot does with its work: hands it back, asks a question, proposes it for merging, and
-keeps notes."""
+"""What a bot does with its work: hands it back, asks a question, proposes it for merging, and keeps notes."""
 
 import asyncio
 import logging
@@ -20,6 +19,7 @@ from crewbots.memory import CREW_SCOPE, MemoryError, Note
 from crewbots.pages import Page
 from crewbots.routines import RoutineError
 from crewbots.runner.common import MergeError, NotAllowed
+from crewbots.runner.merge_status import MergeStatus
 from crewbots.runner.reviews import MAX_REVIEW_ROUNDS
 from crewbots.sources import KINDS
 from crewbots.store import Handoff, Status, Task
@@ -30,7 +30,7 @@ OTHER = {"other", "something else", "other (specify)", "other (please specify)"}
 log = logging.getLogger(__name__)
 
 
-class Work:
+class Work(MergeStatus):
     """The part of Runner that takes a bot's handoffs, questions, merge proposals and notes."""
 
     def _check_worktree_sweep(self) -> None:
@@ -283,6 +283,9 @@ class Work:
             raise MergeError(
                 f"{task_id} is not approved (round {state.round}, reviewed versions {state.rounds or 'none'}, "
                 f"current version {state.version}); pass force to merge anyway")
+        if into := self.already_on(work):
+            raise MergeError(f"{task_id} is already on {into}: its changes are all there, so there is nothing to merge; "
+                             "withdraw the proposal instead")
         wt = worktree.Worktree(repo=Path(work.repo), path=Path(work.worktree_path), branch=work.branch, base=work.base)
         reviewers = ", ".join(f"{t.bot} ({r.verdict if r else 'no verdict'})" for t, r in state.latest) or "none"
         proposals = self.store.last_events(task_id, ("merge_proposed",), 1)

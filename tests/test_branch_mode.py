@@ -1364,3 +1364,29 @@ def test_a_tracked_unity_lockfile_keeps_heads_entry_in_the_snapshot(repo, monkey
     with branch_mode.snapshot(checkout) as (g, _):
         tree = g("write-tree").strip()
     assert git("show", f"{tree}:Temp/UnityLockfile") == "in head"
+
+
+async def test_branch_mode_proposal_already_on_main_is_not_merged(game, monkeypatch):
+    crew, store, path, git, gate = game
+    parent = store.create_task("chief", "work")
+    task = crew.runner.submit("engineer", "work", workspace=str(path), parent_id=parent.id)
+    (path / "feature").write_text("feature\n")
+    gate.set()
+    await wait_until(crew.settled(task.id))
+    monkeypatch.setattr(crew.runner, "review_state", lambda _: SimpleNamespace(approved=True, round=1, rounds=[1],
+                                                                                version=1, latest=[]))
+    crew.runner.propose_merge(parent.id, task.id, "Add feature")
+    git("add", "-A")
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "feature")
+    git("switch", "-q", "main")
+    (path / "feature").write_text("feature\n")  # the same change reached main another way
+    git("add", "-A")
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "feature, again")
+    (path / "file").write_text("Vir's edit\n")
+    before = (git("status", "--porcelain"), git("for-each-ref", "--format=%(refname) %(objectname)"))
+    assert crew.runner.already_on(store.get_task(task.id)) == "main"
+    with pytest.raises(MergeError, match="already on main"):
+        crew.runner.merge(task.id)
+    assert (git("status", "--porcelain"), git("for-each-ref", "--format=%(refname) %(objectname)")) == before
+    assert store.get_task(task.id).merge_state == "proposed"
+    await crew.runner.shutdown()

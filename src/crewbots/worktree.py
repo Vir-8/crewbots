@@ -5,8 +5,10 @@ Worktrees live under ~/.crewbots, not inside the repo, so they never show up as 
 
 import hashlib
 import logging
+import os
 import re
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -89,6 +91,30 @@ def merge(wt: Worktree, message: str, *, tip: str | None = None) -> str:
     return _git(wt.repo, "rev-parse", "HEAD")
 
 
+def git_read(cwd: Path, *args: str, env: dict[str, str] | None = None) -> str:
+    """A git call that leaves the repository as it was: no optional locks, so `status` doesn't refresh the index."""
+    return _git(cwd, *args, env={"GIT_OPTIONAL_LOCKS": "0", **(env or {})})
+
+
+def already_in(repo: Path, target: str, tip: str, base: str) -> bool:
+    """Whether `tip` is already part of `target`: an ancestor of it, or a merge that would change nothing. Writes
+    nothing to the repository: merge-tree's objects go to a temporary directory that is removed afterwards."""
+    try:
+        git_read(repo, "merge-base", "--is-ancestor", tip, target)
+        return True
+    except GitError as e:
+        if "exit code 1" not in str(e):
+            raise
+    with tempfile.TemporaryDirectory(prefix="crewbots-merge-tree-") as scratch:
+        objects = git_read(repo, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+        try:
+            merged = git_read(repo, "merge-tree", "--write-tree", "--merge-base", base, target, tip,
+                              env={"GIT_OBJECT_DIRECTORY": scratch, "GIT_ALTERNATE_OBJECT_DIRECTORIES": objects})
+        except GitError:  # conflicts, or a merge base that isn't there: not all of it is in
+            return False
+        return merged.split("\n", 1)[0].strip() == git_read(repo, "rev-parse", f"{target}^{{tree}}")
+
+
 def remove(wt: Worktree, delete_branch: bool = False, *, branch_tip: str | None = None) -> bool:
     """Remove a checkout; later branch/prune failures are warnings. Return whether the branch was deleted."""
     if delete_branch and branch_tip is None:
@@ -108,8 +134,9 @@ def remove(wt: Worktree, delete_branch: bool = False, *, branch_tip: str | None 
     return branch_deleted
 
 
-def _git(cwd: Path, *args: str, strip: bool = True) -> str:
-    result = subprocess.run([paths.git(), *args], cwd=cwd, capture_output=True, text=True)
+def _git(cwd: Path, *args: str, strip: bool = True, env: dict[str, str] | None = None) -> str:
+    result = subprocess.run([paths.git(), *args], cwd=cwd, capture_output=True, text=True,
+                            env=None if env is None else {**os.environ, **env})
     if result.returncode != 0:
         detail = "\n".join(part for part in (result.stdout.strip(), result.stderr.strip()) if part)
         status = (f"terminated by signal {-result.returncode}" if result.returncode < 0

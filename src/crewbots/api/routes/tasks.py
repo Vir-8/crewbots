@@ -10,6 +10,7 @@ from crewbots.api.schemas import (
     EventOut,
     MergeRequest,
     MergeResultOut,
+    MergeStatusOut,
     Message,
     NewTask,
     PermissionAnswer,
@@ -106,6 +107,10 @@ def routes(c: Context) -> APIRouter:
         data = event.data if event and event.data.get("commit") == task.merged_commit else {}
         return task.to_json() | {"leftover_files": data.get("leftover_files"),
                                  "leftover_check_error": data.get("leftover_check_error")}
+
+    @v1.get("/tasks/{task_id}/merge-status", response_model=MergeStatusOut)
+    async def merge_status(task_id: str):
+        return {"already_on": runner.already_on(task_or_404(task_id))}
 
     @v1.post("/tasks/{task_id}/withdraw-merge", response_model=WithdrawalResultOut)
     async def withdraw_merge(task_id: str, body: WithdrawalReason):

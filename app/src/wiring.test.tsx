@@ -155,6 +155,124 @@ it("offers no room reply limit by default and lets a room opt in", () => {
   expect(changeRoom).toHaveBeenCalledWith("room", { max_depth: null });
 });
 
+it("keeps the withdraw dialog open and shows why the withdrawal failed", async () => {
+  const withdrawMerge = vi.fn().mockRejectedValue(new Error("Worktree maintenance is running; try again when it finishes."));
+  const task = { id: "work", status: "idle", merge_state: "proposed" } as any;
+  const draw = () => render(() => MergeButton({ crew: { withdrawMerge } as any, task })!);
+  find(draw(), "button")!.props.onClick();
+  find(draw(), "input")!.props.onChange({ target: { value: "Superseded" } });
+  await find(draw(), "form")!.props.onSubmit({ preventDefault: () => {} });
+  const tree = draw();
+  expect(find(tree, "form")).toBeDefined();
+  expect(find(tree, "input")!.props.value).toBe("Superseded");
+  const alert = find(tree, "p")!;
+  expect(alert.props.role).toBe("alert");
+  expect(alert.props.children).toBe("Worktree maintenance is running; try again when it finishes.");
+});
+
+const buttons = (node: any): any[] => !node || typeof node !== "object" ? [] : Array.isArray(node) ? node.flatMap(buttons) : [...(node.type === "button" ? [node] : []), ...buttons(node.props?.children)];
+
+it("marks a proposal already on main and offers only Withdraw, and follows main as it moves", async () => {
+  const { api } = await import("./api");
+  const status = vi.spyOn(api, "mergeStatus").mockResolvedValue({ already_on: "main" });
+  const task = { id: "work", status: "idle", merge_state: "proposed" } as any;
+  const events = new Map<string, unknown[]>();
+  const draw = () => render(() => MergeButton({ crew: { events } as any, task })!);
+  const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
+  const focus = vi.fn();
+  vi.stubGlobal("addEventListener", focus);
+  vi.stubGlobal("removeEventListener", vi.fn());
+  draw();
+  hooks.effects[0]!();
+  await settle();
+  expect(JSON.stringify(draw())).toContain("Already on ");
+  expect(buttons(draw()).map((b) => b.props.children)).toEqual(["Withdraw"]);
+  // The task gets an event after main moved on without the change: Merge is back.
+  status.mockResolvedValue({ already_on: null });
+  events.set("work", [{ id: 1 }]);
+  hooks.effects = [];
+  draw();
+  hooks.effects[0]!();
+  await settle();
+  expect(JSON.stringify(draw())).not.toContain("Already on ");
+  expect(buttons(draw()).map((b) => b.props.children).length).toBe(2);
+  // The window regains focus after the change landed on main.
+  status.mockResolvedValue({ already_on: "main" });
+  const onFocus = focus.mock.calls.find(([name]) => name === "focus")![1];
+  onFocus();
+  await settle();
+  expect(JSON.stringify(draw())).toContain("Already on ");
+  // And a later event brings it back to not-on-main and back to already-on, by events.
+  status.mockResolvedValue({ already_on: null });
+  events.set("work", [{ id: 1 }, { id: 2 }]);
+  hooks.effects = [];
+  draw();
+  hooks.effects[0]!();
+  await settle();
+  expect(JSON.stringify(draw())).not.toContain("Already on ");
+  status.mockResolvedValue({ already_on: "main" });
+  events.set("work", [{ id: 1 }, { id: 2 }, { id: 3 }]);
+  hooks.effects = [];
+  draw();
+  hooks.effects[0]!();
+  await settle();
+  expect(JSON.stringify(draw())).toContain("Already on ");
+  expect(status).toHaveBeenCalledTimes(5);
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+it("moves a second proposal to Already on main when the first one merges, without a focus event", async () => {
+  const { api } = await import("./api");
+  const status = vi.spyOn(api, "mergeStatus").mockResolvedValue({ already_on: null });
+  const first = { id: "first", status: "idle", merge_state: "proposed" } as any;
+  const second = { id: "second", status: "idle", merge_state: "proposed" } as any;
+  const tasks = new Map<string, any>([["first", first], ["second", second]]);
+  vi.stubGlobal("addEventListener", vi.fn());
+  vi.stubGlobal("removeEventListener", vi.fn());
+  const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
+  const draw = () => render(() => MergeButton({ crew: { tasks } as any, task: second })!);
+  draw();
+  hooks.effects[0]!();
+  await settle();
+  expect(JSON.stringify(draw())).not.toContain("Already on ");
+  status.mockResolvedValue({ already_on: "main" });
+  tasks.set("first", { ...first, merge_state: "merged" }); // the first card's task merged
+  hooks.effects = [];
+  draw();
+  hooks.effects[0]!();
+  await settle();
+  expect(status).toHaveBeenLastCalledWith("second");
+  expect(JSON.stringify(draw())).toContain("Already on ");
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+it("ignores a merge-status answer that arrives after a newer question was asked", async () => {
+  const { api } = await import("./api");
+  const answers: ((v: { already_on: string | null }) => void)[] = [];
+  vi.spyOn(api, "mergeStatus").mockImplementation(() => new Promise((resolve) => { answers.push(resolve); }));
+  const task = { id: "work", status: "idle", merge_state: "proposed" } as any;
+  vi.stubGlobal("addEventListener", vi.fn());
+  vi.stubGlobal("removeEventListener", vi.fn());
+  const events = new Map<string, unknown[]>();
+  const draw = () => render(() => MergeButton({ crew: { events } as any, task })!);
+  const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
+  draw();
+  hooks.effects[0]!(); // question 1
+  events.set("work", [{ id: 1 }]);
+  hooks.effects = [];
+  draw();
+  hooks.effects[0]!(); // question 2
+  answers[1]!({ already_on: null }); // the newer answer comes first
+  await settle();
+  answers[0]!({ already_on: "main" }); // the older one is late
+  await settle();
+  expect(JSON.stringify(draw())).not.toContain("Already on ");
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
 it("withdraws through the in-app dialog and allows cancellation", async () => {
   const withdrawMerge = vi.fn().mockResolvedValue(undefined);
   const task = { id: "work", status: "idle", merge_state: "proposed" } as any;
@@ -173,7 +291,7 @@ it("withdraws through the in-app dialog and allows cancellation", async () => {
   expect(find(tree, "form")).toBeUndefined();
   find(tree, "button")!.props.onClick();
   tree = draw();
-  const actions = find(tree, "form")!.props.children[3];
+  const actions = find(tree, "form")!.props.children[4];
   actions.props.children[0].props.onClick();
   tree = draw();
   expect(find(tree, "form")).toBeUndefined();

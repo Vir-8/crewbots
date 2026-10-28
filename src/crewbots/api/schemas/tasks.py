@@ -55,6 +55,10 @@ class MergeResultOut(TaskOut):
     leftover_check_error: str | None = None
 
 
+class MergeStatusOut(BaseModel):
+    already_on: str | None  # the branch a proposal's changes are already part of
+
+
 class WithdrawalResultOut(TaskOut):
     notice: str | None = None
 

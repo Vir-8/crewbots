@@ -328,6 +328,8 @@ async function request(method: string, path: string, body?: any) {
     say(id, "merged", { commit: "9f8e7d6c5b4a", into: task.repo ?? "~/code", forced: Boolean(body?.force) });
     return ok(update(id, { merge_state: "merged", merged_commit: "9f8e7d6c5b4a" }));
   }
+  /** ?alreadyon marks every proposal as already part of main, to see that card. */
+  if (method === "GET" && action === "merge-status") return ok({ already_on: new URLSearchParams(location.search).has("alreadyon") ? "main" : null });
   if (method === "POST" && action === "withdraw-merge") {
     const reason = String(body?.reason ?? "").trim();
     if (!reason || task.merge_state !== "proposed") return { ok: false, status: 400, data: { detail: "A proposed merge and reason are required" } };

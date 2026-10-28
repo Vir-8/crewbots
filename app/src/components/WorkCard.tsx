@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { Crew } from "../state";
 import { doing, oneLine } from "../state";
@@ -102,10 +102,31 @@ export function MergeButton({ crew, task }: { crew: Crew; task: Task }) {
   const [busy, setBusy] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
   const [reason, setReason] = useState("");
+  const [failure, setFailure] = useState<string | null>(null);
+  const [alreadyOn, setAlreadyOn] = useState<string | null>(null);
+  // Main can move under a proposal: ask again when the task has news and when the window comes back.
+  const news = crew.events?.get(task.id)?.length ?? 0;
+  let merges = 0; // another task merging moves main, so every proposal is asked about again
+  for (const other of crew.tasks?.values() ?? []) if (other.merge_state === "merged") merges++;
+  const asked = useRef(0);
+  useEffect(() => {
+    let current = true;
+    if (task.merge_state !== "proposed") {
+      setAlreadyOn(null);
+      return;
+    }
+    const check = () => {
+      const mine = ++asked.current; // an answer to an older question never replaces a newer one
+      api.mergeStatus(task.id).then((status) => { if (current && mine === asked.current) setAlreadyOn(status.already_on); }, () => undefined);
+    };
+    check();
+    window.addEventListener("focus", check);
+    return () => { current = false; window.removeEventListener("focus", check); };
+  }, [task.id, task.merge_state, news, merges]);
   useEffect(() => {
     if (!withdrawing || busy) return;
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !e.isComposing) { setWithdrawing(false); setReason(""); }
+      if (e.key === "Escape" && !e.isComposing) { setWithdrawing(false); setReason(""); setFailure(null); }
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
@@ -127,31 +148,37 @@ export function MergeButton({ crew, task }: { crew: Crew; task: Task }) {
   const withdraw = async () => {
     if (!reason.trim() || busy) return;
     setBusy(true);
+    setFailure(null);
     try {
       await crew.withdrawMerge(task.id, reason.trim());
       setWithdrawing(false);
       setReason("");
-    } catch {
-      // The crew displays the error; keep the reason for another try.
+    } catch (e) {
+      // Keep the reason for another try, and say why it failed where the user is looking.
+      setFailure(String(e).replace(/^Error: /, ""));
     } finally {
       setBusy(false);
     }
   };
   return (
     <>
+      {alreadyOn && <span className="merged"><Icon name="merge" size={13} /> Already on {alreadyOn}</span>}
       <button className="button small" disabled={busy} onClick={() => setWithdrawing(true)}>Withdraw</button>
-      <button className="button primary small" disabled={busy || ACTIVE.includes(task.status)} onClick={merge}>
-        <Icon name="merge" size={13} />
-        {busy ? "Merging…" : "Merge"}
-      </button>
+      {!alreadyOn && (
+        <button className="button primary small" disabled={busy || ACTIVE.includes(task.status)} onClick={merge}>
+          <Icon name="merge" size={13} />
+          {busy ? "Merging…" : "Merge"}
+        </button>
+      )}
       {withdrawing && (
         <div className="dialog-backdrop" onClick={(e) => { e.stopPropagation(); if (!busy) setWithdrawing(false); }}>
           <form className="dialog" role="dialog" aria-modal="true" aria-labelledby="withdraw-title" onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); void withdraw(); }}>
             <h2 id="withdraw-title">Withdraw merge proposal</h2>
             <label className="dialog-label" htmlFor="withdraw-reason">Reason</label>
             <input id="withdraw-reason" className="dialog-input" value={reason} onChange={(e) => setReason(e.target.value)} autoFocus />
+            {failure && <p role="alert" className="error-text small">{failure}</p>}
             <div className="dialog-actions">
-              <button type="button" className="button" disabled={busy} onClick={() => { setWithdrawing(false); setReason(""); }}>Cancel</button>
+              <button type="button" className="button" disabled={busy} onClick={() => { setWithdrawing(false); setReason(""); setFailure(null); }}>Cancel</button>
               <button type="submit" className="button primary" disabled={busy || !reason.trim()}>{busy ? "Withdrawing…" : "Withdraw"}</button>
             </div>
           </form>
