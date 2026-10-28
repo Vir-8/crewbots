@@ -103,6 +103,9 @@ for (const b of bots) {
   task("t_seat000001", "reviewer", "Engineering seat", { kind: "seat", workspace: null, status: "needs_input" });
   emit(reviewer, "seat_escalation", { task: "t_seat000001", question_id: 901, room: "Engineering",
     question: "Which release should I review?", choices: [{ label: "Current release" }, { label: "Next release" }] });
+  // The Review desk: one seat waiting between tries, one running a turn.
+  task("t_seat000003", "reviewer", "Review desk seat", { kind: "seat", workspace: null, room_id: "r_review0002", status: "queued", attempt: { attempt: 2, of: 4, wait_seconds: 30 } });
+  task("t_seat000004", "critic", "Review desk seat", { kind: "seat", workspace: null, room_id: "r_review0002", status: "running" });
   task("t_seat000002", "reviewer", "Release seat", { kind: "seat", workspace: null, status: "needs_input" });
   emit(reviewer, "seat_escalation", { task: "t_seat000002", question_id: 902, room: "Release",
     question: "What should the review focus on?", choices: [] });

@@ -35,6 +35,7 @@ class Task:
     base_branch: str | None
     checkout_state: str | None
     session_id: str | None
+    session_backend: str | None
     result: str | None
     error: str | None
     input_tokens: int

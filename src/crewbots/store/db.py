@@ -31,6 +31,7 @@ create table if not exists tasks (
     base_branch   text,                        -- branch-mode checkout's original branch
     checkout_state text,                       -- starting until switch -c and linking finish
     session_id    text,
+    session_backend text,                      -- the backend that made session_id: another backend can't resume it
     result        text,
     error         text,
     input_tokens  integer not null default 0,
@@ -452,6 +453,7 @@ MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] =
     ("remember a branch-mode merge's index lock", _add_columns("tasks", {"merge_lock": "text"})),
     ("remember branch checkout and merge lock intent", _add_columns("tasks", {
         "checkout_state": "text", "merge_marker": "text"})),
+    ("remember which backend made a task's session", _add_columns("tasks", {"session_backend": "text"})),
 ]
 
 

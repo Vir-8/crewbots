@@ -1555,3 +1555,13 @@ async def test_room_mention_notice_does_not_restart_a_stopped_chat(crew, store):
     await wait_until(idle(crew))
     assert "older room mentions were trimmed" in next(s.prompt for s in crew.specs_for("chief") if "hello again" in s.prompt)
     await crew.runner.shutdown()
+
+
+@pytest.mark.parametrize("status", [Status.QUEUED, Status.HELD, Status.RUNNING])
+def test_the_room_list_calls_a_group_working_only_while_a_seat_runs(crew, store, status):
+    room = crew.runner.create_room("Eng", ["engineer", "reviewer"], lead="engineer")
+    store.create_task("engineer", "seat", kind="seat", room_id=room["id"], status=status)
+    with TestClient(create_app(crew.runner, "t", 8765), base_url="http://127.0.0.1:8765/v1") as client:
+        chats = client.get("/chats", headers={"Authorization": "Bearer t"}).json()
+    group = next(c for c in chats if c["room"] and c["room"]["id"] == room["id"])
+    assert group["working"] is (status is Status.RUNNING)

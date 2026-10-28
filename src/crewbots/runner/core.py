@@ -441,8 +441,7 @@ class Runner(Branches, Retries, Sessions, Rooms, Delegation, Reviewing, Work, Fi
         async with self._turn_slot(task_id):
             if (task := self.store.get_task(task_id)).worktree_path or task.review_of:
                 await self._worktree_sweep_done.wait()
-            if task_id in self._attempts:
-                self._attempts[task_id]["state"] = "running"
+            self._attempts.get(task_id, {}).update(state="running")
             task = self._set(task_id, status=Status.RUNNING, error=None)
             self.store.pending_started(task_id)
             try:
@@ -457,16 +456,14 @@ class Runner(Branches, Retries, Sessions, Rooms, Delegation, Reviewing, Work, Fi
                 branch_start = branch_mode.turn_head(self._branch_checkout(branch_task)) if branch_task.base_branch else None
             except Exception as e:  # a bot removed from the crew, a missing workspace, a git failure
                 self._record(task_id, Done(final_text="", is_error=True, error=f"crewbots: {e}"))
-                self._set(task_id, status=Status.FAILED, error=str(e))
+                self._failed(task_id, str(e))
                 if (task.base_branch or task.review_of) and "HEAD is not on the task branch" in str(e):
                     self._branch_notice(task_id, str(e))
                 return None
             backend = self.backends[bot.backend]
             if task.kind != "review":
                 self._refresh_working_state(bot.name)
-            if self._gone_cold(task):
-                await self._fresh_start(task_id, "idle")
-                task = self.store.get_task(task_id)
+            task = await self._without_stale_session(task, bot)
             open_session = await self._session_for(task, bot, cwd, backend)
             prompt, primed = self._with_updates(task, bot, prompt)
             compacted = False
@@ -543,7 +540,7 @@ class Runner(Branches, Retries, Sessions, Rooms, Delegation, Reviewing, Work, Fi
                             self._record(task_id, event)
                         match event:
                             case SessionStarted(session_id=sid):
-                                self.store.update_task(task_id, session_id=sid)
+                                self.store.update_task(task_id, session_id=sid, session_backend=bot.backend)
                             case Usage():
                                 self.store.add_usage(task_id, event.input_tokens, event.output_tokens, event.cost_usd)
                             case Compacted():  # the CLI compacted it on its own, mid-turn
@@ -697,7 +694,7 @@ class Runner(Branches, Retries, Sessions, Rooms, Delegation, Reviewing, Work, Fi
             if fields["status"] in (Status.FAILED, Status.CANCELLED):
                 self._close_questions(task.id)
             self._refresh_working_state(task.bot)
-        self.bus.publish({"type": "task", "task": task.to_json()})
+        self.bus.publish({"type": "task", "task": {**task.to_json(), "attempt": self._retrying(task_id)}})
         if self.restarting and "status" in fields:  # how many turns the restart still waits for
             self.bus.publish({"type": "crew", "crew": self.state()})
         return task

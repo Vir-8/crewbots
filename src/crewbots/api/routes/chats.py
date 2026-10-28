@@ -58,7 +58,8 @@ def routes(c: Context) -> APIRouter:
         last = {"author": message["author"], "text": _said(message), "at": message["at"]} if message else None
         return {"key": f"room:{room['id']}", "kind": "group", "title": room["title"], "bot": None, "task_id": None,
                 "room": room, "last": last,
-                "unread": unread, "muted": room["muted"], "working": any(s and busy(s.id) for s in seats),
+                "unread": unread, "muted": room["muted"],
+                "working": any(s and s.status is Status.RUNNING and not runner._retrying(s.id) for s in seats),
                 "updated_at": room["updated_at"]}
 
     def room_or_404(room_id: str) -> dict[str, Any]:

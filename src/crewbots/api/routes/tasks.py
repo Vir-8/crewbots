@@ -30,7 +30,7 @@ def routes(c: Context) -> APIRouter:
 
     @v1.get("/tasks", response_model=list[TaskOut])
     async def tasks(status: Status | None = None, bot: str | None = None, limit: int = Query(100, le=1000)):
-        return [t.to_json() for t in store.list_tasks(status=status, bot=bot, limit=limit)]
+        return [{**t.to_json(), "attempt": runner._retrying(t.id)} for t in store.list_tasks(status=status, bot=bot, limit=limit)]
 
     @v1.post("/tasks", status_code=201, response_model=TaskOut)
     async def new_task(body: NewTask):
@@ -47,7 +47,7 @@ def routes(c: Context) -> APIRouter:
 
     @v1.get("/tasks/{task_id}", response_model=TaskOut)
     async def task(task_id: str):
-        return task_or_404(task_id).to_json()
+        return {**task_or_404(task_id).to_json(), "attempt": runner._retrying(task_id)}
 
     @v1.get("/tasks/{task_id}/status", response_model=TaskStatus)
     async def task_status(task_id: str):

@@ -241,7 +241,8 @@ export function RoomProfile(props: { crew: Crew; room: Room; onOpen: (id: string
           {members.map((name) => {
             const bot = crew.bots.find((b) => b.name === name);
             const seat = seats.find((s) => s.bot === name);
-            const replying = seat && ACTIVE.includes(seat.status);
+            const replying = seat?.status === "running" && !seat.attempt;
+            const retrying = seat?.attempt;
             return (
               <div key={name} className="member-row">
                 <button className="profile-item link member" onClick={() => props.onChat(name)} title={`Chat with ${labelOf(name)}`}>
@@ -250,7 +251,7 @@ export function RoomProfile(props: { crew: Crew; room: Room; onOpen: (id: string
                     <span className="member-name">{labelOf(name)}</span>
                     {bot?.display_name && <span className="faint small">{bot.title}</span>}
                   </span>
-                  {replying ? <span className="faint small">Working…</span> : name === room.lead ? <span className="lead-tag">Lead</span> : null}
+                  {replying ? <span className="faint small">Working…</span> : retrying ? <span className="faint small">Retrying ({retrying.attempt} of {retrying.of})</span> : name === room.lead ? <span className="lead-tag">Lead</span> : null}
                 </button>
                 {name !== room.lead && !replying && (
                   <span className="member-actions">

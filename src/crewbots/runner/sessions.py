@@ -241,6 +241,27 @@ class Sessions:
                                session_id=None)
         self._record(task_id, kind="rollover", data={"percent": round(percent, 1), "briefing": briefing})
 
+    async def _without_stale_session(self, task: Task, bot: Bot) -> Task:
+        """A session gone cold (`_gone_cold`), or made by another backend (the bot's was changed) can't be resumed
+        sensibly: the task starts afresh."""
+        if self._gone_cold(task):
+            await self._fresh_start(task.id, "idle")
+            return self.store.get_task(task.id)
+        if not task.session_id or task.session_backend in (None, bot.backend):
+            return task
+        await self._forget_session(task.id, f"its session was made by {task.session_backend}, and "
+                                            f"{bot.name} now runs on {bot.backend}")
+        return self.store.get_task(task.id)
+
+    async def _forget_session(self, task_id: str, why: str) -> None:
+        """Drops a stored session id that can't be resumed: the next turn starts a fresh session, whose system prompt
+        already carries the working state and the crew's updates."""
+        await self._close_session(task_id)
+        self._context_seen.pop(task_id, None)
+        self.store.update_task(task_id, session_id=None, session_backend=None)
+        self.store.set_primed(task_id, {})
+        self._record(task_id, kind="notice", data={"message": f"Starting a fresh session: {why}."})
+
     async def _fresh_start(self, task_id: str, why: str) -> None:
         """The task carries on in a fresh session, which starts from its bot's notes, logs and the task's state, and
         the conversation's last few messages: when it sat idle past its cache (`idle`), or couldn't be compacted."""

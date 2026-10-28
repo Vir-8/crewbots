@@ -7,8 +7,8 @@ import { GroupChat } from "./ChatView";
 const room = { id: "room", title: "Engineering", lead: "reviewer", members: ["reviewer", "critic"] } as Room;
 const chat = { key: "group", room, unread: 0 } as Chat;
 
-function render(status: Task["status"]) {
-  const seat = { id: "seat", kind: "seat", room_id: room.id, bot: "reviewer", status } as Task;
+function render(status: Task["status"], attempt: Task["attempt"] = null) {
+  const seat = { id: "seat", kind: "seat", room_id: room.id, bot: "reviewer", status, attempt } as Task;
   const crew = {
     bots: [], tasks: new Map([[seat.id, seat]]),
     roomMessages: new Map([[room.id, [{ id: 1, room_id: room.id, author: "user", text: "Hello", at: "2026-10-28T00:00:00Z", depth: 0 }]]]),
@@ -17,10 +17,20 @@ function render(status: Task["status"]) {
 }
 
 describe("room activity", () => {
-  it.each(["queued", "running"] as const)("describes a %s seat as working, without promising a reply", (status) => {
-    const html = render(status);
+  it("describes a running seat as working, without promising a reply", () => {
+    const html = render("running");
     expect(html).toContain("reviewer is working");
     expect(html).not.toContain("replying");
+  });
+
+  it("does not call a queued seat working", () => {
+    expect(render("queued")).not.toContain("working");
+  });
+
+  it("shows a seat waiting between tries as retrying, not working", () => {
+    const html = render("queued", { attempt: 2, of: 4, wait_seconds: 30 });
+    expect(html).toContain("reviewer couldn&#x27;t start, retrying (attempt 2 of 4)");
+    expect(html).not.toContain("is working");
   });
 
   it("clears the activity indicator when a seat is idle", () => {

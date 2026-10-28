@@ -105,10 +105,11 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
     if (box.current) box.current.scrollTop = box.current.scrollHeight;
   }, [messages?.length, Boolean(room.stopped)]);
 
-  const typing = room.members.filter((m) => {
-    const seat = [...crew.tasks.values()].find((t) => t.kind === "seat" && t.room_id === room.id && t.bot === m);
-    return seat && ACTIVE.includes(seat.status);
-  });
+  const seats = room.members.map((m) => [...crew.tasks.values()].find((t) => t.kind === "seat" && t.room_id === room.id && t.bot === m));
+  // Working is a turn that is running; a seat waiting between tries is not, and says so.
+  const typing = room.members.filter((_, i) => seats[i]?.status === "running" && !seats[i]?.attempt);
+  const retrying = room.members.flatMap((m, i) => (seats[i]?.attempt ? [{ bot: m, ...seats[i]!.attempt! }] : []));
+  const retryText = retrying.map((r) => `${labelOf(r.bot)} couldn't start, retrying (attempt ${r.attempt} of ${r.of})`).join(" · ");
   // Where time has passed, a centred day and time goes over the next message, which starts a group of its own.
   const breaks = useMemo(() => new Set([...timeBreaks(messages ?? [])].map((i) => messages![i].id)), [messages]);
   const groups = useMemo(() => byAuthor(messages ?? [], breaks), [messages, breaks]);
@@ -133,7 +134,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
           <span className="chat-head-text">
             <span className="chat-head-title">{room.title}</span>
             <span className="chat-head-sub">
-              {typing.length > 0 ? `${typing.map(labelOf).join(", ")} ${typing.length === 1 ? "is" : "are"} working` : `${room.members.map(labelOf).join(", ")} · ${labelOf(room.lead)} leads`}
+              {retrying.length > 0 ? retryText : typing.length > 0 ? `${typing.map(labelOf).join(", ")} ${typing.length === 1 ? "is" : "are"} working` : `${room.members.map(labelOf).join(", ")} · ${labelOf(room.lead)} leads`}
             </span>
           </span>
         </button>
@@ -211,6 +212,12 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
                 <span className="shimmer">
                   {typing.map(labelOf).join(", ")} {typing.length === 1 ? "is" : "are"} working
                 </span>
+              </div>
+            )}
+            {retrying.length > 0 && (
+              <div className="working-indicator retrying">
+                <span className="working-dot" />
+                <span>{retryText}</span>
               </div>
             )}
             {room.max_depth != null && room.stopped && typing.length === 0 && (

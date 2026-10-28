@@ -74,7 +74,7 @@ async def test_deleting_a_group_chat_keeps_the_work_it_handed_out(crew, store):
         await crew.runner.delete_room(room["id"])
         heard = [queue.get_nowait() for _ in range(queue.qsize())]
     assert heard[-1] == {"type": "room_gone", "room_id": room["id"]}
-    assert {"type": "task", "task": store.get_task(opened[0].id).to_json()} in heard
+    assert {"type": "task", "task": {**store.get_task(opened[0].id).to_json(), "attempt": None}} in heard
     assert room["id"] not in [r["id"] for r in store.rooms()] and store.room_messages(room["id"]) == []
     assert store.get_task(opened[0].id).parent_id == crew.runner.chat("engineer").id  # it reports to the chat now
     assert store.get_task(seat.id).kind == "seat"  # kept, for what its turns cost

@@ -7,6 +7,14 @@ from pydantic import BaseModel
 from crewbots.store import Status, Verdict
 
 
+class RetryOut(BaseModel):
+    """A task waiting to try again after a failed turn: the try it's waiting for, of how many."""
+
+    attempt: int
+    of: int
+    wait_seconds: float
+
+
 class TaskOut(BaseModel):
     id: str
     bot: str
@@ -39,6 +47,7 @@ class TaskOut(BaseModel):
     budget: int | None
     created_at: str
     updated_at: str
+    attempt: RetryOut | None = None  # set while it waits between tries
 
 
 class MergeResultOut(TaskOut):

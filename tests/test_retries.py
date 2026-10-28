@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from dataclasses import replace
 
 import pytest
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
@@ -181,3 +182,145 @@ def test_codex_failures_are_judged_by_their_error_kind():
     assert codex_retry("rateLimitExceeded") == "limit"
     assert [type(e) for e in AppServerParser().feed("error", {"error": {"message": "retrying"}, "willRetry": True})] == [
         Notice]
+
+
+def resume_fails(error):
+    """A backend that can't resume the stored session: it says `error` while asked to, and starts afresh otherwise."""
+    calls = []
+
+    def reply(spec):
+        calls.append(spec)
+        if spec.resume_session_id:
+            return [Done(final_text="", is_error=True, error=error, retry="transient")]
+        return [SessionStarted(session_id="s-new"), Text(text="done"), Done(final_text="done")]
+
+    return FakeBackend(reply=reply)
+
+
+@pytest.mark.parametrize("error", ["codex app-server: thread/resume: no rollout found for thread id 9869b148",
+                                   "No conversation found with session ID 01a17e6b"])
+async def test_a_session_that_is_gone_starts_one_fresh_session_at_once(store, tmp_path, error):
+    backend = resume_fails(error)
+    runner = runner_for(store, tmp_path, backend)
+    task = runner.submit("worker", "first")
+    await wait_until(settled(store, task.id))
+    store.update_task(task.id, session_id="stale", session_backend="fake")
+    backend.specs.clear()
+
+    runner.send(task.id, "the pending message")
+    await wait_until(lambda: len(backend.specs) >= 2 and settled(store, task.id)())
+
+    resumed, fresh = backend.specs
+    assert resumed.resume_session_id == "stale" and fresh.resume_session_id is None
+    assert fresh.prompt.endswith("the pending message") and "Trying again" not in fresh.prompt
+    after = store.get_task(task.id)
+    assert after.status is Status.IDLE and after.session_id == "s-new" and after.session_backend == "fake"
+    notices = [e.data["message"] for e in store.events(task.id) if e.kind == "notice"]
+    assert not any(m.startswith("Trying again") for m in notices)
+    assert any(m.startswith("Starting a fresh session") for m in notices)
+
+
+async def test_a_session_from_another_backend_is_not_resumed(store, tmp_path):
+    backend = failing(0)
+    runner = runner_for(store, tmp_path, backend)
+    task = runner.submit("worker", "first")
+    await wait_until(settled(store, task.id))
+    store.update_task(task.id, session_id="codex-thread", session_backend="codex")
+    backend.specs.clear()
+
+    runner.send(task.id, "again")
+    await wait_until(lambda: backend.specs and settled(store, task.id)())
+
+    assert [s.resume_session_id for s in backend.specs] == [None]
+    assert store.get_task(task.id).session_backend == "fake"
+
+
+async def test_other_resume_errors_are_still_retried(store, tmp_path):
+    backend = resume_fails("API Error: 529 overloaded")
+    runner = runner_for(store, tmp_path, backend)
+    task = runner.submit("worker", "first")
+    await wait_until(settled(store, task.id))
+    store.update_task(task.id, session_id="stale", session_backend="fake")
+    backend.specs.clear()
+
+    runner.send(task.id, "again")
+    await wait_until(settled(store, task.id))
+
+    assert store.get_task(task.id).status is Status.FAILED
+    assert len(backend.specs) == 4 and all(s.resume_session_id == "stale" for s in backend.specs)
+
+
+def room_seat(store, tmp_path, backend, waits):
+    runner = runner_for(store, tmp_path, backend, retry_waits_s=waits)
+    room = runner.create_room("Engineering", ["worker"])
+    return runner, room
+
+
+def seat_updates(queue):
+    out = []
+    while not queue.empty():
+        message = queue.get_nowait()
+        if message["type"] == "task":
+            out.append(message["task"])
+    return out
+
+
+async def test_a_seat_waiting_to_try_again_says_so_and_is_not_running(store, tmp_path):
+    runner, room = room_seat(store, tmp_path, failing(10), (30.0, 30.0))
+    with runner.bus.subscribe() as queue:
+        runner.post(room["id"], "user", "@worker go")
+        seat = lambda: store.seat_of(room["id"], "worker")  # noqa: E731
+        await wait_until(lambda: seat() and runner._retrying(seat().id))
+
+        assert seat().status is Status.QUEUED  # not running: nothing is being done
+        assert runner._retrying(seat().id) == {"attempt": 2, "of": 3, "wait_seconds": 30.0}
+        shown = [t for t in seat_updates(queue) if t["id"] == seat().id]
+        assert shown[-1]["status"] == "queued" and shown[-1]["attempt"] == {"attempt": 2, "of": 3, "wait_seconds": 30.0}
+        assert all(t["attempt"] is None for t in shown if t["status"] == "running")
+    runner._runs[seat().id].cancel()
+
+
+async def test_the_last_failed_try_clears_the_retry_and_tells_the_room_once(store, tmp_path):
+    runner, room = room_seat(store, tmp_path, failing(10), (0.0, 0.0))
+    runner.post(room["id"], "user", "@worker go")
+    seat = lambda: store.seat_of(room["id"], "worker")  # noqa: E731
+    await wait_until(lambda: seat() and seat().status is Status.FAILED)
+    await asyncio.sleep(0.05)
+
+    assert runner._retrying(seat().id) is None
+    told = [m for m in store.room_messages(room["id"]) if m["author"] == "worker"]
+    assert [m["text"] for m in told] == ["I couldn't take this turn: backend error. Details: room_status."]
+    assert "529" in store.get_task(seat().id).error  # the error stays where room_status reads it
+
+
+async def test_the_room_is_told_a_fixed_summary_never_the_error_text(store, tmp_path):
+    secret = "Cookie: session=abc123 password=hunter2 sk-abcdefghijklmnop"
+    backend = FakeBackend(reply=lambda spec: [Done(final_text="", is_error=True, error=secret)])
+    runner, room = room_seat(store, tmp_path, backend, (0.0,))
+    runner.post(room["id"], "user", "@worker go")
+    await wait_until(lambda: any(m["author"] == "worker" for m in store.room_messages(room["id"])))
+
+    told = [m["text"] for m in store.room_messages(room["id"]) if m["author"] == "worker"]
+    assert told == ["I couldn't take this turn: unexpected error. Details: room_status."]
+    assert not any(bit in told[0] for bit in ("abc123", "hunter2", "sk-abc", "Cookie"))
+
+
+async def test_a_seat_that_cannot_start_tells_its_room_once(store, tmp_path):
+    runner, room = room_seat(store, tmp_path, failing(0), (0.0,))
+    runner.crew.bots["worker"] = replace(runner.crew.bots["worker"], workspace=tmp_path / "gone")
+    runner.post(room["id"], "user", "@worker go")
+    await wait_until(lambda: any(m["author"] == "worker" for m in store.room_messages(room["id"])))
+    await asyncio.sleep(0.05)
+
+    told = [m["text"] for m in store.room_messages(room["id"]) if m["author"] == "worker"]
+    assert told == ["I couldn't take this turn: workspace missing. Details: room_status."]
+
+
+async def test_a_failure_without_text_gets_the_fallback_summary(store, tmp_path):
+    backend = FakeBackend(reply=lambda spec: [Done(final_text="", is_error=True, error=None)])
+    runner, room = room_seat(store, tmp_path, backend, (0.0,))
+    runner.post(room["id"], "user", "@worker go")
+    await wait_until(lambda: any(m["author"] == "worker" for m in store.room_messages(room["id"])))
+
+    told = [m["text"] for m in store.room_messages(room["id"]) if m["author"] == "worker"]
+    assert told == ["I couldn't take this turn: unexpected error. Details: room_status."]

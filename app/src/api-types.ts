@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "ed47976c4077";
+export const API_SCHEMA = "01e4f68e6515";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -558,6 +558,7 @@ export interface MergeResultOut {
   budget: number | null;
   created_at: string;
   updated_at: string;
+  attempt?: RetryOut | null;
   leftover_files?: string[] | null;
   leftover_check_error?: string | null;
 }
@@ -943,6 +944,13 @@ export interface RestartBody {
   timeout_s?: number;
 }
 
+/** A task waiting to try again after a failed turn: the try it's waiting for, of how many. */
+export interface RetryOut {
+  attempt: number;
+  of: number;
+  wait_seconds: number;
+}
+
 export interface ReviewBody {
   verdict: Verdict;
   summary: string;
@@ -1160,6 +1168,7 @@ export interface TaskOut {
   budget: number | null;
   created_at: string;
   updated_at: string;
+  attempt?: RetryOut | null;
 }
 
 /** What /status shows for a chat or a thread. */
@@ -1313,5 +1322,6 @@ export interface WithdrawalResultOut {
   budget: number | null;
   created_at: string;
   updated_at: string;
+  attempt?: RetryOut | null;
   notice?: string | null;
 }
