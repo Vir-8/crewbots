@@ -50,7 +50,7 @@ def setup(tmp_path):
         git(repo, *IDENT, "commit", "-qm", f"Add {name}")
     store = Store(":memory:")
     crew = make_crew(tmp_path, bot("chief", can_delegate=True), bot("engineer"))
-    crew.projects["demo"] = Project("demo", repo, "", tmp_path / "demo.md")
+    crew.projects["demo"] = Project("demo", repo, "", tmp_path / "demo.md", ci=("true",))
     runner = Runner(store, crew)
     runner.send = lambda *a, **kw: None
     clean_history(repo)

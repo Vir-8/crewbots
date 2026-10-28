@@ -17,6 +17,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from crewbots import ci
 from crewbots.push import REMOTE_TIMEOUT, GitFailed, _display_url, _git, _remote_tip
 from crewbots.runner.common import NotAllowed
 
@@ -167,6 +168,8 @@ async def propose(runner: Any, task_id: str, project: str, branch: str, summary:
         data.update(await asyncio.to_thread(snapshot, folder, branch, _holder(runner, folder), _blocking(runner, folder)))
     except NotAllowed as e:
         data |= {"branch": branch, "error": str(e)}
+    if "error" not in data:  # the card is only made for a commit CI passes on
+        data["ci"] = await asyncio.to_thread(ci.check, folder, data["new"], data["target"], runner.crew.project(project).ci)
     event = runner.store.append_event(runner.chat(chief.name).id, kind="replace_main_proposed", data=data)
     runner.bus.publish({"type": "event", "event": event.to_json()})
     return event.id

@@ -18,6 +18,11 @@ describe("push proposals", () => {
     expect(html).toContain("abc123 Add feature");
     expect(html).toContain(">Push</button>");
   });
+  it("shows the CI result", () => {
+    const block = build([{ ...event, data: { ...event.data, ci: { note: "CI passed locally on abc123def456", steps: ["a", "b"] } } }], [], new Map())[0];
+    if (block.kind !== "push") throw new Error("missing push card");
+    expect(renderToStaticMarkup(<PushCard block={block} />)).toContain("CI passed locally on abc123def456 (2 steps)");
+  });
   it("shows the rejection on the card and removes the button", () => {
     const result: StoredEvent = { id: 2, task_id: "chat", kind: "push_result", at: "", data: { proposal: 1, ok: false, reason: "The remote changed; make a new proposal." } };
     const block = build([event, result], [], new Map())[0];

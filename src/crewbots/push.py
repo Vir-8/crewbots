@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from crewbots import attribution, paths
+from crewbots import attribution, ci, paths
 from crewbots.runner.common import NotAllowed
 
 REMOTE_TIMEOUT = 15
@@ -157,6 +157,9 @@ async def propose(runner: Any, task_id: str, project: str, summary: str) -> int:
         data.update({"branch": e.branch, "upstream": e.upstream, "push_url_display": e.push_url_display, "error": str(e)})
     except NotAllowed as e:
         data["error"] = str(e)
+    if "error" not in data:  # the card is only made for a commit CI passes on
+        data["ci"] = await asyncio.to_thread(ci.check, folder, data["head"], data["destination"].removeprefix("refs/heads/"),
+                                             runner.crew.project(project).ci)
     chat = runner.chat(chief.name)
     event = runner.store.append_event(chat.id, kind="push_proposed", data=data)
     runner.bus.publish({"type": "event", "event": event.to_json()})

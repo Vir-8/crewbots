@@ -21,6 +21,7 @@ export function PushCard({ block }: { block: Extract<Block, { kind: "push" }> })
     <div className="ask-head">{result?.ok && result.pushed ? `Pushed ${data.project}` : `Push ${data.project}?`}</div>
     <div className="permission-what">{data.summary}</div>
     {data.branch && <div className="small">Branch: <code>{data.branch}</code> · Upstream: <code>{data.upstream}</code>{data.push_url_display && <> · Destination: <code>{data.push_url_display}</code></>}</div>}
+    {data.ci && <div className="small" title={(data.ci.steps ?? []).join("\n")}>{data.ci.note}{data.ci.steps?.length ? ` (${data.ci.steps.length} steps)` : ""}</div>}
     {data.commits && <pre className="push-commits">{data.commits.length ? data.commits.join("\n") : "Everything up-to-date. Nothing to push."}</pre>}
     {result?.ok && result.reason !== "Push completed." && <div className="small">{result.reason}</div>}
     {block.started && !result && <div className={busy ? "small" : "push-error"}>{busy ? "Pushing…" : "Push started; result unknown. Check the remote before making a new proposal."}</div>}

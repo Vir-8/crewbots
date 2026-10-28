@@ -37,7 +37,7 @@ def setup(tmp_path, monkeypatch):
     git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "Add one")
     store = Store(":memory:")
     crew = make_crew(tmp_path, bot("chief", can_delegate=True), bot("engineer"))
-    crew.projects["demo"] = Project("demo", repo, "", tmp_path / "demo.md")
+    crew.projects["demo"] = Project("demo", repo, "", tmp_path / "demo.md", ci=("true",))
     runner = Runner(store, crew)
     notices = []
     monkeypatch.setattr(runner, "send", lambda *a, **kw: notices.append((a, kw)))
@@ -300,9 +300,10 @@ async def test_proposal_remote_snapshot_does_not_block_the_event_loop(setup, mon
         entered.set()
         loop.call_soon_threadsafe(resumed.set)
         release.wait(2)
-        return {"commits": []}
+        return {"commits": [], "head": "a" * 40, "destination": "refs/heads/main"}
 
     monkeypatch.setattr("crewbots.push.snapshot", slow_snapshot)
+    monkeypatch.setattr("crewbots.push.ci.check", lambda *a: {"status": "none"})
     job = asyncio.create_task(async_propose(runner, runner.chat("chief").id, "demo", "Ready"))
     try:
         await asyncio.wait_for(resumed.wait(), 1)

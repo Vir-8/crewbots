@@ -38,6 +38,7 @@ class Project:
     about: str  # what it is, for bots choosing where work goes
     path: Path  # its file
     isolation_setting: Isolation | None = None
+    ci: tuple[str, ...] = ()  # commands to check before a push, for a repo with no GitHub workflow
 
     @property
     def isolation(self) -> Isolation:
@@ -83,8 +84,11 @@ def parse(text: str, path: Path) -> Project:
     isolation = meta.get("isolation")
     if "isolation" in meta and isolation not in ("branch", "worktree"):
         raise ProjectError("isolation must be `branch` or `worktree`")
+    ci = meta.get("ci", [])
+    if not isinstance(ci, list) or not all(isinstance(c, str) and c.strip() for c in ci):
+        raise ProjectError("ci must be a list of commands")
     return Project(name=name, folder=Path(str(meta["folder"])).expanduser(), about=body.strip(), path=path,
-                   isolation_setting=isolation)
+                   isolation_setting=isolation, ci=tuple(ci))
 
 
 def name_for(folder: Path) -> str:
@@ -105,11 +109,13 @@ def save(home: Path, name: str, folder: Path, about: str, isolation: Isolation |
     if folder.resolve() == crew or folder.resolve().is_relative_to(crew) or crew.is_relative_to(folder.resolve()):
         raise ProjectError(f"{folder} holds the crew's own settings, so it can't be a project")
     path = home / FOLDER / f"{name}.md"
-    if isolation is None:
-        isolation = parse(path.read_text(), path).isolation_setting if path.is_file() else None
+    old = parse(path.read_text(), path) if path.is_file() else None
+    if isolation is None and old:
+        isolation = old.isolation_setting
     path.parent.mkdir(parents=True, exist_ok=True)
     shown = str(folder).replace(str(Path.home()), "~", 1) if folder.is_relative_to(Path.home()) else str(folder)
-    meta = {"folder": shown, **({"isolation": isolation} if isolation is not None else {})}
+    meta = {"folder": shown, **({"isolation": isolation} if isolation is not None else {}),
+            **({"ci": list(old.ci)} if old and old.ci else {})}
     path.write_text(f"---\n{yaml.safe_dump(meta, sort_keys=False)}---\n{about.strip()}\n")
     return parse(path.read_text(), path)
 

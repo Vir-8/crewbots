@@ -124,7 +124,8 @@ async def test_push_uses_selected_chief_even_without_legacy_flag(tmp_path, monke
     bots.projects["demo"] = Project("demo", tmp_path, "", tmp_path / "demo.md")
     runner = Runner(store, bots)
     store.set_chief("aaa")
-    monkeypatch.setattr(push, "snapshot", lambda folder: {"commits": []})
+    monkeypatch.setattr(push, "snapshot", lambda folder: {"commits": [], "head": "a" * 40, "destination": "refs/heads/main"})
+    monkeypatch.setattr(push.ci, "check", lambda *a: {"status": "none"})
     chat = runner.chat("aaa")
     event_id = await push.propose(runner, chat.id, "demo", "Ready")
     assert store.last_event(chat.id, ("push_proposed",)).id == event_id
