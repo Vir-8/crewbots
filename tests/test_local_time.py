@@ -40,7 +40,7 @@ def test_elsewhere_and_questions_are_local(tmp_path):
     store.db.execute("update tasks set updated_at = ? where id = ?", ("2026-10-28T10:33:00.000+00:00", chat.id))
     assert runner._sync_working_state("worker")
     text = (runner.crew.memory.root / "worker" / "working-state" / "state.md").read_text()
-    assert f"chat {chat.id} · 2026-10-28T16:03" in text
+    assert f"your chat with the user ({chat.id}) · idle · 2026-10-28T16:03" in text
     store.close()
 
 

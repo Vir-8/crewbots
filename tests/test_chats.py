@@ -43,7 +43,7 @@ async def test_each_bot_has_one_chat_that_carries_on(crew, store):
 
     assert first.id == again.id == crew.runner.chat("chief").id and first.kind == "chat"
     assert [e.data["text"] for e in store.events(first.id) if e.kind == "message"] == ["hello", "and again"]
-    assert "ongoing chat with the user" in crew.specs_for("chief")[0].system_prompt
+    assert "your chat with the user, and the group chats" in crew.specs_for("chief")[0].system_prompt
 
 
 @pytest.mark.parametrize("answer", ["NO_REPLY", "no_reply", "  **No_Reply**  ", "NO_REPLY\n\nLeaving this to my room seat."])
@@ -723,7 +723,7 @@ async def test_stop_keeps_queued_and_cleanup_mentions_unread_until_next_wake(cre
     crew.backend.gate.set()
     crew.runner.post(room["id"], "engineer", "@chief next")
     await wait_until(lambda: len(crew.specs_for("chief")) == 2)
-    prompt = crew.specs_for("chief")[-1].prompt
+    prompt = crew.specs_for("chief")[-1].prompt.split("</crew-updates>")[-1]  # what's new, below what came lately
     assert "@chief waiting" in prompt and "@chief during cleanup" in prompt and "@chief next" in prompt
     assert "@chief first" not in prompt
     await wait_until(idle(crew))

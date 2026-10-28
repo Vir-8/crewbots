@@ -160,7 +160,7 @@ async def test_a_new_routine_waits_for_its_next_time_then_runs_once(crew, store,
     assert task.bot == "chief" and task.kind == "chat"  # a message in the chief's chat, from the routine
     await wait_until(crew.settled(task.id))
     [spec] = crew.specs_for("chief")
-    assert "ongoing chat with the user" in spec.system_prompt
+    assert "your chat with the user, and the group chats" in spec.system_prompt
     # The first run looks back to the time it would last have run.
     assert spec.prompt.startswith("[routine: standup]\n\nStandup since Fri 23 Oct 09:00.")
     assert [e.data["from"] for e in store.events(task.id) if e.kind == "message"] == ["routine:standup"]

@@ -276,9 +276,7 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
                     self._seat_turn_seen.pop(task_id, None)
                     self._waking.discard(task_id)
                     self._stay_awake()
-            opened = self._sessions.get(task_id)
-            if not (opened and opened.session.alive and getattr(opened.session, "interruptible", False)):
-                await self._close_session(task_id)  # an interruptible session stopped its turn and stays warm
+            await self._stop_session(task_id)
             await self.browser.close_task(task_id)
             task = self._set(task_id, status=Status.CANCELLED)
             if task.kind == "review" and task.parent_id is None:  # stopping a review stops its reviewers
@@ -436,7 +434,7 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
 
     async def _run(self, task_id: str, prompt: str, owed: bool = False, nudged: bool = False) -> Done | None:
         """One turn. Returns its Done if it failed, for `_tries` to settle; None once the task is settled."""
-        async with self._turn_slot(task_id):
+        async with self._mind_lock(self.store.get_task(task_id)), self._turn_slot(task_id):
             if (task := self.store.get_task(task_id)).worktree_path or task.review_of:
                 await self._worktree_sweep_done.wait()
             self._attempts.get(task_id, {}).update(state="running")
@@ -462,6 +460,7 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
             if task.kind != "review":
                 self._refresh_working_state(bot.name)
             task = await self._without_stale_session(task, bot)
+            mind = self._mind(task).id  # where its session is kept: a seat's is its chat's
             open_session = await self._session_for(task, bot, cwd, backend)
             prompt, primed = self._with_updates(task, bot, prompt)
             compacted = False
@@ -538,7 +537,7 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
                             self._record(task_id, event)
                         match event:
                             case SessionStarted(session_id=sid):
-                                self.store.update_task(task_id, session_id=sid, session_backend=bot.backend)
+                                self.store.update_task(mind, session_id=sid, session_backend=bot.backend)
                             case Usage():
                                 self.store.add_usage(task_id, event.input_tokens, event.output_tokens, event.cost_usd)
                             case Compacted():  # the CLI compacted it on its own, mid-turn
@@ -575,17 +574,17 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
                       and open_session.chief == self.is_chief(task.bot)):
                     open_session.last_used = asyncio.get_running_loop().time()
                 else:
-                    await self._close_session(task_id)  # it died, stalled, or was stopped mid-turn: the next turn resumes
+                    await self._close_session(mind)  # it died, stalled, or was stopped mid-turn: the next turn resumes
             if done is None or done.is_error:
                 self._escalated.discard(task_id)
                 return done or Done(final_text="", is_error=True, error="the run ended without a result",
                                     retry="transient")
             if compacted:  # its next turn is told its instructions and its state again
-                self.store.set_primed(task_id, {})
+                self.store.set_primed(mind, {})
             elif primed:  # it has these now; a turn that failed hears them again
-                self.store.set_primed(task_id, primed)
-            self._turn_ended[task_id] = time.time()
-            self._flushed.discard(task_id)
+                self.store.set_primed(mind, primed)
+            self._turn_ended[mind] = time.time()
+            self._flushed.discard(mind)
             if task_id in self._escalated:
                 self._escalated.discard(task_id)
                 self._set(task_id, status=Status.NEEDS_INPUT,
@@ -596,7 +595,7 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
                                        owed, nudged)
                     self._seat_turn_finished(task, done.final_text)
                 try:
-                    await self._maybe_compact(task_id, open_session, bot)
+                    await self._maybe_compact(mind, open_session, bot)
                 except NotAllowed as e:
                     return Done(final_text="", is_error=True, error=str(e))
                 # Not idle yet if messages are waiting: the next turn starts right away, and watchers should not stop.
@@ -619,11 +618,12 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
                            deny_read=self._state_denials(bot.name))
         # A backend that hosts tools in-process gets the crew tools as Python; any other, as an MCP server with a token.
         in_process = getattr(backend, "in_process_tools", False) and self.api_url is not None
-        grants = self.store.grants(task.id)  # what the user allowed this task beyond its bot's role card
+        grants = self._grants(task)  # what the user allowed this task beyond its bot's role card
         proactive = task.created_by == "crewbots" and task.parent_id is not None  # started on its own, from a check-in
         return RunSpec(
             prompt=prompt, cwd=cwd, model=bot.model,
-            on_prompt_sent=(lambda: self._room_prompt_sent(task.id)) if task.kind == "seat" else None,
+            on_prompt_sent=((lambda: self._room_prompt_sent(self._tokens.get(token, task.id)))  # whichever seat it's for
+                            if task.kind in ("chat", "seat") else None),
             access=Access.READ_ONLY if task.kind == "ask" or (task.review_of and
                 self.store.get_task(task.review_of).base_branch) else bot.access,
             system_prompt=self.crew.system_prompt(bot, delegated_by=task.created_by if task.parent_id else None,
@@ -632,13 +632,13 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
                                                   routine=task.routine, setting=self._setting(task),
                                                   recent=self._recent(bot.name),
                                                   state=self.crew.memory.state(bot.name, task.id)),
-            resume_session_id=task.session_id,
+            resume_session_id=self._mind(task).session_id,
             # Work it started on its own reaches nothing outside crewbots, so it gets none of the bot's own MCP servers:
             # which of their tools only read can't be told from their names.
             mcp_servers={**({} if proactive else bot.mcp),
                          **({} if in_process else self._crew_tools(token, bot))},
             proactive=proactive,
-            crew=CrewTools(self, task.id, self.is_coordinator(bot.name)) if in_process else None,
+            crew=CrewTools(self, task.id, self.is_coordinator(bot.name), follows=token) if in_process else None,
             deny_read=self._state_denials(bot.name),
             read_dirs=[*self.crew.skill_dirs, *[d for d in (self.crew.memory.root, self.crew.home / attachments_module.FOLDER,
                                                             self.crew.pages_of(bot))

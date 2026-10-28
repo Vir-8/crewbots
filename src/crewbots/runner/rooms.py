@@ -98,7 +98,8 @@ class Rooms:
                           members: list[str] | None = None, muted: bool | None = None,
                           archived: bool | None = None) -> dict[str, Any]:
         """The user's changes to a group chat; what's left None stays. Its bots take up a new name, lead or members
-        from their next turn. Archived, it's kept but out of the way, and its bots aren't woken there."""
+        from their next turn there, which is told the room's setting again. Archived, it's kept but out of the way,
+        and its bots aren't woken there."""
         room = self.store.room(room_id)
         changes: dict[str, Any] = {}
         if title is not None:
@@ -122,12 +123,9 @@ class Rooms:
                 raise NotAllowed("the crew's own group chat can't be archived")
             changes["archived_at"] = _iso(datetime.now(UTC)) if archived else None
         room = self._set_room(room_id, **changes)
-        if changes.keys() & {"title", "lead", "members"}:
+        if "title" in changes:  # each bot's next turn there is told the room as it is now
             for seat in self.store.seats_in(room_id):
-                if "title" in changes:
-                    self._set(seat.id, title=f"{room['title']} ({seat.bot})")
-                if seat.id not in self._runs:
-                    await self._close_session(seat.id)  # its next turn starts from the room as it is now
+                self._set(seat.id, title=f"{room['title']} ({seat.bot})")
         return room
 
     async def delete_room(self, room_id: str) -> None:
@@ -146,7 +144,6 @@ class Rooms:
                     self._set(child.id, parent_id=self.chat(seat.bot).id)
             for seat in seats:
                 await self.cancel(seat.id, _begun=True)
-                await self._close_session(seat.id)
                 self._seat_depth.pop(seat.id, None)
             self.store.delete_room(room_id)
             for seat in seats:

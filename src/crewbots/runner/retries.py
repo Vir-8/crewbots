@@ -55,10 +55,11 @@ class Retries:
             if done is None:
                 return  # settled: finished, or failed for good
             task = self.store.get_task(task_id)
-            if task.session_id and not fresh and SESSION_GONE.search(done.error or ""):
+            mind = self._mind(task)  # a seat's session is its chat's
+            if mind.session_id and not fresh and SESSION_GONE.search(done.error or ""):
                 # Waiting won't bring it back: once, at once, a fresh session takes the message.
                 fresh, prompt = True, original
-                await self._forget_session(task_id, "the session it was to resume no longer exists")
+                await self._forget_session(mind.id, "the session it was to resume no longer exists")
                 continue
             if not done.retry or attempt == len(self.retry_waits_s):
                 self._failed(task_id, done.error, done.final_text or None, done.retry)

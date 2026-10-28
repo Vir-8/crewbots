@@ -129,10 +129,15 @@ class ToolRefused(Exception):
 class CrewTools:
     """The crew tools for one task, called in the daemon's own process."""
 
-    def __init__(self, runner: "Runner", task_id: str, can_delegate: bool):
+    def __init__(self, runner: "Runner", task_id: str, can_delegate: bool, *, follows: str | None = None):
         self.runner = runner
-        self.task_id = task_id
+        self._task_id = task_id
         self.can_delegate = can_delegate
+        self.follows = follows  # a session token: a session shared by a chat and its seats acts for whichever has the turn
+
+    @property
+    def task_id(self) -> str:
+        return self.runner._tokens.get(self.follows, self._task_id) if self.follows else self._task_id
 
     def definitions(self) -> list[ToolDef]:
         if not self.can_delegate:

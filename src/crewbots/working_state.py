@@ -18,6 +18,7 @@ EDITABLE = SECTIONS[:4]
 LIMIT = 4000
 QUESTION_LIMIT = 1000
 ELSEWHERE_LIMIT = 12
+ELSEWHERE_CHARS = 140  # a line: what it is, whose and where from, then as much of a thread's title as fits
 AUTO_LIMIT = 12
 AUTO_CHARS = 1200
 LOCK_TIMEOUT = 0.1  # never wait indefinitely on the event loop
@@ -161,7 +162,7 @@ def sync(path: Path, questions: list[str], elsewhere: list[str]) -> None:
             newest.append(line)
         warning = any(line.startswith("- State was trimmed;") for line in sections["Elsewhere"])
         sections["Open questions"] = list(reversed(newest))
-        sections["Elsewhere"] = [line[:120] for line in elsewhere[:ELSEWHERE_LIMIT]]
+        sections["Elsewhere"] = [line[:ELSEWHERE_CHARS] for line in elsewhere[:ELSEWHERE_LIMIT]]
         trimmed = _auto_budget(sections)
         trimmed = _fit(sections, keep_generated=True) or trimmed
         if trimmed or warning:

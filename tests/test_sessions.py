@@ -90,15 +90,44 @@ def test_existing_room_session_receives_updated_setting(store, tmp_path, old_pri
     runner, _ = make(store, tmp_path, None, bot("worker"), bot("helper"))
     room = runner.create_room("Discussion", ["worker", "helper"])
     seat = store.create_task("worker", "Discussion (worker)", kind="seat", room_id=room["id"], status=Status.IDLE)
-    store.update_task(seat.id, session_id="existing-session")
+    chat = runner.chat("worker")  # a seat's session is its bot's chat's
+    store.update_task(chat.id, session_id="existing-session")
     if old_primed is not None:
-        store.set_primed(seat.id, old_primed)
+        store.set_primed(chat.id, old_primed)
 
     prompt, primed = runner._with_updates(store.get_task(seat.id), runner.crew.bots["worker"], "[helper]: thanks")
-    assert "## Group chat setting" in prompt and '"thanks"' in prompt and "NO_REPLY" in prompt
-    assert primed is not None and "room-setting" in primed
-    store.set_primed(seat.id, primed)
-    assert runner._with_updates(store.get_task(seat.id), runner.crew.bots["worker"], "next") == ("next", None)
+    assert f"## Group chat setting: {room['id']}" in prompt and '"thanks"' in prompt and "NO_REPLY" in prompt
+    assert prompt.endswith(f"[In the group chat 'Discussion' ({room['id']}); your reply is posted there]\n[helper]: thanks")
+    assert primed is not None and f"room-setting:{room['id']}" in primed
+    store.set_primed(chat.id, primed)
+    channel = f"[In the group chat 'Discussion' ({room['id']}); your reply is posted there]\nnext"
+    assert runner._with_updates(store.get_task(seat.id), runner.crew.bots["worker"], "next") == (channel, None)
+
+
+def test_a_chat_and_its_seats_share_one_session_told_each_rooms_setting_once(store, tmp_path):
+    runner, _ = make(store, tmp_path, None, bot("worker"), bot("helper"))
+    worker = runner.crew.bots["worker"]
+    one, two = (runner.create_room(name, ["worker", "helper"]) for name in ("One", "Two"))
+    seat_one, seat_two = (store.create_task("worker", r["title"], kind="seat", room_id=r["id"], status=Status.IDLE)
+                          for r in (one, two))
+    chat = runner.chat("worker")
+    assert runner._mind(seat_one).id == runner._mind(seat_two).id == chat.id
+    store.update_task(chat.id, session_id="shared")
+    _, primed = runner._with_updates(chat, worker, "hi")
+    store.set_primed(chat.id, primed)
+    runner.post(one["id"], "helper", "earlier in One")
+    now = runner.post(one["id"], "helper", "now")
+    store.mark_seen(f"seat:{seat_one.id}", now["id"])  # as waking it does: it's told everything up to here
+    for room, seat in ((one, seat_one), (two, seat_two)):
+        prompt, primed = runner._with_updates(store.get_task(seat.id), worker, "[helper]: now")
+        assert f"Group chat setting: {room['id']}" in prompt
+        assert ("earlier in One" in prompt) == (room is one)  # what was said there lately, the first time
+        assert prompt.count("[helper]: now") == 1  # what's new isn't repeated as what came before it
+        store.set_primed(chat.id, primed)
+    for seat in (seat_one, seat_two):  # told once each, kept while the other is told
+        assert "crew-updates" not in runner._with_updates(store.get_task(seat.id), worker, "again")[0]
+    prompt, _ = runner._with_updates(chat, worker, "back here")
+    assert prompt.endswith("[In your chat with the user; your reply goes to them]\nback here")
 
 
 async def test_follow_ups_reuse_the_same_session(store, tmp_path):
@@ -442,22 +471,46 @@ async def test_a_chat_recalls_what_its_own_compacted_conversation_said(store, tm
     await runner.shutdown()
 
 
+async def test_a_chat_turn_and_a_group_chat_turn_take_turns_in_one_session(store, tmp_path):
+    backend = SessionBackend()
+    runner, _ = make(store, tmp_path, backend, bot("worker"), bot("helper"))
+    room = runner.create_room("Engineering", ["worker", "helper"], lead="helper")
+    backend.gate = asyncio.Event()
+    chat = runner.say("worker", "how's it going?")
+    await wait_until(lambda: len(backend.opened) == 1 and backend.opened[0].turns)
+    runner.post(room["id"], "user", "@worker are you there?")
+    seat = store.seat_of(room["id"], "worker")
+    await asyncio.sleep(0.05)
+    assert len(backend.opened[0].turns) == 1  # the seat waits for the chat's turn: one session, one turn at a time
+    backend.gate.set()
+    await wait_until(lambda: settled(store, runner, chat.id)() and settled(store, runner, seat.id)())
+
+    [session] = backend.opened
+    assert len(session.turns) == 2 and "are you there?" in session.turns[1]
+    assert "how's it going?" in store.get_task(chat.id).result  # each reply went back where it was asked
+    posted = [m for m in store.room_messages(room["id"]) if m["author"] == "worker"]
+    assert posted and "are you there?" in posted[0]["text"] and "how's it going" not in posted[0]["text"]
+    assert store.get_task(chat.id).session_id == "s-0" and (await runner.status(seat.id))["session_id"] == "s-0"
+    await runner.shutdown()
+
+
 def test_lately_and_shared_state_reach_open_seat_once(store, tmp_path):
     from crewbots.working_state import edit
 
     runner, _ = make(store, tmp_path, None, bot("worker"), bot("helper"))
     room = runner.create_room("Discussion", ["worker", "helper"])
     seat = store.create_task("worker", "Discussion", kind="seat", room_id=room["id"], status=Status.IDLE)
-    store.update_task(seat.id, session_id="session")
-    seat = store.get_task(seat.id)
+    chat = runner.chat("worker")
+    store.update_task(chat.id, session_id="session")
     _, initial = runner._with_updates(seat, runner.crew.bots["worker"], "first")
-    store.set_primed(seat.id, initial)
+    store.set_primed(chat.id, initial)
     runner.crew.memory.log("worker", "New log line")
     edit(runner.crew.memory.root / "worker" / "working-state" / "state.md", "User's rules", "add", "Ask before merging")
     prompt, primed = runner._with_updates(seat, runner.crew.bots["worker"], "next")
     assert "New log line" in prompt and "Ask before merging" in prompt
-    store.set_primed(seat.id, primed)
-    assert runner._with_updates(seat, runner.crew.bots["worker"], "again") == ("again", None)
+    store.set_primed(chat.id, primed)
+    prompt, primed = runner._with_updates(seat, runner.crew.bots["worker"], "again")
+    assert primed is None and "crew-updates" not in prompt
 
 
 async def test_user_answer_to_escalation_is_shared_as_decision(store, tmp_path):
@@ -508,6 +561,26 @@ async def test_elsewhere_has_metadata_without_conversation_text(store, tmp_path)
     elsewhere = state.split("## Elsewhere", 1)[1]
     assert chat.id in elsewhere and room["id"] in elsewhere
     assert secret not in state and len([line for line in elsewhere.splitlines() if line.startswith("- ")]) <= 12
+
+
+def test_elsewhere_says_a_thread_is_the_bots_own_and_who_it_is_for(store, tmp_path):
+    runner, _ = make(store, tmp_path, None, bot("worker"), bot("lead"))
+    room = runner.create_room("Engineering", ["worker", "lead"], lead="lead")
+    seat = store.create_task("lead", "Engineering (lead)", kind="seat", room_id=room["id"], status=Status.IDLE)
+    handed = store.create_task("worker", "Add a force-push option", parent_id=seat.id, created_by="lead",
+                               status=Status.RUNNING)
+    merged = store.create_task("worker", "Old fix", parent_id=seat.id, created_by="lead", status=Status.IDLE)
+    store.update_task(merged.id, merge_state="merged")
+    own = store.create_task("worker", "Look into the logs", parent_id=runner.chat("worker").id, created_by="worker",
+                            status=Status.IDLE)
+    runner._sync_working_state("worker")
+    state = (runner.crew.memory.root / "worker" / "working-state" / "state.md").read_text()
+    lines = [line for line in state.split("## Elsewhere", 1)[1].splitlines() if line.startswith("- ")]
+    assert lines[0].startswith(f"- your thread {handed.id} for lead in 'Engineering' · running · ")
+    assert lines[0].endswith(" · Add a force-push option")
+    assert lines[1].startswith(f"- your thread {own.id} · idle · ") and lines[1].endswith(" · Look into the logs")
+    assert merged.id not in state  # closed work isn't listed
+    assert lines[2].startswith("- your chat with the user (")
 
 
 async def test_long_answer_links_to_full_answer_and_full_state_does_not_block_user(store, tmp_path):
