@@ -43,6 +43,15 @@ async def test_the_chief_adds_a_bot_when_asked(crewed):
     assert any(e.kind == "notice" and "Added Mira" in e.data["message"] for e in store.events(task.id))
 
 
+async def test_adding_earlier_coordinator_does_not_change_chief(crewed):
+    runner, store = crewed
+    chief, _ = tools(runner, store, "chief")
+    await chief.call("add_bot", {**MARKETING, "name": "aaa", "can_delegate": True})
+    assert list(runner.crew.bots)[0] == "aaa"
+    assert store.chief() == runner.coordinator().name == "chief"
+    assert not runner.is_coordinator("aaa")
+
+
 async def test_only_a_coordinator_can_add_bots(crewed):
     runner, store = crewed
     engineer, _ = tools(runner, store, "engineer")

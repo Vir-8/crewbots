@@ -57,6 +57,16 @@ def test_a_damaged_database_is_reported(tmp_path, signed_in):
     assert db.ok is False and "back up" in db.hint
 
 
+def test_missing_chief_is_reported(tmp_path):
+    home = tmp_path / "crew"
+    home.mkdir()
+    store = Store(home / "crewbots.db")
+    store.set_chief("gone")
+    store.close()
+    [finding] = doctor._chief(home)
+    assert finding.ok is False and "gone" in finding.line and "disabled" in finding.line
+
+
 def test_worktrees_no_task_needs_are_listed_with_how_to_remove_them(tmp_path, signed_in):
     home = tmp_path / "crew"
     home.mkdir()

@@ -136,7 +136,7 @@ class Scheduler:
         said = (self.store.routine_state("away") or {}).get("last_run_at")
         if away and not said and any(r.enabled for r in self.routines):
             crew = self.runner.crew
-            chief = next((b for b in crew.bots.values() if b.can_delegate), next(iter(crew.bots.values()), None))
+            chief = self.runner.coordinator()
             if chief:
                 chat = self.runner.chat(chief.name)
                 self.runner._record(chat.id, kind="text", data={"away": True, "text": prompts.text(

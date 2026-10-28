@@ -30,7 +30,7 @@ class Wakes:
 
     def always_on(self, bot: str) -> bool:
         card = self.crew.bots.get(bot)
-        return bool(card and card.can_delegate and card.proactive)
+        return bool(card and self.is_coordinator(bot) and card.proactive)
 
     def next_check(self, task_id: str, minutes: float, why: str) -> datetime:
         """The `next_check` tool: when the bot wants to look around again, and what for."""

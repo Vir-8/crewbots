@@ -51,6 +51,30 @@ def routes(c: Context) -> APIRouter:
         c.store.set_auto_merge(body.auto_merge)
         return {"auto_merge": c.store.auto_merge()}
 
+    @v1.get("/crew/chief")
+    async def chief_setting():
+        return {"chief": c.store.chief(), "available": runner.coordinator() is not None}
+
+    @v1.put("/crew/chief")
+    async def set_chief(body: dict[str, str]):
+        name = body.get("chief", "")
+        if name not in runner.crew.bots:
+            raise HTTPException(422, f"no bot named {name!r}")
+        await runner.set_coordinator(name)
+        return {"chief": name, "available": True}
+
+    @v1.get("/crew/coordinators")
+    async def coordinator_settings():
+        return {"coordinators": c.store.coordinators() or []}
+
+    @v1.put("/crew/coordinators")
+    async def set_coordinators(body: dict[str, list[str]]):
+        names = body.get("coordinators")
+        if names is None or len(names) != len(set(names)) or any(name not in runner.crew.bots for name in names):
+            raise HTTPException(422, "coordinators must be distinct existing bot handles")
+        await runner.set_coordinators(names)
+        return {"coordinators": names}
+
     @v1.post("/crew/pause", response_model=CrewState)
     async def pause():
         """No new turn starts until resumed; turns already running finish."""

@@ -62,13 +62,13 @@ class Attention:
         asked; overnight it's skipped then."""
         store = self.runner.store
         items = [i for i in store.proactive_waiting("fyi") if i["expires_at"] > now.astimezone(UTC).isoformat()]
-        store.mark_digested(_midnight(now), [i["id"] for i in items])
         if not items:
             return None
         crew = self.runner.crew
-        chief = next((b for b in crew.bots.values() if b.can_delegate), next(iter(crew.bots.values()), None))
+        chief = self.runner.coordinator()
         if chief is None:
             return None
+        store.mark_digested(_midnight(now), [i["id"] for i in items])
         lines = [f"- {crew.bots[i['bot']].label if i['bot'] in crew.bots else i['bot']}: {i['text']}" for i in items]
         text = "Good morning. While you were away, the crew noticed:\n\n" + "\n".join(lines)
         chat = self.runner.chat(chief.name)

@@ -14,6 +14,7 @@ Store's parts are by area: tasks, events, rooms, search, code review's drafts, r
 crew, and what bots asked the user to allow; `db.py` has the database itself and its migrations.
 """
 
+import json
 from pathlib import Path
 
 from crewbots.store.db import Connection, migrate
@@ -44,3 +45,22 @@ class Store(Tasks, Events, Rooms, Search, Drafts, Routines, Happenings, Permissi
     def set_auto_merge(self, enabled: bool) -> None:
         self.db.execute("insert into crew_settings (key, value) values ('auto_merge', ?) "
                         "on conflict(key) do update set value = excluded.value", (int(enabled),))
+
+    def chief(self) -> str | None:
+        row = self.db.execute("select value from crew_settings where key = 'chief'").fetchone()
+        return str(row[0]).removeprefix("bot:") if row else None
+
+    def set_chief(self, name: str, *, only_if_unset: bool = False) -> None:
+        conflict = "do nothing" if only_if_unset else "do update set value = excluded.value"
+        # The existing value column has INTEGER affinity; the prefix preserves handles such as "001".
+        self.db.execute(f"insert into crew_settings (key, value) values ('chief', ?) on conflict(key) {conflict}",
+                        ("bot:" + name,))
+
+    def coordinators(self) -> list[str] | None:
+        row = self.db.execute("select value from crew_settings where key = 'coordinators'").fetchone()
+        return json.loads(row[0]) if row else None
+
+    def set_coordinators(self, names: list[str], *, only_if_unset: bool = False) -> None:
+        conflict = "do nothing" if only_if_unset else "do update set value = excluded.value"
+        self.db.execute(f"insert into crew_settings (key, value) values ('coordinators', ?) on conflict(key) {conflict}",
+                        (json.dumps(names),))

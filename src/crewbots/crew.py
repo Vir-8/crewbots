@@ -67,7 +67,7 @@ class Bot:
     timeout_s: float | None = None
     mcp: dict[str, McpServer] = field(default_factory=dict)  # once loaded: the crew's servers it names, and its own
     mcp_names: tuple[str, ...] = ()  # the crew's servers (mcp.json) its role card names
-    can_delegate: bool = False  # a coordinator: it adds bots and proposes work for merging, which others can't
+    can_delegate: bool = False  # legacy coordinator flag, used once to initialize crew settings
     skills: tuple[str, ...] = ()  # () or ("all",): every skill, the crew's and global; ("none",); or just these
     budget: Budget | None = None
     network: bool | tuple[str, ...] = False  # web search and pages, and a writer's commands: none, any, or these hosts
@@ -181,7 +181,7 @@ class Crew:
 
     def system_prompt(self, bot: Bot, delegated_by: str | None = None, reviewing: str | None = None,
                       briefing: str | None = None, routine: str | None = None, setting: str | None = None,
-                      recent: str | None = None, state: str | None = None) -> str:
+                      recent: str | None = None, state: str | None = None, coordinator: bool = False, chief: bool = False) -> str:
         living = self.living_parts(bot)
         # What stays the same for every task of this bot comes first and what changes comes last: the model's prompt
         # cache matches from the start, so a bot's sessions share the cached start, and a new note or a task's own
@@ -194,9 +194,8 @@ class Crew:
             "when you open a thread for it or delegate it. Your chat isn't any one project's; it runs in your own "
             f"folder, {_home_relative(self.folder_of(bot))}.\n\n{living['projects'][1]}",
             prompts.text("crew-tools", self.home) + "\n\n" + prompts.text("delegation", self.home)
-            + ("\n\n" + prompts.text("coordinating", self.home) if bot.can_delegate else "")
-            + ("\n\n" + prompts.text("chief-push", self.home)
-               if bot.can_delegate and next((b for b in self.bots.values() if b.can_delegate), None) == bot else ""),
+            + ("\n\n" + prompts.text("coordinating", self.home) if coordinator else "")
+            + ("\n\n" + prompts.text("chief-push", self.home) if chief else ""),
         ]
         if "skills" in living:
             parts.append(

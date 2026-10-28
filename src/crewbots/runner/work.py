@@ -188,7 +188,7 @@ class Work:
     def propose_merge(self, parent_id: str, task_id: str, summary: str) -> Task:
         """A coordinator proposes approved work, merging it locally if the user enabled that."""
         parent = self.store.get_task(parent_id)
-        if parent.bot not in self.crew.bots or not self.crew.bots[parent.bot].can_delegate:
+        if not self.is_coordinator(parent.bot):
             raise NotAllowed("only a coordinator can propose a merge")
         work = self._own_child(parent_id, task_id)
         if not work.worktree_path:
@@ -249,7 +249,7 @@ class Work:
         """Withdraw a proposal without changing its worktree."""
         if parent_id is not None:
             parent = self.store.get_task(parent_id)
-            if parent.bot not in self.crew.bots or not self.crew.bots[parent.bot].can_delegate:
+            if not self.is_coordinator(parent.bot):
                 raise NotAllowed("only a coordinator can withdraw a merge")
             self._own_child(parent_id, task_id)
             by = parent.bot

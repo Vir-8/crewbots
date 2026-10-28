@@ -14,8 +14,9 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
+import yaml
 
-from crewbots import paths
+from crewbots import crew, paths
 from crewbots import service as svc
 
 STALE_AFTER = timedelta(days=14)  # a finished task's worktree left this long is probably forgotten
@@ -35,7 +36,29 @@ def run(home: Path) -> list[Finding]:
         asked = [pool.submit(f) for f in (_claude, _codex, lambda: _daemon(home), _service, lambda: _database(home),
                                           lambda: _disk(home))]
         found = [finding for future in asked for finding in future.result()]
-    return found + _worktrees(home) + _log()
+    return found + _chief(home) + _worktrees(home) + _log()
+
+
+def _chief(home: Path) -> list[Finding]:
+    db = home / "crewbots.db"
+    if not db.exists():
+        return []
+    try:
+        with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as conn:
+            row = conn.execute("select value from crew_settings where key = 'chief'").fetchone()
+    except sqlite3.Error:
+        return []  # the database check reports errors; old crews migrate on daemon start
+    if not row:
+        return []
+    name = str(row[0]).removeprefix("bot:")
+    for path in (home / "bots").glob("*.md"):
+        try:
+            if crew.parse_card(path.read_text(), path.stem, path).name == name:
+                return []
+        except (OSError, ValueError, yaml.YAMLError):
+            continue
+    return [Finding(False, f"Chief: configured bot {name!r} is missing; chief-only actions are disabled",
+                    "Restore its role card or choose an existing bot with PUT /v1/crew/chief.")]
 
 
 def _cli(*argv: str) -> str | None:

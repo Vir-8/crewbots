@@ -61,8 +61,10 @@ class Sessions:
         current = self._sessions.get(task.id)
         grants = tuple(g["id"] for g in self.store.grants(task.id))
         deny_read = tuple(self._state_denials(bot.name))
+        coordinator = self.is_coordinator(bot.name)
+        chief = self.is_chief(bot.name)
         if (current and current.session.alive and current.cwd == cwd and current.grants == grants
-                and current.deny_read == deny_read):
+                and current.deny_read == deny_read and current.coordinator == coordinator and current.chief == chief):
             return current  # one that opened before the user allowed something opens again, with it
         if current:
             await self._close_session(task.id)
@@ -79,7 +81,7 @@ class Sessions:
                                                                   "running this turn on its own"})
             return None
         opened = OpenSession(session=session, token=token, cwd=cwd, last_used=asyncio.get_running_loop().time(),
-                             grants=grants, deny_read=deny_read)
+                             grants=grants, deny_read=deny_read, coordinator=coordinator, chief=chief)
         self._sessions[task.id] = opened
         return opened
 
@@ -147,6 +149,11 @@ class Sessions:
         except Exception:
             logging.getLogger(__name__).exception("Could not prepare instruction updates for %s", bot.name)
             return prompt, None
+        authority = prompts.text("coordinating", self.crew.home) if self.is_coordinator(bot.name) else (
+            "You are not a configured coordinator. Coordinator-only tools belong to the configured coordinators.")
+        authority += "\n\n" + (prompts.text("chief-push", self.crew.home) if self.is_chief(bot.name) else
+                                  "You are not the configured chief. Chief-only tools belong to the configured chief.")
+        living["chief-role"] = ("Coordinator and chief permissions", authority)
         if task.kind == "seat" and (setting := self._setting(task)):
             living["room-setting"] = ("Group chat setting", setting)
         seen = self.store.primed(task.id) if task.session_id else None
@@ -157,7 +164,7 @@ class Sessions:
             now["working-state"] = seen["working-state"]
         if seen is None:
             if task.session_id:
-                keys = [key for key in ("lately", "working-state", "room-setting") if key in living]
+                keys = [key for key in ("lately", "working-state", "room-setting", "chief-role") if key in living]
                 updates = "\n\n".join(f"## {living[key][0]}\n\n{living[key][1]}" for key in keys)
                 return prompts.text("crew-updates", self.crew.home, updates=updates, message=prompt), now
             return prompt, now  # a new session starts from these (or one from before they were kept: from now on)

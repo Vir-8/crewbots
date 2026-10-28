@@ -41,6 +41,22 @@ async def review_round(crew, parent, work, verdict):
     return review
 
 
+@pytest.mark.parametrize("coordinator", ["chief", "eng-lead"])
+async def test_coordinators_propose_only_reviewed_work_and_withdraw(store, tmp_path, coordinator):
+    crew = ScriptedCrew(store, tmp_path, bot("chief", can_delegate=True), bot("eng-lead", can_delegate=True),
+                        bot("engineer"), bot("reviewer"))
+    parent = store.create_task(coordinator, "lead", status=Status.IDLE)
+    work = store.create_task("engineer", "build", parent_id=parent.id, created_by=coordinator)
+    (tmp_path / "wt").mkdir()
+    store.update_task(work.id, status=Status.IDLE, turns=1, worktree_path=str(tmp_path / "wt"))
+    with pytest.raises(NotAllowed, match="not approved"):
+        crew.runner.propose_merge(parent.id, work.id, "Ready")
+    await review_round(crew, parent, work, Verdict.PASS)
+    assert crew.runner.propose_merge(parent.id, work.id, "Ready").merge_state == "proposed"
+    assert crew.runner.withdraw_merge(work.id, "Revising", parent_id=parent.id).merge_state is None
+    assert crew.runner.next_check(parent.id, 10, "follow up")
+
+
 def git(repo, *args):
     return subprocess.run([paths.git(), *args], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
 

@@ -39,6 +39,8 @@ class OpenSession:
     last_used: float
     grants: tuple[int, ...] = ()  # what the user had allowed its task when it opened (runner/permissions.py)
     deny_read: tuple[Path, ...] = ()
+    coordinator: bool = False  # authority and tool catalog when the session opened
+    chief: bool = False
 
 
 class Bus:

@@ -3,6 +3,7 @@
 import asyncio
 import dataclasses
 
+import httpx
 import pytest
 from fakes import bot, make_crew, wait_until
 
@@ -240,6 +241,122 @@ class InProcessBackend(SessionBackend):
         session = await super().open(spec)
         session.interruptible = True
         return session
+
+
+@pytest.mark.parametrize("in_process", [False, True], ids=["mcp", "in-process"])
+async def test_chief_change_refreshes_open_sessions_and_catalogs(store, tmp_path, in_process):
+    from crewbots.api import create_app
+    from crewbots.crew_tools import SPECS, ToolRefused
+
+    backend = InProcessBackend() if in_process else SessionBackend()
+    runner, _ = make(store, tmp_path, backend, bot("chief", can_delegate=True), bot("engineer"))
+    chief = runner.say("chief", "first")
+    engineer = runner.say("engineer", "first")
+    await wait_until(lambda: len(backend.opened) == 2 and all(settled(store, runner, t.id)() for t in (chief, engineer)))
+    original = {s.spec.crew.task_id if in_process else
+                runner.task_for_token(s.spec.mcp_servers[MCP_SERVER_NAME].env["CREWBOTS_TOKEN"]).id: s
+                for s in backend.opened}
+    assert "`add_bot(" in original[chief.id].spec.system_prompt
+    assert "`add_bot(" not in original[engineer.id].spec.system_prompt
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(runner, "admin", 8765)),
+                                 base_url="http://127.0.0.1:8765/v1") as client:
+        response = await client.put("/crew/chief", headers={"Authorization": "Bearer admin"}, json={"chief": "engineer"})
+    assert response.status_code == 200
+    assert all(session.closed for session in original.values())
+
+    runner.send(chief.id, "second")
+    runner.send(engineer.id, "second")
+    await wait_until(lambda: len(backend.opened) == 4 and all(settled(store, runner, t.id)() for t in (chief, engineer)))
+    fresh = {s.spec.crew.task_id if in_process else
+             runner.task_for_token(s.spec.mcp_servers[MCP_SERVER_NAME].env["CREWBOTS_TOKEN"]).id: s
+             for s in backend.opened[2:]}
+    assert "`add_bot(" not in fresh[chief.id].spec.system_prompt
+    assert "`add_bot(" in fresh[engineer.id].spec.system_prompt
+    if in_process:
+        old_tools, new_tools = fresh[chief.id].spec.crew, fresh[engineer.id].spec.crew
+        assert "propose_merge" in {t.name for t in old_tools.definitions()}
+        assert {"add_bot", "propose_merge"} <= {t.name for t in new_tools.definitions()}
+        if "propose_push" in SPECS:  # Push lands in a parallel branch
+            assert "propose_push" not in {t.name for t in old_tools.definitions()}
+            assert "propose_push" in {t.name for t in new_tools.definitions()}
+        with pytest.raises(ToolRefused, match="not one"):
+            await old_tools.call("add_bot", {})
+        with pytest.raises(ToolRefused, match="needs"):
+            await new_tools.call("add_bot", {})
+    else:
+        assert fresh[chief.id].spec.mcp_servers[MCP_SERVER_NAME].env["CREWBOTS_DELEGATE"] == "1"
+        assert fresh[engineer.id].spec.mcp_servers[MCP_SERVER_NAME].env["CREWBOTS_DELEGATE"] == "1"
+    await runner.shutdown()
+
+
+@pytest.mark.parametrize("in_process", [False, True], ids=["mcp", "in-process"])
+async def test_chief_change_lets_active_turns_finish_then_refreshes(store, tmp_path, in_process):
+    from crewbots.crew_tools import ToolRefused
+
+    backend = InProcessBackend() if in_process else SessionBackend()
+    backend.gate = asyncio.Event()
+    runner, _ = make(store, tmp_path, backend, bot("chief", can_delegate=True), bot("engineer"))
+    chief = runner.say("chief", "first")
+    engineer = runner.say("engineer", "first")
+    await wait_until(lambda: len(backend.opened) == 2 and all(s.turns for s in backend.opened))
+    original = list(backend.opened)
+    await runner.set_coordinator("engineer")
+    assert all(not s.closed for s in original)
+    if in_process:
+        former = next(s.spec.crew for s in original if s.spec.crew.task_id == chief.id)
+        with pytest.raises(ToolRefused, match="not one"):
+            await former.call("add_bot", {})
+    backend.gate.set()
+    await wait_until(lambda: all(settled(store, runner, t.id)() for t in (chief, engineer)))
+    assert all(s.closed for s in original)
+    runner.send(chief.id, "second")
+    runner.send(engineer.id, "second")
+    await wait_until(lambda: len(backend.opened) == 4 and all(settled(store, runner, t.id)() for t in (chief, engineer)))
+    assert all(s.spec.resume_session_id is not None for s in backend.opened[2:])
+    updates = [s.turns[0] for s in backend.opened[2:]]
+    assert any("You are not the configured chief" in turn for turn in updates)
+    assert any("`add_bot(" in turn for turn in updates)
+    await runner.shutdown()
+
+
+@pytest.mark.parametrize("in_process", [False, True], ids=["mcp", "in-process"])
+async def test_coordinator_change_refreshes_idle_and_active_sessions(store, tmp_path, in_process):
+    from crewbots.crew_tools import ToolRefused
+
+    backend = InProcessBackend() if in_process else SessionBackend()
+    runner, _ = make(store, tmp_path, backend, bot("chief", can_delegate=True), bot("engineer"))
+    task = runner.say("engineer", "first")
+    await wait_until(lambda: len(backend.opened) == 1 and settled(store, runner, task.id)())
+    first = backend.opened[0]
+    await runner.set_coordinators(["engineer"])
+    assert first.closed
+    backend.gate = asyncio.Event()
+    runner.send(task.id, "second")
+    await wait_until(lambda: len(backend.opened) == 2 and backend.opened[1].turns)
+    active = backend.opened[1]
+    if in_process:
+        assert "propose_merge" in {t.name for t in active.spec.crew.definitions()}
+        assert "add_bot" not in {t.name for t in active.spec.crew.definitions()}
+    else:
+        env = active.spec.mcp_servers[MCP_SERVER_NAME].env
+        assert env["CREWBOTS_DELEGATE"] == "1" and env["CREWBOTS_CHIEF"] == "0"
+    await runner.set_coordinators([])
+    assert not active.closed
+    if in_process:
+        with pytest.raises(ToolRefused):
+            await active.spec.crew.call("next_check", {"minutes": 10, "why": "work"})
+    backend.gate.set()
+    await wait_until(settled(store, runner, task.id))
+    assert active.closed
+    runner.send(task.id, "third")
+    await wait_until(lambda: len(backend.opened) == 3 and settled(store, runner, task.id)())
+    fresh = backend.opened[2].spec
+    if in_process:
+        assert "propose_merge" not in {t.name for t in fresh.crew.definitions()}
+    else:
+        assert fresh.mcp_servers[MCP_SERVER_NAME].env["CREWBOTS_DELEGATE"] == "0"
+    await runner.shutdown()
 
 
 async def test_an_in_process_backend_gets_the_crew_tools_as_python_not_a_server(store, tmp_path):

@@ -26,7 +26,10 @@ class Rooms:
             if room["crew"]:
                 return room
         bots = list(self.crew.bots.values())
-        lead = next((b.name for b in bots if b.can_delegate), bots[0].name if bots else "")
+        chief = self.coordinator()
+        if chief is None:
+            raise NotAllowed("the configured chief is missing; restore it or change the crew's chief setting")
+        lead = chief.name
         return self.create_room(CREW_ROOM, [b.name for b in bots], lead, crew=True)
 
     def create_room(self, title: str, members: list[str], lead: str | None = None, crew: bool = False) -> dict[str, Any]:

@@ -116,7 +116,7 @@ async def test_it_looks_again_when_it_asked_to(store, tmp_path):
     await wait_until(lambda: not crew.runner.running())
     assert "You asked to look again now: whether the build went green." in prompted(store, chat.id)[0]
     assert store.wake_state("chief")["next_at"] is None  # until it asks again
-    with pytest.raises(ToolRefused, match="coordinator"):
+    with pytest.raises(ToolRefused, match="crew tools"):
         await CrewTools(crew.runner, crew.runner.chat("engineer").id, can_delegate=True).call(
             "next_check", {"minutes": 30, "why": "x"})
 

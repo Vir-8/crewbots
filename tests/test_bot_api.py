@@ -121,6 +121,58 @@ def test_only_user_can_change_automatic_merge_setting(crew_app):
     assert client.get("/crew/merge-settings", headers=as_bot(ADMIN)).json() == {"auto_merge": True}
 
 
+def test_coordinator_setting_and_live_server_authorization(crew_app):
+    client, backend, _ = crew_app
+    _, token = start(client, backend, "engineer")
+    headers = as_bot(ADMIN)
+    assert client.put("/crew/coordinators", headers=as_bot(token), json={"coordinators": ["engineer"]}).status_code == 403
+    assert client.put("/crew/coordinators", headers=headers, json={"coordinators": ["missing"]}).status_code == 422
+    assert client.put("/crew/coordinators", headers=headers, json={"coordinators": ["engineer", "engineer"]}).status_code == 422
+    assert client.put("/crew/coordinators", headers=headers, json={"coordinators": ["engineer"]}).json() == {
+        "coordinators": ["engineer"]}
+    assert client.post("/bot/next_check", headers=as_bot(token), json={"minutes": 10, "why": "work"}).status_code == 200
+    assert client.post("/bot/add_bot", headers=as_bot(token), json={"name": "new", "title": "New",
+        "description": "New", "instructions": "New"}).status_code == 403
+    assert client.post("/bot/propose_push", headers=as_bot(token),
+                       json={"project": "demo", "summary": "Ready"}).status_code == 403
+    assert client.put("/crew/coordinators", headers=headers, json={"coordinators": []}).status_code == 200
+    assert client.post("/bot/next_check", headers=as_bot(token), json={"minutes": 10, "why": "work"}).status_code == 403
+
+
+def test_chief_setting_is_user_only_and_immediately_revokes_old_chief(crew_app):
+    client, backend, store = crew_app
+    chief_id, token = start(client, backend, "chief")
+    store.set_coordinators([])
+    work = store.create_task("engineer", "work", parent_id=chief_id, created_by="chief")
+    store.update_task(work.id, merge_state="proposed")
+    assert client.put("/crew/chief", headers=as_bot(token), json={"chief": "engineer"}).status_code == 403
+    assert client.put("/crew/chief", headers=as_bot(ADMIN), json={"chief": "missing"}).status_code == 422
+    assert client.put("/crew/chief", headers=as_bot(ADMIN), json={"chief": "engineer"}).json() == {
+        "chief": "engineer", "available": True}
+    refused = client.post("/bot/withdraw_merge", headers=as_bot(token), json={"task_id": work.id, "reason": "old"})
+    assert refused.status_code == 403
+    engineer_id, engineer_token = start(client, backend, "engineer")
+    new_work = store.create_task("chief", "work", parent_id=engineer_id, created_by="engineer")
+    store.update_task(new_work.id, merge_state="proposed")
+    result = client.post("/bot/withdraw_merge", headers=as_bot(engineer_token),
+                         json={"task_id": new_work.id, "reason": "old"})
+    assert result.status_code == 200
+
+
+def test_missing_chief_disables_existing_chief_session(crew_app):
+    client, backend, store = crew_app
+    chief_id, token = start(client, backend, "chief")
+    store.set_coordinators([])
+    work = store.create_task("engineer", "work", parent_id=chief_id, created_by="chief")
+    store.update_task(work.id, merge_state="proposed")
+    store.set_chief("gone")
+    assert client.get("/crew/chief", headers=as_bot(ADMIN)).json() == {"chief": "gone", "available": False}
+    assert client.get("/chats", headers=as_bot(ADMIN)).status_code == 200
+    result = client.post("/bot/withdraw_merge", headers=as_bot(token), json={"task_id": work.id, "reason": "old"})
+    assert result.status_code == 403
+    assert store.get_task(work.id).merge_state == "proposed"
+
+
 def test_worker_cannot_call_propose_merge_directly(crew_app):
     client, backend, _ = crew_app
     _, token = start(client, backend, "engineer")
@@ -203,8 +255,8 @@ async def test_workers_delegate_but_only_coordinators_add_bots_and_propose_merge
                       "propose_routine", "share", "write_page", "edit_page", "set_name",
                       "ask_permission", "browser_open", "browser_screenshot", "browser_click",
                       "browser_type", "browser_evaluate", "browser_console"}
-    assert coordinator == worker | {"add_bot", "propose_merge", "withdraw_merge", "next_check"}
-    assert chief == coordinator | {"propose_push"}
+    assert coordinator == worker | {"propose_merge", "withdraw_merge", "next_check"}
+    assert chief == coordinator | {"add_bot", "propose_push"}
 
 
 def test_a_verdict_from_a_task_that_is_not_a_review_is_refused_with_a_reason(crew_app):

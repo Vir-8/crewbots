@@ -121,6 +121,10 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         self.browser = Browser()
         self.store = store
         self.crew = crew
+        # Preserve the old selection once, before any bots can be added or reordered.
+        legacy = next((b for b in crew.bots.values() if b.can_delegate), None)
+        store.set_chief(legacy.name if legacy else "", only_if_unset=True)
+        store.set_coordinators([b.name for b in crew.bots.values() if b.can_delegate], only_if_unset=True)
         self.backends = dict(backends) if backends else {name: cls() for name, cls in BACKENDS.items()}
         self.worktree_root = worktree_root
         self.max_children = max_children
@@ -546,7 +550,9 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
                 await self.browser.close_task(task_id)
                 if open_session is None:
                     self._tokens.pop(token, None)
-                elif open_session.session.alive and not stalled:
+                elif (open_session.session.alive and not stalled
+                      and open_session.coordinator == self.is_coordinator(task.bot)
+                      and open_session.chief == self.is_chief(task.bot)):
                     open_session.last_used = asyncio.get_running_loop().time()
                 else:
                     await self._close_session(task_id)  # it died, stalled, or was stopped mid-turn: the next turn resumes
@@ -594,6 +600,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
             on_prompt_sent=(lambda: self._room_prompt_sent(task.id)) if task.kind == "seat" else None,
             access=Access.READ_ONLY if task.kind == "ask" else bot.access,  # a question is answered, not worked on
             system_prompt=self.crew.system_prompt(bot, delegated_by=task.created_by if task.parent_id else None,
+                                                  coordinator=self.is_coordinator(bot.name), chief=self.is_chief(bot.name),
                                                   reviewing=self._review_brief(task), briefing=task.briefing,
                                                   routine=task.routine, setting=self._setting(task),
                                                   recent=self._recent(bot.name),
@@ -604,7 +611,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
             mcp_servers={**({} if proactive else bot.mcp),
                          **({} if in_process else self._crew_tools(token, bot))},
             proactive=proactive,
-            crew=CrewTools(self, task.id, bot.can_delegate) if in_process else None,
+            crew=CrewTools(self, task.id, self.is_coordinator(bot.name)) if in_process else None,
             deny_read=self._state_denials(bot.name),
             read_dirs=[*self.crew.skill_dirs, *[d for d in (self.crew.memory.root, self.crew.home / attachments_module.FOLDER,
                                                             self.crew.pages_of(bot))
@@ -637,8 +644,9 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         if not self.api_url:
             return {}
         command, *args = self.mcp_command
-        env = {"CREWBOTS_URL": self.api_url, "CREWBOTS_TOKEN": token, "CREWBOTS_DELEGATE": "1" if bot.can_delegate else "0",
-               "CREWBOTS_CHIEF": "1" if bot.can_delegate and self.coordinator() == bot else "0",
+        env = {"CREWBOTS_URL": self.api_url, "CREWBOTS_TOKEN": token,
+               "CREWBOTS_DELEGATE": "1" if self.is_coordinator(bot.name) else "0",
+               "CREWBOTS_CHIEF": "1" if self.is_chief(bot.name) else "0",
                "CREWBOTS_TOOLS": tools, "CREWBOTS_REVIEW": flags,
                "CREWBOTS_HOME": str(self.crew.home)}  # for the crew's own tool descriptions (prompts/tools/)
         return {MCP_SERVER_NAME: McpServer(command=command, args=list(args), env=env)}

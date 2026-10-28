@@ -49,8 +49,8 @@ class Delegation:
             raise UnknownBot(f"no bot named {bot!r}; the crew is {sorted(self.crew.bots)}")
         if bot == parent.bot:
             raise NotAllowed("that's you: to work on it yourself, open a thread with start_thread")
-        if self.crew.bots[bot].can_delegate:
-            raise NotAllowed(f"{bot} is a coordinator; delegate to the bot that will do the work")
+        if self.is_chief(bot):
+            raise NotAllowed(f"{bot} is the chief; delegate to the bot that will do the work")
         chain = self._chain(parent)
         if bot in {t.bot for t in chain}:
             way = " → ".join(dict.fromkeys(t.bot for t in reversed(chain)))
@@ -165,12 +165,12 @@ class Delegation:
         return self.send(task_id, text, sender=sender)
 
     def add_bot(self, task_id: str, fields: dict[str, Any]) -> Bot:
-        """A coordinator adds a bot, when the user asks it to, with whatever it gives it: either access short of full
+        """The chief adds a bot, when the user asks it to, with whatever it gives it: either access short of full
         (no sandbox is the user's call), any of the crew's MCP servers (all of them unless it names some), delegation,
-        and network unless the coordinator has none itself. Nothing lets a bot remove or change one: that's the user's."""
+        and network unless the chief has none itself. Nothing lets a bot remove or change one: that's the user's."""
         maker = self.bot_for(self.store.get_task(task_id).bot)
-        if maker is None or not maker.can_delegate:
-            raise NotAllowed("only a bot that coordinates the crew can add bots")
+        if maker is None or not self.is_chief(maker.name):
+            raise NotAllowed("only the chief can add bots")
         access = Access(fields.get("access") or Access.READ_ONLY)
         if access is Access.FULL:
             raise NotAllowed("full access, with no sandbox, is the user's to give, in the app")

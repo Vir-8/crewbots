@@ -192,20 +192,21 @@ def build_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = F
         result = call("POST", "/bot/message", {"task_id": task_id, "text": text})
         return f"Sent to {result['id']} ({result['status']})."
 
-    if not can_delegate:  # adding bots and proposing merges are a coordinator's
+    if not can_delegate:  # merge proposals are a coordinator's
         return server
 
-    @server.tool(description=describe("add_bot"))
-    def add_bot(name: str, title: str, description: str, instructions: str, display_name: str | None = None,
-                backend: str | None = None, model: str | None = None, effort: str | None = None,
-                access: str | None = None, network: bool | None = None, can_delegate: bool = False,
-                mcp: list[str] | None = None, skills: list[str] | None = None) -> str:
-        fields = {"name": name, "title": title, "description": description, "instructions": instructions,
-                  "display_name": display_name, "backend": backend, "model": model, "effort": effort, "access": access,
-                  "network": network, "can_delegate": can_delegate, "mcp": mcp, "skills": skills}
-        bot = call("POST", "/bot/add_bot", {k: v for k, v in fields.items() if v is not None})
-        return (f"Added {bot['label']} (@{bot['name']}), {bot['title']}, to the crew. It's in the roster now: "
-                "@mention it in a group chat to bring it in.")
+    if is_chief:
+        @server.tool(description=describe("add_bot"))
+        def add_bot(name: str, title: str, description: str, instructions: str, display_name: str | None = None,
+                    backend: str | None = None, model: str | None = None, effort: str | None = None,
+                    access: str | None = None, network: bool | None = None, can_delegate: bool = False,
+                    mcp: list[str] | None = None, skills: list[str] | None = None) -> str:
+            fields = {"name": name, "title": title, "description": description, "instructions": instructions,
+                      "display_name": display_name, "backend": backend, "model": model, "effort": effort, "access": access,
+                      "network": network, "can_delegate": can_delegate, "mcp": mcp, "skills": skills}
+            bot = call("POST", "/bot/add_bot", {k: v for k, v in fields.items() if v is not None})
+            return (f"Added {bot['label']} (@{bot['name']}), {bot['title']}, to the crew. It's in the roster now: "
+                    "@mention it in a group chat to bring it in.")
 
     if is_chief:
         @server.tool(description=describe("propose_push"))

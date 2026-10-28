@@ -7,6 +7,7 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
 ## How it works
 
 - **A crew is a folder.** `bots/` has one role card per bot, `team/` has the files every bot reads (mission, standards, protocol, rules), and `skills/` has the skills bots can use.
+- **The chief** is stored in the crew's settings, independent of role-card order. Existing crews retain their current chief when the daemon first starts with this version. To change it, the user can call `PUT /v1/crew/chief` with `{"chief": "bot-handle"}`. If that bot is missing, chief-only actions stop and `crewbots doctor` reports it. The chief is always a coordinator; other coordinators are stored once from legacy `can_delegate` role cards and can be changed by the user with `PUT /v1/crew/coordinators` and `{"coordinators": ["bot-handle"]}`.
 - **A role card** is Markdown with frontmatter:
   - The frontmatter is what the harness enforces: backend, model, access level, workspace, and the bot's own MCP servers.
   - The body is the card itself: its mission, what it owns, what it does *not* own, and what done means.
@@ -22,8 +23,7 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
   - A task by a writing bot in a git repo gets its own worktree, on the branch `crewbots/<task id>`. A writing bot with no folder of its own works in `<crew>/work/<bot>`, never in the crew's folder, whose role cards, rules and routines are yours.
   - Every event is stored, so you can read the whole transcript later.
 - **Delegation.** Any bot hands a piece of work to the teammate best suited to it through crewbots' own MCP tools:
-  - `delegate`, `tasks` and `message` are every bot's, as are `handoff` and `escalate`. A coordinator
-    (`can_delegate: true`, the chief in the starter crew) also adds bots (`add_bot`) and proposes work for merging.
+  - `delegate`, `tasks` and `message` are every bot's, as are `handoff` and `escalate`. Coordinators propose and withdraw merges and schedule their next check; the chief also adds bots (`add_bot`) and proposes pushes.
   - Delegated tasks run in parallel, each as its own bot with its own access. The delegating bot ends its turn instead
     of waiting, and when none of its tasks are still running, their handoffs and results arrive as its next message.
   - `ask(bot, question)` asks a teammate a quick question instead: the teammate answers read-only, with no worktree,
@@ -31,7 +31,7 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
     Answer: …".
   - An escalation reaches it at once.
   - The harness enforces the rules:
-    - never to yourself, nor to a coordinator, nor back to a bot already in the chain (a circle)
+    - never to yourself, nor to the chief, nor back to a bot already in the chain (a circle)
     - a chain at most three delegations deep (`crewbots serve --max-delegation-depth` changes it)
     - at most four unfinished delegated tasks per bot at once, and twelve from one task
     - no delegating past a budget or a reached plan limit, the delegating bot's or the teammate's

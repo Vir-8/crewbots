@@ -28,8 +28,32 @@ class Welcome:
     """The part of Runner that starts a crew off."""
 
     def coordinator(self) -> Bot | None:
-        bots = self.crew.bots.values()
-        return next((b for b in bots if b.can_delegate), next(iter(bots), None))
+        return self.crew.bots.get(self.store.chief())
+
+    def is_chief(self, name: str) -> bool:
+        chief = self.coordinator()
+        return chief is not None and chief.name == name
+
+    def is_coordinator(self, name: str) -> bool:
+        return name in self.crew.bots and (self.is_chief(name) or name in (self.store.coordinators() or []))
+
+    async def _refresh_authority_sessions(self) -> None:
+        for task_id, opened in list(self._sessions.items()):
+            task = self.store.get_task(task_id)
+            if task_id not in self._runs and (opened.coordinator != self.is_coordinator(task.bot)
+                                               or opened.chief != self.is_chief(task.bot)):
+                await self._close_session(task_id)
+
+    async def set_coordinator(self, name: str) -> None:
+        """Refresh idle sessions on a chief change; active turns finish before their sessions close."""
+        if self.store.chief() != name:
+            self.store.set_chief(name)
+            await self._refresh_authority_sessions()
+
+    async def set_coordinators(self, names: list[str]) -> None:
+        if self.store.coordinators() != names:
+            self.store.set_coordinators(names)
+            await self._refresh_authority_sessions()
 
     def started(self) -> bool:
         return bool(self.crew.projects) or self.store.routine_state(STARTED) is not None

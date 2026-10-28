@@ -166,7 +166,7 @@ async def test_a_reviewer_reads_the_worktree_of_the_work_it_reviews(store, tmp_p
     assert crew.specs_for("reviewer")[0].cwd == tmp_path / "wts" / work.worktree_path.split("/wts/")[1]
 
 
-async def test_any_bot_delegates_but_not_to_itself_or_a_coordinator(store, tmp_path):
+async def test_any_bot_delegates_but_not_to_itself_or_the_chief(store, tmp_path):
     crew = ScriptedCrew(store, tmp_path, chief(), bot("deputy", can_delegate=True), bot("engineer"), bot("writer"),
                         gate=asyncio.Event())
     worker_task = store.create_task("engineer", "x")
@@ -176,8 +176,9 @@ async def test_any_bot_delegates_but_not_to_itself_or_a_coordinator(store, tmp_p
     assert child.bot == "writer" and child.created_by == "engineer" and child.parent_id == worker_task.id
     with pytest.raises(NotAllowed, match="that's you"):
         crew.runner.delegate(worker_task.id, "engineer", "do my work")
-    with pytest.raises(NotAllowed, match="is a coordinator"):
-        crew.runner.delegate(chief_task.id, "deputy", "manage this")
+    assert crew.runner.delegate(chief_task.id, "deputy", "manage this").bot == "deputy"
+    with pytest.raises(NotAllowed, match="is the chief"):
+        crew.runner.delegate(worker_task.id, "chief", "manage this")
     await crew.runner.shutdown()
 
 

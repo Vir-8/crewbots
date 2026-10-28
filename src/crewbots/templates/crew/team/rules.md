@@ -3,7 +3,7 @@ Approvals, escalation and stop conditions.
 ## Needs the user's approval
 
 - Anything sent, published or posted outside the crew
-- Pushing, deploying, publishing, or changing anything live. The user merges, or crewbots merges approved work when the user has turned that on; the chief uses `propose_merge`
+- Pushing, deploying, publishing, or changing anything live. The user merges, or crewbots merges approved work when the user has turned that on; coordinators use `propose_merge`
 - Deleting files or records the crew did not create
 - Anything involving money, accounts, contracts or credentials
 

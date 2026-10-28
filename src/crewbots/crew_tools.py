@@ -100,7 +100,7 @@ def describe(name: str, home: Path | None = None) -> str:
 
 def tools_for(can_delegate: bool, home: Path | None = None, *, is_chief: bool = False) -> list[ToolDef]:
     return [ToolDef(name, describe(name, home), spec.schema, spec.coordinator_only) for name, spec in SPECS.items()
-            if (can_delegate or not spec.coordinator_only) and (name != "propose_push" or is_chief)]
+            if (can_delegate or not spec.coordinator_only) and (name not in {"add_bot", "propose_push"} or is_chief)]
 
 
 class ToolRefused(Exception):
@@ -116,9 +116,11 @@ class CrewTools:
         self.can_delegate = can_delegate
 
     def definitions(self) -> list[ToolDef]:
-        chief = self.runner.coordinator() if self.can_delegate else None
-        is_chief = bool(chief and self.runner.store.get_task(self.task_id).bot == chief.name)
-        return tools_for(self.can_delegate, self.runner.crew.home, is_chief=is_chief)
+        if not self.can_delegate:
+            return tools_for(False, self.runner.crew.home)
+        bot = self.runner.store.get_task(self.task_id).bot
+        return tools_for(self.can_delegate and self.runner.is_coordinator(bot), self.runner.crew.home,
+                         is_chief=self.can_delegate and self.runner.is_chief(bot))
 
     async def call(self, name: str, args: dict[str, Any]) -> str | list[dict[str, Any]]:
         """Runs one tool and returns its result for the bot; raises ToolRefused with the reason it can't."""
@@ -132,7 +134,12 @@ class CrewTools:
         from crewbots.store import Verdict
 
         tool = SPECS.get(name)
-        if tool is None or (tool.coordinator_only and not self.can_delegate):
+        bot = self.runner.store.get_task(self.task_id).bot
+        if (tool is None or (tool.coordinator_only and
+                             not (self.can_delegate and self.runner.is_coordinator(bot))) or
+                (name in {"add_bot", "propose_push"} and not (self.can_delegate and self.runner.is_chief(bot)))):
+            if name == "propose_push":
+                raise ToolRefused("Only the chief can propose a push")
             raise ToolRefused(f"{name} is not one of this bot's crew tools")
         missing = [k for k in tool.schema["required"] if args.get(k) in (None, "")]
         if missing:
