@@ -5,7 +5,7 @@ import subprocess
 import pytest
 from fakes import ScriptedCrew, bot, git_repo, wait_until
 
-from crewbots import paths
+from crewbots import paths, worktree
 from crewbots.backends import Access
 from crewbots.events import Done
 from crewbots.runner import MAX_REVIEW_ROUNDS, MergeError, NotAllowed
@@ -194,11 +194,65 @@ async def test_approved_work_is_proposed_and_the_user_merges_it(store, tmp_path)
     assert (repo / "hello.py").read_text().startswith("def hello")
     assert git(repo, "rev-parse", "HEAD") == merged.merged_commit
     message = git(repo, "log", "-1", "--format=%B")
-    assert f"Merge {work.branch}: add hello.py" in message and "reviewer (pass)" in message
+    assert message.startswith("add hello.py\n") and "reviewer (pass)" in message
     assert not tmp_path.joinpath(work.worktree_path).exists()
     assert work.branch not in git(repo, "branch")
     with pytest.raises(MergeError, match="already merged"):
         crew.runner.merge(work.id)
+
+
+@pytest.mark.parametrize("enabled,approved,conflict", [
+    (False, True, False), (True, True, False), (True, False, False), (True, True, True),
+])
+async def test_automatic_merge_is_opt_in_and_preserves_failed_proposals(store, tmp_path, monkeypatch,
+                                                                           enabled, approved, conflict):
+    repo = git_repo(tmp_path / "repo")
+    crew = crew_for(store, tmp_path)
+    parent = store.create_task("chief", "lead", workspace=str(repo), status=Status.IDLE)
+    crew.script["engineer"] = lambda spec, me: (
+        (spec.cwd / "README.md").write_text("bot edit\n"), [Done(final_text="edited")])[1]
+    work = crew.runner.delegate(parent.id, "engineer", "Improve the readme")
+    await wait_until(crew.settled(work.id))
+    if approved:
+        await review_round(crew, parent, work, Verdict.PASS)
+    if conflict:
+        (repo / "README.md").write_text("user edit\n")
+        git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "user edit")
+    head = git(repo, "rev-parse", "HEAD")
+    store.set_auto_merge(enabled)
+    commands = []
+    original = worktree._git
+
+    def recorded(cwd, *args, **kwargs):
+        commands.append(args)
+        return original(cwd, *args, **kwargs)
+
+    monkeypatch.setattr(worktree, "_git", recorded)
+    if not approved:
+        with pytest.raises(NotAllowed, match="not approved"):
+            crew.runner.propose_merge(parent.id, work.id, "Improve readme")
+        assert store.get_task(work.id).merge_state is None
+    elif conflict:
+        with pytest.raises(MergeError, match="(?s)proposal is waiting for the user.*CONFLICT"):
+            crew.runner.propose_merge(parent.id, work.id, "Improve readme")
+        assert store.get_task(work.id).merge_state == "proposed"
+        assert git(repo, "status", "--porcelain") == ""
+        assert (repo / "README.md").read_text() == "user edit\n"
+        assert git(repo, "rev-parse", "HEAD") == head
+        assert not (repo / ".git" / "MERGE_HEAD").exists()
+    else:
+        result = crew.runner.propose_merge(parent.id, work.id, "Improve readme")
+        assert result.merge_state == ("merged" if enabled else "proposed")
+        assert (repo / "README.md").read_text() == ("bot edit\n" if enabled else "hello\n")
+        if enabled:
+            assert git(repo, "log", "-1", "--format=%s") == "Improve the readme"
+            assert git(repo, "log", "-1", "--format=%s", "HEAD^2") == "Improve the readme"
+            assert [e.data["automatic"] for e in store.events(work.id) if e.kind == "merged"] == [True]
+            with pytest.raises(NotAllowed, match="already merged"):
+                crew.runner.propose_merge(parent.id, work.id, "again")
+        else:
+            assert git(repo, "rev-parse", "HEAD") == head
+    assert all("push" not in command for command in commands)
 
 
 def engineer_wrote(crew, store, tmp_path, repo, content="new\n"):
@@ -251,7 +305,7 @@ async def test_a_conflict_is_aborted_and_changes_nothing(store, tmp_path):
     git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "user edit")
     head = git(repo, "rev-parse", "HEAD")
 
-    with pytest.raises(MergeError, match="nothing was changed"):
+    with pytest.raises(MergeError, match=r"(?s)nothing was changed.*CONFLICT.*README\.md"):
         crew.runner.merge(work.id, force=True)
 
     assert git(repo, "rev-parse", "HEAD") == head

@@ -204,8 +204,9 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
 
     @server.tool(description=describe("propose_merge"))
     def propose_merge(task_id: str, summary: str) -> str:
-        call("POST", "/bot/propose_merge", {"task_id": task_id, "summary": summary})
-        return f"Proposed {task_id} to the user for merging."
+        task = call("POST", "/bot/propose_merge", {"task_id": task_id, "summary": summary})
+        return (f"Merged {task_id} locally as {task['merged_commit']}." if task["merge_state"] == "merged"
+                else f"Proposed {task_id} to the user for merging.")
 
 
     return server

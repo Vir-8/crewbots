@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Crew } from "../state";
+import { Markdown } from "./bits";
 import { Marked } from "./Find";
 import { Icon } from "./Icon";
 import type { Block } from "./threadBlocks";
@@ -9,7 +10,7 @@ type Asked = Extract<Block, { kind: "ask" }>;
 /** A bot's question, waiting on your answer. With choices, a button for each (boxes to tick, when several may be
  * picked) and Other, to answer in your own words. Answering sends your message, as if you'd typed it; once answered,
  * what you picked stays marked. */
-export function Question({ crew, block }: { crew: Crew; block: Asked }) {
+export function Question({ crew, block, onOpen }: { crew: Crew; block: Asked; onOpen: (id: string) => void }) {
   const choices = block.choices ?? [];
   const [picked, setPicked] = useState<string[]>([]);
   const [other, setOther] = useState<string | null>(null); // your own words, while answering with Other
@@ -31,7 +32,7 @@ export function Question({ crew, block }: { crew: Crew; block: Asked }) {
         <Icon name={answered ? "check" : "question"} size={15} />
         {answered ? "Answered" : "Needs your answer"}
       </div>
-      <div className="ask-text"><Marked text={block.question} /></div>
+      <div className="ask-text"><Markdown text={block.question} onSelect={onOpen} /></div>
       {choices.length > 0 && (
         <div className="ask-choices">
           {choices.map((c) => (
@@ -44,8 +45,8 @@ export function Question({ crew, block }: { crew: Crew; block: Asked }) {
             >
               <span className={`ask-mark ${block.multiple ? "box" : ""}`}>{chosen.has(c.label) && <Icon name="check" size={11} />}</span>
               <span className="ask-choice-text">
-                <span className="ask-label">{c.label}</span>
-                {c.description && <span className="ask-description">{c.description}</span>}
+                <span className="ask-label"><Marked text={c.label} /></span>
+                {c.description && <span className="ask-description"><Marked text={c.description} /></span>}
               </span>
             </button>
           ))}

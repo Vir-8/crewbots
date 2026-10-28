@@ -7,6 +7,10 @@ from pydantic import BaseModel
 RESTART_TIMEOUT_S = 20 * 60.0  # how long a restart waits for running turns; then they're cut off and carried on
 
 
+class MergeSettings(BaseModel):
+    auto_merge: bool
+
+
 
 class PlanLimitOut(BaseModel):
     plan: str

@@ -92,6 +92,31 @@
   font-size: 14px;
 }
 
+.ask .md > :first-child {
+  margin-top: 0;
+}
+
+.ask .md p,
+.ask .md ul,
+.ask .md ol {
+  margin-bottom: 6px;
+}
+
+.ask .md pre,
+.ask .md code {
+  background: var(--bg);
+}
+
+.ask .md pre {
+  margin: 6px 0;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.ask .md > :last-child {
+  margin-bottom: 0;
+}
+
 /* A question's choices: one a row, picked with a click (or ticked, when several may be), and Other. */
 .ask-choices {
   display: flex;

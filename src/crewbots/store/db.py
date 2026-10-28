@@ -272,6 +272,14 @@ create index if not exists permissions_by_task on permissions(task_id);
 """
 SCHEMA += PERMISSIONS
 
+SETTINGS = """
+create table if not exists crew_settings (
+    key text primary key,
+    value integer not null
+);
+"""
+SCHEMA += SETTINGS
+
 # Full-text search over what the crew said and decided: the `recall` tool. Kept in step with events as they're added.
 # `search` matches words (stemmed); `trigrams`, the same rows, matches any three or more characters, for ids, paths
 # and parts of code names (migration 6).
@@ -411,6 +419,7 @@ MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] =
     ("an always-on bot's looks around", lambda db, _: db.executescript(WAKES)),
     ("memories brought in from Claude Code and Codex", lambda db, _: db.executescript(BROUGHT_IN)),
     ("what bots ask the user to allow", lambda db, _: db.executescript(PERMISSIONS)),
+    ("crew settings", lambda db, _: db.executescript(SETTINGS)),
 ]
 
 

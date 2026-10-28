@@ -37,7 +37,7 @@ When the reviews arrive, merge findings that describe the same problem, and note
 ## 4. Act
 
 - **Act on findings exist:** send them back to the owner with `message`, as one list. When the fix comes back, run a new round: the same reviewers, with `review_of` set again. crewbots counts the rounds and stops at three. Then report the best version and what is still open to the user.
-- **All reviewers passed the current version:** call `propose_merge(task_id, summary)`. The summary covers what changed, how it was verified, and anything in Consider. The user decides whether to merge.
+- **All reviewers passed the current version:** call `propose_merge(task_id, summary)`. The summary covers what changed, how it was verified, and anything in Consider. The user merges, or crewbots merges approved work when the user has turned that on.
 - **A reviewer failed it only on findings you dismissed:** say why in your report to the user, and don't propose the merge yourself. The user can still merge it.
 
 ## Report

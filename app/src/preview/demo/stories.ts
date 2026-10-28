@@ -129,7 +129,7 @@ export const resetsAt = Math.floor(Date.now() / 1000) + 2 * 3600;
   tool(g.id, "Read", { file_path: "package.json" });
   say(g.id, "The upgrade itself is mechanical, but `legacy-charts` uses APIs React 19 removed, and its last release was in 2023.");
   emit(g.id, "escalation", {
-    question: "legacy-charts doesn't work with React 19 and is unmaintained. Which way should I go?",
+    question: "`legacy-charts` doesn't work with React 19 and is unmaintained.\n\nThe failing check is:\n\n```sh\nnpm test -- LegacyChart\n```\n\nWhich way should I go?",
     choices: [
       { label: "Replace it with recharts", description: "About 6 chart components to port, then the upgrade" },
       { label: "Stay on React 18 for now", description: "Upgrade once the charts have been replaced" },

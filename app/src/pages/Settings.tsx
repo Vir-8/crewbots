@@ -10,12 +10,15 @@ import type { Reviewer } from "../types";
 export function Settings({ crew }: { crew: Crew }) {
   const [login, setLogin] = useState<boolean | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [autoMerge, setAutoMerge] = useState<boolean | null>(null);
+  const [mergeError, setMergeError] = useState<string | null>(null);
   const [repos, setRepos] = useState<Record<string, string>>({});
   const [repo, setRepo] = useState("");
   const [repoError, setRepoError] = useState<string | null>(null);
   useEffect(() => {
     bridge.startAtLogin().then(setLogin, () => setLogin(null));
     api.reviewRepos().then(setRepos, () => setRepos({}));
+    api.mergeSettings().then((s) => setAutoMerge(s.auto_merge), (e) => setMergeError(String(e)));
   }, []);
 
   const problems = [
@@ -75,6 +78,18 @@ export function Settings({ crew }: { crew: Crew }) {
                 }
               }}
             />
+          </div>
+          <div className="list-row">
+            <span className="list-text">
+              <span className="list-title">Merge approved work automatically</span>
+              <span className="faint">Merge locally after every review passes. You still push and deploy.</span>
+              {mergeError && <span className="error-text">{mergeError}</span>}
+            </span>
+            <Switch on={Boolean(autoMerge)} disabled={autoMerge === null} label="Merge approved work automatically" onChange={async (on) => {
+              setMergeError(null);
+              try { setAutoMerge((await api.setMergeSettings(on)).auto_merge); }
+              catch (e) { setMergeError(String(e)); }
+            }} />
           </div>
           <div className="list-row">
             <span className="list-text">

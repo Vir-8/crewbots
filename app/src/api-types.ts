@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "9c4251a3140e";
+export const API_SCHEMA = "bf1df486f094";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -500,6 +500,10 @@ export interface MergeProposal {
 
 export interface MergeRequest {
   force?: boolean;
+}
+
+export interface MergeSettings {
+  auto_merge: boolean;
 }
 
 export interface Message {

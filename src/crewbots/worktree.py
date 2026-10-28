@@ -83,7 +83,10 @@ def remove(wt: Worktree, delete_branch: bool = False) -> None:
 def _git(cwd: Path, *args: str, strip: bool = True) -> str:
     result = subprocess.run([paths.git(), *args], cwd=cwd, capture_output=True, text=True)
     if result.returncode != 0:
-        raise GitError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
+        detail = "\n".join(part for part in (result.stdout.strip(), result.stderr.strip()) if part)
+        status = (f"terminated by signal {-result.returncode}" if result.returncode < 0
+                  else f"exit code {result.returncode}")
+        raise GitError(f"git {' '.join(args)} failed ({status})" + (f": {detail}" if detail else ""))
     return result.stdout.strip() if strip else result.stdout
 
 

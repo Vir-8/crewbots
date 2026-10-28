@@ -199,7 +199,7 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
         </div>
       );
     case "ask":
-      return <Question crew={props.crew} block={block} />;
+      return <Question crew={props.crew} block={block} onOpen={props.onOpen} />;
     case "permission":
       return <Permission crew={props.crew} block={block} onOpen={props.onOpen} />;
     case "held": {

@@ -88,7 +88,7 @@ def routes(c: Context) -> APIRouter:
     @v1.post("/bot/propose_merge")
     async def bot_propose_merge(request: Request, body: MergeProposal):
         task = runner.propose_merge(request.state.task.id, body.task_id, body.summary)
-        return {"id": task.id, "merge_state": task.merge_state}
+        return {"id": task.id, "merge_state": task.merge_state, "merged_commit": task.merged_commit}
 
     @v1.post("/bot/remember", status_code=201)
     async def bot_remember(request: Request, body: Remember):

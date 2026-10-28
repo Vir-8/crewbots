@@ -122,7 +122,7 @@ class CrewTools:
         from crewbots.crew import CrewError
         from crewbots.memory import MemoryError
         from crewbots.pages import PageError
-        from crewbots.runner import NotAllowed, UnknownBot
+        from crewbots.runner import MergeError, NotAllowed, UnknownBot
         from crewbots.store import Verdict
 
         tool = SPECS.get(name)
@@ -169,8 +169,9 @@ class CrewTools:
                     task = r.message_child(me, args["task_id"], args["text"])
                     return f"Sent to {task.id} ({task.status})."
                 case "propose_merge":
-                    r.propose_merge(me, args["task_id"], args["summary"])
-                    return f"Proposed {args['task_id']} to the user for merging."
+                    task = r.propose_merge(me, args["task_id"], args["summary"])
+                    return (f"Merged {task.id} locally as {task.merged_commit}." if task.merge_state == "merged"
+                            else f"Proposed {task.id} to the user for merging.")
                 case "remember":
                     note = r.remember(me, args["title"], args["body"], shared=bool(args.get("shared")))
                     return f"Remembered: {note.title} ({note.path})."
@@ -228,7 +229,7 @@ class CrewTools:
             self.runner.store.log_agent("refused", self.runner.store.get_task(self.task_id).bot, task_id=self.task_id,
                                         text=f"{name}: {e}")
             raise ToolRefused(str(e)) from None
-        except (UnknownBot, MemoryError, CrewError, AttachmentError, PageError, BrowserError) as e:
+        except (UnknownBot, MemoryError, CrewError, AttachmentError, PageError, BrowserError, MergeError) as e:
             raise ToolRefused(str(e.args[0] if e.args else e)) from None
         raise ToolRefused(f"{name} is not implemented")
 

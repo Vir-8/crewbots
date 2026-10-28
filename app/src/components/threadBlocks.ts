@@ -44,7 +44,7 @@ export function said(block: Block): string {
     case "say":
       return shown(block.text);
     case "ask":
-      return [block.question, ...(block.choices ?? []).map((c) => c.label)].join("\n");
+      return [shown(block.question), ...(block.choices ?? []).flatMap((c) => [c.label, c.description ?? ""])].join("\n");
     case "asked":
       return block.question;
     case "handoff":
@@ -54,7 +54,7 @@ export function said(block: Block): string {
     case "page":
       return block.page;
     case "permission":
-      return [block.what, block.why, block.folder ?? ""].filter(Boolean).join("\n");
+      return [shown(block.what), shown(block.why), block.folder ?? ""].filter(Boolean).join("\n");
     case "activity":
       return block.items.map(said).filter(Boolean).join("\n");
     default:
@@ -247,7 +247,11 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
         break;
       case "merged":
         flush();
-        out.push({ kind: "line", id: e.id, text: `Merged as ${String(d.commit).slice(0, 7)}${d.forced ? ", without approval" : ""}`, icon: "check", tone: "good" });
+        out.push({ kind: "line", id: e.id, text: `Merged${d.automatic ? " automatically" : ""} as ${String(d.commit).slice(0, 7)}${d.forced ? ", without approval" : ""}`, icon: "check", tone: "good" });
+        break;
+      case "merge_cleanup_failed":
+        flush();
+        out.push({ kind: "line", id: e.id, text: `Merged, but couldn't remove the worktree: ${d.reason}`, icon: "alert", tone: "bad" });
         break;
       case "done":
         if (d.is_error) {

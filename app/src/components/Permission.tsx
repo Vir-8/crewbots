@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api } from "../api";
 import type { Crew } from "../state";
 import { labelOf } from "./Avatar";
+import { Markdown } from "./bits";
 import { Icon } from "./Icon";
 import type { Block } from "./threadBlocks";
 
@@ -38,9 +39,9 @@ export function Permission({ crew, block, onOpen }: { crew: Crew; block: Asked; 
           In its thread: {asker.title}
         </button>
       )}
-      <div className="permission-what">{block.what}</div>
+      <div className="permission-what"><Markdown text={block.what} onSelect={onOpen} /></div>
       {block.folder && <div className="permission-folder"><Icon name="folder" size={13} /> {block.folder.replace(/^\/Users\/[^/]+/, "~")}</div>}
-      {block.why && <div className="permission-why">{block.why}</div>}
+      {block.why && <div className="permission-why"><Markdown text={block.why} onSelect={onOpen} /></div>}
       {error && <p className="bad small">{error}</p>}
       {!answered && (
         <div className="permission-actions">

@@ -4,6 +4,8 @@ import { bridge } from "../bridge";
 import type { Crew } from "../state";
 import type { StoredEvent, Task } from "../types";
 import { Thread } from "./Thread";
+import { build, said } from "./threadBlocks";
+import { count } from "./Find";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -132,6 +134,38 @@ describe("a bot's working, in a chat", () => {
     expect(answered).toContain("Answered");
     expect(answered).toMatch(/ask-choice picked"[^>]*>(?:(?!<\/button>).)*Stay on 18/);
     expect(answered).not.toContain("Answer in your own words");
+  });
+
+  it("renders and finds Markdown in questions and permission text", () => {
+    const { crew, task } = chat(0);
+    const at = new Date(Date.UTC(2026, 9, 27, 7)).toISOString();
+    const question = "Check `export` first.\n\nThen run:\n\n```sh\nexport report\n```";
+    crew.events.set(task.id, [
+      { id: 1, task_id: task.id, kind: "escalation", data: { question }, at },
+      { id: 2, task_id: task.id, kind: "permission", data: { permission: 7, kind: "network", bot: "engineer", task: task.id, what: "Allow `export`?", why: "Run this:\n\n```sh\nexport report\n```" }, at },
+    ]);
+    const html = renderToStaticMarkup(<Thread crew={crew} task={task} onOpen={() => undefined} find={{ query: "export", current: 0, onFound: () => undefined }} />);
+    expect(html).toContain('<p><span class="pre">Check <code><mark class="find-hit">export</mark></code> first.</span></p><p><span class="pre">Then run:</span></p>');
+    expect(html.match(/<pre><mark class="find-hit">export<\/mark> report<\/pre>/g)).toHaveLength(2);
+    expect(html).toContain('<p><span class="pre">Allow <code><mark class="find-hit">export</mark></code>?</span></p>');
+    expect(html).not.toContain("`");
+    expect(html.match(/class="find-hit"/g)).toHaveLength(4);
+    const blocks = build(crew.events.get(task.id)!, [], crew.tasks);
+    expect(blocks.map((block) => count(said(block), "export"))).toEqual([2, 2]);
+    expect(blocks.map((block) => count(said(block), "```"))).toEqual([0, 0]);
+  });
+
+  it("finds choice labels and descriptions in open and answered questions", () => {
+    const { crew, task } = chat(0);
+    const at = new Date(Date.UTC(2026, 9, 27, 7)).toISOString();
+    const asked: StoredEvent = { id: 1, task_id: task.id, kind: "escalation", data: { question: "Choose:", choices: [{ label: "Export", description: "Export the report" }] }, at };
+    for (const answered of [false, true]) {
+      crew.events.set(task.id, answered ? [asked, { id: 2, task_id: task.id, kind: "message", data: { from: "user", text: "Export" }, at }] : [asked]);
+      const html = renderToStaticMarkup(<Thread crew={crew} task={task} onOpen={() => undefined} find={{ query: "export", current: 0, onFound: () => undefined }} />);
+      expect(html).toContain('<span class="ask-label"><mark class="find-hit">Export</mark></span>');
+      expect(html).toContain('<span class="ask-description"><mark class="find-hit">Export</mark> the report</span>');
+      expect(count(said(build(crew.events.get(task.id)!, [], crew.tasks)[0]), "export")).toBe(2);
+    }
   });
 
   it("asks your permission with Allow and Don't allow, and says how it was answered", () => {

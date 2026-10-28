@@ -36,3 +36,11 @@ class Store(Tasks, Events, Rooms, Search, Drafts, Routines, Happenings, Permissi
 
     def close(self) -> None:
         self.db.close()
+
+    def auto_merge(self) -> bool:
+        row = self.db.execute("select value from crew_settings where key = 'auto_merge'").fetchone()
+        return bool(row and row[0] == 1)
+
+    def set_auto_merge(self, enabled: bool) -> None:
+        self.db.execute("insert into crew_settings (key, value) values ('auto_merge', ?) "
+                        "on conflict(key) do update set value = excluded.value", (int(enabled),))

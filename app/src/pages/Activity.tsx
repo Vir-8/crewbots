@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { api } from "../api";
 import { type Chain, chains, pairs, type Step } from "../activity";
 import { Avatar, labelOf } from "../components/Avatar";
 import { ago, StatusPill } from "../components/bits";
@@ -19,6 +20,16 @@ export function Activity({ crew, onOpen }: { crew: Crew; onOpen: (id: string) =>
   const week = useMemo(() => pairs(crew.tasks, new Date(Date.now() - WEEK).toISOString()), [crew.tasks]);
   const busy = all.filter((c) => c.busy);
   const done = all.filter((c) => !c.busy).slice(0, RECENT);
+  const mergedIds = useMemo(() => all.flatMap((chain) => chain.steps.map((s) => s.task)).filter((t) => t.merge_state === "merged").map((t) => t.id).sort().join(","), [all]);
+  const [automatic, setAutomatic] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    let current = true;
+    const ids = mergedIds ? mergedIds.split(",") : [];
+    Promise.all(ids.map(async (id) => ({ id, events: await api.events(id).catch(() => []) }))).then((items) => {
+      if (current) setAutomatic(new Set(items.filter(({ events }) => events.some((e) => e.kind === "merged" && e.data.automatic)).map(({ id }) => id)));
+    }).catch(() => {});
+    return () => { current = false; };
+  }, [mergedIds]);
   const where = (task: Task | undefined) => {
     if (!task) return "";
     if (task.kind === "chat") return `From ${labelOf(task.bot)}'s chat`;
@@ -43,7 +54,7 @@ export function Activity({ crew, onOpen }: { crew: Crew; onOpen: (id: string) =>
               </div>
             )}
             {busy.map((chain) => (
-              <ChainCard key={chain.steps[0].task.id} chain={chain} where={where(chain.from)} onOpen={onOpen} />
+              <ChainCard key={chain.steps[0].task.id} chain={chain} where={where(chain.from)} onOpen={onOpen} automatic={automatic} />
             ))}
           </section>
           {week.length > 0 && (
@@ -67,7 +78,7 @@ export function Activity({ crew, onOpen }: { crew: Crew; onOpen: (id: string) =>
             <section className="page-section">
               <h2>Recently</h2>
               {done.map((chain) => (
-                <ChainCard key={chain.steps[0].task.id} chain={chain} where={where(chain.from)} onOpen={onOpen} />
+                <ChainCard key={chain.steps[0].task.id} chain={chain} where={where(chain.from)} onOpen={onOpen} automatic={automatic} />
               ))}
             </section>
           )}
@@ -77,7 +88,7 @@ export function Activity({ crew, onOpen }: { crew: Crew; onOpen: (id: string) =>
   );
 }
 
-function ChainCard({ chain, where, onOpen }: { chain: Chain; where: string; onOpen: (id: string) => void }) {
+function ChainCard({ chain, where, onOpen, automatic }: { chain: Chain; where: string; onOpen: (id: string) => void; automatic: Set<string> }) {
   return (
     <div className="list activity-chain">
       {where && (
@@ -86,7 +97,7 @@ function ChainCard({ chain, where, onOpen }: { chain: Chain; where: string; onOp
         </div>
       )}
       {chain.steps.map((step) => (
-        <StepRow key={step.task.id} step={step} onOpen={onOpen} />
+        <StepRow key={step.task.id} step={step} onOpen={onOpen} automatic={automatic.has(step.task.id)} />
       ))}
     </div>
   );
@@ -94,7 +105,7 @@ function ChainCard({ chain, where, onOpen }: { chain: Chain; where: string; onOp
 
 const SAID: Record<Step["verb"], string> = { asked: "asked", review: "asked for a review from", delegated: "handed work to" };
 
-function StepRow({ step, onOpen }: { step: Step; onOpen: (id: string) => void }) {
+function StepRow({ step, onOpen, automatic }: { step: Step; onOpen: (id: string) => void; automatic: boolean }) {
   const { task, from, verb } = step;
   return (
     <button className="list-row activity-step" style={{ paddingLeft: 16 + step.depth * 24 }} onClick={() => onOpen(task.id)}>
@@ -107,6 +118,7 @@ function StepRow({ step, onOpen }: { step: Step; onOpen: (id: string) => void })
         <span className="list-title">{oneLine(task.title, 110)}</span>
         <span className="faint small">
           {labelOf(from)} {SAID[verb]} {labelOf(task.bot)}
+          {automatic && " · Merged automatically"}
         </span>
       </span>
       <span className="activity-state">

@@ -56,3 +56,20 @@ def test_remove_deletes_the_checkout_and_optionally_the_branch(repo, tmp_path):
 def test_names_that_could_escape_the_root_are_refused(repo, tmp_path):
     with pytest.raises(ValueError):
         worktree.create(repo, "../outside", root=tmp_path / "wts")
+
+
+def test_git_failure_reports_both_output_streams(repo, monkeypatch):
+    result = subprocess.CompletedProcess([], 1, stdout=" stdout detail \n", stderr=" stderr detail \n")
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: result)
+
+    with pytest.raises(worktree.GitError, match="stdout detail\\nstderr detail"):
+        worktree._git(repo, "merge", "branch")
+
+
+@pytest.mark.parametrize(("returncode", "status"), [(1, "exit code 1"), (-9, "terminated by signal 9")])
+def test_git_failure_without_output_reports_status(repo, monkeypatch, returncode, status):
+    result = subprocess.CompletedProcess([], returncode, stdout="  \n", stderr="")
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: result)
+
+    with pytest.raises(worktree.GitError, match=status):
+        worktree._git(repo, "merge", "branch")

@@ -19,6 +19,7 @@ from crewbots.api.schemas import (
     CrewState,
     DigestOut,
     IntentOut,
+    MergeSettings,
     ProactiveOut,
     Reaction,
     RestartBody,
@@ -40,6 +41,15 @@ def routes(c: Context) -> APIRouter:
     @v1.get("/crew", response_model=CrewState)
     async def crew_state():
         return runner.state()
+
+    @v1.get("/crew/merge-settings", response_model=MergeSettings)
+    async def merge_settings():
+        return {"auto_merge": c.store.auto_merge()}
+
+    @v1.put("/crew/merge-settings", response_model=MergeSettings)
+    async def set_merge_settings(body: MergeSettings):
+        c.store.set_auto_merge(body.auto_merge)
+        return {"auto_merge": c.store.auto_merge()}
 
     @v1.post("/crew/pause", response_model=CrewState)
     async def pause():

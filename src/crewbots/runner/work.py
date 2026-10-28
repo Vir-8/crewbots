@@ -1,4 +1,4 @@
-"""What a bot does with its work: hands it back, asks a question, proposes it for merging (which only the user does), and
+"""What a bot does with its work: hands it back, asks a question, proposes it for merging, and
 keeps notes."""
 
 from pathlib import Path
@@ -124,7 +124,10 @@ class Work:
         return "\n\n".join(f"## {whose}\n\n{text}" for whose, text in logs if text) or None
 
     def propose_merge(self, parent_id: str, task_id: str, summary: str) -> Task:
-        """A coordinator puts approved work in front of the user. Only the user merges."""
+        """A coordinator proposes approved work, merging it locally if the user enabled that."""
+        parent = self.store.get_task(parent_id)
+        if parent.bot not in self.crew.bots or not self.crew.bots[parent.bot].can_delegate:
+            raise NotAllowed("only a coordinator can propose a merge")
         work = self._own_child(parent_id, task_id)
         if not work.worktree_path:
             raise NotAllowed(f"{task_id} has no worktree, so there is nothing to merge")
@@ -137,10 +140,15 @@ class Work:
                 f"(round {state.round} of {MAX_REVIEW_ROUNDS}, version {state.version}, "
                 f"reviewed versions {state.rounds or 'none'})")
         task = self._set(task_id, merge_state="proposed")
-        self._record(task_id, kind="merge_proposed", data={"by": self.store.get_task(parent_id).bot, "summary": summary})
+        self._record(task_id, kind="merge_proposed", data={"by": parent.bot, "summary": summary})
+        if self.store.auto_merge():
+            try:
+                return self.merge(task_id, automatic=True)
+            except MergeError as e:
+                raise MergeError(f"Automatic merge failed; the proposal is waiting for the user: {e}") from None
         return task
 
-    def merge(self, task_id: str, force: bool = False) -> Task:
+    def merge(self, task_id: str, force: bool = False, *, automatic: bool = False) -> Task:
         """The user's merge: commits the worktree, merges its branch into the repo's current branch, removes the
         worktree. Refuses work that is still running or not approved (unless forced); a conflict changes nothing."""
         work = self.store.get_task(task_id)
@@ -159,13 +167,17 @@ class Work:
         reviewers = ", ".join(f"{t.bot} ({r.verdict if r else 'no verdict'})" for t, r in state.latest) or "none"
         try:
             worktree.commit(wt, f"{work.title}\n\ncrewbots task {work.id}, by {work.bot}")
-            commit = worktree.merge(wt, f"Merge {work.branch}: {work.title}\n\nReviewed in round {state.round}: "
+            commit = worktree.merge(wt, f"{work.title}\n\nReviewed in round {state.round}: "
                                         f"{reviewers}.{' Merged without approval.' if not state.approved else ''}")
         except worktree.GitError as e:
             raise MergeError(str(e)) from None
-        worktree.remove(wt, delete_branch=True)
         task = self._set(task_id, merge_state="merged", merged_commit=commit)
-        self._record(task_id, kind="merged", data={"commit": commit, "into": str(wt.repo), "forced": not state.approved})
+        self._record(task_id, kind="merged", data={"commit": commit, "into": str(wt.repo), "forced": not state.approved,
+                                                   "automatic": automatic})
+        try:
+            worktree.remove(wt, delete_branch=True)
+        except worktree.GitError as e:
+            self._record(task_id, kind="merge_cleanup_failed", data={"reason": str(e)})
         return task
 
     def handoff(self, task_id: str, done: str, output: list[str], open: str, needs: str) -> Handoff:

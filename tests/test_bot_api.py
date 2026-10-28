@@ -111,6 +111,23 @@ def test_run_tokens_and_the_users_token_open_different_doors(crew_app):
     assert client.get("/bot/tasks", headers={**as_bot(token), "Host": "evil.example:8765"}).status_code == 403
 
 
+def test_only_user_can_change_automatic_merge_setting(crew_app):
+    client, backend, _ = crew_app
+    _, token = start(client, backend, "chief")
+    assert client.get("/crew/merge-settings", headers=as_bot(ADMIN)).json() == {"auto_merge": False}
+    assert client.put("/crew/merge-settings", headers=as_bot(token), json={"auto_merge": True}).status_code == 403
+    assert client.put("/crew/merge-settings", headers=as_bot(ADMIN), json={"auto_merge": True}).json() == {"auto_merge": True}
+    assert client.get("/crew/merge-settings", headers=as_bot(ADMIN)).json() == {"auto_merge": True}
+
+
+def test_worker_cannot_call_propose_merge_directly(crew_app):
+    client, backend, _ = crew_app
+    _, token = start(client, backend, "engineer")
+    response = client.post("/bot/propose_merge", headers=as_bot(token), json={"task_id": "t_any", "summary": "work"})
+    assert response.status_code == 403
+    assert "only a coordinator" in response.json()["detail"]
+
+
 def test_a_run_token_stops_working_when_its_run_ends(crew_app):
     client, backend, store = crew_app
     task_id, token = start(client, backend, "engineer")
