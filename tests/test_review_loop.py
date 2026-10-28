@@ -282,12 +282,37 @@ async def test_withdraw_proposal_preserves_worktree_and_records_reason(store, tm
     assert store.events(work.id)[-1].data["by"] == "user"
 
 
-def test_merge_subject_uses_first_line_at_word_boundary():
+def test_merge_subject_uses_first_paragraph_and_a_complete_sentence():
     from crewbots.runner.work import _merge_subject
 
-    assert _merge_subject("A useful subject\nDetails", "title") == "A useful subject"
+    assert _merge_subject("A useful subject\n\nDetails", "title") == "A useful subject"
     assert _merge_subject("", "Fallback title") == "Fallback title"
-    assert _merge_subject("A long subject with several words", "title", 17) == "A long subject"
+    assert _merge_subject("e.g.", "Fallback title") == "Fallback title"
+    assert _merge_subject("Fix the update dialog change list so it no longer cuts\noff mid-sentence", "title") == (
+        "Fix the update dialog change list so it no longer cuts off mid-sentence")
+    assert _merge_subject("Fix the update dialog change list so it no longer cuts\n"
+                          "off mid-sentence when the subject exceeds the limit", "Fix the update dialog") == (
+        "Fix the update dialog")
+    assert _merge_subject("Fix the update dialog. " + "More detail " * 8, "title") == "Fix the update dialog."
+    assert _merge_subject("e.g. " + "Details without a complete sentence " * 3, "title") == "title"
+    assert _merge_subject("Fix examples such as e.g. the update dialog. " + "Details " * 8, "title") == (
+        "Fix examples such as e.g. the update dialog.")
+    assert _merge_subject("Fix the list, i.e. the update dialog. " + "Details " * 8, "title") == (
+        "Fix the list, i.e. the update dialog.")
+    assert _merge_subject("Fix updates, etc. " + "Details without a sentence " * 3, "title") == "title"
+
+
+def test_merge_subject_fallback_is_nonempty_and_bounded():
+    from crewbots.runner.work import _merge_subject
+
+    long_summary = "A sentence that is much too long to fit into the permitted subject line " * 2
+    assert _merge_subject(long_summary, "") == "Merge work"
+    title = "A long task title with enough words that it cannot possibly fit in a single merge subject line"
+    result = _merge_subject(long_summary, title)
+    assert result == "A long task title with enough words that it cannot possibly fit in a…"
+    assert len(result) <= 72
+    assert _merge_subject(long_summary, "x" * 100) == "x" * 71 + "…"
+    assert _merge_subject(long_summary, "x" * 70 + " next") == "x" * 70 + "…"
 
 
 def engineer_wrote(crew, store, tmp_path, repo, content="new\n"):

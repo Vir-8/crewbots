@@ -6,7 +6,7 @@ const path = "src/crewbots/browser/very-long-unbroken-directory-name/another-ver
 const flag = "--proxy-bypass-list=<-loopback>";
 const t = work("t_longreview", "engineer", "Inspect a long browser review in the thread panel", chatIds.chief);
 message(t.id, "chief", `Inspect ${path} and ${flag}.`);
-say(t.id, `The implementation is in \`${path}\`.\n\n\`\`\`sh\nchrome ${flag} --user-data-dir=/a/very-long-unbroken-directory-name/another-very-long-unbroken-directory-name/profile\n\`\`\``);
+say(t.id, `The implementation is in \`${path}\`. Copy the command from this fenced block.\n\n\`\`\`sh\nchrome ${flag} --user-data-dir=/a/very-long-unbroken-directory-name/another-very-long-unbroken-directory-name/profile\n\`\`\``);
 done(t.id);
 reviews.set(t.id, {
   work_id: t.id, version: 1, round: 1, max_rounds: 3, approved: false, failed: true, out_of_rounds: false,

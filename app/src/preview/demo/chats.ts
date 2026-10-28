@@ -5,6 +5,7 @@ import { bots, done, emit, message, say, task, tasks, tick, tool } from "./make"
 import type { Attachment, Room } from "../../types";
 
 export const chatIds: Record<string, string> = {};
+const overflowExample = "A long code line stays in its block:\n\n```text\n" + "export_column_name_".repeat(12) + "\n```\n\nThe URL https://example.com/" + "long-path-segment-".repeat(10) + " and inline code `" + "long_identifier_".repeat(12) + "` wrap inside this message. The paragraph remains visible.";
 for (const b of bots) {
   chatIds[b.name] = task(`t_chat_${b.name}`.slice(0, 12).padEnd(12, "0"), b.name, `Chat with ${b.name}`, { kind: "chat", workspace: null }).id;
 }
@@ -27,6 +28,7 @@ for (const b of bots) {
   say(chief, "Merged. The CSV export is with the engineer now, and the reviewer and critic will check it before it comes to you.");
   message(chief, "user", "Please ask @engineer to check this with @Roger. Email vir@emberlane.games; `@engineer` is just code.");
   say(chief, "Thanks, I've sent this to @engineer. **@Roger** will follow up. `@engineer` and @unknown are examples, not mentions.\n\n```\n@engineer\n```");
+  say(chief, overflowExample);
   message(chief, "user", "Write up the Q3 retro and a Q4 plan from it.");
   emit(chief, "text", { text: "Done: the retro is `docs/retro/q3-retro.pdf`, and the plan it led to is `docs/retro/q4-plan.md`.", files: [made.retro, made.plan] });
   done(chief);
@@ -139,6 +141,7 @@ export const roomMessages = new Map<string, { id: number; room_id: string; autho
     said("engineer", "Endpoint's in and its tests pass. Wiring the button now. @reviewer it'll be yours in a few minutes.", 1),
     said("reviewer", "Ready when you are. I'll check the filters reach the export. @everyone can find me at vir@emberlane.games; `@engineer` is code.", 2),
     said("chief", "Thanks both. I'll propose it for merging once both reviews pass.", 1),
+    said("engineer", overflowExample, 1),
     { ...said("engineer", "The launch cut, for anyone who wants a look before Friday:", 1), attachments: [files.cut] },
     { ...said("user", "Here's the copy deck for it."), attachments: [files.notes] },
   ]);

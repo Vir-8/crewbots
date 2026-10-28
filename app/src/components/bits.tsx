@@ -1,4 +1,4 @@
-import { createContext, useContext, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import type { Status } from "../types";
 import { Finding, Marked } from "./Find";
 import { crewMentionNames } from "./Avatar";
@@ -225,6 +225,27 @@ async function toClipboard(text: string) {
   }
 }
 
+export function CodeBlock({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const copy = () => toClipboard(text).then(() => {
+    setCopied(true);
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setCopied(false), 1500);
+  }, () => undefined);
+  return (
+    <div className="code-block">
+      <div className="code-block-bar">
+        <button type="button" className="button small code-copy" onClick={() => void copy()} aria-label={copied ? "Copied" : "Copy code"}>
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <pre><Marked text={text} /></pre>
+    </div>
+  );
+}
+
 /**
  * The Markdown bots write: paragraphs, headings, lists (nested, and numbered from where they start), fenced code,
  * `code` and **bold**. Built as React elements, never as HTML, so nothing a bot writes can run in the window.
@@ -241,7 +262,7 @@ export function Markdown({ text, onSelect, everyone = false }: { text: string; o
       const code: string[] = [];
       for (i++; i < lines.length && !lines[i].startsWith("```"); i++) code.push(lines[i]);
       i++;
-      blocks.push(<pre key={blocks.length}><Marked text={code.join("\n")} /></pre>);
+      blocks.push(<CodeBlock key={blocks.length} text={code.join("\n")} />);
     } else if (/^#{1,6}\s/.test(line)) {
       const Tag = line.startsWith("# ") || line.startsWith("## ") ? "h3" : "h4";
       blocks.push(<Tag key={blocks.length}>{inline(line.replace(/^#+\s*/, ""))}</Tag>);

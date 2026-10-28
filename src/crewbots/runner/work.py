@@ -1,6 +1,7 @@
 """What a bot does with its work: hands it back, asks a question, proposes it for merging, and
 keeps notes."""
 
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -299,13 +300,23 @@ def _short(text: str, chars: int) -> str:
 
 
 def _merge_subject(summary: str, title: str, limit: int = 72) -> str:
-    line = summary.strip().splitlines()[0].strip() if summary.strip() else title.strip()
-    if len(line) <= limit:
-        return line
-    prefix = line[:limit]
-    if line[limit].isspace():
-        return prefix.rstrip()
-    return prefix.rsplit(" ", 1)[0] if " " in prefix else prefix
+    paragraph = " ".join(re.split(r"\n\s*\n", summary.strip(), maxsplit=1)[0].split())
+    abbreviation = r"\b(?:e\.g|i\.e|etc|mr|mrs|ms|dr|vs|inc)\.$"
+    if paragraph and len(paragraph) <= limit and not re.fullmatch(abbreviation, paragraph, re.I):
+        return paragraph
+    for end in re.finditer(r"[.!?](?=\s|$)", paragraph):
+        sentence = paragraph[:end.end()]
+        if len(sentence) > limit:
+            break
+        if len(sentence) >= 20 and not re.search(abbreviation, sentence, re.I):
+            return sentence
+    fallback = " ".join(title.split()) or "Merge work"
+    if len(fallback) <= limit:
+        return fallback
+    prefix = fallback[:limit - 1]
+    if not prefix[-1].isspace() and not fallback[limit - 1].isspace() and " " in prefix:
+        prefix = prefix.rsplit(" ", 1)[0]
+    return prefix.rstrip() + "…"
 
 
 def _mentions(match: str, text: str) -> bool:

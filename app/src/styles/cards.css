@@ -114,6 +114,18 @@
   font-size: 12px;
 }
 
+.ask .md .code-block {
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+
+.ask .md .code-block pre {
+  margin: 0;
+  padding-top: 4px;
+  border: 0;
+  background: transparent;
+}
+
 .ask .md > :last-child {
   margin-bottom: 0;
 }

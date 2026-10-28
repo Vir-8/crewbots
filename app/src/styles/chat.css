@@ -261,12 +261,14 @@
 }
 
 .md code {
+  overflow-wrap: anywhere;
   padding: 1px 5px;
   border-radius: 5px;
   background: var(--raised);
 }
 
 .md pre {
+  max-width: 100%;
   margin: 4px 0 12px;
   padding: 11px 13px;
   border-radius: 10px;
@@ -274,6 +276,40 @@
   font-family: var(--mono);
   font-size: 12.5px;
   overflow-x: auto;
+}
+
+.md .code-block {
+  min-width: 0;
+  max-width: 100%;
+  margin: 4px 0 12px;
+  border-radius: 10px;
+  background: var(--raised);
+}
+
+.md .code-block-bar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 6px 0;
+}
+
+.md .code-copy {
+  opacity: 0;
+  background: var(--bg);
+}
+
+.md .code-block:hover .code-copy,
+.md .code-block:focus-within .code-copy {
+  opacity: 1;
+}
+
+.md .code-block pre {
+  margin: 0;
+  padding-top: 4px;
+  background: transparent;
+}
+
+.md pre code {
+  overflow-wrap: normal;
 }
 
 .md strong {
@@ -356,6 +392,7 @@ button.chat-head-who:hover {
 }
 
 .thread-col.chat > .said .say {
+  width: max-content;
   max-width: 85%;
   min-width: 0;
   padding: 10px 15px;
@@ -380,6 +417,7 @@ button.chat-head-who:hover {
 }
 
 .thread-col.chat .message-body {
+  max-width: 100%;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -458,6 +496,7 @@ button.chat-head-who:hover {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  width: max-content;
   min-width: 0;
   max-width: 85%;
 }
@@ -469,6 +508,8 @@ button.chat-head-who:hover {
 }
 
 .room-message {
+  min-width: 0;
+  max-width: 100%;
   display: flex;
   align-items: flex-end;
   gap: 4px;
@@ -488,6 +529,9 @@ button.chat-head-who:hover {
 }
 
 .room-bubble {
+  width: max-content;
+  min-width: 0;
+  max-width: 100%;
   align-self: flex-start;
   padding: 9px 14px;
   border-radius: 16px;
