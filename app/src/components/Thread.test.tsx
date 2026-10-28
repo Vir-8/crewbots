@@ -63,6 +63,34 @@ describe("opening a long chat", () => {
 });
 
 describe("a bot's working, in a chat", () => {
+  it("keeps a work card in history and shows review rounds rather than versions", () => {
+    const { crew, task } = chat(0);
+    const work = { id: "t_1111111111", bot: "engineer", title: "Old work", status: "idle", kind: "thread", parent_id: task.id, created_by: task.bot, created_at: "2026-10-27T07:01:00Z", merge_state: "merged" } as Task;
+    const reviewer = (id: string, version: number) => ({ id, bot: "reviewer", status: "idle", kind: "thread", parent_id: task.id, review_of: work.id, review_version: version } as Task);
+    const review = reviewer("t_2222222222", 4);
+    crew.children.set(task.id, [work, review]);
+    crew.tasks.set(work.id, work);
+    crew.family = () => [];
+    crew.asks = new Map();
+    crew.verdicts = new Map([[work.id, [{ id: 10, task_id: review.id, kind: "review", data: { task_id: review.id, verdict: "pass" }, at: "2026-10-27T07:02:00Z" }]]]);
+    crew.events.set(task.id, [
+      { id: 1, task_id: task.id, kind: "tool_call", data: { id: "delegate", name: "mcp__crewbots__delegate", input: {} }, at: "2026-10-27T07:00:00Z" },
+      { id: 2, task_id: task.id, kind: "tool_result", data: { id: "delegate", output: "Delegated t_1111111111 to engineer: Old work" }, at: "2026-10-27T07:01:00Z" },
+      { id: 3, task_id: task.id, kind: "message", data: { from: "user", text: "Newest message" }, at: "2026-10-27T07:03:00Z" },
+    ]);
+    const render = () => renderToStaticMarkup(<Thread crew={crew} task={task} onOpen={() => undefined} chat />);
+    const first = render();
+    expect(first.indexOf("Old work")).toBeLessThan(first.indexOf("Newest message"));
+    expect(first).toContain("Merged");
+    expect(first).not.toContain("round 4 of 3");
+    expect(first).toContain("round 1 of 3");
+    crew.children.set(task.id, [work, review, reviewer("t_3333333333", 7), reviewer("t_4444444444", 7)]);
+    const second = render();
+    expect(second).toContain("round 2 of 3");
+    expect(second).not.toContain("round 7 of 3");
+    expect(second.indexOf("Old work")).toBeLessThan(second.indexOf("Newest message"));
+  });
+
   it("keeps tool images folded while user attachments and shared images stay visible", () => {
     vi.spyOn(bridge, "fileSrc").mockImplementation((path) => path);
     const { crew, task } = chat(0);

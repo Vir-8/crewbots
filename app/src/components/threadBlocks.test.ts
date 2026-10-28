@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import type { StoredEvent } from "../types";
+import type { StoredEvent, Task } from "../types";
 import { build } from "./threadBlocks";
 
 it("distinguishes automatic merges in the thread", () => {
@@ -7,4 +7,35 @@ it("distinguishes automatic merges in the thread", () => {
   expect(build([event], [], new Map())).toEqual([
     { kind: "line", id: 1, text: "Merged automatically as abcdef1", icon: "check", tone: "good" },
   ]);
+});
+
+it("anchors each work card to its own delegation or creation, even as its status changes", () => {
+  const at = (minute: number) => `2026-10-27T10:${String(minute).padStart(2, "0")}:00Z`;
+  const child = (id: string, minute: number) => ({ id, created_at: at(minute), status: "idle", kind: "thread", review_of: null } as Task);
+  const older = child("t_1111111111", 2);
+  const manual = child("t_2222222222", 4);
+  const newer = child("t_3333333333", 6);
+  const event = (id: number, minute: number, kind: string, data: Record<string, unknown>): StoredEvent => ({ id, task_id: "chat", kind, data, at: at(minute) });
+  const events = [
+    event(1, 1, "tool_call", { id: "old", name: "mcp__crewbots__delegate", input: {} }),
+    event(2, 2, "tool_result", { id: "old", output: "Delegated t_1111111111 to engineer: old" }),
+    event(3, 3, "message", { from: "user", text: "After old work" }),
+    event(4, 5, "tool_call", { id: "new", name: "mcp__crewbots__start_thread", input: {} }),
+    event(5, 6, "tool_result", { id: "new", output: "Opened thread t_3333333333: new" }),
+    event(6, 7, "message", { from: "user", text: "Latest message" }),
+  ];
+  const positions = (children: Task[]) => build(events, children, new Map()).map((b) => b.kind === "work" ? b.task.id : b.id);
+  expect(positions([older, manual, newer])).toEqual([older.id, 3, manual.id, newer.id, 6]);
+  expect(positions([{ ...older, merge_state: "merged", updated_at: at(9) }, manual, newer])).toEqual([older.id, 3, manual.id, newer.id, 6]);
+  expect(positions([newer, manual, older])).toEqual([older.id, 3, manual.id, newer.id, 6]);
+});
+
+it("places a child with a missing tool result at its creation time, without claiming another call", () => {
+  const child = { id: "t_1111111111", created_at: "2026-10-27T10:02:00Z", kind: "thread" } as Task;
+  const events: StoredEvent[] = [
+    { id: 1, task_id: "chat", kind: "tool_call", data: { id: "failed", name: "mcp__crewbots__delegate", input: {} }, at: "2026-10-27T10:00:00Z" },
+    { id: 2, task_id: "chat", kind: "tool_result", data: { id: "failed", output: "No budget", is_error: true }, at: "2026-10-27T10:01:00Z" },
+    { id: 3, task_id: "chat", kind: "message", data: { from: "user", text: "Later" }, at: "2026-10-27T10:03:00Z" },
+  ];
+  expect(build(events, [child], new Map()).map((b) => b.kind === "work" ? b.task.id : b.id)).toEqual([1, child.id, 3]);
 });

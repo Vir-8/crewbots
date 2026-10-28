@@ -13,11 +13,11 @@ export type Block =
   | { kind: "brief"; id: number; at: string; from: string; text: string }
   | { kind: "say"; id: number; at: string; text: string; tag?: string; raised?: number; files?: Attachment[] }
   | { kind: "steps"; id: number; calls: { call: StoredEvent; result?: StoredEvent }[] }
-  | { kind: "work"; id: number; task: Task }
+  | { kind: "work"; id: string; task: Task }
   | { kind: "asked"; id: number; bot: string; question: string; task?: Task }
   | { kind: "line"; id: number; text: string; icon?: "check" | "merge" | "branch" | "alert" | "play" | "message" | "repeat"; tone?: string; gist?: string } // gist: what it was, in a folded run's few words
   | { kind: "page"; id: number; page: string; changed: boolean }
-  | { kind: "activity"; id: number; items: Block[] }
+  | { kind: "activity"; id: number | string; items: Block[] }
   | { kind: "offer"; id: number; outcome?: Record<string, any> } // the chief's, under its greeting: how it was answered
   // What a bot asks the user to allow: in its own thread, and in the chat its work came from (`here` false there).
   | { kind: "permission"; id: number; permission: number; bot: string; taskId: string; ask: string; what: string; why: string; folder?: string; here: boolean; allowed?: boolean }
@@ -90,9 +90,25 @@ export function fold(blocks: Block[]): Block[] {
 
 export function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>): Block[] {
   const out: Block[] = [];
-  const delegated = children.filter((c) => !c.review_of && c.kind !== "review" && c.kind !== "ask"); // in the order they were delegated, like the calls; a review's reviewers show in its pane
+  const delegated = children.filter((c) => !c.review_of && c.kind !== "review" && c.kind !== "ask");
   const asked = children.filter((c) => c.kind === "ask");
   const results = new Map(events.filter((e) => e.kind === "tool_result").map((e) => [e.data.id, e]));
+  // A successful tool result names the actual child. Other children (for example /new or autonomous work),
+  // and calls whose results are missing, are placed at their creation time rather than at the end of the chat.
+  const byId = new Map(delegated.map((task) => [task.id, task]));
+  const workCalls = new Map<number, Task>();
+  const matched = new Set<string>();
+  for (const e of events) {
+    if (e.kind !== "tool_call" || !["mcp__crewbots__delegate", "mcp__crewbots__start_thread"].includes(e.data.name) || e.data.input?.review_of) continue;
+    const result = results.get(e.data.id);
+    const id = !result?.data.is_error && String(result?.data.output ?? "").match(/\b(?:Delegated|Opened thread) (t_[a-f0-9]{10})\b/)?.[1];
+    const task = id && byId.get(id);
+    if (task && !matched.has(task.id)) {
+      workCalls.set(e.id, task);
+      matched.add(task.id);
+    }
+  }
+  const unanchored = delegated.filter((task) => !matched.has(task.id)).sort((a, b) => a.created_at.localeCompare(b.created_at));
   let steps: { call: StoredEvent; result?: StoredEvent }[] = [];
   const flush = () => {
     if (steps.length) out.push({ kind: "steps", id: steps[0].call.id, calls: steps });
@@ -100,6 +116,11 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
   };
 
   for (const e of events) {
+    while (unanchored.length && Date.parse(unanchored[0].created_at) <= Date.parse(e.at)) {
+      flush();
+      const task = unanchored.shift()!;
+      out.push({ kind: "work", id: task.id, task });
+    }
     const d = e.data;
     if (e.kind === "tool_call") {
       const result = results.get(d.id);
@@ -107,7 +128,10 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
         flush();
         if (d.input?.review_of) continue; // a review shows inside the card of the work it reviews
         if (result?.data.is_error) out.push({ kind: "line", id: e.id, text: `Couldn't delegate: ${oneLine(result.data.output, 160)}`, icon: "alert", tone: "bad" });
-        else if (delegated.length) out.push({ kind: "work", id: e.id, task: delegated.shift()! });
+        else if (workCalls.has(e.id)) {
+          const task = workCalls.get(e.id)!;
+          out.push({ kind: "work", id: task.id, task });
+        }
       } else if (d.name === "mcp__crewbots__ask") {
         flush();
         if (result?.data.is_error) out.push({ kind: "line", id: e.id, text: `Couldn't ask: ${oneLine(result.data.output, 160)}`, icon: "alert", tone: "bad" });
@@ -265,7 +289,7 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
     }
   }
   flush();
-  for (const left of delegated) out.push({ kind: "work", id: Number.MAX_SAFE_INTEGER - out.length, task: left }); // no call seen
+  for (const task of unanchored) out.push({ kind: "work", id: task.id, task });
   for (const left of asked) out.push({ kind: "asked", id: Number.MAX_SAFE_INTEGER - out.length, bot: left.bot, question: left.title, task: left });
   return out;
 }

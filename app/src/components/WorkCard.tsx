@@ -22,8 +22,9 @@ export function WorkCard({ crew, task, onOpen }: { crew: Crew; task: Task; onOpe
   const active = ACTIVE.includes(task.status) || Boolean(below);
   const status = ACTIVE.includes(task.status) || !below ? task.status : below.status;
   const reviews = (crew.children.get(task.parent_id ?? "") ?? []).filter((t) => t.review_of === task.id);
-  const round = Math.max(0, ...reviews.map((r) => r.review_version ?? 0));
-  const latest = reviews.filter((r) => r.review_version === round);
+  const versions = [...new Set(reviews.flatMap((r) => r.review_version == null ? [] : [r.review_version]))].sort((a, b) => a - b);
+  const round = versions.length;
+  const latest = reviews.filter((r) => r.review_version != null && r.review_version === versions.at(-1));
   const verdicts = crew.verdicts.get(task.id) ?? [];
   const verdictOf = (review: Task) => verdicts.filter((v) => v.data.task_id === review.id).at(-1)?.data.verdict as string | undefined;
   const line = active ? doing(crew.latest.get((ACTIVE.includes(task.status) ? task : below ?? task).id)) : oneLine(task.result ?? task.error ?? "", 200);
@@ -66,7 +67,7 @@ export function WorkCard({ crew, task, onOpen }: { crew: Crew; task: Task; onOpe
               </span>
             );
           })}
-          {round > 1 && <span className="faint">round {round} of 3</span>}
+          {round > 0 && <span className="faint">round {round} of 3</span>}
           <span className="grow" />
           <MergeButton crew={crew} task={task} />
         </div>
