@@ -68,6 +68,7 @@ class Task:
 
 
 ACTIVE = {Status.QUEUED, Status.RUNNING}
+STOPPED = {Status.FAILED, Status.NEEDS_INPUT, Status.HELD}  # work that stopped, which may need someone
 
 @dataclass(frozen=True)
 class Handoff:

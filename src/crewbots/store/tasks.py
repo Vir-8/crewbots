@@ -4,7 +4,7 @@ import json
 import uuid
 from typing import Any
 
-from crewbots.store.records import Handoff, Review, Status, Task, Verdict, _now, _review, _task
+from crewbots.store.records import STOPPED, Handoff, Review, Status, Task, Verdict, _now, _review, _task
 
 TITLE_CHARS = 80
 
@@ -34,7 +34,10 @@ class Tasks:
              routine, budget, kind, room_id, pr, now, now),
         )
         self._add_search_row(title, task_id, 0, "task", now)
-        return self.get_task(task_id)
+        task = self.get_task(task_id)
+        if task.status in STOPPED:
+            self._stopped_event(task)
+        return task
 
     def get_task(self, task_id: str) -> Task:
         row = self.db.execute("select * from tasks where id = ?", (task_id,)).fetchone()
@@ -143,11 +146,19 @@ class Tasks:
         if bad := set(fields) - allowed:
             raise ValueError(f"cannot update {sorted(bad)}")  # the owner, in particular, never changes here
         fields["updated_at"] = _now()
+        before = self.get_task(task_id).status if "status" in fields else None
         assignments = ", ".join(f"{k} = ?" for k in fields)
         cur = self.db.execute(f"update tasks set {assignments} where id = ?", (*fields.values(), task_id))
         if cur.rowcount == 0:
             raise KeyError(task_id)
-        return self.get_task(task_id)
+        task = self.get_task(task_id)
+        if before is not None and before not in STOPPED and task.status in STOPPED:
+            self._stopped_event(task)
+        return task
+
+    def _stopped_event(self, task: Task) -> None:
+        """A task stopping is a crew event, so that whoever looks around finds it by id, however its time ties."""
+        self.add_crew_event("task_stopped", task.id, f"{task.bot}'s {task.title!r} is {task.status.value.replace('_', ' ')}")
 
     def add_usage(self, task_id: str, input_tokens: int, output_tokens: int, cost_usd: float | None) -> None:
         self.db.execute(

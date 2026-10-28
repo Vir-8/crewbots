@@ -24,7 +24,8 @@ class Routines:
 
     def wake_state(self, bot: str) -> dict[str, Any]:
         row = self.db.execute("select * from wakes where bot = ?", (bot,)).fetchone()
-        return dict(row) if row else {"bot": bot, "looked_at": None, "next_at": None, "next_why": None}
+        return dict(row) if row else {"bot": bot, "looked_at": None, "next_at": None, "next_why": None,
+                                       "seen_event": None}
 
     def brought_in(self) -> dict[str, dict[str, str]]:
         """The memories brought in from Claude Code and Codex, by path: the fingerprint of what each said then, and
@@ -39,11 +40,15 @@ class Routines:
                             [(path, print_, now) for path, print_ in fingerprints.items()])
 
     def set_wake(self, bot: str, **fields: str | None) -> None:
-        """Sets some of the bot's `looked_at`, `next_at` and `next_why`, keeping the rest."""
+        """Sets some of the bot's `looked_at`, `next_at`, `next_why` and `seen_event`, keeping the rest. A `looked_at`
+        without what was seen then leaves it unknown, to be worked out from that time once."""
+        if "looked_at" in fields and "seen_event" not in fields:
+            fields = fields | {"seen_event": None}
         state = self.wake_state(bot) | fields
-        self.db.execute("insert into wakes (bot, looked_at, next_at, next_why) values (?, ?, ?, ?) on conflict(bot) do"
-                        " update set looked_at = excluded.looked_at, next_at = excluded.next_at, next_why = excluded.next_why",
-                        (bot, state["looked_at"], state["next_at"], state["next_why"]))
+        self.db.execute("insert into wakes (bot, looked_at, next_at, next_why, seen_event) values (?, ?, ?, ?, ?)"
+                        " on conflict(bot) do update set looked_at = excluded.looked_at, next_at = excluded.next_at,"
+                        " next_why = excluded.next_why, seen_event = excluded.seen_event",
+                        (bot, state["looked_at"], state["next_at"], state["next_why"], state["seen_event"]))
 
     def triggered(self, routine: str, keys: list[str]) -> set[str]:
         """Which of `keys` this trigger already started on."""

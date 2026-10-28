@@ -24,6 +24,19 @@ class Happenings:
         rows = self.db.execute("select * from crew_events where at >= ? order by id desc limit ?", (since, limit))
         return [dict(r) for r in reversed(rows.fetchall())]
 
+    def events_between(self, after_id: int, up_to_id: int, kinds: set[str]) -> list[dict[str, Any]]:
+        """The crew events of these kinds with `after_id` < id <= `up_to_id`, oldest first, all of them."""
+        marks = ", ".join("?" * len(kinds))
+        rows = self.db.execute(f"select * from crew_events where id > ? and id <= ? and kind in ({marks}) order by id",
+                               (after_id, up_to_id, *sorted(kinds)))
+        return [dict(r) for r in rows.fetchall()]
+
+    def last_crew_event_id(self, at_or_before: str | None = None) -> int:
+        """The newest crew event's id (0 if none), or the newest stamped at or before the given time."""
+        row = self.db.execute("select max(id) from crew_events" + (" where at <= ?" if at_or_before else ""),
+                              (at_or_before,) if at_or_before else ()).fetchone()
+        return row[0] or 0
+
     def add_chief_event(self, kind: str, subject: str, who: str) -> None:
         self.db.execute("insert into chief_batch (at, kind, subject, who) values (?, ?, ?, ?)", (_now(), kind, subject, who))
 

@@ -194,18 +194,18 @@ class Scheduler:
                 continue
             state = self.store.wake_state(bot)
             if not state["looked_at"]:  # from now on, what happens is news
-                self.store.set_wake(bot, looked_at=_utc(now))
+                runner.mark_looked(bot)
                 continue
             looked = datetime.fromisoformat(state["looked_at"])
             due = bool(state["next_at"]) and datetime.fromisoformat(state["next_at"]) <= now
-            events, stopped, urgent = runner.news_for(bot, state["looked_at"])
+            events, stopped, urgent, snap = runner.news_for(bot)
             news = bool(events or stopped) and now - looked >= (URGENT_GAP if urgent else NEWS_GAP)
             if not (due or news) or (runner.attention.quiet(now) and not urgent):
                 continue
             if time.time() - runner.attention.user_wrote < BREAK_S or not runner.capacity.verdict(
                     card.backend.split("-")[0]).go:
                 continue
-            return runner.wake(bot, self._wake_text(bot, state, events, stopped, looked, now, due))
+            return runner.wake(bot, self._wake_text(bot, state, events, stopped, looked, now, due), snap)
         return None
 
     def _wake_text(self, bot: str, state: dict[str, Any], events: list[dict[str, Any]], stopped: list[Task],

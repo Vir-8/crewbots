@@ -2,6 +2,6 @@
 
 from crewbots.store.core import Store
 from crewbots.store.db import Connection, Rows
-from crewbots.store.records import ACTIVE, Handoff, Review, Status, StoredEvent, Task, Verdict
+from crewbots.store.records import ACTIVE, STOPPED, Handoff, Review, Status, StoredEvent, Task, Verdict
 
-__all__ = ["ACTIVE", "Connection", "Handoff", "Review", "Rows", "Status", "Store", "StoredEvent", "Task", "Verdict"]
+__all__ = ["ACTIVE", "Connection", "Handoff", "Review", "Rows", "STOPPED", "Status", "Store", "StoredEvent", "Task", "Verdict"]
