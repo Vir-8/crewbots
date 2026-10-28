@@ -15,6 +15,7 @@ import json
 import os
 import shutil
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,10 @@ from crewbots.events import Done, Event, Notice, SessionStarted, Text, ToolCall,
 
 CREW_SERVER = "crewbots"
 INTERRUPT_GRACE_S = 20.0  # after an interrupt, how long the turn may take to wind down before the session is dropped
+# After a result, while a message steered into the turn has none of its own yet: a message that came too late for the
+# turn's last step gets a turn of its own, which Claude Code starts at once (its init comes with the result); one
+# taken in at a step gets nothing more.
+STEER_GRACE_S = 3.0
 _END = object()
 
 
@@ -146,10 +151,26 @@ class ClaudeAgentSession:
         self.stderr_lines: list[str] = []
         self.temp: Path | None = None
         self._broken = False
+        # A turn's prompts: its own and any steered into it, and how many have their result. Claude Code takes a steered
+        # message at the turn's next step, or answers it straight after, and the turn reads on until each has its result.
+        self._asked = self._answered = 0
+        self.steerable = False  # a turn is under way that a message can be steered into
 
     @property
     def alive(self) -> bool:
         return self.client is not None and not self._broken
+
+    async def steer(self, text: str) -> bool:
+        """Adds a message to the turn under way; False if no turn is open to take it."""
+        if not self.steerable or not self.client:
+            return False
+        self._asked += 1  # before anything else runs: the turn now waits for this one's result too
+        try:
+            await self.client.query(text)
+        except Exception:
+            self._broken = True
+            return False
+        return True
 
     async def turn(self, prompt: str) -> AsyncIterator[Event]:
         assert self.client
@@ -159,36 +180,53 @@ class ClaudeAgentSession:
 
         async def pump() -> None:
             try:
-                # Until the result of this turn's prompt, past any turn Claude Code started itself in between.
+                # Until the result of this turn's prompts, past any turn Claude Code started itself in between.
                 async for message in self.client.receive_messages():
                     await queue.put(message)
                     if isinstance(message, ResultMessage) and ours(message):
-                        break
+                        self._answered += 1
+                        if self._answered >= self._asked:
+                            self.steerable = False
+                            break
             except Exception as e:  # the CLI died, or the protocol broke
                 await queue.put(e)
             finally:
                 await queue.put(_END)
 
+        self._asked, self._answered, self.steerable = 1, 0, True
         try:
             await self.client.query(prompt)
             if self.on_prompt_sent:
                 self.on_prompt_sent()
         except Exception as e:
             self._broken = True
+            self.steerable = False
             yield Done(final_text="", is_error=True, error=f"claude: {e}", retry="transient")
             return
         reader = asyncio.create_task(pump())
         loop = asyncio.get_running_loop()
         deadline = loop.time() + self.timeout_s if self.timeout_s else None
         timed_out = False
+        answered = 0
+        held: Done | None = None  # the latest result's, while a steered message may yet get one of its own
+        asked = 0  # how many prompts the turn had when it was held
+        said: list[str] = []  # earlier answers in the turn, when a steered message got an answer of its own
         try:
             while True:
                 for notice in self.policy.take_refusals():
                     yield Notice(message=notice)
                 remaining = None if deadline is None else deadline - loop.time()
                 try:
-                    message = await asyncio.wait_for(queue.get(), None if remaining is None else max(0.0, remaining))
+                    wait = STEER_GRACE_S if held else None if remaining is None else max(0.0, remaining)
+                    message = await asyncio.wait_for(queue.get(), wait)
                 except TimeoutError:
+                    if held and self._asked > asked:  # another came in meanwhile: wait for its answer too
+                        asked = self._asked
+                        continue
+                    if held:  # the steered messages were taken in at a step of this turn: nothing more is coming
+                        settled = True
+                        yield held
+                        return
                     timed_out = True
                     deadline = None
                     await self._interrupt()
@@ -209,11 +247,20 @@ class ClaudeAgentSession:
                                retry="transient")
                     settled = True
                     return
+                if held:  # more is coming: a steered message's own turn, whose answer goes with this one
+                    said, held = [*said, held.final_text], None
+                answered = answered + 1 if isinstance(message, ResultMessage) and ours(message) else answered
                 for event in mapper.feed(message, timed_out=timed_out, timeout_s=self.timeout_s):
                     if isinstance(event, SessionStarted):
                         self.session_id = event.session_id
+                    if isinstance(event, Done) and said:
+                        event = replace(event, final_text=_answers([*said, event.final_text]))
+                    if isinstance(event, Done) and answered < self._asked:
+                        held, asked = event, self._asked  # a steered message may still have its answer to come
+                        continue
                     yield event
         finally:
+            self.steerable = False
             if not settled:
                 # Abandoned mid-turn (cancelled): stop the turn but keep the session, if Claude winds down in time.
                 await self._interrupt()
@@ -263,6 +310,13 @@ class ClaudePolicy(Policy):
         if reason is None:
             return PermissionResultAllow()
         return PermissionResultDeny(message=self.refused(name, reason))
+
+
+def _answers(texts: list[str]) -> str:
+    """A turn's answers, when a message steered into it was answered on its own: each that says something, in order."""
+    from crewbots.crew import is_no_reply  # crew loads the backends
+
+    return "\n\n".join(t for t in texts if t.strip() and not is_no_reply(t)) or texts[-1]
 
 
 def ours(result: ResultMessage) -> bool:

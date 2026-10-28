@@ -32,6 +32,7 @@ from crewbots.api.schemas import (
     ShareBody,
     StateBody,
     TaskDrop,
+    TaskStop,
     ThreadBody,
 )
 from crewbots.crew_tools import CrewTools, ToolRefused
@@ -121,6 +122,11 @@ def routes(c: Context) -> APIRouter:
         task = runner.withdraw_merge(body.task_id, body.reason, parent_id=request.state.task.id)
         event = runner.store.last_event(task.id, ("merge_withdrawn",))
         return {"id": task.id, "merge_state": task.merge_state, "notice": event.data.get("notice") if event else None}
+
+    @v1.post("/bot/stop_task")
+    async def bot_stop_task(request: Request, body: TaskStop):
+        task = await runner.stop_work(body.task_id, by_task=request.state.task.id)
+        return {"id": task.id, "status": task.status}
 
     @v1.post("/bot/drop_task")
     async def bot_drop_task(request: Request, body: TaskDrop):

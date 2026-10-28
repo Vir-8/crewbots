@@ -395,7 +395,8 @@ async def test_workers_cant_reach_coordinator_tools(store, tmp_path):
 
     assert {d.name for d in tools.definitions()} == {
         "handoff", "escalate", "review", "remember", "forget", "recall", "start_thread", "post", "delegate", "tasks",
-        "message", "ask", "open_group", "add_to_group", "working_state", "update_state", "remind_on", "propose_routine", "share",
+        "message", "stop_task", "ask", "open_group", "add_to_group", "working_state", "update_state", "remind_on",
+        "propose_routine", "share",
         "write_page", "edit_page", "set_name", "ask_permission", "browser_open", "browser_screenshot",
         "browser_click", "browser_type", "browser_evaluate", "browser_console"}
     with pytest.raises(ToolRefused, match="not one of this bot's crew tools"):
@@ -467,3 +468,87 @@ def test_other_bot_temporary_state_files_are_denied(tmp_path):
     assert policy.check_tool("Read", {"file_path": str(temporary)}) is not None
     assert policy.check_tool("Glob", {"path": str(other), "pattern": ".state-*"}) is not None
     assert policy.check_tool("Read", {"file_path": str(own)}) is None
+
+
+# Steering: a message sent into a turn under way
+
+
+class LiveClient:
+    """A fake SDK client whose messages arrive when the test sends them."""
+
+    def __init__(self):
+        self.queries: list[str] = []
+        self.messages: asyncio.Queue = asyncio.Queue()
+
+    async def query(self, prompt):
+        self.queries.append(prompt)
+
+    async def receive_messages(self):
+        while True:
+            yield await self.messages.get()
+
+    async def interrupt(self):
+        pass
+
+    async def disconnect(self):
+        pass
+
+
+async def steered_turn(monkeypatch, feed):
+    """Runs a turn, steering "and use CSV" into it after its first step, then `feed`s the client the rest."""
+    import crewbots.backends.claude_sdk as sdk
+
+    monkeypatch.setattr(sdk, "STEER_GRACE_S", 0.05)
+    client = LiveClient()
+    session = session_with(client)
+    assert not await session.steer("too early")  # no turn under way
+    stream = session.turn("export the report")
+    client.messages.put_nowait(AssistantMessage(content=[ToolUseBlock(id="t1", name="Bash", input={})], model="m"))
+    assert await anext(stream) == ToolCall(id="t1", name="Bash", input={})
+    assert session.steerable and await session.steer("and use CSV")
+    reading = asyncio.create_task(collect(stream))  # the turn reads on while the messages come
+    await feed(client, session)
+    return client, session, await asyncio.wait_for(reading, 2)
+
+
+async def test_a_message_taken_in_at_a_step_ends_the_turn_with_one_result(monkeypatch):
+    async def feed(client, session):
+        client.messages.put_nowait(result("Exported it as CSV"))  # Claude Code folded it in: one result, then nothing
+
+    client, session, events = await steered_turn(monkeypatch, feed)
+    assert client.queries == ["export the report", "and use CSV"]
+    assert [e for e in events if isinstance(e, Done)] == [Done(final_text="Exported it as CSV")]
+    assert not session.steerable and not await session.steer("after")
+
+
+async def test_a_message_too_late_for_a_step_is_answered_in_the_same_turn(monkeypatch):
+    async def feed(client, session):
+        for message in (result("Exported it as JSON"), SystemMessage(subtype="init", data={"session_id": "s-1"}),
+                        AssistantMessage(content=[TextBlock(text="Now as CSV too")], model="m"), result("Now as CSV too")):
+            client.messages.put_nowait(message)
+
+    _, _, events = await steered_turn(monkeypatch, feed)
+    assert [e for e in events if isinstance(e, Done)] == [Done(final_text="Exported it as JSON\n\nNow as CSV too")]
+    assert len([e for e in events if isinstance(e, Usage)]) == 2  # both answers cost tokens
+
+
+async def test_a_message_steered_while_the_turn_waits_is_answered_too(monkeypatch):
+    async def feed(client, session):
+        client.messages.put_nowait(result("Exported it"))  # "and use CSV" was taken in: nothing more for it
+        await asyncio.sleep(0.03)
+        assert await session.steer("and email it")  # in the wait after it: Claude Code answers in a turn of its own
+        client.messages.put_nowait(SystemMessage(subtype="init", data={"session_id": "s-1"}))
+        await asyncio.sleep(0.15)  # longer than the wait: once its turn has begun, the turn waits for its answer
+        client.messages.put_nowait(result("Emailed it"))
+
+    client, _, events = await steered_turn(monkeypatch, feed)
+    assert client.queries[-1] == "and email it"
+    assert [e for e in events if isinstance(e, Done)] == [Done(final_text="Exported it\n\nEmailed it")]
+
+
+def test_a_turns_answers_leave_out_the_silent_ones():
+    from crewbots.backends.claude_sdk import _answers
+
+    assert _answers(["NO_REPLY", "On it"]) == "On it"
+    assert _answers(["Here it is", ""]) == "Here it is"
+    assert _answers(["NO_REPLY", "NO_REPLY"]) == "NO_REPLY"  # still silent

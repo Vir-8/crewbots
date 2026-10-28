@@ -113,6 +113,55 @@ class Sessions:
         if not warm and not self._session_busy(key):
             await self._close_session(key)
 
+    @property
+    def _steering(self) -> dict[str, OpenSession]:
+        """Tasks with a turn under way in a session, which a message to them goes into (`_steer`)."""
+        return self.__dict__.setdefault("_steering_now", {})
+
+    def _steer(self, task: Task, sender: str, text: str) -> bool:
+        """Sends a message into the task's turn under way, the way someone adds to what they asked while it's being
+        done, rather than holding it until the turn ends. Only conversation steers: the user's, a group chat's and a
+        teammate's. crewbots' own notices and reports wait for the turn to end."""
+        opened = self._steering.get(task.id)
+        if (not opened or not getattr(opened.session, "steerable", False)
+                or not (sender in ("user", "room") or sender in self.crew.bots)):
+            return False
+        steering = asyncio.get_running_loop().create_task(self._steer_into(task.id, opened, text))
+        kept = self.__dict__.setdefault("_steers_sent", set())
+        kept.add(steering)
+        steering.add_done_callback(kept.discard)
+        return True
+
+    async def _steer_into(self, task_id: str, opened: OpenSession, text: str) -> None:
+        try:
+            taken = await opened.session.steer(text)
+        except Exception:
+            taken = False
+        if taken:
+            self.store.pending_steered(task_id, text)  # a turn carried on after a restart has it too
+        else:
+            self._requeue(task_id, text)
+
+    def _requeue(self, task_id: str, text: str) -> None:
+        """A message that missed the turn it was steered into waits for the next, as one sent after it would."""
+        if task_id in self._runs:
+            self._queue_during_run(self.store.get_task(task_id), text)
+        elif task_id not in self._cancelling and self.store.get_task(task_id).status is not Status.CANCELLED:
+            self._set(task_id, status=Status.QUEUED, error=None)
+            self._start(task_id, text)
+
+    async def _steerable(self, task_id: str, opened: OpenSession, stream: AsyncIterator[Event]) -> AsyncIterator[Event]:
+        """A turn's events, while messages sent to its task go into it."""
+        self._steering[task_id] = opened
+        try:
+            async with aclosing(stream) as events:
+                async for event in events:
+                    yield event
+        finally:
+            self._steering.pop(task_id, None)
+            for text in getattr(opened.session, "missed_steers", list)():
+                self._requeue(task_id, text)
+
     async def _session_for(self, task: Task, bot: Bot, cwd: Path, backend: Backend) -> OpenSession | None:
         """The task's open session (for a seat, its chat's), or a new one; None to run this turn as its own process."""
         mind = self._mind(task)

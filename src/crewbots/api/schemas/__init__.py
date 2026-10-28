@@ -27,6 +27,7 @@ from crewbots.api.schemas.bot import (
     ShareBody,
     StateBody,
     TaskDrop,
+    TaskStop,
     ThreadBody,
     WithdrawalReason,
 )
@@ -308,6 +309,7 @@ __all__ = [
     "RemindOn",
     "StateBody",
     "TaskDrop",
+    "TaskStop",
     "SkillOut",
     "StarterOut",
     "Streak",

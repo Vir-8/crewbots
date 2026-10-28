@@ -256,8 +256,8 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
             return task
         if task.reported:
             self.store.update_task(task_id, reported=False)  # its next outcome goes back to the parent too
-        if task_id in self._runs:
-            return self._queue_during_run(task, text)
+        if task_id in self._runs:  # into the turn under way, if it can take it; else after it
+            return task if self._steer(task, sender, text) else self._queue_during_run(task, text)
         task = self._set(task_id, status=Status.QUEUED, error=None)
         self._start(task_id, text)
         return task
@@ -489,7 +489,7 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
                 if task.kind == "seat":
                     self._seat_dispatch[task_id] = self._seat_turn_seen.get(task_id, 0)
                 if open_session:
-                    stream = open_session.session.turn(prompt)
+                    stream = self._steerable(task_id, open_session, open_session.session.turn(prompt))
                 else:
                     stream = backend.run(self._spec(task, bot, cwd, token, prompt, backend))
                 if task_id in self._attempts:

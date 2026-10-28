@@ -150,5 +150,9 @@ class TaskDrop(BaseModel):
     reason: str
 
 
+class TaskStop(BaseModel):
+    task_id: str
+
+
 class WithdrawalReason(BaseModel):
     reason: str

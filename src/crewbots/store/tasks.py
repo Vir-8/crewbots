@@ -187,6 +187,11 @@ class Tasks:
         self.db.execute("update pending_turns set waiting = json_insert(waiting, '$[#]', ?) where task_id = ?",
                         (text, task_id))
 
+    def pending_steered(self, task_id: str, text: str) -> None:
+        """A message steered into the turn under way is part of what it was asked."""
+        self.db.execute("update pending_turns set prompt = prompt || char(10) || char(10) || ? where task_id = ?",
+                        (text, task_id))
+
     def primed(self, task_id: str) -> dict[str, str] | None:
         """What the task's session started with, part by part (see `set_primed`); None if it isn't known."""
         row = self.db.execute("select parts from primed where task_id = ?", (task_id,)).fetchone()

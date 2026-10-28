@@ -9,7 +9,7 @@ from fakes import bot, make_crew, wait_until
 
 from crewbots.backends import RunSpec
 from crewbots.events import Done, SessionStarted, Text
-from crewbots.runner import MCP_SERVER_NAME, Runner
+from crewbots.runner import MCP_SERVER_NAME, NotAllowed, Runner
 from crewbots.store import Status, Store
 
 
@@ -846,3 +846,107 @@ def test_handoff_closes_questions_without_treating_idle_as_done(store, tmp_path)
     assert "Still open?" in path.read_text()
     runner.handoff(task.id, "Done", [], "", "")
     assert "Still open?" not in path.read_text()
+
+
+class SteeredSession(FakeSession):
+    """A session whose turn can take messages while it waits at the backend's gate."""
+
+    def __init__(self, backend, spec):
+        super().__init__(backend, spec)
+        self.steered: list[str] = []
+        self.steerable = False
+        self.takes = True
+        self.misses: list[str] = []
+
+    async def steer(self, text):
+        if not (self.steerable and self.takes):
+            return False
+        self.steered.append(text)
+        return True
+
+    def missed_steers(self):
+        missed, self.misses = self.misses, []
+        return missed
+
+    async def turn(self, prompt):
+        self.steerable = True
+        try:
+            async for event in super().turn(prompt):
+                yield event
+        finally:
+            self.steerable = False
+
+
+class SteeredBackend(SessionBackend):
+    async def open(self, spec):
+        session = SteeredSession(self, spec)
+        self.opened.append(session)
+        return session
+
+
+async def chat_mid_turn(store, tmp_path, *bots):
+    backend = SteeredBackend()
+    runner, _ = make(store, tmp_path, backend, *(bots or (bot("worker"),)))
+    backend.gate = asyncio.Event()
+    chat = runner.say("worker", "export the report")
+    await wait_until(lambda: backend.opened and backend.opened[0].steerable)
+    return runner, backend, backend.opened[0], chat
+
+
+async def test_a_message_to_a_working_chat_goes_into_its_turn(store, tmp_path):
+    runner, backend, session, chat = await chat_mid_turn(store, tmp_path)
+    runner.say("worker", "as CSV, please")
+    await wait_until(lambda: session.steered == ["as CSV, please"])
+    assert runner.queued(chat.id) == []  # not held for after the turn
+    assert "as CSV, please" in store.db.execute("select prompt from pending_turns where task_id = ?",
+                                                (chat.id,)).fetchone()[0]  # a turn carried on after a restart has it
+    backend.gate.set()
+    await wait_until(settled(store, runner, chat.id))
+    assert len(session.turns) == 1  # one turn took both
+    assert [e.data["text"] for e in store.events(chat.id) if e.kind == "message"] == ["export the report",
+                                                                                   "as CSV, please"]
+    await runner.shutdown()
+
+
+async def test_crewbots_notices_wait_for_the_turn_to_end(store, tmp_path):
+    runner, backend, session, chat = await chat_mid_turn(store, tmp_path)
+    runner.send(chat.id, "1 thread finished", sender="crewbots")
+    assert runner.queued(chat.id) == ["1 thread finished"] and session.steered == []
+    backend.gate.set()
+    await wait_until(lambda: len(session.turns) == 2 and settled(store, runner, chat.id)())
+    await runner.shutdown()
+
+
+@pytest.mark.parametrize("how", ["refused", "missed"])
+async def test_a_message_the_turn_couldnt_take_goes_to_the_next(store, tmp_path, how):
+    runner, backend, session, chat = await chat_mid_turn(store, tmp_path)
+    if how == "refused":
+        session.takes = False  # the turn was ending as it came
+    runner.say("worker", "as CSV, please")
+    if how == "missed":
+        await wait_until(lambda: session.steered)
+        session.misses = ["as CSV, please"]  # taken, but the turn ended before it went in
+    backend.gate.set()
+    await wait_until(lambda: len(session.turns) == 2 and settled(store, runner, chat.id)())
+    assert "as CSV, please" in session.turns[1]
+    await runner.shutdown()
+
+
+async def test_a_teammate_steers_work_it_handed_out_and_can_stop_it(store, tmp_path):
+    backend = SteeredBackend()
+    runner, _ = make(store, tmp_path, backend, bot("lead", can_delegate=True), bot("worker"), bot("other"))
+    backend.gate = asyncio.Event()
+    lead = runner.chat("lead")
+    work = runner.delegate(lead.id, "worker", "build the export")
+    await wait_until(lambda: backend.opened and backend.opened[0].steerable)
+    runner.message_child(lead.id, work.id, "stop: it's been done already")
+    await wait_until(lambda: backend.opened[0].steered)
+    assert "stop: it's been done already" in backend.opened[0].steered[0]  # marked as the teammate's
+    with pytest.raises(NotAllowed, match="isn't yours"):
+        await runner.stop_work(work.id, by_task=runner.chat("other").id)
+    with pytest.raises(NotAllowed, match="conversation"):
+        await runner.stop_work(lead.id, by_task=lead.id)
+    stopped = await runner.stop_work(work.id, by_task=lead.id)
+    assert stopped.status is Status.CANCELLED
+    assert (await runner.stop_work(work.id, by_task=lead.id)).status is Status.CANCELLED  # once is enough
+    await runner.shutdown()

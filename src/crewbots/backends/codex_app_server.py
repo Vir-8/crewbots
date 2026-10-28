@@ -44,6 +44,7 @@ if TYPE_CHECKING:
     from crewbots.backends.codex_cli import CodexCLI
 
 OPEN_TIMEOUT_S = 120.0  # starting the thread waits for its MCP servers
+STEER_LOOK_S = 1.0  # a turn looks this often for a message steered into it, even while nothing comes from Codex
 CLIENT = {"name": "crewbots", "title": "crewbots", "version": "0.1"}
 CREW_SERVER = "crewbots"
 
@@ -70,6 +71,9 @@ class CodexSession:
         self._files: dict[str, list[str]] = {}  # file change item id → the paths it touches, for its approval
         self._turn_id: str | None = None
         self._steers: list[str] = []  # reasons to tell the model, after a refusal
+        self._asks: list[str] = []  # messages steered into the turn under way, sent at its next look
+        self._missed: list[str] = []  # steered messages the turn ended before taking, for the next turn
+        self.steerable = False
         self.temp: Path | None = None
         self._context: tuple[int, int] | None = None  # (tokens in the latest request, the model's context window)
         self.context_window = spec.context_window  # the bot's own window, when it's smaller than the model's
@@ -128,15 +132,19 @@ class CodexSession:
             })
             turn_id = (started.get("turn") or {}).get("id")
             self._turn_id = turn_id
+            self.steerable = True
             loop = asyncio.get_running_loop()
             deadline = loop.time() + self.timeout_s if self.timeout_s else None
             while True:
                 for notice in self.policy.take_refusals() if self.policy else []:
                     yield Notice(message=notice)
                 await self._steer()
-                try:
-                    message = await self._next(None if deadline is None else max(0.0, deadline - loop.time()))
+                left = None if deadline is None else max(0.0, deadline - loop.time())
+                try:  # a look at least every STEER_LOOK_S, so a steered message doesn't wait on a quiet command
+                    message = await self._next(STEER_LOOK_S if left is None else min(left, STEER_LOOK_S))
                 except TimeoutError:
+                    if deadline is None or loop.time() < deadline:
+                        continue
                     yield Done(final_text=parser.final_text(), is_error=True, error=f"timed out after {self.timeout_s:g}s")
                     return
                 if message is None:
@@ -157,6 +165,9 @@ class CodexSession:
         except (AppServerError, BrokenPipeError, ConnectionResetError) as e:
             yield Done(final_text=parser.final_text(), is_error=True, error=f"codex app-server: {e}", retry="transient")
         finally:
+            self.steerable = False
+            self._missed += self._asks
+            self._asks = []
             if not finished:
                 self._broken = True
                 await self.process.stop()
@@ -277,13 +288,33 @@ class CodexSession:
                             "use the escalate tool if the task can't be done without it.")
         return "decline"
 
+    async def steer(self, text: str) -> bool:
+        """Adds a message to the turn under way, sent at its next look (`_steer`); False if no turn is open. One the
+        turn ends before taking comes back from `missed_steers`."""
+        if not self.steerable:
+            return False
+        self._asks.append(text)
+        return True
+
+    def missed_steers(self) -> list[str]:
+        missed, self._missed = self._missed, []
+        return missed
+
     async def _steer(self) -> None:
-        """Tells the model why something was declined, as input to the turn in progress."""
+        """Tells the model why something was declined, and what was steered into the turn, as input to the turn in
+        progress."""
         while self._steers and self._turn_id:
             text = self._steers.pop(0)
             with contextlib.suppress(AppServerError):
                 await self._request("turn/steer", {"threadId": self.session_id, "expectedTurnId": self._turn_id,
                                                    "input": [{"type": "text", "text": text, "text_elements": []}]})
+        while self._asks and self._turn_id:
+            text = self._asks.pop(0)
+            try:
+                await self._request("turn/steer", {"threadId": self.session_id, "expectedTurnId": self._turn_id,
+                                                   "input": [{"type": "text", "text": text, "text_elements": []}]})
+            except AppServerError:  # the turn ended first: the next one takes it
+                self._missed.append(text)
 
 
 CODEX_WARNING_PERCENT = 80.0  # Codex reports how much is used, not a warning; Claude warns at about this point

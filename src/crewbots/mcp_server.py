@@ -192,6 +192,11 @@ def build_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = F
         result = call("POST", "/bot/message", {"task_id": task_id, "text": text})
         return f"Sent to {result['id']} ({result['status']})."
 
+    @server.tool(description=describe("stop_task"))
+    def stop_task(task_id: str) -> str:
+        task = call("POST", "/bot/stop_task", {"task_id": task_id})
+        return f"{task['id']} is {task['status']}."
+
     if not can_delegate:  # merge proposals are a coordinator's
         return server
 

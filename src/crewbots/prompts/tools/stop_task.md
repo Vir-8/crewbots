@@ -1,0 +1,1 @@
+Stop a thread of your own, or work you handed out (the chief: anyone's), the way the user's Stop does. Its folder and branch stay as they are. To change what it's doing instead, message it: a message reaches it mid-turn, at its next step.

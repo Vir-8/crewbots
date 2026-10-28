@@ -168,6 +168,24 @@ class Delegation:
         self.store.log_agent("message", sender, child.bot, task_id, text=text)
         return self.send(task_id, text, sender=sender)
 
+    async def stop_work(self, task_id: str, *, by_task: str) -> Task:
+        """The `stop_task` tool: a bot stops a thread of its own, or work it handed out (the chief, any), as the app's
+        Stop does. To change what the work does instead, message it: that reaches it mid-turn."""
+        caller = self.store.get_task(by_task)
+        try:
+            task = self.store.get_task(task_id)
+        except KeyError:
+            raise NotAllowed(f"no task {task_id}") from None
+        if task.kind in ("chat", "seat") or task_id == by_task:
+            raise NotAllowed(f"{task_id} is a conversation, not work: message it, or end your own turn")
+        handed_out = bool(task.parent_id) and self.store.get_task(task.parent_id).bot == caller.bot
+        if task.bot != caller.bot and not handed_out and not self.is_chief(caller.bot):
+            raise NotAllowed(f"{task_id} isn't yours and you didn't hand it out; ask whoever did")
+        if not (task.active or task.id in self._runs or task.status in (Status.HELD, Status.NEEDS_INPUT)):
+            return task  # stopped already
+        self.store.log_agent("stop", caller.bot, task.bot, task.id, text="")
+        return await self.cancel(task_id)
+
     def add_bot(self, task_id: str, fields: dict[str, Any]) -> Bot:
         """The chief adds a bot, when the user asks it to, with whatever it gives it: either access short of full
         (no sandbox is the user's call), any of the crew's MCP servers (all of them unless it names some), delegation,

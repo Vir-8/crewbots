@@ -98,6 +98,7 @@ SPECS: dict[str, Spec] = {
     "tasks": Spec(_object({}, [])),
     "room_status": Spec(_object({"room": STRING}, []), coordinator_only=True),
     "message": Spec(_object({"task_id": STRING, "text": STRING}, ["task_id", "text"])),
+    "stop_task": Spec(_object({"task_id": STRING}, ["task_id"])),
     "propose_push": Spec(_object({"project": STRING, "summary": STRING}, ["project", "summary"]), coordinator_only=True),
     "propose_replace_main": Spec(_object({"project": STRING, "branch": STRING, "summary": STRING},
                                          ["project", "branch", "summary"]), coordinator_only=True),
@@ -214,6 +215,9 @@ class CrewTools:
                 case "message":
                     task = r.message_child(me, args["task_id"], args["text"])
                     return f"Sent to {task.id} ({task.status})."
+                case "stop_task":
+                    task = await r.stop_work(args["task_id"], by_task=me)
+                    return f"{task.id} is {task.status}."
                 case "propose_push":
                     from crewbots.push import proposal_message, propose
                     proposal = await propose(r, me, args["project"], args["summary"])
