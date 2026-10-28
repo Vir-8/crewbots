@@ -240,6 +240,10 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
         flush();
         out.push({ kind: "replace", id: e.id, data: d, started: events.some((x) => x.kind === "replace_main_started" && x.data.proposal === e.id), result: events.find((x) => x.kind === "replace_main_result" && x.data.proposal === e.id)?.data });
         break;
+      case "dropped":
+        flush();
+        out.push({ kind: "line", id: e.id, text: `${d.by === "user" ? "You" : d.by} dropped it: ${d.reason}`, icon: "merge" });
+        break;
       case "merge_withdrawn":
         flush();
         out.push({ kind: "line", id: e.id, text: `${d.by === "user" ? "You" : d.by} withdrew the merge proposal: ${d.reason}`, icon: "merge" });

@@ -138,6 +138,14 @@ export function MergeButton({ crew, task }: { crew: Crew; task: Task }) {
       </span>
     );
   }
+  if (task.merge_state === "dropped") {
+    const dropped = (crew.events?.get(task.id) ?? []).filter((event) => event.kind === "dropped").at(-1);
+    return (
+      <span className="merged dropped" title={dropped?.data.reason}>
+        <Icon name="x" size={13} /> Dropped
+      </span>
+    );
+  }
   if (task.merge_state !== "proposed") return null;
   const merge = async () => {
     if (!window.confirm(`Merge ${task.branch} into ${task.repo ?? "your checkout"}?`)) return;

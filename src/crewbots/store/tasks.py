@@ -83,11 +83,12 @@ class Tasks:
     def owed_by_delegator(self, bot: str) -> list[Task]:
         """Code tasks other bots finished for `bot` that it still owes an action on: idle, and the latest of their handoff,
         review verdict, merge, withdrawal and drop is a handoff or a passing review (a failing review hands the work back to
-        the worker, and the other three close it). One waiting on the user to merge it isn't owed."""
+        the worker, and the other three close it). One waiting on the user to merge it isn't owed, nor one dropped on
+        purpose."""
         rows = self.db.execute(
             "select t.* from tasks t join tasks p on p.id = t.parent_id where p.bot = ? and t.bot != p.bot "
             "and t.status = 'idle' and t.branch is not null and t.review_of is null "
-            "and coalesce(t.merge_state, '') not in ('merged', 'merging', 'proposed') and (select e.kind || ':' || "
+            "and coalesce(t.merge_state, '') not in ('merged', 'merging', 'proposed', 'dropped') and (select e.kind || ':' || "
             "coalesce(json_extract(e.data, '$.verdict'), '') from events e where e.task_id = t.id and e.kind in "
             "('handoff', 'review', 'merged', 'merge_withdrawn', 'worktree_dropped') order by e.id desc limit 1) "
             "in ('handoff:', 'review:pass') order by t.created_at, t.id", (bot,)).fetchall()

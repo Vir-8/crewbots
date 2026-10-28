@@ -15,7 +15,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ImageContent, TextContent
 
-from crewbots.crew_tools import describe, merge_text, recall_text, shared_text
+from crewbots.crew_tools import describe, dropped_text, merge_text, recall_text, shared_text
 
 INSTRUCTIONS = "Tools for working in a crewbots crew: hand work back, escalate decisions, and (for coordinators) delegate."
 
@@ -231,6 +231,10 @@ def build_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = F
     def propose_merge(task_id: str, summary: str) -> str:
         task = call("POST", "/bot/propose_merge", {"task_id": task_id, "summary": summary})
         return merge_text(task_id, task["merge_state"], task["merged_commit"], task)
+
+    @server.tool(description=describe("drop_task"))
+    def drop_task(task_id: str, reason: str) -> str:
+        return dropped_text(call("POST", "/bot/drop_task", {"task_id": task_id, "reason": reason}))
 
     @server.tool(description=describe("withdraw_merge"))
     def withdraw_merge(task_id: str, reason: str) -> str:

@@ -145,5 +145,10 @@ class MergeWithdrawal(BaseModel):
     reason: str
 
 
+class TaskDrop(BaseModel):
+    task_id: str
+    reason: str
+
+
 class WithdrawalReason(BaseModel):
     reason: str

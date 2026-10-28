@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "c644653d7ac3";
+export const API_SCHEMA = "4413552a6155";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -548,7 +548,7 @@ export interface MergeResultOut {
   turns: number;
   review_of: string | null;
   review_version: number | null;
-  merge_state: "proposed" | "merging" | "merged" | null;
+  merge_state: "proposed" | "merging" | "merged" | "dropped" | null;
   merged_commit: string | null;
   merged_tip: string | null;
   kind: "chat" | "seat" | "thread" | "review" | "ask";
@@ -1140,6 +1140,11 @@ export interface Submitted {
   comments: number;
 }
 
+export interface TaskDrop {
+  task_id: string;
+  reason: string;
+}
+
 export interface TaskOut {
   id: string;
   bot: string;
@@ -1162,7 +1167,7 @@ export interface TaskOut {
   turns: number;
   review_of: string | null;
   review_version: number | null;
-  merge_state: "proposed" | "merging" | "merged" | null;
+  merge_state: "proposed" | "merging" | "merged" | "dropped" | null;
   merged_commit: string | null;
   merged_tip: string | null;
   kind: "chat" | "seat" | "thread" | "review" | "ask";
@@ -1316,7 +1321,7 @@ export interface WithdrawalResultOut {
   turns: number;
   review_of: string | null;
   review_version: number | null;
-  merge_state: "proposed" | "merging" | "merged" | null;
+  merge_state: "proposed" | "merging" | "merged" | "dropped" | null;
   merged_commit: string | null;
   merged_tip: string | null;
   kind: "chat" | "seat" | "thread" | "review" | "ask";

@@ -431,9 +431,8 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
             self._waking.discard(task_id)
             self._stay_awake()
         self._report_up(task_id)
-        task = self.store.get_task(task_id)
-        if settled and task.kind == "thread" and not task.active and not self._background(task_id):
-            self.happened("thread_done", task_id, f"{task.bot}'s thread {task.title!r} is {task.status.value}")
+        if settled:
+            self._turns_over(self.store.get_task(task_id))
 
     async def _run(self, task_id: str, prompt: str, owed: bool = False, nudged: bool = False) -> Done | None:
         """One turn. Returns its Done if it failed, for `_tries` to settle; None once the task is settled."""

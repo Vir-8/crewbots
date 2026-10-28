@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import re
 import secrets
 import tempfile
 import time
@@ -17,6 +18,7 @@ from crewbots.events import Notice
 from crewbots.memory import CREW_SCOPE, MemoryError, Note
 from crewbots.pages import Page
 from crewbots.routines import RoutineError
+from crewbots.runner.closing import Closing
 from crewbots.runner.common import MergeError, NotAllowed
 from crewbots.runner.merge_message import merge_message
 from crewbots.runner.merge_status import MergeStatus
@@ -27,10 +29,11 @@ from crewbots.store import Handoff, Status, Task
 CHOICES = 6  # offered with a question, at most
 LABEL_CHARS, DESCRIPTION_CHARS = 80, 240  # of a choice
 OTHER = {"other", "something else", "other (specify)", "other (please specify)"}  # the app always offers Other
+DROPPED = re.compile(r"\s*dropped\s*:\s*(.*)", re.IGNORECASE | re.DOTALL)  # a handoff that closes its work on purpose
 log = logging.getLogger(__name__)
 
 
-class Work(MergeStatus):
+class Work(Closing, MergeStatus):
     """The part of Runner that takes a bot's handoffs, questions, merge proposals and notes."""
 
     def _check_worktree_sweep(self, task_id: str | None = None) -> None:
@@ -350,46 +353,6 @@ class Work(MergeStatus):
         self._cleanup_after_action(task)
         return task
 
-    def withdraw_merge(self, task_id: str, reason: str, *, parent_id: str | None = None) -> Task:
-        """Withdraw a proposal, preserving work on its branch."""
-        self._check_worktree_sweep(task_id)
-        if parent_id is not None:
-            parent = self.store.get_task(parent_id)
-            if not self.is_coordinator(parent.bot):
-                raise NotAllowed("only a coordinator can withdraw a merge")
-            self._own_child(parent_id, task_id)
-            by = parent.bot
-        else:
-            by = "user"
-        if not reason.strip():
-            raise NotAllowed("give a reason for withdrawing the proposal")
-        try:
-            task = self.store.get_task(task_id)
-        except KeyError:
-            raise NotAllowed(f"no task {task_id}") from None
-        if task.merge_state != "proposed":
-            raise NotAllowed(f"{task_id} has no merge proposal to withdraw")
-        notice = None
-        if task.base_branch:
-            if task.active or task.id in self._runs or any(r.active or r.id in self._runs
-                                                           for r in self.store.reviewers_of(task.id)):
-                raise NotAllowed("task or reviewer is still active")
-            checkout = self._branch_checkout(task)
-            if branch_mode.on_branch(checkout):
-                try:
-                    branch_mode.drop(checkout, task.id)
-                except worktree.GitError as e:
-                    raise NotAllowed(str(e)) from None
-            else:
-                notice = "HEAD is not on the task branch; project released without switching or committing"
-                reason = reason.strip() + f" ({notice})"
-        task = self._set(task_id, merge_state=None, **({"worktree_path": None} if task.base_branch else {}))
-        self._record(task_id, kind="merge_withdrawn", data={"by": by, "reason": reason.strip(),
-                                                             **({"notice": notice} if notice else {})})
-        if not task.base_branch:
-            self._cleanup_after_action(task)
-        return task
-
     def _cleanup_after_action(self, task: Task) -> None:
         try:
             result = self._cleanup_worktree(task)
@@ -524,39 +487,21 @@ class Work(MergeStatus):
             raise NotAllowed("only coordinators can sweep worktrees")
         return await self.run_worktree_sweep(dry_run)
 
-    def drop_worktree(self, task_id: str) -> dict[str, str]:
-        self._check_worktree_sweep(task_id)
-        task = self.store.get_task(task_id)
-        if task.merge_state == "merging":
-            raise NotAllowed("a merge is being recovered; the checkout cannot be dropped")
-        if task.merge_state == "proposed":
-            raise NotAllowed("withdraw the open merge proposal first")
-        if task.base_branch:
-            if task.active or task.id in self._runs or any(r.active or r.id in self._runs
-                                                           for r in self.store.reviewers_of(task.id)):
-                raise NotAllowed("task or reviewer is still active")
-            checkout = self._branch_checkout(task)
-            on_branch = branch_mode.on_branch(checkout)
-            unchanged = not on_branch
-            if on_branch:
-                try:
-                    if task.merge_state == "merged":
-                        branch_mode.leave_merged_branch(checkout)
-                    else:
-                        branch_mode.drop(checkout, task.id)
-                except worktree.GitError as e:
-                    raise NotAllowed(str(e)) from None
-            self._set(task.id, worktree_path=None)
-            self._record(task.id, kind="worktree_dropped", data={"path": task.worktree_path})
-            return {"task_id": task.id, "path": task.worktree_path, "branch": task.branch, "status": "removed",
-                    "reason": "project released without switching or committing" if unchanged else (
-                        f"switched back to {task.base_branch}" if task.merge_state == "merged" else "branch saved")}
-        return self._cleanup_worktree(task)
+    def _turns_over(self, task: Task) -> None:
+        """A task's turns are over for now: a thread's end is news for the crew, and a folder its own handoff dropped
+        can go."""
+        if task.kind == "thread" and not task.active and not self._background(task.id):
+            self.happened("thread_done", task.id, f"{task.bot}'s thread {task.title!r} is {task.status.value}")
+        if task.merge_state == "dropped" and task.worktree_path:
+            self._drop_checkout(task)
 
     def handoff(self, task_id: str, done: str, output: list[str], open: str, needs: str) -> Handoff:
         task = self.store.get_task(task_id)
         handoff = self.store.add_handoff(task_id, task.bot, done, output, open, needs)
         self._record(task_id, kind="handoff", data=handoff.to_json())
+        if (dropped := DROPPED.match(done)) and task.kind == "thread" and task.merge_state in (None, "dropped"):
+            reason = next((line for line in dropped[1].splitlines() if line.strip()), "dropped by its own bot")
+            self._mark_dropped(task, task.bot, reason)  # its folder goes once the turn is over
         self._close_questions(task_id)
         self._refresh_working_state(task.bot)
         self.crew.memory.log(task.bot, f"{task_id} {task.title}: {_short(done, 300)}"

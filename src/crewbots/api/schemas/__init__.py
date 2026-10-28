@@ -26,6 +26,7 @@ from crewbots.api.schemas.bot import (
     SearchHit,
     ShareBody,
     StateBody,
+    TaskDrop,
     ThreadBody,
     WithdrawalReason,
 )
@@ -306,6 +307,7 @@ __all__ = [
     "ProposedRoutine",
     "RemindOn",
     "StateBody",
+    "TaskDrop",
     "SkillOut",
     "StarterOut",
     "Streak",

@@ -37,7 +37,7 @@ class TaskOut(BaseModel):
     turns: int
     review_of: str | None
     review_version: int | None
-    merge_state: Literal["proposed", "merging", "merged"] | None
+    merge_state: Literal["proposed", "merging", "merged", "dropped"] | None
     merged_commit: str | None
     merged_tip: str | None
     kind: Literal["chat", "seat", "thread", "review", "ask"]

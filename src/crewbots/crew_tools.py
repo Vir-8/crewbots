@@ -104,6 +104,7 @@ SPECS: dict[str, Spec] = {
     "propose_merge": Spec(_object({"task_id": STRING, "summary": STRING}, ["task_id", "summary"]), coordinator_only=True),
     "withdraw_merge": Spec(_object({"task_id": STRING, "reason": STRING}, ["task_id", "reason"]), coordinator_only=True),
     "sweep_worktrees": Spec(_object({"dry_run": {"type": "boolean"}}, []), coordinator_only=True),
+    "drop_task": Spec(_object({"task_id": STRING, "reason": STRING}, ["task_id", "reason"]), coordinator_only=True),
     "next_check": Spec(_object({"minutes": {"type": "number"}, "why": STRING}, ["minutes", "why"]), coordinator_only=True),
 }
 
@@ -226,6 +227,8 @@ class CrewTools:
                     event = r.store.last_event(task.id, ("merge_withdrawn",))
                     notice = event.data.get("notice") if event else None
                     return f"Withdrew the merge proposal for {task.id}." + (f" {notice}." if notice else "")
+                case "drop_task":
+                    return dropped_text(await r.drop(args["task_id"], args["reason"], by_task=me))
                 case "working_state":
                     from crewbots.working_state import edit
                     task = r.store.get_task(me)
@@ -296,6 +299,12 @@ class CrewTools:
         except (UnknownBot, MemoryError, CrewError, AttachmentError, PageError, BrowserError, MergeError) as e:
             raise ToolRefused(str(e.args[0] if e.args else e)) from None
         raise ToolRefused(f"{name} is not implemented")
+
+
+def dropped_text(result: dict[str, str]) -> str:
+    if result["status"] == "already dropped":
+        return f"{result['task_id']} was already dropped."
+    return f"Dropped {result['task_id']}: {result['reason']}. It's closed, and no longer counts as open work."
 
 
 def shared_text(shared: dict[str, Any]) -> str:
