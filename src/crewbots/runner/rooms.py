@@ -54,7 +54,9 @@ class Rooms:
                 row = self.store.db.execute(
                     "select json_extract(data, '$.error') from events where task_id = ? and kind = 'done'"
                     " and json_extract(data, '$.is_error') = 1 and json_extract(data, '$.error') is not null"
-                    " and json_extract(data, '$.error') != '' order by id desc limit 1", (seat.id,)).fetchone()
+                    " and json_extract(data, '$.error') != '' and id > coalesce((select max(id) from events"
+                    " where task_id = ? and kind = 'done' and json_extract(data, '$.is_error') = 0), 0)"
+                    " order by id desc limit 1", (seat.id, seat.id)).fetchone()  # none once a later turn succeeded
                 error = seat.error or (row[0] if row else None)
                 attempt = dict(self._attempts.get(seat.id, {}))
                 last_activity = attempt.pop("last_activity", None)

@@ -46,10 +46,12 @@ async def test_room_status_authorization_and_error_recovery(setup):
     assert (entry["task_id"], entry["bot"], entry["status"]) == (seat.id, "worker", "failed")
     assert entry["updated_at"] and entry["error"] == "failed: token=[redacted]"
     store.append_event(seat.id, Done(final_text="", is_error=True, error="previous failure password=hunter2"))
-    store.append_event(seat.id, Done(final_text="", is_error=False))
     store.update_task(seat.id, error=None)
     data = json.loads(await tools.call("room_status", {"room": own["id"]}))
     assert data["rooms"][0]["seats"][0]["error"] == "previous failure password=[redacted]"
+    store.append_event(seat.id, Done(final_text="", is_error=False))  # a good turn since: the old error is history
+    data = json.loads(await tools.call("room_status", {"room": own["id"]}))
+    assert data["rooms"][0]["seats"][0]["error"] is None
     with pytest.raises(ToolRefused):
         await tools.call("room_status", {"room": other["id"]})
     worker = CrewTools(runner, runner.chat("worker").id, False)
