@@ -229,6 +229,31 @@ async def test_delegation_stops_at_the_limit(store, tmp_path):
     await crew.runner.shutdown()
 
 
+@pytest.mark.parametrize("action", ["delegate", "start_thread"])
+@pytest.mark.parametrize("finished,unfinished,blocked", [(12, 0, False), (0, 12, True), (12, 11, False), (12, 12, True)])
+async def test_child_limit_only_counts_unfinished_work(store, tmp_path, action, finished, unfinished, blocked):
+    crew = ScriptedCrew(store, tmp_path, chief(), bot("engineer"), max_out=100, gate=asyncio.Event())
+    parent = store.create_task("chief", "chat", kind="chat")
+    for i in range(finished):
+        status = (Status.IDLE, Status.FAILED, Status.CANCELLED, Status.INTERRUPTED)[i % 4]
+        store.create_task("chief", "finished", parent_id=parent.id, status=status)
+    for i in range(unfinished):
+        status = (Status.QUEUED, Status.RUNNING, Status.HELD, Status.NEEDS_INPUT)[i % 4]
+        store.create_task("chief", "unfinished", parent_id=parent.id, status=status)
+
+    def open_work():
+        if action == "delegate":
+            return crew.runner.delegate(parent.id, "engineer", "work")
+        return crew.runner.start_thread(parent.id, "work", "work")
+
+    if blocked:
+        with pytest.raises(NotAllowed, match="12 unfinished"):
+            open_work()
+    else:
+        assert open_work().parent_id == parent.id
+    await crew.runner.shutdown()
+
+
 async def test_a_bot_can_only_touch_tasks_it_delegated(store, tmp_path):
     crew = ScriptedCrew(store, tmp_path, chief(), bot("engineer"))
     mine = store.create_task("chief", "mine")

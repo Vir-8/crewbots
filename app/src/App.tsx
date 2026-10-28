@@ -22,6 +22,7 @@ import { Analytics } from "./pages/Analytics";
 import { Tools } from "./pages/Tools";
 import { bridge } from "./api";
 import { chatToOpen, latestChat } from "./sidebar";
+import { profileVisible, toggleProfile } from "./panelState";
 import type { Crew } from "./state";
 import { useCrew } from "./state";
 import { settle } from "./components/ui";
@@ -165,8 +166,15 @@ export function App() {
   const chat = crew.chats.find((c) => c.key === current);
   const page = page_ && chat?.kind === "direct" && chat.bot === page_.bot ? page_ : null; // only beside its own bot's chat
   const thread = thread_ && !page ? crew.tasks.get(thread_) : undefined;
-  const profile = !thread && !page && profileOn && chat?.kind === "direct" && current === chat.key ? chat.bot : null;
-  const room = !thread && profileOn && chat?.kind === "group" && current === chat.key ? chat.room : null;
+  const showProfile = profileVisible(profileOn, Boolean(thread), Boolean(page));
+  const profile = showProfile && chat?.kind === "direct" && current === chat.key ? chat.bot : null;
+  const room = showProfile && chat?.kind === "group" && current === chat.key ? chat.room : null;
+  const onProfile = () => {
+    const next = toggleProfile(profileOn, Boolean(thread || page));
+    setProfileOn(next.profileOn);
+    setThread(next.thread);
+    setPage(next.page);
+  };
 
   return (
     <div ref={shell} className={`app ${thread || page || profile || room ? "with-panel" : ""} ${profile || room ? "with-profile" : ""} ${current === "review" ? "reviewing" : ""} ${sideHidden ? "side-hidden" : ""}`}>
@@ -229,14 +237,11 @@ export function App() {
             onPage={(p) => openPage(chat.bot!, p)}
             onCustomize={() => setEditing(chat.bot!)}
             profileOpen={Boolean(profile)}
-            onProfile={() => {
-              setProfileOn(!profileOn || Boolean(page));
-              setPage(null);
-            }}
+            onProfile={onProfile}
             onNewGroup={(title, members) => setNewGroup({ title, members })}
           />
         ) : chat?.kind === "group" ? (
-          <GroupChat crew={crew} chat={chat} onOpen={openTask} panelOpen={Boolean(room)} onPanel={() => setProfileOn(!profileOn)} />
+          <GroupChat crew={crew} chat={chat} onOpen={openTask} panelOpen={Boolean(room)} onPanel={onProfile} />
         ) : (
           <div className="thread" />
         )}

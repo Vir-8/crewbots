@@ -58,6 +58,12 @@ class Tasks:
         rows = self.db.execute("select * from tasks where parent_id = ? order by created_at, id", (parent_id,)).fetchall()
         return [_task(r) for r in rows]
 
+    def unfinished_children(self, parent_id: str) -> int:
+        """Children still running, waiting to run, held, or waiting for an answer."""
+        return self.db.execute(
+            "select count(*) from tasks where parent_id = ? and status in (?, ?, ?, ?)",
+            (parent_id, Status.QUEUED, Status.RUNNING, Status.HELD, Status.NEEDS_INPUT)).fetchone()[0]
+
     def add_handoff(self, task_id: str, from_bot: str, done: str, output: list[str], open: str, needs: str) -> Handoff:
         now = _now()
         cur = self.db.execute(

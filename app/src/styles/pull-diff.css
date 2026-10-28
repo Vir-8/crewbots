@@ -303,7 +303,7 @@
   margin-bottom: 10px;
 }
 
-.verdict {
+.verdicts .verdict {
   display: flex;
   align-items: flex-start;
   gap: 10px;
@@ -312,20 +312,20 @@
   cursor: pointer;
 }
 
-.verdict.on {
+.verdicts .verdict.on {
   background: var(--raised);
 }
 
-.verdict.blocked {
+.verdicts .verdict.blocked {
   opacity: 0.45;
   cursor: default;
 }
 
-.verdict input {
+.verdicts .verdict input {
   margin-top: 3px;
 }
 
-.verdict > span {
+.verdicts .verdict > span {
   display: flex;
   flex-direction: column;
 }

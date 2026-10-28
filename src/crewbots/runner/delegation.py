@@ -18,7 +18,7 @@ from crewbots.runner.common import NotAllowed, UnknownBot, _clip
 from crewbots.runner.reviews import MAX_REVIEW_ROUNDS, _review_findings, _round_status
 from crewbots.store import Handoff, Review, Status, Task
 
-MAX_CHILDREN = 12  # a stop condition: a task that keeps delegating is looping, not managing
+MAX_CHILDREN = 12  # unfinished children of one task
 MAX_DEPTH = 3  # delegations in a row: chief → engineer → helper → one more, and no further
 MAX_OUT = 4  # tasks one bot has delegated that aren't finished yet, across all its work
 
@@ -32,9 +32,9 @@ class Delegation:
         parent = self.store.get_task(task_id)
         workspace = str(self._project(project).folder) if project else parent.workspace
         _not_answering(parent)
-        if len(self.store.children(task_id)) >= self.max_children:
-            raise NotAllowed(f"stop condition: this conversation already opened {self.max_children} threads. Finish or "
-                             "report on those before opening more.")
+        if self.store.unfinished_children(task_id) >= self.max_children:
+            raise NotAllowed(f"stop condition: this conversation already has {self.max_children} unfinished child tasks. "
+                             "Finish those before opening more.")
         return self.submit(parent.bot, goal, created_by=parent.bot, parent_id=task_id, workspace=workspace,
                            title=title)
 
@@ -66,10 +66,10 @@ class Delegation:
                              "more.")
         if reason := self.hold_reason(parent) or self.budget_reason(bot, parent):
             raise NotAllowed(f"no budget for more work: {reason}")
-        if len(self.store.children(parent_id)) >= self.max_children:
+        if self.store.unfinished_children(parent_id) >= self.max_children:
             raise NotAllowed(
-                f"stop condition: this task already delegated {self.max_children} tasks. Report to the user "
-                "with what you have and what is still open, instead of delegating more.")
+                f"stop condition: this task already has {self.max_children} unfinished child tasks. Wait for them "
+                "to finish before delegating more.")
         version = None
         if review_of:
             work = self._own_child(parent_id, review_of)
