@@ -76,6 +76,10 @@ def routes(c: Context) -> APIRouter:
     async def bot_room_status(request: Request, body: dict[str, str]):
         return runner.room_status(request.state.task.id, body.get("room") or None)
 
+    @v1.post("/bot/sweep_worktrees")
+    async def bot_sweep_worktrees(request: Request, body: dict[str, bool]):
+        return await runner.bot_worktree_sweep(request.state.task.id, body.get("dry_run", True))
+
     @v1.post("/bot/message")
     async def bot_message(request: Request, body: ChildMessage):
         task = runner.message_child(request.state.task.id, body.task_id, body.text)

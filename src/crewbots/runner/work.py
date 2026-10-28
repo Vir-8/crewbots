@@ -1,6 +1,7 @@
 """What a bot does with its work: hands it back, asks a question, proposes it for merging, and
 keeps notes."""
 
+import asyncio
 import logging
 import os
 import re
@@ -393,7 +394,7 @@ class Work:
         except Exception:
             log.exception("Could not clean up worktree for %s", task.id)
 
-    def _cleanup_worktree(self, task: Task, *, sweep: bool = False) -> dict[str, str]:
+    def _cleanup_worktree(self, task: Task, *, sweep: bool = False, dry_run: bool = False) -> dict[str, str]:
         result = {"task_id": task.id, "path": task.worktree_path or "", "branch": task.branch or ""}
         if task.base_branch:
             return result | {"status": "kept", "reason": "branch-mode project checkout"}
@@ -422,6 +423,17 @@ class Work:
                         if entry.startswith("160000 ") and "\t" in entry]
             if any((wt.path / name / ".git").exists() for name in [*untracked.split("\0"), *gitlinks] if name):
                 raise worktree.GitError("worktree contains an untracked nested repository; leaving it in place")
+            if dry_run:
+                notes = []
+                # --no-optional-locks is GIT_OPTIONAL_LOCKS=0: a dry run must not rewrite the index.
+                if worktree._git(wt.path, "--no-optional-locks", "status", "--porcelain", "--ignore-submodules=none"):
+                    notes.append("uncommitted changes would be saved to the branch first")
+                ahead = worktree._git(wt.repo, "rev-list", "--count", f"{wt.base}..{wt.branch}")
+                if ahead != "0" and task.merge_state != "merged":
+                    notes.append(f"{ahead} unmerged commit(s) stay on the branch")
+                if not notes:
+                    notes.append("merged and clean" if task.merge_state == "merged" else "clean, nothing unmerged")
+                return result | {"status": "would_remove", "branch_status": "kept", "reason": "; ".join(notes)}
             if task.merge_state == "merged" and not sweep:
                 if not task.merged_commit:
                     raise worktree.GitError("merged task has no recorded merge commit")
@@ -467,13 +479,29 @@ class Work:
         log.info("Removed worktree for %s; branch %s", task.id, "deleted" if deleted else "kept")
         return result | {"status": "removed", "branch_status": "deleted" if deleted else "kept"}
 
-    def sweep_worktrees(self) -> dict[str, list[dict[str, str]]]:
+    def sweep_worktrees(self, dry_run: bool = False) -> dict[str, list[dict[str, str]]]:
         rows = self.store.db.execute("select id from tasks where worktree_path is not null order by id").fetchall()
-        results = [self._cleanup_worktree(self.store.get_task(row[0]), sweep=True) for row in rows]
-        report = {"removed": [r for r in results if r["status"] == "removed"],
-                  "kept": [r for r in results if r["status"] != "removed"]}
-        log.info("Worktree sweep: %s", report)
+        results = [self._cleanup_worktree(self.store.get_task(row[0]), sweep=True, dry_run=dry_run) for row in rows]
+        gone = "would_remove" if dry_run else "removed"
+        report = {gone: [r for r in results if r["status"] == gone],
+                  "kept": [r for r in results if r["status"] != gone]}
+        log.info("Worktree sweep%s: %s", " (dry run)" if dry_run else "", report)
         return report
+
+    async def run_worktree_sweep(self, dry_run: bool = False) -> dict[str, list[dict[str, str]]]:
+        """The sweep off the event loop; a real one holds new work back until it finishes, even if the caller leaves."""
+        self._check_worktree_sweep()
+        if dry_run:
+            return await asyncio.to_thread(self.sweep_worktrees, True)
+        self._worktree_sweep_done.clear()
+        operation = asyncio.create_task(asyncio.to_thread(self.sweep_worktrees))
+        operation.add_done_callback(lambda _: self._worktree_sweep_done.set())
+        return await asyncio.shield(operation)
+
+    async def bot_worktree_sweep(self, task_id: str, dry_run: bool = True) -> dict[str, list[dict[str, str]]]:
+        if not self.is_coordinator(self.store.get_task(task_id).bot):
+            raise NotAllowed("only coordinators can sweep worktrees")
+        return await self.run_worktree_sweep(dry_run)
 
     def drop_worktree(self, task_id: str) -> dict[str, str]:
         self._check_worktree_sweep()

@@ -101,6 +101,7 @@ SPECS: dict[str, Spec] = {
     "propose_push": Spec(_object({"project": STRING, "summary": STRING}, ["project", "summary"]), coordinator_only=True),
     "propose_merge": Spec(_object({"task_id": STRING, "summary": STRING}, ["task_id", "summary"]), coordinator_only=True),
     "withdraw_merge": Spec(_object({"task_id": STRING, "reason": STRING}, ["task_id", "reason"]), coordinator_only=True),
+    "sweep_worktrees": Spec(_object({"dry_run": {"type": "boolean"}}, []), coordinator_only=True),
     "next_check": Spec(_object({"minutes": {"type": "number"}, "why": STRING}, ["minutes", "why"]), coordinator_only=True),
 }
 
@@ -194,6 +195,10 @@ class CrewTools:
                     import json
 
                     return json.dumps(r.room_status(me, args.get("room") or None), indent=1)
+                case "sweep_worktrees":
+                    import json
+
+                    return json.dumps(await r.bot_worktree_sweep(me, args.get("dry_run", True)), indent=1)
                 case "message":
                     task = r.message_child(me, args["task_id"], args["text"])
                     return f"Sent to {task.id} ({task.status})."

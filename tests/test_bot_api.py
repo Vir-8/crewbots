@@ -255,7 +255,7 @@ async def test_workers_delegate_but_only_coordinators_add_bots_and_propose_merge
                       "propose_routine", "share", "write_page", "edit_page", "set_name",
                       "ask_permission", "browser_open", "browser_screenshot", "browser_click",
                       "browser_type", "browser_evaluate", "browser_console"}
-    assert coordinator == worker | {"propose_merge", "withdraw_merge", "next_check", "room_status"}
+    assert coordinator == worker | {"propose_merge", "withdraw_merge", "next_check", "room_status", "sweep_worktrees"}
     assert chief == coordinator | {"add_bot", "propose_push"}
 
 

@@ -199,6 +199,10 @@ def build_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = F
     def room_status(room: str | None = None) -> str:
         return json.dumps(call("POST", "/bot/room_status", {"room": room} if room else {}), indent=1)
 
+    @server.tool(description=describe("sweep_worktrees"))
+    def sweep_worktrees(dry_run: bool = True) -> str:
+        return json.dumps(call("POST", "/bot/sweep_worktrees", {"dry_run": dry_run}), indent=1)
+
     if is_chief:
         @server.tool(description=describe("add_bot"))
         def add_bot(name: str, title: str, description: str, instructions: str, display_name: str | None = None,
