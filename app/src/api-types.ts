@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "c4a2a04a4122";
+export const API_SCHEMA = "39c235867460";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -95,6 +95,13 @@ export interface BroughtIn {
   projects: ProjectOut[];
   memories: number;
   task_id: string | null;
+}
+
+export interface BrowserInput {
+  generation: number;
+  lease_generation: number;
+  owner: string;
+  event: Record<string, unknown>;
 }
 
 export interface Budget {
@@ -413,6 +420,12 @@ export interface LastMessage {
   author: string;
   text: string;
   at: string;
+}
+
+export interface LeaseRef {
+  generation: number;
+  lease_generation: number;
+  owner: string;
 }
 
 export interface LiveBots {
@@ -1015,6 +1028,10 @@ export interface SearchHit {
   snippet: string;
   bot: string;
   title: string;
+}
+
+export interface SessionRef {
+  generation: number;
 }
 
 export interface ShareBody {

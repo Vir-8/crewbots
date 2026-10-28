@@ -18,7 +18,21 @@ from fastapi.responses import JSONResponse
 
 from crewbots import crew as crew_module
 from crewbots.api.context import API_VERSION, Context
-from crewbots.api.routes import attachments, bot, bots, chats, crew, events, mcp, projects, reviews, routines, tasks, usage
+from crewbots.api.routes import (
+    attachments,
+    bot,
+    bots,
+    browser,
+    chats,
+    crew,
+    events,
+    mcp,
+    projects,
+    reviews,
+    routines,
+    tasks,
+    usage,
+)
 from crewbots.attachments import AttachmentError
 from crewbots.memory import MemoryError
 from crewbots.reviews import Reviews, ReviewTools
@@ -28,7 +42,7 @@ from crewbots.scheduler import Scheduler
 from crewbots.store import Store, Task
 
 DEFAULT_PORT = 8765
-AREAS = (bots, mcp, tasks, attachments, chats, reviews, usage, crew, routines, projects, events, bot)
+AREAS = (bots, mcp, tasks, attachments, chats, reviews, usage, crew, routines, projects, events, browser, bot)
 
 
 def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: Scheduler | None = None,

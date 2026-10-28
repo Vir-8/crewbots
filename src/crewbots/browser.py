@@ -20,6 +20,7 @@ from uuid import uuid4
 
 from crewbots import paths
 from crewbots.browser_cdp import CDP, BrowserError
+from crewbots.browser_control import CONTEXT_GRACE_S, CONTROL_NOTICE, BrowserControl, ControlLease
 from crewbots.browser_process import CHROME, LaunchStillRunning, Profiles, launch
 from crewbots.browser_proxy import BrowserProxy, Network, allowed
 
@@ -41,9 +42,21 @@ class BrowserSession:
     auth_requests: deque = field(default_factory=lambda: deque(maxlen=200))
     idle: asyncio.Task | None = None
     failure: str | None = None
+    generation: int = 0
+    lease: ControlLease | None = None
+    notice: bool = False
+    control_transition: str | None = None
+    control_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    viewport: tuple[int, int] | None = None
 
 
-class Browser:
+class TargetCloseError(BrowserError):
+    def __init__(self, tab, error):
+        super().__init__(str(error))
+        self.tab = tab
+
+
+class Browser(BrowserControl):
     def __init__(self, root: Path | None = None, *, idle_s: float = 300):
         self.root = (root or paths.root() / "browser").absolute()
         self.idle_s = idle_s
@@ -58,8 +71,14 @@ class Browser:
         self._lock = asyncio.Lock()
         self._active: asyncio.Task | None = None
         self._closing = False
+        # A new daemon must not reuse a generation from its predecessor.
+        self._session_generation = uuid4().int >> 88  # stays exact as a JavaScript number
+        self._lease_generation = 0
+        self._control_notices = deque(maxlen=256)
         self._log = None
         self._creating: dict[str, asyncio.Future] = {}
+        self._disposing: dict[str, BrowserSession] = {}
+        self._context_timers: dict[str, asyncio.TimerHandle] = {}
         self._stderr = ""
         self._last_cdp: dict = {}
         self._proxy_logs: dict[str, deque] = {}
@@ -76,7 +95,8 @@ class Browser:
                 CHROME, "--headless=new", "--remote-debugging-pipe",
                 f"--user-data-dir={self.profile}", "--no-first-run", "--no-default-browser-check",
                 "--disable-background-networking", "--disable-component-update", "--disable-sync",
-                "--disable-extensions", "--disable-quic", "--disable-features=MediaRouter",
+                "--disable-domain-reliability", "--disable-extensions", "--disable-quic",
+                "--disable-features=MediaRouter,PreconnectToSearch,NetworkTimeServiceQuerying",
                 # NetworkContext proxy overrides are not restored after a network service restart.
                 "--enable-features=NetworkServiceInProcess2",
                 "--disable-breakpad", "--disable-crash-reporter",
@@ -89,7 +109,7 @@ class Browser:
             self.cdp.on_event_error = self._event_error
             initial = await self.cdp.call("Target.getTargets")
             self._startup_targets = {target["targetId"] for target in initial["targetInfos"]
-                                     if target.get("url") == "about:blank" and not target.get("browserContextId")}
+                                     if target.get("type") == "page"}
             await self.cdp.call("Browser.setDownloadBehavior", {"behavior": "deny"})
             await self.cdp.call("Target.setAutoAttach", {"autoAttach": True, "waitForDebuggerOnStart": True,
                                                         "flatten": True, "filter": [{"type": "page"}]})
@@ -133,7 +153,8 @@ class Browser:
                 raise BrowserError(f"Chrome timed out: Target.attachedToTarget for target {target}, context {context}") from None
             if attached_target != target:
                 raise BrowserError(f"Unexpected auto-attached target {attached_target}; expected {target}")
-            tab = BrowserSession(task_id, context, target, session, network, proxy)
+            self._session_generation += 1
+            tab = BrowserSession(task_id, context, target, session, network, proxy, generation=self._session_generation)
             self.sessions[task_id] = tab
             await self._configure(session)
             await self.cdp.call("Runtime.runIfWaitingForDebugger", session=session)
@@ -159,37 +180,50 @@ class Browser:
         ):
             await self.cdp.call(method, params, session)
 
+    async def _close_target(self, target):
+        try:
+            result = await self.cdp.call("Target.closeTarget", {"targetId": target})
+        except BrowserError as error:
+            if str(error) == "No target with given id found":
+                return  # A popup may have closed itself before the command arrived.
+            raise
+        if result.get("success") is False:
+            raise BrowserError("Target.closeTarget returned false")
+
+    def _context_owner(self, context):
+        return next((t for t in self.sessions.values() if context and t.context == context), None) or self._disposing.get(context)
+
     async def _event(self, message):
         method, data, session = message.get("method"), message.get("params", {}), message.get("sessionId")
         tab = next((t for t in self.sessions.values() if t.session == session), None)
         if method == "Target.attachedToTarget":
             info = data["targetInfo"]
             attached = self._creating.get(info.get("browserContextId"))
-            if not session and attached is not None and not attached.done() and info.get("url") == "about:blank":
-                attached.set_result((info["targetId"], data["sessionId"]))
-            elif not session and info["targetId"] in self._startup_targets:
-                # Keep the initial blank tab, but fail all its requests: it has no task proxy.
-                self._startup_targets.discard(info["targetId"])
+            if not session and info["targetId"] in self._startup_targets:
+                # Keep the initial page, but fail all its requests: it has no task proxy.
                 try:
                     await self.cdp.call("Fetch.enable", {"patterns": [{"urlPattern": "*"}]}, data["sessionId"])
+                    await self.cdp.call("Runtime.runIfWaitingForDebugger", session=data["sessionId"])
                 except Exception:
-                    # Leave it paused unless it can be closed; never resume without interception.
-                    try:
-                        result = await self.cdp.call("Target.closeTarget", {"targetId": info["targetId"]})
-                        if result.get("success") is False:
-                            raise BrowserError("Target.closeTarget returned false")
-                    except Exception:
-                        self._startup_targets.add(info["targetId"])
-                        raise
+                    # Close an incompletely configured target; if that fails, stop Chrome.
+                    await self._close_target(info["targetId"])
+                    self._startup_targets.discard(info["targetId"])
                     return
-                await self.cdp.call("Runtime.runIfWaitingForDebugger", session=data["sessionId"])
+                self._startup_targets.discard(info["targetId"])
+            elif not session and attached is not None and not attached.done() and info.get("url") == "about:blank":
+                attached.set_result((info["targetId"], data["sessionId"]))
             else:
                 # Unrequested targets, including about:blank popups, must never stay paused indefinitely.
+                owner = self._context_owner(info.get("browserContextId")) if not session and info.get("type") == "page" else None
                 try:
-                    result = await self.cdp.call("Target.closeTarget", {"targetId": info["targetId"]})
-                    if result.get("success") is False:
-                        raise BrowserError("Target.closeTarget returned false")
+                    await self._close_target(info["targetId"])
                 except Exception as e:
+                    if not session and info.get("type") == "page":
+                        if not owner:
+                            # An unknown context may be the unprotected default context.
+                            self._startup_targets.add(info["targetId"])
+                            raise
+                        raise TargetCloseError(owner, e) from e
                     # A raced or non-closeable child is still paused. Do not discard its parent task.
                     log.warning("Could not close browser target %s: %s", info["targetId"], e)
                     self.cdp.note("target_close_error", targetId=info["targetId"], session=session, error=str(e))
@@ -237,7 +271,8 @@ class Browser:
 
     async def _event_error(self, message, error):
         session = message.get("sessionId")
-        target = message.get("params", {}).get("targetInfo", {}).get("targetId")
+        info = message.get("params", {}).get("targetInfo", {})
+        target = info.get("targetId")
         unsafe_startup = not session and target in self._startup_targets
         if unsafe_startup:
             # We could neither protect nor close the default target. Stop every proxy
@@ -249,11 +284,13 @@ class Browser:
                 with contextlib.suppress(ProcessLookupError):
                     self.process.terminate()
         tab = next((t for t in self.sessions.values() if t.session == session), None)
+        if not tab and not unsafe_startup and not session and message.get("method") == "Target.attachedToTarget":
+            tab = error.tab if isinstance(error, TargetCloseError) else self._context_owner(info.get("browserContextId"))
         if tab:
             # Stop network traffic and release a pending navigation before waiting for the action lock.
             tab.failure = f"Chrome event handler failed: {error}"
             tab.loaded.set()
-            self.cdp.fail_session(session, str(error))
+            self.cdp.fail_session(tab.session, str(error))
             await tab.proxy.close()
         async with self._lock:
             if unsafe_startup:
@@ -272,6 +309,9 @@ class Browser:
         return result.get("result", {}).get("value")
 
     async def action(self, task_id: str, folder: Path, network: Network, action: str, args: dict) -> list[dict]:
+        tab = self.sessions.get(task_id)
+        if tab and tab.lease and tab.network == network:
+            raise BrowserError("The user has control of the browser; wait for hand-back")
         async with self._lock:
             if self._closing:
                 raise BrowserError("The browser service is shutting down")
@@ -288,6 +328,8 @@ class Browser:
         if tab and tab.network != network:
             await self._close_task(task_id)
             tab = None
+        if tab and tab.lease:
+            raise BrowserError("The user has control of the browser; wait for hand-back")
         try:
             if action == "open":
                 if not allowed(args["url"], network) or urlsplit(args["url"]).scheme not in {"http", "https"}:
@@ -298,6 +340,10 @@ class Browser:
                 raise BrowserError("Open an HTTP(S) page first; the browser may have closed after being idle")
             content = await self._perform(tab, folder, action, args)
             self._arm_idle(tab)
+            if tab.notice or task_id in self._control_notices:
+                tab.notice = False
+                self._control_notices = deque((t for t in self._control_notices if t != task_id), maxlen=256)
+                content.insert(0, {"type": "text", "text": CONTROL_NOTICE})
             return content
         except (OSError, ValueError, KeyError, TypeError) as e:
             raise BrowserError(str(e)) from None
@@ -332,6 +378,7 @@ class Browser:
                 raise BrowserError("theme must be light or dark")
             await self.cdp.call("Emulation.setDeviceMetricsOverride", {
                 "width": width, "height": height, "deviceScaleFactor": 1, "mobile": False}, tab.session)
+            tab.viewport = (width, height)
             await self.cdp.call("Emulation.setEmulatedMedia", {
                 "features": [{"name": "prefers-color-scheme", "value": theme}]}, tab.session)
             await self._evaluate(tab, "document.fonts.ready.then(() => new Promise(r => "
@@ -410,10 +457,7 @@ class Browser:
                 if self.sessions.get(tab.task_id) is tab:
                     self.sessions.pop(tab.task_id)
                 with contextlib.suppress(Exception):
-                    await tab.proxy.close()
-                if self.cdp:
-                    with contextlib.suppress(Exception):
-                        await self.cdp.call("Target.disposeBrowserContext", {"browserContextId": tab.context})
+                    await self._dispose_tab(tab)
                 if not self.sessions:
                     try:
                         await self._stop()
@@ -428,12 +472,31 @@ class Browser:
     async def _close_task(self, task_id):
         tab = self.sessions.pop(task_id, None)
         if tab:
+            if tab.lease and tab.lease.timer and tab.lease.timer is not asyncio.current_task():
+                tab.lease.timer.cancel()
+            tab.lease = None
             if tab.idle and tab.idle is not asyncio.current_task():
                 tab.idle.cancel()
-            await tab.proxy.close()  # stop its traffic even if CDP disposal races a detached session
-            if self.cdp:
-                with contextlib.suppress(Exception):
-                    await self.cdp.call("Target.disposeBrowserContext", {"browserContextId": tab.context})
+            await self._dispose_tab(tab)
+
+    async def _dispose_tab(self, tab):
+        if timer := self._context_timers.pop(tab.context, None):
+            timer.cancel()
+        self._disposing[tab.context] = tab
+        try:
+            try:
+                await tab.proxy.close()  # stop its traffic even if CDP disposal races a detached session
+            finally:
+                if self.cdp:
+                    with contextlib.suppress(Exception):
+                        await self.cdp.call("Target.disposeBrowserContext", {"browserContextId": tab.context})
+        finally:
+            # Keep late events attributable after disposal, without retaining old contexts indefinitely.
+            def forget():
+                if self._disposing.get(tab.context) is tab:
+                    self._disposing.pop(tab.context, None)
+                    self._context_timers.pop(tab.context, None)
+            self._context_timers[tab.context] = asyncio.get_running_loop().call_later(CONTEXT_GRACE_S, forget)
 
     async def close_task(self, task_id):
         async with self._lock:
@@ -473,6 +536,10 @@ class Browser:
             self._leave_profile = False
         self._profiles.close()
         self._startup_targets.clear()
+        for timer in self._context_timers.values():
+            timer.cancel()
+        self._context_timers.clear()
+        self._disposing.clear()
 
     def chrome_stderr(self) -> str:
         if self.profile:
