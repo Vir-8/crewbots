@@ -213,7 +213,8 @@ async def test_approved_work_is_proposed_and_the_user_merges_it(store, tmp_path)
     assert (repo / "hello.py").read_text().startswith("def hello")
     assert git(repo, "rev-parse", "HEAD") == merged.merged_commit
     message = git(repo, "log", "-1", "--format=%B")
-    assert message.startswith("adds hello.py; reviewed\n") and "reviewer (pass)" in message
+    assert message == "adds hello.py; reviewed"
+    assert git(repo, "rev-list", "--count", f"{work.base}..HEAD") == "1"
     assert not tmp_path.joinpath(work.worktree_path).exists()
     assert work.branch not in git(repo, "branch")
     with pytest.raises(MergeError, match="already merged"):
@@ -265,7 +266,7 @@ async def test_automatic_merge_is_opt_in_and_preserves_failed_proposals(store, t
         assert (repo / "README.md").read_text() == ("bot edit\n" if enabled else "hello\n")
         if enabled:
             assert git(repo, "log", "-1", "--format=%s") == "Improve readme"
-            assert git(repo, "log", "-1", "--format=%s", "HEAD^2") == "Improve readme"
+            assert git(repo, "rev-list", "--parents", "-1", "HEAD").count(" ") == 1  # a squash: no merge commit
             assert [e.data["automatic"] for e in store.events(work.id) if e.kind == "merged"] == [True]
             with pytest.raises(NotAllowed, match="already merged"):
                 crew.runner.propose_merge(parent.id, work.id, "again")
@@ -345,14 +346,10 @@ async def test_merged_work_reopens_for_followup_review_and_changes_api(store, tm
         response = await client.get(f"/tasks/{work.id}/changes", headers={"Authorization": "Bearer admin"})
     assert response.status_code == 200 and "+task work" in response.json()["diff"]
 
-    store.update_task(work.id, merged_tip=None)  # older records recover the tip from the merge commit
-    assert "+task work" in crew.runner.changes(work.id)
-
     crew.script["engineer"] = lambda spec, me: [Done(final_text=(spec.cwd / "new.txt").read_text())]
     crew.runner.send(work.id, "follow up")
     await wait_until(crew.settled(work.id))
     assert store.get_task(work.id).result == "task work"
-    store.update_task(work.id, merged_tip=merged.merged_tip)
     assert crew.runner.drop_worktree(work.id)["status"] == "removed"
     assert not path.exists()
 
@@ -368,7 +365,7 @@ async def test_merged_work_reopens_for_followup_review_and_changes_api(store, tm
 
 
 def test_merge_subject_uses_first_paragraph_and_a_complete_sentence():
-    from crewbots.runner.work import _merge_subject
+    from crewbots.runner.merge_message import _merge_subject
 
     assert _merge_subject("A useful subject\n\nDetails", "title") == "A useful subject"
     assert _merge_subject("", "Fallback title") == "Fallback title"
@@ -388,7 +385,7 @@ def test_merge_subject_uses_first_paragraph_and_a_complete_sentence():
 
 
 def test_merge_subject_fallback_is_nonempty_and_bounded():
-    from crewbots.runner.work import _merge_subject
+    from crewbots.runner.merge_message import _merge_subject
 
     long_summary = "A sentence that is much too long to fit into the permitted subject line " * 2
     assert _merge_subject(long_summary, "") == "Merge work"
@@ -422,7 +419,7 @@ async def test_unapproved_work_merges_only_when_forced(store, tmp_path):
 
     crew.runner.merge(work.id, force=True)
     assert (repo / "README.md").read_text() == "new\n"
-    assert "Merged without approval" in git(repo, "log", "-1", "--format=%B")
+    assert [e.data["forced"] for e in store.events(work.id) if e.kind == "merged"] == [True]
 
 
 async def test_a_dirty_checkout_is_never_merged_into(store, tmp_path):

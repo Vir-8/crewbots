@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import os
-import re
 import secrets
 import tempfile
 import time
@@ -19,6 +18,7 @@ from crewbots.memory import CREW_SCOPE, MemoryError, Note
 from crewbots.pages import Page
 from crewbots.routines import RoutineError
 from crewbots.runner.common import MergeError, NotAllowed
+from crewbots.runner.merge_message import merge_message
 from crewbots.runner.merge_status import MergeStatus
 from crewbots.runner.reviews import MAX_REVIEW_ROUNDS
 from crewbots.sources import KINDS
@@ -287,10 +287,9 @@ class Work(MergeStatus):
             raise MergeError(f"{task_id} is already on {into}: its changes are all there, so there is nothing to merge; "
                              "withdraw the proposal instead")
         wt = worktree.Worktree(repo=Path(work.repo), path=Path(work.worktree_path), branch=work.branch, base=work.base)
-        reviewers = ", ".join(f"{t.bot} ({r.verdict if r else 'no verdict'})" for t, r in state.latest) or "none"
         proposals = self.store.last_events(task_id, ("merge_proposed",), 1)
         summary = proposals[0].data.get("summary", "") if proposals else ""
-        subject = _merge_subject(summary, work.title)
+        message = merge_message(summary, work.title, unreviewed=not state.approved)
         try:
             if work.base_branch:
                 def mark_merging(commit: str, tip: str) -> str:
@@ -299,7 +298,7 @@ class Work(MergeStatus):
                               merge_lock=None, merge_marker=marker)
                     return marker
 
-                commit, tip = branch_mode.merge(self._branch_checkout(work), subject,
+                commit, tip = branch_mode.merge(self._branch_checkout(work), message,
                                                 expected_files=proposals[0].data.get("files") if proposals else None,
                                                 before_lock=mark_merging)
                 try:
@@ -315,11 +314,9 @@ class Work(MergeStatus):
                 return task
             if not wt.path.exists():
                 self._restore_worktree(work)
-            worktree.commit(wt, f"{subject}\n\ncrewbots task {work.id}, by {work.bot}")
+            worktree.commit(wt, f"{message.splitlines()[0]}\n\ncrewbots task {work.id}, by {work.bot}")
             tip = worktree._git(wt.path, "rev-parse", "HEAD")
-            commit = worktree.merge(wt, f"{subject}\n\nReviewed in round {state.round}: "
-                                        f"{reviewers}.{' Merged without approval.' if not state.approved else ''}",
-                                    tip=tip)
+            commit = worktree.merge(wt, message, tip=tip)
         except worktree.GitError as e:
             current = self.store.get_task(task_id)
             if branch_mode.LOCK_LEFT in str(e) or branch_mode.LOCK_STUCK in str(e):
@@ -434,6 +431,11 @@ class Work(MergeStatus):
                 ahead = worktree._git(wt.repo, "rev-list", "--count", f"{wt.base}..{wt.branch}")
                 if ahead != "0" and task.merge_state != "merged":
                     notes.append(f"{ahead} unmerged commit(s) stay on the branch")
+                later = "0"
+                if task.merge_state == "merged" and task.merged_tip:
+                    later = worktree._git(wt.repo, "rev-list", "--count", f"{task.merged_tip}..{wt.branch}")
+                    if later != "0":
+                        notes.append(f"merged, {later} later commit(s) kept on the branch")
                 if not notes:
                     notes.append("merged and clean" if task.merge_state == "merged" else "clean, nothing unmerged")
                 return result | {"status": "would_remove", "branch_status": "kept", "reason": "; ".join(notes)}
@@ -454,7 +456,7 @@ class Work(MergeStatus):
                 raise worktree.GitError("task branch changed while saving; leaving the worktree in place")
             delete_branch = task.merge_state == "merged" and not sweep
             if delete_branch:
-                worktree._git(wt.repo, "merge-base", "--is-ancestor", branch_tip, task.merged_commit)
+                worktree.branch_merged(wt.repo, branch_tip, task.merged_tip, task.merged_commit)
             removing = True
             deleted = worktree.remove(wt, delete_branch=delete_branch, branch_tip=branch_tip)
         except (worktree.GitError, OSError) as e:
@@ -673,26 +675,6 @@ def _choices(given: list[Any] | None) -> list[dict[str, str]]:
 def _short(text: str, chars: int) -> str:
     text = " ".join(text.split())
     return text if len(text) <= chars else text[:chars - 1] + "…"
-
-
-def _merge_subject(summary: str, title: str, limit: int = 72) -> str:
-    paragraph = " ".join(re.split(r"\n\s*\n", summary.strip(), maxsplit=1)[0].split())
-    abbreviation = r"\b(?:e\.g|i\.e|etc|mr|mrs|ms|dr|vs|inc)\.$"
-    if paragraph and len(paragraph) <= limit and not re.fullmatch(abbreviation, paragraph, re.I):
-        return paragraph
-    for end in re.finditer(r"[.!?](?=\s|$)", paragraph):
-        sentence = paragraph[:end.end()]
-        if len(sentence) > limit:
-            break
-        if len(sentence) >= 20 and not re.search(abbreviation, sentence, re.I):
-            return sentence
-    fallback = " ".join(title.split()) or "Merge work"
-    if len(fallback) <= limit:
-        return fallback
-    prefix = fallback[:limit - 1]
-    if not prefix[-1].isspace() and not fallback[limit - 1].isspace() and " " in prefix:
-        prefix = prefix.rsplit(" ", 1)[0]
-    return prefix.rstrip() + "…"
 
 
 def _mentions(match: str, text: str) -> bool:

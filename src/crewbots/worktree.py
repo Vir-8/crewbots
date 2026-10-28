@@ -74,9 +74,9 @@ def commit(wt: Worktree, message: str) -> str | None:
 
 
 def merge(wt: Worktree, message: str, *, tip: str | None = None) -> str:
-    """Merges the worktree's branch into whatever branch the main checkout has out, with a merge commit, and returns
-    that commit. It refuses a checkout with uncommitted changes, and a conflict is aborted, so it either merges cleanly
-    or changes nothing."""
+    """Squashes the worktree's branch into whatever branch the main checkout has out, as one commit with `message`,
+    and returns that commit (the current one, if the branch adds nothing). It refuses a checkout with uncommitted
+    changes, and a conflict is reset, so it either merges cleanly or changes nothing."""
     if _git(wt.repo, "status", "--porcelain", "--untracked-files=no"):
         raise GitError(f"{wt.repo} has uncommitted changes; commit or stash them, then merge again")
     try:
@@ -84,11 +84,22 @@ def merge(wt: Worktree, message: str, *, tip: str | None = None) -> str:
     except GitError:
         raise GitError(f"{wt.repo} is not on a branch (detached HEAD); check out the branch to merge into") from None
     try:
-        _git(wt.repo, "merge", "--no-ff", "--no-edit", "-m", message, tip or wt.branch)
+        _git(wt.repo, "merge", "--squash", tip or wt.branch)
+        if subprocess.run([paths.git(), "diff", "--cached", "--quiet"], cwd=wt.repo).returncode:
+            _git(wt.repo, "commit", "-q", "--cleanup=whitespace", "-m", message)
     except GitError as e:
-        subprocess.run([paths.git(), "merge", "--abort"], cwd=wt.repo, capture_output=True)
+        subprocess.run([paths.git(), "reset", "--merge"], cwd=wt.repo, capture_output=True)
         raise GitError(f"merging {wt.branch} into {into} failed, and nothing was changed: {e}") from None
     return _git(wt.repo, "rev-parse", "HEAD")
+
+
+def branch_merged(repo: Path, branch_tip: str, merged_tip: str | None, merged_commit: str) -> None:
+    """Raises GitError unless the branch holds nothing beyond what was merged. A squash commit does not have the
+    branch in its history, so the recorded tip is what counts; records without one come from merge commits."""
+    if merged_tip:
+        _git(repo, "merge-base", "--is-ancestor", branch_tip, merged_tip)
+    else:
+        _git(repo, "merge-base", "--is-ancestor", branch_tip, merged_commit)
 
 
 def git_read(cwd: Path, *args: str, env: dict[str, str] | None = None) -> str:
