@@ -10,7 +10,7 @@ from crewbots.events import Done
 from crewbots.runner import MAX_REVIEW_ROUNDS, MergeError
 from crewbots.store import Status, Store, Verdict
 
-T0 = datetime(2026, 10, 28, 12, 0, tzinfo=UTC)
+T0 = datetime.now(UTC) + timedelta(hours=1)  # routine news kept now has waited out QUIET by then
 
 
 @pytest.fixture
@@ -230,4 +230,31 @@ async def test_overlapping_stall_groups_list_each_task_once_with_its_title(store
     lines = [x for x in notices(store, crew)[-1].splitlines() if x.startswith("- stall raised")]
     assert sorted(lines) == sorted(f"- stall raised: {ids[n]} (engineer) Title {n}" for n in "abc")
     assert not store.chief_events()
+    await crew.runner.shutdown()
+
+
+async def test_routine_news_waits_quietly_until_something_needs_the_chief(store, tmp_path):
+    from crewbots.runner.chief_events import QUIET
+
+    crew = make(store, tmp_path)
+    now = datetime.now(UTC)
+    for kind in ("done", "review pass", "merged"):
+        crew.runner._crew_event(kind, "t_a", "engineer")
+    assert not crew.runner.flush_chief_events(now + timedelta(minutes=5))  # nothing needs the chief yet
+    assert crew.runner.flush_chief_events(now + QUIET + timedelta(seconds=1))
+    await wait_until(crew.settled(crew.runner.chat("chief").id))
+    crew.runner._crew_event("done", "t_b", "engineer")
+    crew.runner._crew_event("stall raised", "t_c", "eng-lead")
+    assert crew.runner.flush_chief_events(now + QUIET + timedelta(minutes=3))  # this one goes at once, with the news
+    assert "done: t_b" in notices(store, crew)[-1] and "stall raised: t_c" in notices(store, crew)[-1]
+    await crew.runner.shutdown()
+
+
+async def test_routine_news_of_work_the_chief_handed_out_is_not_kept(store, tmp_path):
+    crew = make(store, tmp_path)
+    mine = store.create_task("chief", "chat", kind="chat", status=Status.IDLE)
+    work = store.create_task("engineer", "build", parent_id=mine.id, created_by="chief", status=Status.IDLE)
+    crew.runner._crew_event("done", work.id, "engineer")  # its result reaches the chief already
+    crew.runner._crew_event("escalation", work.id, "engineer")
+    assert [e["kind"] for e in store.chief_events()] == ["escalation"]
     await crew.runner.shutdown()

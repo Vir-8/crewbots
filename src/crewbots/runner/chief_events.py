@@ -1,7 +1,8 @@
 """Crew activity the chief should hear about without looking: threads done or failed, review verdicts and limits,
 merges, escalations and stall alerts, for any bot but the chief itself (its own work reports to it already). They are
-kept in the store and go to its main chat as one short notice, at most once every BATCH, listing kinds, ids and bot
-names and a short title, with no message text, like the "State changed" notice. Nothing happened, nothing sent. While
+kept in the store and go to its main chat as one short notice, at most once every BATCH, or after QUIET when none of
+them needs the chief, listing kinds, ids and bot names and a short title, with no message text, like the "State
+changed" notice. Nothing happened, nothing sent. While
 the chat is stopped or waiting on the user the events just stay in the store until a tick finds it idle."""
 
 import logging
@@ -12,6 +13,11 @@ from crewbots.runner.common import MergeError
 from crewbots.store import Status, Task, Verdict
 
 BATCH = timedelta(minutes=2)  # at most one notice this often
+# What the chief may need to act on goes at the next BATCH. Routine news (work done, verdicts, merges) waits up to
+# QUIET, gathering more, unless something that needs the chief comes first: each notice is a turn that reads the
+# chief's whole conversation back, and most of this needs nothing from it.
+NEEDS_CHIEF = {"failed", "escalation", "stall raised", "review limit", "merge failed"}
+QUIET = timedelta(minutes=30)
 LISTED = 20  # events a notice lists; the rest are counted
 TITLE = 60  # characters of a task's title in a line
 NOT_THREADS = ("chat", "seat", "ask", "review")
@@ -24,10 +30,21 @@ class ChiefEvents:
     bases, so each wrapper below runs first and calls the real method."""
 
     def _crew_event(self, kind: str, task_id: str, bot: str) -> None:
-        """Keeps something for the next notice. The chief's own tasks are left out."""
+        """Keeps something for the next notice. The chief's own tasks are left out, and routine news of work it handed
+        out, which reports to it already."""
         chief = self.coordinator()
-        if chief is not None and bot != chief.name:
-            self.store.add_chief_event(kind, task_id, bot)
+        if chief is None or bot == chief.name:
+            return
+        if kind not in NEEDS_CHIEF and self._handed_out_by(task_id) == chief.name:
+            return
+        self.store.add_chief_event(kind, task_id, bot)
+
+    def _handed_out_by(self, task_id: str) -> str | None:
+        try:
+            task = self.store.get_task(task_id)
+            return self.store.get_task(task.parent_id).bot if task.parent_id else None
+        except KeyError:
+            return None
 
     def waiting_on_user(self, task: Task) -> bool:
         """Whether the session is waiting on the user: not for the daemon to wake, and not a stall."""
@@ -55,6 +72,8 @@ class ChiefEvents:
         last = (self.store.routine_state("chief-events") or {}).get("last_run_at")
         if last and now - datetime.fromisoformat(last) < BATCH:
             return False
+        if not any(e["kind"] in NEEDS_CHIEF for e in events) and now - datetime.fromisoformat(events[0]["at"]) < QUIET:
+            return False  # routine news alone gathers for a while
         # a stall names several tasks in one subject: one entry each; the same thing twice is one line
         entries = [{**e, "subject": task} for e in events for task in (e["subject"].split(", ") if e["subject"] else [""])]
         latest = {(e["kind"], e["subject"] or e["who"]): e for e in entries}

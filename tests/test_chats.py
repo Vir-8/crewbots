@@ -1176,6 +1176,8 @@ async def test_room_mention_trimming_is_reported(crew, store):
     chat = crew.runner.chat("chief")
     assert any("older room mentions were trimmed" in e.data.get("message", "") for e in store.events(chat.id))
     assert "manual item" in path.read_text()
+    await wait_until(idle(crew))
+    assert not any("older room mentions" in s.prompt for s in crew.specs_for("chief"))  # the seats answer; no wake
     await crew.runner.shutdown()
 
 
