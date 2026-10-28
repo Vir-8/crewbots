@@ -32,6 +32,8 @@ class Task:
     worktree_path: str | None
     branch: str | None
     base: str | None
+    base_branch: str | None
+    checkout_state: str | None
     session_id: str | None
     result: str | None
     error: str | None
@@ -45,6 +47,8 @@ class Task:
     merge_state: str | None
     merged_commit: str | None
     merged_tip: str | None
+    merge_lock: str | None
+    merge_marker: str | None
     briefing: str | None
     kind: str
     room_id: str | None

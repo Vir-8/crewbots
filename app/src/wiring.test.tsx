@@ -207,11 +207,33 @@ it("withdraws through the in-app dialog and allows cancellation", async () => {
 it("shows the review cap received for the work", () => {
   const task = { id: "work", parent_id: "parent", status: "idle", title: "Work", bot: "engineer" } as any;
   const review = { id: "review", review_of: task.id, review_version: 1, bot: "reviewer" };
-  const crew = { family: () => [], children: new Map([["parent", [review]]]), verdicts: new Map(), tasks: new Map(), latest: new Map(), asks: new Map() } as any;
+  const crew = { family: () => [], children: new Map([["parent", [review]]]), verdicts: new Map(), tasks: new Map(), latest: new Map(), asks: new Map(), events: new Map(), ensureEvents: vi.fn() } as any;
   hooks.values[0] = { task: "work", max: 5 };
   const tree = render(() => WorkCard({ crew, task, onOpen: () => {} }));
   const foot = (tree.props.children as any[]).find((n) => n?.props?.className === "work-foot");
   expect(foot.props.children[1].props.children).toEqual(["round ", 1, " of 5"]);
+});
+
+it("lists the files in a branch merge proposal", () => {
+  const task = { id: "work", parent_id: "parent", status: "idle", title: "Work", bot: "engineer", merge_state: "proposed" } as any;
+  const crew = { family: () => [], children: new Map(), verdicts: new Map(), tasks: new Map(), latest: new Map(), asks: new Map(), ensureEvents: vi.fn(),
+    events: new Map([["work", [{ kind: "merge_proposed", data: { files: ["Assets/Vir.png", "Assets/new.png"] } }]]]) } as any;
+  const tree = render(() => WorkCard({ crew, task, onOpen: () => {} }));
+  const files = (tree.props.children as any[]).find((n) => n?.props?.className === "work-files");
+  expect(files.props.children[1].props.children.map((item: any) => item.props.children.props.children)).toEqual(["Assets/Vir.png", "Assets/new.png"]);
+});
+
+it("shows saves left uncommitted after a branch merge", () => {
+  const task = { id: "work", parent_id: "parent", status: "idle", title: "Work", bot: "engineer", merge_state: "merged" } as any;
+  const ensureEvents = vi.fn();
+  const crew = { family: () => [], children: new Map(), verdicts: new Map(), tasks: new Map(), latest: new Map(), asks: new Map(), ensureEvents,
+    events: new Map([["work", [{ kind: "merged", data: { leftover_files: ["Assets/Vir.png", "new file"] } }]]]) } as any;
+  const tree = render(() => WorkCard({ crew, task, onOpen: () => {} }));
+  const files = (tree.props.children as any[]).find((n) => n?.props?.className === "work-files");
+  expect(files.props.children[0].props.children).toBe("Saved after the merge started, still uncommitted:");
+  expect(files.props.children[1].props.children.map((item: any) => item.props.children.props.children)).toEqual(["Assets/Vir.png", "new file"]);
+  hooks.effects[0]();
+  expect(ensureEvents).toHaveBeenCalledWith("work");
 });
 
 it("composer ignores IME keys and resets the highlighted mention as typing narrows results", () => {

@@ -428,6 +428,12 @@ def _review(args: argparse.Namespace) -> int:
 def _merge(args: argparse.Namespace) -> int:
     task = _client(args).post(f"/tasks/{args.task_id}/merge", json={"force": args.force}).raise_for_status().json()
     print(f"merged {task['id']} ({task['branch']}) as {task['merged_commit'][:12]}")
+    if task.get("leftover_files"):
+        print("Saved after the merge started, still uncommitted:")
+        for file in task["leftover_files"]:
+            print(f"  {file}")
+    if task.get("leftover_check_error"):
+        print(f"Could not check for later saves: {task['leftover_check_error']}")
     return 0
 
 
@@ -535,7 +541,13 @@ def _format_stored(e: dict[str, Any]) -> str:
         case "merge_proposed":
             return f"⇢ proposed for merging by {e['data']['by']}: {e['data']['summary']}"
         case "merged":
-            return f"✓ merged as {e['data']['commit'][:12]} into {e['data']['into']}"
+            d = e["data"]
+            text = f"✓ merged as {d['commit'][:12]} into {d['into']}"
+            if d.get("leftover_files"):
+                text += " · Saved after the merge started, still uncommitted: " + ", ".join(d["leftover_files"])
+            if d.get("leftover_check_error"):
+                text += f" · Could not check for later saves: {d['leftover_check_error']}"
+            return text
         case "memory":
             d = e["data"]
             where = "the crew's notes" if d["scope"] == "crew" else "its notes"

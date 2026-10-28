@@ -293,7 +293,7 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
         break;
       case "merged":
         flush();
-        out.push({ kind: "line", id: e.id, text: `Merged${d.automatic ? " automatically" : ""} as ${String(d.commit).slice(0, 7)}${d.forced ? ", without approval" : ""}`, icon: "check", tone: "good" });
+        out.push({ kind: "line", id: e.id, text: `Merged${d.automatic ? " automatically" : ""} as ${String(d.commit).slice(0, 7)}${d.forced ? ", without approval" : ""}${d.leftover_files?.length ? ` · Saved after the merge started, still uncommitted: ${d.leftover_files.join(", ")}` : ""}${d.leftover_check_error ? ` · Could not check for later saves: ${d.leftover_check_error}` : ""}`, icon: "check", tone: "good" });
         break;
       case "merge_cleanup_failed":
         flush();

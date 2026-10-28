@@ -1446,3 +1446,109 @@ async def test_free_text_seat_message_after_question_is_closed(crew, store):
     crew.runner.send(seat.id, "Another message")
     await wait_until(idle(crew))
     assert any(e.kind == "message" and e.data.get("text") == "Another message" for e in store.events(seat.id))
+
+
+async def test_working_state_needs_me_add_wakes_main_chat_once(crew, store):
+    from crewbots.crew_tools import CrewTools
+
+    room = crew.runner.create_room("Engineering", ["chief", "engineer"], lead="engineer")
+    replies(crew, {})
+    seat = store.create_task("chief", "seat", kind="seat", room_id=room["id"], status=Status.IDLE)
+    chat = crew.runner.chat("chief")
+    tools = CrewTools(crew.runner, seat.id, can_delegate=False)
+
+    def notices(task):
+        return [e for e in store.events(task.id) if e.kind == "state_notice"]
+
+    await tools.call("working_state", {"section": "Decisions", "action": "add", "text": "a decision"})
+    await tools.call("working_state", {"section": "Commitments", "action": "add", "text": "a commitment"})
+    await wait_until(idle(crew))
+    assert not notices(chat) and not crew.specs_for("chief")
+
+    await tools.call("working_state", {"section": "Needs me", "action": "add", "text": "Tell Vir about the review limit"})
+    await wait_until(idle(crew))
+    assert [e.data["message"] for e in notices(chat)] == ["State changed: 1 item needs you."]
+    assert len([s for s in crew.specs_for("chief") if "State changed" in s.prompt]) == 1
+    assert not notices(seat)
+
+    # the main chat writing its own item is not woken by it
+    own = CrewTools(crew.runner, chat.id, can_delegate=False)
+    await own.call("working_state", {"section": "Needs me", "action": "add", "text": "mine"})
+    assert len(notices(chat)) == 1
+    await crew.runner.shutdown()
+
+
+async def _stopped_chief(crew, store, *, finished: bool):
+    room = crew.runner.create_room("Engineering", ["chief", "engineer"], lead="engineer")
+    replies(crew, {})
+    seat = store.create_task("chief", "seat", kind="seat", room_id=room["id"], status=Status.IDLE)
+    chat = crew.runner.chat("chief")
+    crew.runner._begin_cancel(chat.id)
+    if finished:
+        await crew.runner.cancel(chat.id, _begun=True)
+        crew.runner._cancelling.discard(chat.id)
+    return room, seat, chat
+
+
+@pytest.mark.parametrize("finished", [True, False])
+async def test_needs_me_add_does_not_restart_a_stopped_chat(crew, store, finished):
+    from crewbots.crew_tools import CrewTools
+
+    room, seat, chat = await _stopped_chief(crew, store, finished=finished)
+    await CrewTools(crew.runner, seat.id, can_delegate=False).call(
+        "working_state", {"section": "Needs me", "action": "add", "text": "secret review-limit item"})
+    await wait_until(idle(crew))
+    assert not [s for s in crew.specs_for("chief") if "State changed" in s.prompt]
+    assert len([e for e in store.events(chat.id) if e.kind == "state_notice"]) == 1
+    crew.runner._cancelling.discard(chat.id)
+    crew.runner.send(chat.id, "hello again")
+    await wait_until(idle(crew))
+    prompt = next(s.prompt for s in crew.specs_for("chief") if "hello again" in s.prompt)
+    assert "State changed: 1 item needs you." in prompt and "secret review-limit item" not in prompt
+    await crew.runner.shutdown()
+
+
+async def test_needs_me_replace_remove_and_done_wake_nothing(crew, store):
+    from crewbots.crew_tools import CrewTools
+    from crewbots.working_state import read
+
+    room = crew.runner.create_room("Engineering", ["chief", "engineer"], lead="engineer")
+    replies(crew, {})
+    seat = store.create_task("chief", "seat", kind="seat", room_id=room["id"], status=Status.IDLE)
+    tools = CrewTools(crew.runner, seat.id, can_delegate=False)
+    ids = []
+    for i in range(3):
+        await tools.call("working_state", {"section": "Needs me", "action": "add", "text": f"item {i}"})
+        path = crew.runner.crew.memory.root / "chief" / "working-state" / "state.md"
+        ids.append([x for x in read(path).split("`")[1::2] if len(x) == 24][-1])
+    await wait_until(idle(crew))
+    chat = crew.runner.chat("chief")
+    before = len([e for e in store.events(chat.id) if e.kind == "state_notice"])
+    await tools.call("working_state", {"section": "Needs me", "action": "replace", "entry_id": ids[0], "text": "new"})
+    await tools.call("working_state", {"section": "Needs me", "action": "remove", "entry_id": ids[1]})
+    await tools.call("working_state", {"section": "Needs me", "action": "replace", "entry_id": ids[2], "text": "x",
+                                       "done": True})
+    await wait_until(idle(crew))
+    assert len([e for e in store.events(chat.id) if e.kind == "state_notice"]) == before
+    await crew.runner.shutdown()
+
+
+async def test_room_mention_notice_does_not_restart_a_stopped_chat(crew, store):
+    from crewbots.working_state import edit
+
+    path = crew.runner.crew.memory.root / "chief" / "working-state" / "state.md"
+    edit(path, "Needs me", "add", "manual item")
+    replies(crew, {})
+    chat = crew.runner.chat("chief")
+    crew.runner._begin_cancel(chat.id)
+    for i in range(13):
+        room = crew.runner.create_room(f"room {i}", ["chief", "engineer"], lead="engineer")
+        crew.runner.set_room_limit(room["id"], 1)
+        crew.runner.post(room["id"], "engineer", "@chief request", depth=1)
+    assert any("older room mentions were trimmed" in e.data.get("message", "") for e in store.events(chat.id))
+    assert not crew.specs_for("chief")
+    crew.runner._cancelling.discard(chat.id)
+    crew.runner.send(chat.id, "hello again")
+    await wait_until(idle(crew))
+    assert "older room mentions were trimmed" in next(s.prompt for s in crew.specs_for("chief") if "hello again" in s.prompt)
+    await crew.runner.shutdown()

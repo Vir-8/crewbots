@@ -29,7 +29,7 @@ class TaskOut(BaseModel):
     turns: int
     review_of: str | None
     review_version: int | None
-    merge_state: Literal["proposed", "merged"] | None
+    merge_state: Literal["proposed", "merging", "merged"] | None
     merged_commit: str | None
     merged_tip: str | None
     kind: Literal["chat", "seat", "thread", "review", "ask"]
@@ -39,6 +39,16 @@ class TaskOut(BaseModel):
     budget: int | None
     created_at: str
     updated_at: str
+
+
+class MergeResultOut(TaskOut):
+    leftover_files: list[str] | None = None
+    leftover_check_error: str | None = None
+
+
+class WithdrawalResultOut(TaskOut):
+    notice: str | None = None
+
 
 class EventOut(BaseModel):
     id: int

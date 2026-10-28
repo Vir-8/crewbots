@@ -1,16 +1,12 @@
-"""Runs tasks: each one on its owner bot's backend, in its own worktree when it writes, with every event stored and
-published as it happens.
+"""Runs tasks on their owner's backend and publishes events as they happen.
 
-A follow-up message to a task resumes the same backend session. Messages that arrive while the bot is mid-run wait
-and go in together as the next turn, so a task never has two runs at once.
+A follow-up resumes the same session. Messages arriving mid-run wait for the next turn.
 
-Each active task keeps its CLI running between turns (a long-lived session), so a follow-up, a review round or the
-chief waking up doesn't pay for start-up. A session is closed after it has been idle a while, when its task is
-cancelled, or when the daemon stops, and a backend without sessions, or a session that won't open, falls back to
-one process per turn, resuming from the stored session id.
+Each active task keeps its CLI running between turns. A session closes when idle, cancelled or stopped; otherwise a
+backends without sessions use one process per turn, resuming from the stored session id.
 
-Delegation: a coordinator bot creates child tasks through the crewbots MCP tools, then ends its turn. When none of its
-children are still running, their handoffs and results go back to it as one message, which starts its next turn. It
+Delegation: coordinators create child tasks through MCP tools, then end their turns. Once all children finish, their
+handoffs and results go back as one message. The coordinator
 never waits or polls. Each run gets a token that lets its MCP server act for that task only, and only while it runs.
 
 Chats and rooms: each bot has one ongoing chat with the user, which never ends; real work goes into threads opened
@@ -24,7 +20,6 @@ itself once there's room again, or at once when the user releases it. A turn alr
 
 import asyncio
 import contextlib
-import logging
 import os
 import secrets
 import subprocess
@@ -36,7 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from crewbots import attachments as attachments_module
-from crewbots import prompts, worktree
+from crewbots import branch_mode, prompts
 from crewbots.attention import Attention
 from crewbots.backends import BACKENDS, Access, Backend, McpServer, RunSpec
 from crewbots.browser import Browser
@@ -56,6 +51,7 @@ from crewbots.events import (
     Usage,
 )
 from crewbots.reviews import review_prompt, reviewer_bot
+from crewbots.runner.branches import Branches
 from crewbots.runner.checkins import Checkins
 from crewbots.runner.common import (
     MCP_COMMAND,
@@ -92,7 +88,8 @@ RETRY_WAITS_S = (30.0, 120.0, 300.0)
 STALL_S = 1200.0  # no event at all from a turn for this long: it's stuck, so it's stopped and tried again
 
 
-class Runner(Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams, Checkins, Wakes, Welcome, Permissions):
+class Runner(Branches, Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams, Checkins, Wakes,
+             Welcome, Permissions):
     """Runs the crew's tasks. Its parts are by area: sessions, rooms, delegation, reviews, work, files bots show the
     user, holds, dreams (memory consolidated overnight), check-ins, the chief's own looks around (wakes), starting a
     crew off (welcome), and what bots ask the user to allow (permissions)."""
@@ -138,6 +135,7 @@ class Runner(Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds
         self._runs: dict[str, asyncio.Task[None]] = {}
         self._attempts: dict[str, dict[str, Any]] = {}
         self._cancelling: set[str] = set()
+        self._held_notices: dict[str, list[str]] = {}  # state notices for a stopped chat, until the user writes next
         self._cancel_messages: dict[str, list[tuple[str, str, list[dict[str, Any]] | None, bool, bool]]] = {}
         self._seat_turn_seen: dict[str, int] = {}
         self._seat_queue_floor: dict[str, int] = {}
@@ -191,11 +189,17 @@ class Runner(Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds
         long prompt of crewbots' own out of view."""
         if bot not in self.crew.bots:
             raise UnknownBot(f"no bot named {bot!r}; the crew is {sorted(self.crew.bots)}")
+        project = self._branch_project(bot, workspace, kind, review_of)
         task = self.store.create_task(bot, goal, created_by=created_by, parent_id=parent_id, workspace=workspace,
                                       review_of=review_of, review_version=review_version, routine=routine,
                                       budget=budget, title=title, pr=pr, kind=kind)
+        if project:
+            task = self._start_branch(task, project)
         self.bus.publish({"type": "task", "task": task.to_json()})
         self._message(task.id, said_by or created_by, goal)
+        if project:
+            self._message(task.id, "crewbots", f"Your {project.name} folder is on the crew's branch until this task "
+                          "merges; anything you save there becomes part of this task.")
         self._start(task.id, goal)
         return task
 
@@ -241,6 +245,8 @@ class Runner(Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds
                 self._clear_room_need(task_id)
             self._refresh_working_state(task.bot)
             self.attention.user_wrote = time.time()  # mid-conversation: questions wait for a break
+        if sender == "user" and (held := self._held_notices.pop(task_id, None)):
+            text = "\n\n".join([*dict.fromkeys(held), text])
         if nudge_decision:
             text += "\n\nRecord the decision in your working state, distilled, with no private detail."
         if sender in self.crew.bots and sender != task.bot:
@@ -312,6 +318,7 @@ class Runner(Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds
         """On start: each turn the last stop cut off, or that was waiting its turn, carries on once. A bot that had
         the turn is told it was interrupted and to pick up where it left off; one that hadn't gets it as it was. A
         held one is held again until there's room. Returns the tasks carried on."""
+        self._recover_branch_projects()
         resumed = []
         for turn in self.store.interrupted_turns():
             task = self.store.get_task(turn["task_id"])
@@ -446,9 +453,13 @@ class Runner(Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds
                     await self._close_session(task_id)
                     self._removed_worktrees.discard(task_id)
                 cwd = self._cwd(task, bot)
+                branch_task = self.store.get_task(task.review_of) if task.review_of else task
+                branch_start = branch_mode.turn_head(self._branch_checkout(branch_task)) if branch_task.base_branch else None
             except Exception as e:  # a bot removed from the crew, a missing workspace, a git failure
                 self._record(task_id, Done(final_text="", is_error=True, error=f"crewbots: {e}"))
                 self._set(task_id, status=Status.FAILED, error=str(e))
+                if (task.base_branch or task.review_of) and "HEAD is not on the task branch" in str(e):
+                    self._branch_notice(task_id, str(e))
                 return None
             backend = self.backends[bot.backend]
             if task.kind != "review":
@@ -466,6 +477,20 @@ class Runner(Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds
             looked_at: dict[str, str] = {}
             started = time.time()  # a text file a reply names counts as made by it if it changed since
             self._shared_now[task_id] = set()
+            branch_error: str | None = None
+
+            async def watch_branch() -> None:
+                nonlocal branch_error
+                checkout = self._branch_checkout(branch_task)
+                while True:
+                    await asyncio.sleep(2)
+                    if not branch_mode.turn_safe(checkout, branch_start):
+                        branch_error = f"{branch_task.repo}: HEAD left {branch_task.branch} or its history was rewritten; stopped"
+                        if run := self._runs.get(task_id):
+                            run.cancel()
+                        return
+
+            watcher = asyncio.create_task(watch_branch()) if branch_task.base_branch else None
             try:
                 if task.kind == "seat":
                     self._seat_dispatch[task_id] = self._seat_turn_seen.get(task_id, 0)
@@ -526,17 +551,31 @@ class Runner(Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds
                             case Done():
                                 done = event
             except asyncio.CancelledError:
-                self._set(task_id, status=Status.CANCELLED)
+                if branch_error:
+                    self.store.clear_pending(task_id)
+                    self._set(task_id, status=Status.FAILED, error=branch_error)
+                    self._branch_notice(task_id, branch_error)
+                else:
+                    self._set(task_id, status=Status.CANCELLED)
                 raise
             except Exception as e:  # the backend broke: its CLI wouldn't start, or its protocol did
                 done = Done(final_text="", is_error=True, error=f"crewbots: {e}", retry="transient")
                 self._record(task_id, done)
             finally:
+                if watcher:
+                    watcher.cancel()
+                    await asyncio.gather(watcher, return_exceptions=True)
+                    checkout = self._branch_checkout(branch_task)
+                    if not branch_error and not branch_mode.turn_safe(checkout, branch_start):
+                        branch_error = f"{branch_task.repo}: HEAD left {branch_task.branch} or its history was rewritten; stopped"
+                        self._branch_notice(task_id, branch_error)
+                        done = Done(final_text="", is_error=True, error=branch_error)
+                        self._record(task_id, done)
                 self._seat_dispatch.pop(task_id, None)
                 await self.browser.close_task(task_id)
                 if open_session is None:
                     self._tokens.pop(token, None)
-                elif (open_session.session.alive and not stalled
+                elif (open_session.session.alive and not stalled and not branch_error
                       and open_session.coordinator == self.is_coordinator(task.bot)
                       and open_session.chief == self.is_chief(task.bot)):
                     open_session.last_used = asyncio.get_running_loop().time()
@@ -560,7 +599,10 @@ class Runner(Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds
                     self._seat_replied(task, done.final_text, self._mentioned(task, cwd, done.final_text, started),
                                        owed, nudged)
                     self._seat_turn_finished(task, done.final_text)
-                await self._maybe_compact(task_id, open_session, bot)
+                try:
+                    await self._maybe_compact(task_id, open_session, bot)
+                except NotAllowed as e:
+                    return Done(final_text="", is_error=True, error=str(e))
                 # Not idle yet if messages are waiting: the next turn starts right away, and watchers should not stop.
                 next_status = Status.QUEUED if self._waiting.get(task_id) else Status.IDLE
                 if task.kind != "seat" or self.store.get_task(task_id).status != next_status:
@@ -586,7 +628,8 @@ class Runner(Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds
         return RunSpec(
             prompt=prompt, cwd=cwd, model=bot.model,
             on_prompt_sent=(lambda: self._room_prompt_sent(task.id)) if task.kind == "seat" else None,
-            access=Access.READ_ONLY if task.kind == "ask" else bot.access,  # a question is answered, not worked on
+            access=Access.READ_ONLY if task.kind == "ask" or (task.review_of and
+                self.store.get_task(task.review_of).base_branch) else bot.access,
             system_prompt=self.crew.system_prompt(bot, delegated_by=task.created_by if task.parent_id else None,
                                                   coordinator=self.is_coordinator(bot.name), chief=self.is_chief(bot.name),
                                                   reviewing=self._review_brief(task), briefing=task.briefing,
@@ -638,41 +681,6 @@ class Runner(Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds
                "CREWBOTS_TOOLS": tools, "CREWBOTS_REVIEW": flags,
                "CREWBOTS_HOME": str(self.crew.home)}  # for the crew's own tool descriptions (prompts/tools/)
         return {MCP_SERVER_NAME: McpServer(command=command, args=list(args), env=env)}
-
-    def _cwd(self, task: Task, bot: Bot) -> Path:
-        if task.review_of:
-            reviewed = self.store.get_task(task.review_of)
-            if reviewed.worktree_path and task.workspace == reviewed.worktree_path:
-                self._restore_worktree(reviewed)
-        if task.worktree_path:
-            self._restore_worktree(task)
-            return Path(task.worktree_path)
-        workspace = Path(task.workspace).expanduser() if task.workspace else self.crew.folder_of(bot)
-        if not task.workspace and not bot.workspace:
-            workspace.mkdir(parents=True, exist_ok=True)  # the bot's own folder, made the first time it's needed
-        if not workspace.is_dir():
-            raise FileNotFoundError(f"workspace {workspace} does not exist")
-        if bot.access is Access.READ_ONLY or task.kind == "ask":
-            return workspace
-        if not bot.worktree or not worktree.is_repo(workspace):
-            return self._in_place(workspace)
-        matching = [p for p in self.crew.projects.values() if workspace.resolve() == p.folder.resolve()]
-        if matching and matching[0].isolation == "branch":
-            logging.getLogger(__name__).info("Project %s uses branch isolation; using a worktree until it is available",
-                                             matching[0].name)
-        wt = worktree.create(workspace, task.id, root=self.worktree_root)
-        self._set(task.id, repo=str(wt.repo), worktree_path=str(wt.path), branch=wt.branch, base=wt.base)  # watchers see it now
-        self._record(task.id, kind="worktree", data={"path": str(wt.path), "branch": wt.branch, "base": wt.base})
-        return wt.path
-
-    def _in_place(self, workspace: Path) -> Path:
-        """Where a bot that writes in place (not in a worktree) works: never a folder that holds the crew's own
-        settings, which only the user changes (role cards, team rules, routines and the database)."""
-        home, folder = self.crew.home.resolve(), workspace.resolve()
-        if home.is_relative_to(folder) or folder.is_relative_to(home):
-            raise NotAllowed(f"{workspace} holds the crew's own settings, and a bot that writes can't work there; "
-                             "give it a folder of its own")
-        return workspace
 
     def _message(self, task_id: str, sender: str, text: str, attachments: list[dict[str, Any]] | None = None) -> None:
         self._record(task_id, kind="message", data={"from": sender, "text": text,

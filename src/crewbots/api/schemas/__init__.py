@@ -138,6 +138,7 @@ from crewbots.api.schemas.tasks import (
     FindingOut,
     HandoffOut,
     MergeRequest,
+    MergeResultOut,
     Message,
     NewTask,
     PermissionAnswer,
@@ -146,6 +147,7 @@ from crewbots.api.schemas.tasks import (
     ReviewStateOut,
     TaskOut,
     TaskStatus,
+    WithdrawalResultOut,
 )
 from crewbots.api.schemas.usage import (
     BotUse,
@@ -247,7 +249,9 @@ __all__ = [
     "MergeProposal",
     "MergeWithdrawal",
     "WithdrawalReason",
+    "WithdrawalResultOut",
     "MergeRequest",
+    "MergeResultOut",
     "Message",
     "ModelOut",
     "ModelUse",

@@ -28,6 +28,8 @@ create table if not exists tasks (
     worktree_path text,
     branch        text,
     base          text,
+    base_branch   text,                        -- branch-mode checkout's original branch
+    checkout_state text,                       -- starting until switch -c and linking finish
     session_id    text,
     result        text,
     error         text,
@@ -41,6 +43,8 @@ create table if not exists tasks (
     merge_state   text,                        -- null, proposed (by its coordinator), or merged (by the user)
     merged_commit text,
     merged_tip    text,                        -- task branch tip at merge, before its checkout is removed
+    merge_lock    text,                        -- device:inode of our in-progress index lock
+    merge_marker  text,                        -- timestamp and nonce for this lock attempt
     briefing      text,                        -- where things stood, carried into a fresh session at rollover
     kind          text not null default 'thread', -- chat, seat or thread
     room_id       text,                        -- a seat's room
@@ -444,6 +448,10 @@ MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] =
      lambda db, _: db.execute("update rooms set stopped = null where max_depth is null")),
     ("direct chat mute settings", lambda db, _: db.executescript(CHAT_MUTES)),
     ("remember a merged task's branch tip", _add_columns("tasks", {"merged_tip": "text"})),
+    ("remember a branch-mode checkout's original branch", _add_columns("tasks", {"base_branch": "text"})),
+    ("remember a branch-mode merge's index lock", _add_columns("tasks", {"merge_lock": "text"})),
+    ("remember branch checkout and merge lock intent", _add_columns("tasks", {
+        "checkout_state": "text", "merge_marker": "text"})),
 ]
 
 

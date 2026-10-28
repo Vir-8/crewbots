@@ -241,12 +241,27 @@ class Rooms:
         path = self.crew.memory.root / bot / "working-state" / "state.md"
         try:
             if working_state.room_mentions(path, room, [message], add=True):
-                notice = "State changed: 1 item needs you; older room mentions were trimmed."
-                chat = self.chat(bot)
-                self._record(chat.id, kind="state_notice", data={"message": notice})
-                self.send(chat.id, notice, sender="crewbots", _record_message=False)
+                self._state_notice(bot, "State changed: 1 item needs you; older room mentions were trimmed.")
         except Exception:
             logging.getLogger(__name__).exception("Could not record room mention for %s", bot)
+
+    def _state_notice(self, bot: str, notice: str) -> None:
+        """Tells the bot's main chat its state changed, quietly: a notice with no message text. A chat the user stopped
+        isn't restarted by it: the notice waits, and goes with the user's next message."""
+        chat = self.chat(bot)
+        self._record(chat.id, kind="state_notice", data={"message": notice})
+        if chat.id in self._cancelling or chat.status is Status.CANCELLED:
+            self._held_notices.setdefault(chat.id, []).append(notice)
+        else:
+            self.send(chat.id, notice, sender="crewbots", _record_message=False)
+
+    def need_added(self, task_id: str, trimmed: bool = False) -> None:
+        """A session added a "Needs me" item itself: wake the bot's main chat, with no message text, as for a mention."""
+        task = self.store.get_task(task_id)
+        if self.chat(task.bot).id == task_id:
+            return  # the writer is the main chat
+        self._state_notice(task.bot, "State changed: 1 item needs you; older entries were trimmed." if trimmed
+                           else "State changed: 1 item needs you.")
 
     def _clear_room_mentions(self, bot: str, room_id: str, through: int | None = None) -> None:
         try:
@@ -292,7 +307,6 @@ class Rooms:
         chief = self.coordinator()
         if chief is None:
             return
-        chat = self.chat(chief.name)
         try:
             _, trimmed = edit(self.crew.memory.root / chief.name / "working-state" / "state.md", "Needs me", "add",
                               f"{room['title']} ({room['id']}): @{author} {kind} · {source}")
@@ -300,8 +314,7 @@ class Rooms:
                       else "State changed: 1 item needs you.")
         except (MemoryError, OSError):
             notice = f"State full or unavailable: @{author} needs you in room {room['id']} ({source}); tidy state."
-        self._record(chat.id, kind="state_notice", data={"message": notice})
-        self.send(chat.id, notice, sender="crewbots", _record_message=False)
+        self._state_notice(chief.name, notice)
 
     def post_from(self, task_id: str, text: str, room_id: str | None = None,
                   attachments: list[dict[str, Any]] | None = None) -> dict[str, Any]:

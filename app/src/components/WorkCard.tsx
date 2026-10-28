@@ -27,6 +27,14 @@ export function WorkCard({ crew, task, onOpen }: { crew: Crew; task: Task; onOpe
   const round = versions.length;
   const [cap, setCap] = useState<{ task: string; max: number } | null>(null);
   useEffect(() => {
+    if (task.merge_state) crew.ensureEvents(task.id);
+  }, [crew.ensureEvents, task.id, task.merge_state]);
+  const proposal = (crew.events.get(task.id) ?? []).filter((event) => event.kind === "merge_proposed").at(-1);
+  const files: string[] | undefined = proposal?.data.files;
+  const merged = (crew.events.get(task.id) ?? []).filter((event) => event.kind === "merged").at(-1);
+  const leftovers: string[] | undefined = merged?.data.leftover_files;
+  const checkError: string | undefined = merged?.data.leftover_check_error;
+  useEffect(() => {
     let current = true;
     if (round) api.review(task.id).then((review) => { if (current) setCap({ task: task.id, max: review.max_rounds }); }, () => { if (current) setCap(null); });
     return () => { current = false; };
@@ -63,6 +71,13 @@ export function WorkCard({ crew, task, onOpen }: { crew: Crew; task: Task; onOpe
       </div>
       <div className="work-title">{oneLine(task.title, 160)}</div>
       {line && <div className={`work-line ${active ? "shimmer" : ""}`}>{line}</div>}
+      {task.merge_state === "proposed" && files && (
+        <div className="work-files"><div>Changed files</div><ul>{files.map((file) => <li key={file}><code>{file}</code></li>)}</ul></div>
+      )}
+      {task.merge_state === "merged" && Boolean(leftovers?.length) && (
+        <div className="work-files"><div>Saved after the merge started, still uncommitted:</div><ul>{leftovers!.map((file) => <li key={file}><code>{file}</code></li>)}</ul></div>
+      )}
+      {task.merge_state === "merged" && checkError && <div className="work-files">Could not check for later saves: {checkError}</div>}
       {(latest.length > 0 || task.merge_state) && (
         <div className="work-foot" onClick={(e) => e.stopPropagation()}>
           {latest.map((review) => {

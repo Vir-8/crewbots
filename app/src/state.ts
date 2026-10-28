@@ -145,7 +145,9 @@ export function useCrew() {
       if (events.has(taskId)) return;
       setEvents((current) => new Map(current).set(taskId, [])); // claim it, so it loads once
       api.events(taskId).then(
-        (loaded) => setEvents((current) => new Map(current).set(taskId, loaded as StoredEvent[])),
+        (loaded) => setEvents((current) => current.has(taskId)
+          ? new Map(current).set(taskId, mergeLoadedEvents(loaded as StoredEvent[], current.get(taskId)!))
+          : current),
         (e) => setError(String(e)),
       );
     },
@@ -263,6 +265,11 @@ export interface InboxItem {
   task: Task;
   reason: "merge" | "permission" | "question" | "held" | "failed" | "interrupted";
   text: string;
+}
+
+/** Retain live events that arrived while the task's stored events were loading. */
+export function mergeLoadedEvents(loaded: StoredEvent[], live: StoredEvent[]): StoredEvent[] {
+  return [...new Map([...loaded, ...live].map((event) => [event.id, event])).values()].sort((a, b) => a.id - b.id);
 }
 
 export function derive(tasks: Map<string, Task>, recent: StoredEvent[]) {

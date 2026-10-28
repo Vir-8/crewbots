@@ -9,6 +9,11 @@ it("distinguishes automatic merges in the thread", () => {
   ]);
 });
 
+it("shows files left uncommitted by a merge in the thread", () => {
+  const event: StoredEvent = { id: 1, task_id: "task", kind: "merged", data: { commit: "abcdef123", leftover_files: ["Assets/Vir.png", "new file"] }, at: "" };
+  expect(build([event], [], new Map())[0]).toMatchObject({ text: "Merged as abcdef1 · Saved after the merge started, still uncommitted: Assets/Vir.png, new file" });
+});
+
 it("shows withdrawn proposals and searches the displayed folder", () => {
   const event: StoredEvent = { id: 1, task_id: "task", kind: "merge_withdrawn", data: { by: "user", reason: "Superseded" }, at: "" };
   expect(build([event], [], new Map())[0]).toMatchObject({ text: "You withdrew the merge proposal: Superseded" });

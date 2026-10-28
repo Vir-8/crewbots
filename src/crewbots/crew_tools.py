@@ -15,6 +15,17 @@ if TYPE_CHECKING:
     from crewbots.runner import Runner
 
 
+def merge_text(task_id: str, state: str | None, commit: str | None, details: dict[str, Any]) -> str:
+    if state != "merged":
+        return f"Proposed {task_id} to the user for merging."
+    message = f"Merged {task_id} locally as {commit}."
+    if files := details.get("leftover_files"):
+        message += " Saved after the merge started, still uncommitted: " + ", ".join(files)
+    if error := details.get("leftover_check_error"):
+        message += f" Could not check for later saves: {error}"
+    return message
+
+
 @dataclass(frozen=True)
 class ToolDef:
     name: str
@@ -192,17 +203,22 @@ class CrewTools:
                     return proposal_message(r, proposal)
                 case "propose_merge":
                     task = r.propose_merge(me, args["task_id"], args["summary"])
-                    return (f"Merged {task.id} locally as {task.merged_commit}." if task.merge_state == "merged"
-                            else f"Proposed {task.id} to the user for merging.")
+                    event = r.store.last_event(task.id, ("merged",)) if task.merge_state == "merged" else None
+                    details = event.data if event and event.data.get("commit") == task.merged_commit else {}
+                    return merge_text(task.id, task.merge_state, task.merged_commit, details)
                 case "withdraw_merge":
                     task = r.withdraw_merge(args["task_id"], args["reason"], parent_id=me)
-                    return f"Withdrew the merge proposal for {task.id}."
+                    event = r.store.last_event(task.id, ("merge_withdrawn",))
+                    notice = event.data.get("notice") if event else None
+                    return f"Withdrew the merge proposal for {task.id}." + (f" {notice}." if notice else "")
                 case "working_state":
                     from crewbots.working_state import edit
                     task = r.store.get_task(me)
                     entry_id, pruned = edit(r.crew.memory.root / task.bot / "working-state" / "state.md",
                                             args["section"], args["action"],
                                             args.get("text", ""), args.get("entry_id", ""), bool(args.get("done")))
+                    if args["section"] == "Needs me" and args["action"] == "add" and not args.get("done"):
+                        r.need_added(me, pruned)
                     return (f"Working state entry {entry_id} updated."
                             + (" State entries were trimmed; tidy up your state." if pruned else ""))
                 case "remember":

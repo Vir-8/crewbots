@@ -504,6 +504,16 @@
   -webkit-box-orient: vertical;
 }
 
+.work-files {
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+
+.work-files ul {
+  margin: 4px 0 0;
+  padding-left: 20px;
+}
+
 .work-foot {
   display: flex;
   align-items: center;

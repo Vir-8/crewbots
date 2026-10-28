@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "35f40b316774";
+export const API_SCHEMA = "62af20e9aad5";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -524,6 +524,42 @@ export interface MergeProposal {
 
 export interface MergeRequest {
   force?: boolean;
+}
+
+export interface MergeResultOut {
+  id: string;
+  bot: string;
+  title: string;
+  status: Status;
+  created_by: string;
+  parent_id: string | null;
+  workspace: string | null;
+  repo: string | null;
+  worktree_path: string | null;
+  branch: string | null;
+  base: string | null;
+  session_id: string | null;
+  result: string | null;
+  error: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  reported: boolean;
+  turns: number;
+  review_of: string | null;
+  review_version: number | null;
+  merge_state: "proposed" | "merging" | "merged" | null;
+  merged_commit: string | null;
+  merged_tip: string | null;
+  kind: "chat" | "seat" | "thread" | "review" | "ask";
+  room_id: string | null;
+  pr: string | null;
+  routine: string | null;
+  budget: number | null;
+  created_at: string;
+  updated_at: string;
+  leftover_files?: string[] | null;
+  leftover_check_error?: string | null;
 }
 
 export interface MergeSettings {
@@ -1114,7 +1150,7 @@ export interface TaskOut {
   turns: number;
   review_of: string | null;
   review_version: number | null;
-  merge_state: "proposed" | "merged" | null;
+  merge_state: "proposed" | "merging" | "merged" | null;
   merged_commit: string | null;
   merged_tip: string | null;
   kind: "chat" | "seat" | "thread" | "review" | "ask";
@@ -1233,4 +1269,39 @@ export interface VersionOut {
 
 export interface WithdrawalReason {
   reason: string;
+}
+
+export interface WithdrawalResultOut {
+  id: string;
+  bot: string;
+  title: string;
+  status: Status;
+  created_by: string;
+  parent_id: string | null;
+  workspace: string | null;
+  repo: string | null;
+  worktree_path: string | null;
+  branch: string | null;
+  base: string | null;
+  session_id: string | null;
+  result: string | null;
+  error: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  reported: boolean;
+  turns: number;
+  review_of: string | null;
+  review_version: number | null;
+  merge_state: "proposed" | "merging" | "merged" | null;
+  merged_commit: string | null;
+  merged_tip: string | null;
+  kind: "chat" | "seat" | "thread" | "review" | "ask";
+  room_id: string | null;
+  pr: string | null;
+  routine: string | null;
+  budget: number | null;
+  created_at: string;
+  updated_at: string;
+  notice?: string | null;
 }

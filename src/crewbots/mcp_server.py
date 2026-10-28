@@ -15,7 +15,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ImageContent, TextContent
 
-from crewbots.crew_tools import describe, recall_text, shared_text
+from crewbots.crew_tools import describe, merge_text, recall_text, shared_text
 
 INSTRUCTIONS = "Tools for working in a crewbots crew: hand work back, escalate decisions, and (for coordinators) delegate."
 
@@ -221,13 +221,12 @@ def build_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = F
     @server.tool(description=describe("propose_merge"))
     def propose_merge(task_id: str, summary: str) -> str:
         task = call("POST", "/bot/propose_merge", {"task_id": task_id, "summary": summary})
-        return (f"Merged {task_id} locally as {task['merged_commit']}." if task["merge_state"] == "merged"
-                else f"Proposed {task_id} to the user for merging.")
+        return merge_text(task_id, task["merge_state"], task["merged_commit"], task)
 
     @server.tool(description=describe("withdraw_merge"))
     def withdraw_merge(task_id: str, reason: str) -> str:
-        call("POST", "/bot/withdraw_merge", {"task_id": task_id, "reason": reason})
-        return f"Withdrew the merge proposal for {task_id}."
+        result = call("POST", "/bot/withdraw_merge", {"task_id": task_id, "reason": reason})
+        return f"Withdrew the merge proposal for {task_id}." + (f" {result['notice']}." if result.get("notice") else "")
 
 
     return server
