@@ -93,6 +93,7 @@ function useUpdate(crew: Crew): Update | null {
   const [daemon, setDaemon] = useState<VersionOut | "unversioned" | null>(null);
   const [installedNewer, setInstalledNewer] = useState(false);
   const [restartError, setRestartError] = useState<string | null>(null);
+  const [relaunchFailure, setRelaunchFailure] = useState<string | null>(null);
 
   useEffect(() => {
     if (!connected) return;
@@ -104,7 +105,10 @@ function useUpdate(crew: Crew): Update | null {
   }, [connected]);
 
   useEffect(() => {
-    const ask = () => bridge.appInfo().then((info) => setInstalledNewer(info.installed_newer), () => undefined);
+    const ask = () => bridge.appInfo().then((info) => {
+      setInstalledNewer(info.installed_newer);
+      if (info.relaunch_failure) setRelaunchFailure(info.relaunch_failure); // said once: the app clears it when read
+    }, () => undefined);
     ask();
     const timer = window.setInterval(ask, INSTALLED_EVERY_MS);
     window.addEventListener("focus", ask);
@@ -122,6 +126,7 @@ function useUpdate(crew: Crew): Update | null {
       void restartApp().catch((e) => setRestartError(String(e).replace(/^Error: /, "")));
     } },
   };
+  if (relaunchFailure) return { text: relaunchFailure, bad: true };
   if (!daemon) return null;
   const restartDaemon = { label: "Restart it when idle", run: () => void crew.restart(true) };
   if (daemon === "unversioned" || daemon.api < API_VERSION)

@@ -75,13 +75,22 @@ fn executable_time() -> Option<SystemTime> {
 fn app_info() -> Value {
     let launched = *LAUNCHED_BUILD.get_or_init(executable_time);
     let installed_newer = matches!((launched, executable_time()), (Some(was), Some(now)) if now > was);
-    json!({ "installed_newer": installed_newer })
+    json!({ "installed_newer": installed_newer, "relaunch_failure": update::relaunch_failure() })
 }
 
-/// Quits and opens the app again, from whatever build is installed now.
+/// Quits, and has a helper open the app again at its pinned path once every old instance is gone. If the helper
+/// can't start, the app stays open (Tauri's own restart would bring back `open -n`); the update is installed, so the
+/// next launch is the new version.
 #[tauri::command]
-fn restart_app(app: AppHandle) {
-    app.restart();
+fn restart_app(app: AppHandle) -> Result<(), String> {
+    match update::relaunch() {
+        Ok(()) => app.exit(0),
+        Err(e) => {
+            eprintln!("crewbots: couldn't start the relaunch helper: {e}");
+            return Err("Restart crewbots to finish the update.".into());
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -259,6 +268,7 @@ pub fn run() {
         ])
         .setup(move |app| {
             LAUNCHED_BUILD.get_or_init(executable_time);
+            update::init();
             app.set_menu(app_menu(app)?)?;
             build_tray(app, &crew)?;
             files::allow(app.handle(), crew.home());

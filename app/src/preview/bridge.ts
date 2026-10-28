@@ -397,7 +397,7 @@ export const previewBridge = {
   thumbnail: async (path: string, _size: number) => previewThumbnail(path),
   openUrl: async (url: string) => void window.open(url, "_blank"),
   startAtLogin: async (enabled?: boolean) => enabled ?? true,
-  appInfo: async () => ({ installed_newer: new URLSearchParams(location.search).has("update") }), // ?update shows the banner
+  appInfo: async () => ({ installed_newer: new URLSearchParams(location.search).has("update"), relaunch_failure: null }), // ?update shows the banner
   restartApp: async () => location.assign(location.pathname),
   installUpdate: async (_bundle: string) => ({ path: "/Applications/crewbots.app", warning: null }),
   dictation: browserDictation(),

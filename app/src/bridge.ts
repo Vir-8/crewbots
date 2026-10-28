@@ -34,8 +34,8 @@ const tauriBridge = {
   reveal: (path: string) => revealItemInDir(path),
   /** Whether the crew starts at login; pass `enabled` to change it. */
   startAtLogin: (enabled?: boolean) => invoke<boolean>("start_at_login", { enabled: enabled ?? null }),
-  /** Whether a newer build of the app is installed over this one. */
-  appInfo: () => invoke<{ installed_newer: boolean }>("app_info"),
+  /** Whether a newer build of the app is installed over this one, and why the last restart failed (said once). */
+  appInfo: () => invoke<{ installed_newer: boolean; relaunch_failure: string | null }>("app_info"),
   /** Puts the build an update made in this app's place (the app restarts after). */
   installUpdate: (bundle: string) => invoke<{ path: string; warning: string | null }>("install_update", { bundle }),
   /** Quits and opens the app again, from the build installed now. */
