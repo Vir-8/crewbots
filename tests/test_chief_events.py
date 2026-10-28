@@ -189,3 +189,45 @@ async def test_verdicts_limits_escalations_merges_and_stalls_are_listed(store, t
                  f"escalation: {work.id}", f"stall raised: {work.id} (eng-lead)"):
         assert part in text
     await crew.runner.shutdown()
+
+
+async def test_the_same_event_twice_is_one_line_and_different_kinds_both_show(store, tmp_path):
+    crew = make(store, tmp_path)
+    task = store.create_task("engineer", "build", status=Status.IDLE)
+    for kind in ("done", "escalation", "done"):
+        crew.runner._crew_event(kind, task.id, "engineer")
+    assert crew.runner.flush_chief_events(T0)
+    text = notices(store, crew)[-1]
+    assert text.count(f"done: {task.id}") == 1 and text.count(f"escalation: {task.id}") == 1
+    assert text.index("escalation") < text.index("done")  # the latest occurrence keeps its place
+    await crew.runner.shutdown()
+
+
+async def test_a_line_has_the_short_title_and_nothing_else_from_the_task(store, tmp_path):
+    crew = make(store, tmp_path)
+    short = store.create_task("engineer", "Sweep merged-check fix\nsecret goal body", status=Status.IDLE)
+    long = store.create_task("engineer", "word " * 20, title="Make the sweep treat every stray worktree as merged only if empty",
+                             status=Status.IDLE)
+    for t in (short, long):
+        crew.runner._crew_event("done", t.id, "engineer")
+    assert crew.runner.flush_chief_events(T0)
+    text = notices(store, crew)[-1]
+    assert f"- done: {short.id} (engineer) Sweep merged-check fix\n" in text + "\n"
+    assert "secret goal body" not in text
+    [line] = [x for x in text.splitlines() if long.id in x]
+    title = line.split("(engineer) ")[1]
+    assert title == "Make the sweep treat every stray worktree as merged only if…" and len(title) <= 61
+    await crew.runner.shutdown()
+
+
+async def test_overlapping_stall_groups_list_each_task_once_with_its_title(store, tmp_path):
+    crew = make(store, tmp_path)
+    tasks = {n: store.create_task("engineer", f"Title {n}", status=Status.IDLE) for n in "abc"}
+    ids = {n: t.id for n, t in tasks.items()}
+    crew.runner._crew_event("stall raised", f"{ids['a']}, {ids['b']}", "engineer")
+    crew.runner._crew_event("stall raised", f"{ids['a']}, {ids['c']}", "engineer")
+    assert crew.runner.flush_chief_events(T0)
+    lines = [x for x in notices(store, crew)[-1].splitlines() if x.startswith("- stall raised")]
+    assert sorted(lines) == sorted(f"- stall raised: {ids[n]} (engineer) Title {n}" for n in "abc")
+    assert not store.chief_events()
+    await crew.runner.shutdown()

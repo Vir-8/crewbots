@@ -1,8 +1,8 @@
 """Crew activity the chief should hear about without looking: threads done or failed, review verdicts and limits,
 merges, escalations and stall alerts, for any bot but the chief itself (its own work reports to it already). They are
 kept in the store and go to its main chat as one short notice, at most once every BATCH, listing kinds, ids and bot
-names, with no message text, like the "State changed" notice. Nothing happened, nothing sent. While the chat is stopped or
-waiting on the user the events just stay in the store until a tick finds it idle."""
+names and a short title, with no message text, like the "State changed" notice. Nothing happened, nothing sent. While
+the chat is stopped or waiting on the user the events just stay in the store until a tick finds it idle."""
 
 import logging
 from datetime import UTC, datetime, timedelta
@@ -13,6 +13,7 @@ from crewbots.store import Status, Task, Verdict
 
 BATCH = timedelta(minutes=2)  # at most one notice this often
 LISTED = 20  # events a notice lists; the rest are counted
+TITLE = 60  # characters of a task's title in a line
 NOT_THREADS = ("chat", "seat", "ask", "review")
 
 log = logging.getLogger(__name__)
@@ -54,10 +55,13 @@ class ChiefEvents:
         last = (self.store.routine_state("chief-events") or {}).get("last_run_at")
         if last and now - datetime.fromisoformat(last) < BATCH:
             return False
-        lines = [f"- {e['kind']}: {e['subject']} ({e['who']})" if e["subject"] else f"- {e['kind']}: @{e['who']}"
-                 for e in events[:LISTED]]
-        if len(events) > LISTED:
-            lines.append(f"- and {len(events) - LISTED} more")
+        # a stall names several tasks in one subject: one entry each; the same thing twice is one line
+        entries = [{**e, "subject": task} for e in events for task in (e["subject"].split(", ") if e["subject"] else [""])]
+        latest = {(e["kind"], e["subject"] or e["who"]): e for e in entries}
+        shown = [e for e in entries if latest[(e["kind"], e["subject"] or e["who"])] is e]
+        lines = [self._event_line(e) for e in shown[:LISTED]]
+        if len(shown) > LISTED:
+            lines.append(f"- and {len(shown) - LISTED} more")
         try:
             self._state_notice(chief.name, "Crew activity since the last notice (ids only; ask for details):\n"
                                + "\n".join(lines))
@@ -67,6 +71,18 @@ class ChiefEvents:
         self.store.clear_chief_events(events[-1]["id"])
         self.store.routine_ran("chief-events", now.isoformat(), "")
         return True
+
+    def _event_line(self, e: dict[str, Any]) -> str:
+        if not e["subject"]:
+            return f"- {e['kind']}: @{e['who']}"
+        try:
+            title = self.store.get_task(e["subject"]).title.strip()
+        except KeyError:
+            title = ""
+        if len(title) > TITLE:
+            head = title[:TITLE + 1]
+            title = (head.rsplit(" ", 1)[0] if " " in head else title[:TITLE]).rstrip(" ,.;:-") + "…"
+        return f"- {e['kind']}: {e['subject']} ({e['who']})" + (f" {title}" if title else "")
 
     def _report_up(self, task_id: str, now: bool = False) -> None:
         task = self.store.get_task(task_id)
