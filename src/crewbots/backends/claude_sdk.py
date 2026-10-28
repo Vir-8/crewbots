@@ -348,7 +348,7 @@ def crew_server(crew: "CrewTools | Any") -> Any:
                 text = await crew.call(definition.name, args)
             except ToolRefused as e:
                 return {"content": [{"type": "text", "text": f"crewbots refused this: {e}"}], "is_error": True}
-            return {"content": [{"type": "text", "text": text}]}
+            return {"content": text if isinstance(text, list) else [{"type": "text", "text": text}]}
 
         return call
 

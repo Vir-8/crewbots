@@ -38,6 +38,7 @@ from crewbots import attachments as attachments_module
 from crewbots import prompts, worktree
 from crewbots.attention import Attention
 from crewbots.backends import BACKENDS, Access, Backend, McpServer, RunSpec
+from crewbots.browser import Browser
 from crewbots.capacity import Capacity
 from crewbots.crew import NO_REPLY, Bot, Crew
 from crewbots.crew_tools import CrewTools
@@ -117,6 +118,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         retry_waits_s: tuple[float, ...] | None = None,
         stall_s: float | None = None,
     ):
+        self.browser = Browser()
         self.store = store
         self.crew = crew
         self.backends = dict(backends) if backends else {name: cls() for name, cls in BACKENDS.items()}
@@ -233,6 +235,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         opened = self._sessions.get(task_id)
         if not (opened and opened.session.alive and getattr(opened.session, "interruptible", False)):
             await self._close_session(task_id)  # an interruptible session stopped its turn and stays warm
+        await self.browser.close_task(task_id)
         task = self._set(task_id, status=Status.CANCELLED)
         if task.kind == "review" and task.parent_id is None:  # stopping a review stops its reviewers
             for reviewer in self.store.children(task_id):
@@ -250,6 +253,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         await asyncio.gather(*runs.values(), return_exceptions=True)
         if self._reaper:
             self._reaper.cancel()
+        await self.browser.close()
         self._resumed.set()
         for task_id in list(self._sessions):
             await self._close_session(task_id)
@@ -472,6 +476,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
                 done = Done(final_text="", is_error=True, error=f"crewbots: {e}", retry="transient")
                 self._record(task_id, done)
             finally:
+                await self.browser.close_task(task_id)
                 if open_session is None:
                     self._tokens.pop(token, None)
                 elif open_session.session.alive and not stalled:

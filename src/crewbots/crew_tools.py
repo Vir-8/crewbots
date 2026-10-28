@@ -41,6 +41,13 @@ CHOICES = {"type": "array", "items": {"type": "object", "properties": {"label": 
 # What each tool takes, and whether only coordinators get it. What it's for, which the bot reads, is a prompt:
 # prompts/tools/<name>.md, which a crew can replace (crewbots.prompts).
 SPECS: dict[str, Spec] = {
+    "browser_open": Spec(_object({"url": STRING}, ["url"])),
+    "browser_screenshot": Spec(_object({"width": {"type": "integer"}, "height": {"type": "integer"},
+        "theme": {"type": "string", "enum": ["light", "dark"]}, "full_page": {"type": "boolean"}}, [])),
+    "browser_click": Spec(_object({"selector": STRING}, ["selector"])),
+    "browser_type": Spec(_object({"selector": STRING, "text": STRING, "key": STRING}, [])),
+    "browser_evaluate": Spec(_object({"expression": STRING}, ["expression"])),
+    "browser_console": Spec(_object({"clear": {"type": "boolean"}}, [])),
     "handoff": Spec(_object({"done": STRING, "output": STRINGS, "open": STRING, "needs": STRING}, ["done"])),
     "escalate": Spec(_object({"question": STRING, "choices": CHOICES, "multiple": {"type": "boolean"}}, ["question"])),
     "ask_permission": Spec(_object({"what": STRING, "why": STRING, "kind": {"type": "string", "enum": [
@@ -107,9 +114,11 @@ class CrewTools:
     def definitions(self) -> list[ToolDef]:
         return tools_for(self.can_delegate, self.runner.crew.home)
 
-    async def call(self, name: str, args: dict[str, Any]) -> str:
+    async def call(self, name: str, args: dict[str, Any]) -> str | list[dict[str, Any]]:
         """Runs one tool and returns its result for the bot; raises ToolRefused with the reason it can't."""
         from crewbots.attachments import AttachmentError
+        from crewbots.browser_cdp import BrowserError
+        from crewbots.browser_tools import browser_call
         from crewbots.crew import CrewError
         from crewbots.memory import MemoryError
         from crewbots.pages import PageError
@@ -124,6 +133,8 @@ class CrewTools:
             raise ToolRefused(f"{name} needs {', '.join(missing)}")
         r, me = self.runner, self.task_id
         try:
+            if name.startswith("browser_"):
+                return await browser_call(r, me, name, args)
             match name:
                 case "handoff":
                     r.handoff(me, args["done"], list(args.get("output") or []), args.get("open") or "", args.get("needs") or "")
@@ -217,7 +228,7 @@ class CrewTools:
             self.runner.store.log_agent("refused", self.runner.store.get_task(self.task_id).bot, task_id=self.task_id,
                                         text=f"{name}: {e}")
             raise ToolRefused(str(e)) from None
-        except (UnknownBot, MemoryError, CrewError, AttachmentError, PageError) as e:
+        except (UnknownBot, MemoryError, CrewError, AttachmentError, PageError, BrowserError) as e:
             raise ToolRefused(str(e.args[0] if e.args else e)) from None
         raise ToolRefused(f"{name} is not implemented")
 

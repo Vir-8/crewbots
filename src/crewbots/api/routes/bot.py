@@ -32,12 +32,21 @@ from crewbots.api.schemas import (
     StateBody,
     ThreadBody,
 )
-from crewbots.crew_tools import ToolRefused
+from crewbots.crew_tools import CrewTools, ToolRefused
 
 
 def routes(c: Context) -> APIRouter:
     runner = c.runner
     v1 = APIRouter()
+
+    @v1.post("/bot/browser/{action}")
+    async def bot_browser(request: Request, action: str, body: dict[str, Any]):
+        task = request.state.task
+        try:
+            content = await CrewTools(runner, task.id, False).call("browser_" + action, body)
+        except ToolRefused as e:
+            raise HTTPException(422, str(e)) from None
+        return {"content": content}
 
     @v1.post("/bot/delegate", status_code=201)
     async def bot_delegate(request: Request, body: Delegation):

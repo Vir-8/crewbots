@@ -1,0 +1,1 @@
+Type text into the focused element, or focus selector first. Optionally press key: Enter, Tab, Escape, Backspace, Delete, ArrowLeft, ArrowUp, ArrowRight, ArrowDown. No file uploads. Sending or changing accounts still needs user approval.

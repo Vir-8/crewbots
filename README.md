@@ -293,6 +293,47 @@ The app works like a messaging app:
 - **Menu bar and notifications:** a bot's reply or a message in a group chat (unless you muted it) notifies you when the window isn't in
   front, and so do merges to approve, questions and holds.
 
+## Browser tools
+
+Every bot has a daemon-owned headless Google Chrome browser, started on first use. `browser_open(url)` opens
+an HTTP(S) page; `browser_screenshot(width=1400, height=860, theme="light", full_page=false)` returns a PNG the
+model can see and saves it as `browser-<theme>-<id>.png` in the task's folder. Use `theme="dark"` to emulate
+`prefers-color-scheme: dark`. `browser_click(selector)` clicks a CSS selector, `browser_type(selector, text, key)`
+types or presses a named key, `browser_evaluate(expression)` inspects the page with JavaScript, and
+`browser_console(clear=false)` reads recent messages and errors. Open a page before using the other tools.
+
+Chrome runs outside the bot's CLI sandbox with a separate disposable profile under `~/.crewbots/browser/`.
+Each task has its own context and cookies. A context closes when its turn finishes, is cancelled, or has had no
+successful browser action for five minutes. Each task has its own idle timer; refusals don't extend it. Chrome
+exits and clears its profile when no contexts remain. On startup, an exclusive profile lock protects live browser
+owners. The daemon only stops a recorded orphan when its PID, kernel start time and user match, and only removes
+profiles whose recorded process has exited. It logs and leaves unverifiable or older unrecorded profiles alone.
+A custom profile root, including the manual smoke check, never runs the orphan sweep. Chrome must be installed at
+`/Applications/Google Chrome.app`; no browser package is downloaded.
+
+CDP uses `--remote-debugging-pipe` on inherited file descriptors 3 and 4. There is no debugging TCP listener for
+bots or other local clients to connect to. The pipe transport uses Python's standard library; no dependency was added.
+
+Localhost is always reachable. Other hosts follow the bot's network setting (including host lists and the user's
+network grants). Each task's proxy requires its own random credential, supplied by the daemon only for that
+proxy's CDP authentication challenge. Bots never receive the credential, and it isn't forwarded to websites or
+included in diagnostics. The proxy checks connections, including WebSockets; interception checks redirects and
+subresources. A changed network policy closes the old context before accepting or refusing the next action.
+Downloads and file uploads are disabled; popups, workers and out-of-process frames are closed in this first
+version. Child targets that cannot be closed remain paused; safely resuming and inspecting out-of-process frames
+and workers is left for the later browser pane. Use the page's own tab for UI checks. Browser actions are logged
+and do not grant permission to send, publish, spend or change accounts. The user's approvals still apply.
+
+The session registry in `browser.py` holds each task's context, CDP session, URL and title. A later desktop pane can
+use those sessions for a screencast and user input; this version adds no pane or live browser API. For a manual
+check without restarting the daemon, start `.claude/launch.json`'s `app-preview` and run
+`uv run python scripts/check-browser.py` from an unsandboxed terminal. It calls the daemon's tool implementation
+with throwaway state, and saves both themes and session details under `browser-evidence/` in the checkout.
+The script logs its interpreter, resolved preview addresses and progress. On failure it preserves `chrome.stderr.log`,
+`proxy.json` (including the actual upstream address) and `cdp.json` (commands, attached sessions and paused requests)
+before cleaning up Chrome. If different previews listen on IPv4 and IPv6, pass `--url http://127.0.0.1:5173` or
+`--url 'http://[::1]:5173'` to select one explicitly.
+
 ## Skills from pstack
 
 pstack's skills also work inside a single bot as they are. Its Claude Code port keeps relative links to its docs, so add the whole folder:

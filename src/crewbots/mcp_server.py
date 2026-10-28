@@ -13,6 +13,7 @@ from typing import Any
 import httpx
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import ImageContent, TextContent
 
 from crewbots.crew_tools import describe, recall_text, shared_text
 
@@ -36,6 +37,36 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
                 detail = response.text
             raise CrewError(f"crewbots refused this ({response.status_code}): {detail}")
         return response.json()
+
+    def browser(action, args):
+        result = call("POST", f"/bot/browser/{action}", args)
+        return [ImageContent(**item) if item["type"] == "image" else TextContent(**item) for item in result["content"]]
+
+    @server.tool(description=describe("browser_open"))
+    def browser_open(url: str) -> list[TextContent | ImageContent]:
+        return browser("open", {"url": url})
+
+    @server.tool(description=describe("browser_screenshot"))
+    def browser_screenshot(width: int = 1400, height: int = 860, theme: str = "light",
+                           full_page: bool = False) -> list[TextContent | ImageContent]:
+        return browser("screenshot", {"width": width, "height": height, "theme": theme, "full_page": full_page})
+
+    @server.tool(description=describe("browser_click"))
+    def browser_click(selector: str) -> list[TextContent | ImageContent]:
+        return browser("click", {"selector": selector})
+
+    @server.tool(description=describe("browser_type"))
+    def browser_type(selector: str | None = None, text: str | None = None,
+                     key: str | None = None) -> list[TextContent | ImageContent]:
+        return browser("type", {k: v for k, v in {"selector": selector, "text": text, "key": key}.items() if v is not None})
+
+    @server.tool(description=describe("browser_evaluate"))
+    def browser_evaluate(expression: str) -> list[TextContent | ImageContent]:
+        return browser("evaluate", {"expression": expression})
+
+    @server.tool(description=describe("browser_console"))
+    def browser_console(clear: bool = False) -> list[TextContent | ImageContent]:
+        return browser("console", {"clear": clear})
 
     @server.tool(description=describe("handoff"))
     def handoff(done: str, output: list[str] | None = None, open: str = "", needs: str = "") -> str:
