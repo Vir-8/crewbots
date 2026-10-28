@@ -82,6 +82,8 @@ class Updates:
             if out["needs"][part] and built_at:
                 new.update((c["sha"], c) for c in self._commits(target, built_at, where))
         out["available"] = any(out["needs"].values())
+        if not out["available"] and out["release"].get("state") == "built":
+            out["release"] = {}  # the prepared release has already been taken in
         out["commits"] = sorted(new.values(), key=lambda c: c["at"], reverse=True)[:MAX_COMMITS]
         if self._fetch_error and not out["available"]:
             out["note"] = self._fetch_error

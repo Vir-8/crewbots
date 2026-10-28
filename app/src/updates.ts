@@ -9,6 +9,7 @@ import type { UpdateOut } from "./api-types";
 
 const CHECK_EVERY_MS = 30 * 60_000; // GitHub is asked at most this often
 const FOLLOW_EVERY_MS = 2_000; // while an update runs
+const CHECKOUT_CHANGED = "The checkout changed since this update was prepared. Check for updates again.";
 
 // `following`: you asked for the update now under way, here: the app installs its build when it's ready.
 type State = { update: UpdateOut | null; checking: boolean; installing: boolean; following: boolean; error: string | null };
@@ -31,7 +32,7 @@ export async function check(fetch = false) {
   set({ checking: true });
   try {
     const update = await api.update(fetch);
-    set({ update, checking: false });
+    set({ update, checking: false, error: state.error === CHECKOUT_CHANGED ? null : state.error });
     if (state.following && ready(update)) {
       set({ following: false });
       await install();
@@ -53,7 +54,7 @@ export function ready(update: UpdateOut | null): boolean {
 
 /** A build of the app to put in this one's place, rather than only the daemon to restart. */
 function newApp(update: UpdateOut | null): boolean {
-  return Boolean(update?.release.bundle) && update!.release.commit !== __APP_COMMIT__;
+  return Boolean(update?.needs?.app && update.release.bundle) && update!.release.commit !== __APP_COMMIT__;
 }
 
 /** How far along an update's build is, from how long the last one took: null with nothing to go by. */
@@ -94,8 +95,12 @@ export async function install() {
   try {
     const current = await api.update();
     set({ update: current });
+    if (!current.available && !current.note) {
+      set({ installing: false, following: false });
+      return;
+    }
     if (!ready(current) || current.release.commit !== update.release.commit) {
-      throw new Error("The checkout changed since this update was prepared. Check for updates again.");
+      throw new Error(CHECKOUT_CHANGED);
     }
     if (newApp(current)) await bridge.installUpdate(current.release.bundle!);
     if (current.needs?.daemon) await api.restart(true); // the daemon's own turn: once no turn runs

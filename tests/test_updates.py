@@ -122,12 +122,29 @@ def test_a_built_release_is_not_ready_after_the_checkout_advances(checkout):
     project, _ = checkout
     built = run(project, "rev-parse", "--short=12", "HEAD")
     updates.status_file().parent.mkdir(parents=True, exist_ok=True)
-    updates.status_file().write_text(json.dumps({"state": "built", "commit": built, "bundle": "/build/crewbots.app"}))
+    prepared = commit(project, "Prepare the app", "app/src/App.tsx")
+    updates.status_file().write_text(json.dumps({"state": "built", "commit": prepared, "bundle": "/build/crewbots.app"}))
     assert Updates(project, built).check(built)["release"]["state"] == "built"
 
-    commit(project, "Change the app", "app/src/App.tsx")
+    commit(project, "Change the app again", "app/src/App.tsx")
     found = Updates(project, built).check(built)
     assert found["needs"]["app"] and found["release"] == {}
+
+
+def test_daemon_only_change_uses_running_commit_and_clears_consumed_release(checkout):
+    project, _ = checkout
+    app = run(project, "rev-parse", "--short=12", "HEAD")
+    daemon = commit(project, "Change the daemon", "src/crewbots/browser_proxy.py")
+    updates.status_file().parent.mkdir(parents=True, exist_ok=True)
+    updates.status_file().write_text(json.dumps({"state": "built", "commit": daemon, "kind": "daemon"}))
+
+    pending = Updates(project, app).check(app)
+    assert pending["available"] and pending["needs"] == {"app": False, "daemon": True}
+    assert pending["release"]["state"] == "built"
+
+    current = Updates(project, daemon).check(app)
+    assert not current["available"] and current["needs"] == {"app": False, "daemon": False}
+    assert current["release"] == {}
 
 
 BUILD = """#!/bin/bash

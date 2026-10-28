@@ -9,6 +9,7 @@ const { api, bridge } = vi.hoisted(() => ({
 vi.mock("./api", () => ({ api, bridge }));
 
 import { check, install, ready, restartApp, useUpdates } from "./updates";
+import { UpdatesDialog } from "./components/UpdatesDialog";
 
 const update: UpdateOut = {
   app: "old", daemon: "old", head: "new", available: true, commits: [], pull: false, note: null,
@@ -40,6 +41,40 @@ describe("prepared updates", () => {
     await install();
     expect(bridge.installUpdate).not.toHaveBeenCalled();
     expect(error()).toContain("checkout changed");
+  });
+
+  it("clears the stale checkout warning after a successful check", async () => {
+    await check();
+    api.update.mockResolvedValue({ ...update, head: "later" });
+    await install();
+    expect(error()).toContain("checkout changed");
+    api.update.mockResolvedValue({ ...update, available: false, needs: { app: false, daemon: false }, release: {} });
+    await check();
+    expect(error()).toBe("");
+    const dialog = renderToStaticMarkup(<UpdatesDialog onClose={() => {}} />);
+    expect(dialog).toContain("crewbots is up to date");
+    expect(dialog).not.toContain("checkout changed");
+  });
+
+  it("treats an update already taken in during the recheck as complete", async () => {
+    await check();
+    api.update.mockResolvedValue({ ...update, available: false, needs: { app: false, daemon: false }, release: {} });
+    await install();
+    expect(error()).toBe("");
+    expect(bridge.installUpdate).not.toHaveBeenCalled();
+    expect(api.restart).not.toHaveBeenCalled();
+  });
+
+  it("restarts only the daemon when a prepared app bundle is no longer needed", async () => {
+    const daemonOnly = { ...update, needs: { app: false, daemon: true } };
+    api.update.mockResolvedValue(daemonOnly);
+    await check();
+    const dialog = renderToStaticMarkup(<UpdatesDialog onClose={() => {}} />);
+    expect(dialog).toContain("Restart Daemon");
+    await install();
+    expect(api.restart).toHaveBeenCalledWith(true);
+    expect(bridge.installUpdate).not.toHaveBeenCalled();
+    expect(bridge.restartApp).not.toHaveBeenCalled();
   });
 
   it("reports a refused daemon restart instead of swallowing it", async () => {

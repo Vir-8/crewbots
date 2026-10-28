@@ -16,7 +16,7 @@ export function UpdatesDialog({ onClose }: { onClose: () => void }) {
   const release = update?.release;
   const busy = running(update) || installing;
   const restartsApp = Boolean(update?.needs?.app);
-  const stopped = release?.state === "failed" && release.commit !== __APP_COMMIT__;
+  const stopped = update?.available && release?.state === "failed";
   const changes = update?.commits ?? [];
 
   let title = "Checking for updates…";
@@ -27,14 +27,14 @@ export function UpdatesDialog({ onClose }: { onClose: () => void }) {
     const then = restartsApp ? "Then crewbots installs it and restarts" : "Then the crew's daemon restarts once no bot is working; the app stays open";
     text = installing ? (restartsApp ? "Installing it. crewbots restarts in a moment." : "Restarting the crew's daemon once no bot is working.") : `${release?.step ?? "Starting"}${timeLeft(update) ? `, ${timeLeft(update)}` : ""}. ${then}; you can close this.`;
   } else if (ready(update)) {
-    title = "An update is ready to install";
+    title = restartsApp ? "An update is ready to install" : "The daemon is ready to restart";
     text = restartsApp ? "It's built. crewbots installs it and restarts; the crew's daemon restarts once no bot is working." : "The crew's daemon restarts into it once no bot is working; the app stays open.";
-    action = { label: "Restart to Update", run: () => void install() };
+    action = { label: restartsApp ? "Restart to Update" : "Restart Daemon", run: () => void install() };
   } else if (update?.available) {
     title = "A new version of crewbots is available";
     text = `${changes.length === 1 ? "1 change" : `${changes.length} changes`}${update.pull ? ", from GitHub" : ""}:`;
     text += restartsApp ? "" : " (the crew's daemon only: no build, and the app stays open)";
-    action = { label: stopped ? "Try Again" : restartsApp ? "Update and Restart" : "Update", run: () => void start() };
+    action = { label: stopped ? "Try Again" : restartsApp ? "Update and Restart" : "Restart Daemon", run: () => void start() };
   } else if (update && !checking) {
     title = update.note ? "crewbots can't update just now" : "crewbots is up to date";
     text = update.note ?? `This is the latest build (${__APP_COMMIT__ || "a development build"}).`;

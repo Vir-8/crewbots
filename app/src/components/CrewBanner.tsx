@@ -56,10 +56,10 @@ export function CrewBanner({ crew, onUpdates }: { crew: Crew; onUpdates: () => v
       </div>
     );
   }
-  const failed = own?.release.state === "failed" && own.release.commit !== __APP_COMMIT__;
+  const failed = own?.available && own.release.state === "failed";
   const update: Update | null = ownState.error ? { text: `Couldn't update crewbots: ${ownState.error}`, bad: true, action: { label: "Try again", run: () => void start() } }
     : versions ?? (
-    ready(own) ? { text: "A new version of crewbots is ready", why: own!.commits.map((c) => `· ${c.subject}`).join("\n"), action: { label: "Restart to update", run: () => void install() } }
+    ready(own) ? { text: own!.needs?.app ? "A new version of crewbots is ready" : "The daemon is ready to restart", why: own!.commits.map((c) => `· ${c.subject}`).join("\n"), action: { label: own!.needs?.app ? "Restart to update" : "Restart daemon", run: () => void install() } }
     : failed ? { text: `The update stopped at ${own!.release.step?.toLowerCase()}`, why: own!.release.log ?? undefined, bad: true, action: { label: "Try again", run: () => void start() } }
     : own?.available ? { text: "A new version of crewbots is available", why: own.commits.map((c) => `· ${c.subject}`).join("\n"), action: { label: "See what's new", run: onUpdates } }
     : null);
