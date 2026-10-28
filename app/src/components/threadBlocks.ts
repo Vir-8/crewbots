@@ -15,7 +15,7 @@ export type Block =
   | { kind: "steps"; id: number; calls: { call: StoredEvent; result?: StoredEvent }[] }
   | { kind: "work"; id: string; task: Task }
   | { kind: "asked"; id: number; bot: string; question: string; task?: Task }
-  | { kind: "line"; id: number; text: string; icon?: "check" | "merge" | "branch" | "alert" | "play" | "message" | "repeat"; tone?: string; gist?: string } // gist: what it was, in a folded run's few words
+  | { kind: "line"; id: number; text: string; icon?: "check" | "merge" | "branch" | "alert" | "play" | "message" | "repeat"; tone?: string; gist?: string; wake?: boolean } // gist: what it was, in a folded run's few words; wake: what started a turn the crew began
   | { kind: "page"; id: number; page: string; changed: boolean }
   | { kind: "activity"; id: number | string; items: Block[] }
   | { kind: "offer"; id: number; outcome?: Record<string, any> } // the chief's, under its greeting: how it was answered
@@ -34,6 +34,7 @@ const SHOWN_ELSEWHERE = new Set(
     "forget", "update_state", "write_page", "edit_page", "next_check", "set_name"].map((t) => `mcp__crewbots__${t}`),
 );
 const COMPACTED = "compacted its conversation"; // the gist of the lines about a conversation grown long
+const WOKEN = "woken by the crew";
 const NOTE = /^(Remembered|You gave it a note)/;
 
 /** What a block says, as it's drawn: where ⌘F looks. */
@@ -79,7 +80,7 @@ export function fold(blocks: Block[]): Block[] {
   const out: Block[] = [];
   let run: Block[] = [];
   const close = () => {
-    if (run.length > 1) out.push({ kind: "activity", id: run[0].id, items: run });
+    if (run.length > 1 || run.some((b) => b.kind === "line" && b.wake)) out.push({ kind: "activity", id: run[0].id, items: run });
     else out.push(...run);
     run = [];
   };
@@ -314,7 +315,10 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
         break;
       case "state_notice":
         flush();
-        out.push({ kind: "activity", id: e.id, items: [{ kind: "line", id: e.id, text: oneLine(d.message, 200), gist: oneLine(d.message, 200) }] });
+        out.push(d.warn || String(d.message).startsWith("State full or unavailable") ? { kind: "line", id: e.id, text: oneLine(d.message, 200), icon: "alert", tone: "warn" } : { kind: "line", id: e.id, text: oneLine(d.message, 200), gist: WOKEN, wake: true });
+        break;
+      case "turn_start":
+        flush();
         break;
       case "notice":
         out.push({ kind: "line", id: e.id, text: oneLine(d.message, 200) });
@@ -324,6 +328,61 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
   flush();
   for (const task of unanchored) out.push({ kind: "work", id: task.id, task });
   for (const left of asked.values()) out.push({ kind: "asked", id: Number.MAX_SAFE_INTEGER - out.length, bot: left.bot, question: left.title, task: left });
+  return out;
+}
+
+const startsWake = (e: StoredEvent) => e.kind === "state_notice" || (e.kind === "message" && e.data.from === "crewbots");
+
+/** In a chat: the turns the crew started (a notice, a watchdog or look-around prompt, a teammate's result) are
+ * the bot's own business; the daemon marks them `system: true` on their `turn_start`, and nothing is inferred
+ * here (a turn_start without the flag is shown whole). One that ends silent shows nothing; one that ends in a reply shows the reply, with what
+ * woke it folded into the reply's steps. Turns are the daemon's own (`turn_start` events). What a turn consumes is
+ * what was recorded since the one before began, so a notice queued during a user's turn belongs to the next turn,
+ * not to the user's. Warnings, errors, cards and questions always stay, and so does anything the user wrote. */
+export function settleWakes(events: StoredEvent[], blocks: Block[]): Block[] {
+  type Turn = { from: number; to: number; system: boolean; replied: boolean; wakes: Block[] };
+  const turns: Turn[] = [];
+  const consumer = new Map<number, Turn>(); // a wake event's id -> the turn that took it
+  let pending: StoredEvent[] = [];
+  for (const e of events) {
+    if (e.kind === "turn_start") {
+      const turn: Turn = { from: e.id, to: Infinity, system: e.data.system === true, replied: false, wakes: [] };
+      if (turns.length) turns[turns.length - 1].to = e.id;
+      turns.push(turn);
+      // Whatever came before an unmarked first turn_start is from before turns were recorded: left as it was.
+      if (turns.length > 1 || turn.system)
+        for (const p of pending) {
+          consumer.set(p.id, turn);
+          if (p.kind === "message" && p.data.from === "crewbots") turn.wakes.push({ kind: "line", id: p.id, text: oneLine(p.data.text, 200), gist: WOKEN, wake: true });
+        }
+      pending = [];
+    } else if (startsWake(e) || e.kind === "message") pending.push(e);
+    else if ((e.kind === "text" || e.kind === "shared") && turns.length) turns[turns.length - 1].replied = true;
+  }
+  if (!turns.length) return blocks; // events from before turns were recorded
+  const owner = (b: Block): Turn | undefined => {
+    const id = b.id;
+    if (typeof id !== "number") return undefined;
+    return consumer.get(id) ?? turns.find((t) => id >= t.from && id < t.to);
+  };
+  const out: Block[] = [];
+  for (const b of blocks) {
+    const t = owner(b);
+    if (b.kind === "line" && b.wake) {
+      if (!t) {
+        if (typeof b.id === "number" && b.id < turns[0].from) out.push(b); // from before turns were recorded
+        continue; // else not taken by a turn yet
+      }
+      if (!t.system) out.push(b); // a user's turn: whatever reached it stays
+      else if (t.replied) t.wakes.push(b);
+    } else if (t && t.system && !t.replied && quiet(b)) continue;
+    else if (b.kind === "say" && t && t.wakes.length) {
+      let at = out.length;
+      while (at > 0 && quiet(out[at - 1])) at--;
+      out.splice(at, 0, ...t.wakes.splice(0).sort((x, y) => (x.id as number) - (y.id as number)));
+      out.push(b);
+    } else out.push(b);
+  }
   return out;
 }
 

@@ -77,6 +77,25 @@ class Wakes:
         urgent = any(e["kind"] in URGENT for e in events) or any(t.status is Status.FAILED for t in stopped)
         return events, stopped, urgent, snap
 
+    def _turn_start(self, task_id: str) -> None:
+        """Marks where a logical turn begins, and whether the crew started it: only if every prompt in it is crewbots'
+        own (a notice, watchdog, look-around, check-in). A turn carried on after a restart already has its mark."""
+        system = task_id not in self._by_user
+        self._by_user.discard(task_id)
+        if task_id in self._continuing:
+            self._continuing.discard(task_id)
+        else:
+            self._record(task_id, kind="turn_start", data={"system": system})
+
+    def _resume_mark(self, task_id: str, started: bool, waiting: bool) -> None:
+        """A turn resumed after a restart carries the user's interrupted request, so it isn't the crew's. If the bot had
+        begun it, it continues the turn already recorded, unless that turn was marked the crew's and messages that came in
+        meanwhile are folded into its prompt: some may be the user's, so it gets a fresh mark."""
+        self._by_user.add(task_id)
+        mark = self.store.last_event(task_id, ("turn_start",))
+        if started and not (waiting and mark and mark.data.get("system")):
+            self._continuing.add(task_id)
+
     def wake(self, bot: str, text: str, seen: int | None = None) -> Task:
         """A look around: a turn in the bot's chat, prompted by crewbots, whose reply the user sees as said on its
         own. The next one is whenever it asks for, or news comes. `seen` is the newest event the text was made from."""

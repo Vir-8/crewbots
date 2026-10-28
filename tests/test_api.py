@@ -85,8 +85,8 @@ def test_live_sends_the_backlog_then_new_updates(client):
     wait_idle(client, first["id"])
 
     with client.websocket_connect(f"/v1/live?token={TOKEN}", headers=WS_HOST) as ws:
-        backlog = [ws.receive_json() for _ in range(5)]
-        assert [m["event"]["kind"] for m in backlog] == ["message", "session_started", "text", "usage", "done"]
+        backlog = [ws.receive_json() for _ in range(6)]
+        assert [m["event"]["kind"] for m in backlog] == ["message", "turn_start", "session_started", "text", "usage", "done"]
 
         client.post("/tasks", json={"bot": "worker", "goal": "two"}, headers=AUTH)
         live = []

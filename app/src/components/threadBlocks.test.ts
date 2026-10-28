@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { StoredEvent, Task } from "../types";
-import { build, said } from "./threadBlocks";
+import { type Block, build, fold, said, settleWakes } from "./threadBlocks";
 
 it("distinguishes automatic merges in the thread", () => {
   const event: StoredEvent = { id: 1, task_id: "task", kind: "merged", data: { commit: "abcdef123", automatic: true }, at: "" };
@@ -68,10 +68,129 @@ it("pairs asks with their own task even when children or results are out of orde
   expect(build(events, [second], new Map()).filter((b) => b.kind === "asked").map((b) => b.kind === "asked" && b.task?.result)).toEqual([undefined, undefined, "Second answer"]);
 });
 
-it("folds a shared-state notice on its own", () => {
-  const notice: StoredEvent = { id: 1, task_id: "chat", kind: "state_notice", data: { message: "State changed: 1 item needs you." }, at: "" };
-  const blocks = build([notice], [], new Map());
-  expect(blocks).toEqual([{ kind: "activity", id: 1, items: [{ kind: "line", id: 1, text: "State changed: 1 item needs you.", gist: "State changed: 1 item needs you." }] }]);
+const ev = (id: number, kind: string, data: Record<string, unknown>): StoredEvent => ({ id, task_id: "chat", kind, data, at: "" });
+const shownIn = (events: StoredEvent[]) => fold(settleWakes(events, build(events, [], new Map())));
+const turn = (id: number, system = false) => ev(id, "turn_start", { system });
+const sys = (id: number) => turn(id, true);
+const call = (id: number) => ev(id, "tool_call", { id: `c${id}`, name: "Read", input: {} });
+const notice = (id: number, message = "State changed: 1 item needs you.", extra = {}) => ev(id, "state_notice", { message, ...extra });
+const kinds = (events: StoredEvent[]) => shownIn(events).map((b) => b.kind);
+
+it("shows nothing for a system wake that ends silent", () => {
+  const events = [
+    turn(0),
+    notice(1),
+    ev(2, "message", { from: "crewbots", text: "Still open for you, with nothing run for a while" }),
+    sys(3),
+    call(4),
+    ev(5, "tool_call", { id: "b", name: "mcp__crewbots__write_page", input: { page: "Scratchpad" } }),
+  ];
+  expect(shownIn(events)).toEqual([]);
+});
+
+it("shows only the reply to a system wake, with the wake inside its folded steps", () => {
+  const blocks = shownIn([turn(0), notice(1), sys(2), call(3), ev(4, "text", { text: "Two things need you." })]);
+  expect(blocks.map((b) => b.kind)).toEqual(["activity", "say"]);
+  const folded = blocks[0] as Extract<Block, { kind: "activity" }>;
+  expect(folded.items.map((i) => (i.kind === "line" ? i.text : i.kind))).toEqual(["State changed: 1 item needs you.", "steps"]);
+});
+
+it("folds a wake with no steps into the reply, and keeps what needs the user", () => {
+  const events = [
+    turn(0),
+    ev(1, "message", { from: "crewbots", text: "Crew activity since the last notice" }),
+    sys(2),
+    ev(3, "rate_limit", { status: "limited", plan: "claude", window: "five_hour" }),
+    ev(4, "text", { text: "Done." }),
+  ];
+  expect(kinds(events)).toEqual(["line", "activity", "say"]);
+  expect(kinds(events.slice(0, 4))).toEqual(["line"]);
+});
+
+it("leaves a user message and its reply alone", () => {
+  const events = [ev(1, "message", { from: "user", text: "hi" }), turn(2), call(3), ev(4, "text", { text: "hello" })];
+  expect(kinds(events)).toEqual(["you", "steps", "say"]);
+  expect(kinds(events.slice(0, 3))).toEqual(["you", "steps"]);
+});
+
+it("hides a silent wake's steps but keeps the reply to an earlier wake", () => {
+  const events = [
+    turn(0), notice(1), sys(2), call(3), ev(4, "text", { text: "Wake A answered." }),
+    notice(5, "Crew activity since the last notice"), sys(6), call(7),
+  ];
+  const blocks = shownIn(events);
+  expect(blocks.map((b) => b.kind)).toEqual(["activity", "say"]);
+  const folded = blocks[0] as Extract<Block, { kind: "activity" }>;
+  expect(folded.items.map((i) => (i.kind === "line" ? i.text : i.kind))).toEqual(["State changed: 1 item needs you.", "steps"]);
+  expect(blocks[1]).toMatchObject({ text: "Wake A answered." });
+});
+
+it("does not let a notice queued during a user's turn take over that turn's activity", () => {
+  const events = [
+    ev(1, "message", { from: "user", text: "hi" }), turn(2), call(3),
+    notice(4), // queued while the user's turn runs
+    call(5), ev(6, "text", { text: "Here you go." }),
+    sys(7), call(8), // the notice's own turn, silent
+  ];
+  const blocks = shownIn(events);
+  expect(blocks.map((b) => b.kind)).toEqual(["you", "activity", "say"]);
+  const items = (blocks[1] as Extract<Block, { kind: "activity" }>).items;
+  expect(items.every((i) => i.kind === "steps")).toBe(true); // both of the user's steps, and no wake line
+  expect(items.reduce((n, i) => n + (i.kind === "steps" ? i.calls.length : 0), 0)).toBe(2);
+});
+
+it("shows an old state-full notice that has no warn flag, even after a silent wake", () => {
+  const blocks = shownIn([turn(0), notice(1, "State full or unavailable: @critic needs you (x); tidy state."), sys(2), call(3)]);
+  expect(blocks).toEqual([expect.objectContaining({ kind: "line", tone: "warn" })]);
+});
+
+it("leaves events from before the first turn_start as they were, and no turn takes them", () => {
+  const events = [notice(1), call(2), turn(3), call(4)];
+  const blocks = shownIn(events);
+  // the old notice and steps stay (as one folded run); the silent first turn has nothing to take from them
+  expect(blocks.map((b) => b.kind)).toEqual(["activity"]);
+  expect(JSON.stringify(blocks)).toContain("State changed");
+});
+
+it("a retry's activity and a notice queued during backoff: the next real turn takes the notice", () => {
+  // one turn_start for the user's turn (retries add none); the notice's own turn follows
+  const events = [ev(1, "message", { from: "user", text: "hi" }), turn(2), call(3), ev(4, "done", { is_error: true, error: "overloaded" }), notice(5), call(6), ev(7, "text", { text: "Done." }), sys(8), call(9)];
+  const blocks = shownIn(events);
+  expect(blocks.some((b) => b.kind === "say")).toBe(true);
+  expect(JSON.stringify(blocks)).not.toContain("State changed"); // the notice's turn 8 was silent
+  expect(blocks.filter((b) => b.kind === "steps" || b.kind === "activity").length).toBeGreaterThan(0);
+});
+
+it("keeps a user's steps visible when the turn resumes after a restart and ends silent", () => {
+  // the notice arrived mid-turn; the daemon restarted; the resumed turn adds no turn_start and says nothing
+  const events = [ev(1, "message", { from: "user", text: "build it" }), turn(2), call(3), notice(4), ev(5, "restarted", { again: false }), call(6)];
+  const blocks = shownIn(events);
+  expect(blocks[0]).toMatchObject({ kind: "you" });
+  const steps = blocks.flatMap((b) => (b.kind === "activity" ? b.items : [b])).filter((b) => b.kind === "steps");
+  expect(steps.reduce((n, b) => n + (b.kind === "steps" ? b.calls.length : 0), 0)).toBe(2);
+});
+
+it("keeps the steps of a resumed turn that carries a user's message, marked as the user's", () => {
+  const events = [sys(0), notice(1), ev(2, "message", { from: "user", text: "please build it" }), ev(3, "restarted", { again: false }), turn(4), call(5)];
+  expect(JSON.stringify(shownIn(events))).toContain("Read");
+});
+
+it("takes the wake before a chat's first turn when that turn is marked system", () => {
+  expect(shownIn([notice(1), sys(2), call(3)])).toEqual([]); // silent: nothing shows
+  const blocks = shownIn([notice(1), sys(2), call(3), ev(4, "text", { text: "On it." })]);
+  expect(blocks.map((b) => b.kind)).toEqual(["activity", "say"]);
+  expect(JSON.stringify(blocks)).toContain("State changed");
+});
+
+it("does not hide anything for a turn_start without the system flag", () => {
+  const events = [ev(0, "turn_start", {}), notice(1), ev(2, "turn_start", {}), call(3)];
+  expect(JSON.stringify(shownIn(events))).toContain("Read");
+});
+
+it("always shows a warning notice, even after a silent wake", () => {
+  const events = [turn(0), notice(1, "State full or unavailable: @critic needs you in room r1 (x); tidy state.", { warn: true }), sys(2), call(3)];
+  const blocks = shownIn(events);
+  expect(blocks).toEqual([expect.objectContaining({ kind: "line", icon: "alert", tone: "warn", text: expect.stringContaining("State full") })]);
 });
 
 it("keeps a question open after a teammate message until the user answers", () => {

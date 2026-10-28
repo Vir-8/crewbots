@@ -350,3 +350,10 @@ async def test_a_seat_with_a_dead_session_drops_it_for_good(store, tmp_path, err
     runner.post(room["id"], "user", "@worker third")  # the next wake never tries the dead id
     await wait_until(lambda: backend.specs and settled(store, seat().id)())
     assert "dead-id" not in [s.resume_session_id for s in backend.specs]
+
+
+async def test_a_retried_turn_records_one_turn_start(store, tmp_path):
+    runner = runner_for(store, tmp_path, failing(2))
+    task = runner.submit("worker", "build the export")
+    await wait_until(settled(store, task.id))
+    assert [e.kind for e in store.events(task.id)].count("turn_start") == 1

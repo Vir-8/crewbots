@@ -248,11 +248,12 @@ class Rooms:
         except Exception:
             logging.getLogger(__name__).exception("Could not record room mention for %s", bot)
 
-    def _state_notice(self, bot: str, notice: str) -> None:
+    def _state_notice(self, bot: str, notice: str, warn: bool = False) -> None:
         """Tells the bot's main chat its state changed, quietly: a notice with no message text. A chat the user stopped
-        isn't restarted by it: the notice waits, and goes with the user's next message."""
+        isn't restarted by it: the notice waits, and goes with the user's next message. A `warn` notice asks for attention,
+        so the app always shows it; the routine ones can be hidden when the turn they start ends silent."""
         chat = self.chat(bot)
-        self._record(chat.id, kind="state_notice", data={"message": notice})
+        self._record(chat.id, kind="state_notice", data={"message": notice, **({"warn": True} if warn else {})})
         if chat.id in self._cancelling or chat.status is Status.CANCELLED:
             self._held_notices.setdefault(chat.id, []).append(notice)
         else:
@@ -317,6 +318,8 @@ class Rooms:
                       else "State changed: 1 item needs you.")
         except (MemoryError, OSError):
             notice = f"State full or unavailable: @{author} needs you in room {room['id']} ({source}); tidy state."
+            self._state_notice(chief.name, notice, warn=True)
+            return
         self._state_notice(chief.name, notice)
 
     def post_from(self, task_id: str, text: str, room_id: str | None = None,

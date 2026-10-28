@@ -46,7 +46,7 @@ async def test_each_bot_has_one_chat_that_carries_on(crew, store):
     assert "ongoing chat with the user" in crew.specs_for("chief")[0].system_prompt
 
 
-@pytest.mark.parametrize("answer", ["NO_REPLY", "no_reply", "  **No_Reply**  "])
+@pytest.mark.parametrize("answer", ["NO_REPLY", "no_reply", "  **No_Reply**  ", "NO_REPLY\n\nLeaving this to my room seat."])
 async def test_a_no_reply_turn_in_a_chat_leaves_no_message_and_no_result(crew, store, answer):
     crew.script["chief"] = lambda spec, me: [Text(text=answer), Done(final_text=answer)]
     chat = crew.runner.say("chief", "anything?")
@@ -219,7 +219,7 @@ async def test_everyone_wakes_the_whole_room_and_a_mention_gets_a_reply(crew, st
     assert store.room_messages(room["id"])[-1]["text"] == "I don't have an answer yet."
 
 
-@pytest.mark.parametrize("answer", [NO_REPLY, "", "  **NO_REPLY**  "])
+@pytest.mark.parametrize("answer", [NO_REPLY, "", "  **NO_REPLY**  ", "\n**NO_REPLY**\n\nNothing to add."])
 async def test_bot_mention_can_end_silently_without_waking_anyone(crew, store, answer):
     room = crew.runner.create_room("Handover", ["engineer", "reviewer", "chief"])
     crew.script["reviewer"] = lambda spec, me: [Done(final_text=answer)]
@@ -1576,3 +1576,104 @@ def test_the_room_list_calls_a_group_working_only_while_a_seat_runs(crew, store,
         chats = client.get("/chats", headers={"Authorization": "Bearer t"}).json()
     group = next(c for c in chats if c["room"] and c["room"]["id"] == room["id"])
     assert group["working"] is (status is Status.RUNNING)
+
+
+async def test_system_wakes_are_recorded_for_the_app_to_tell_apart(crew, store):
+    """The app hides a silent system-started turn by what starts it: a `state_notice` event, or a message from
+    crewbots. A user's message is neither."""
+    crew.script["chief"] = lambda spec, me: [Done(final_text=NO_REPLY)]
+    chat = crew.runner.wake("chief", "Looking around on your own.")
+    await wait_until(idle(crew))
+    room = crew.runner.create_room("Engineering", ["chief", "engineer"], lead="engineer")
+    crew.runner.need_added(store.create_task("chief", "seat", kind="seat", room_id=room["id"], status=Status.IDLE).id)
+    await wait_until(idle(crew))
+    crew.runner.say("chief", "hello")
+    await wait_until(idle(crew))
+
+    events = store.events(chat.id)
+    assert [e.data["from"] for e in events if e.kind == "message"] == ["crewbots", "user"]
+    assert any(e.kind == "state_notice" for e in events)
+    # each turn is marked, and a wake is recorded before the turn that takes it
+    marks = [e.kind for e in events if e.kind in ("turn_start", "message")]
+    assert marks[:2] == ["message", "turn_start"] and marks.count("turn_start") == 3
+
+
+async def test_a_full_state_notice_is_a_warning_and_routine_ones_are_not(crew, store):
+    chief = crew.runner.chat("chief")
+    crew.runner._state_notice("chief", "State changed: 1 item needs you.")
+    crew.runner._state_notice("chief", "State full or unavailable: tidy state.", warn=True)
+    await wait_until(idle(crew))
+    notices = [e.data for e in store.events(chief.id) if e.kind == "state_notice"]
+    assert ["warn" in n for n in notices] == [False, True]
+
+
+async def test_turn_start_says_whether_the_crew_started_the_turn(crew, store):
+    crew.script["chief"] = lambda spec, me: [Done(final_text=NO_REPLY)]
+    chat = crew.runner.wake("chief", "Looking around on your own.")
+    await wait_until(idle(crew))
+    crew.runner.say("chief", "hello")
+    await wait_until(idle(crew))
+    marks = [e.data for e in store.events(chat.id) if e.kind == "turn_start"]
+    assert marks == [{"system": True}, {"system": False}]
+
+
+async def test_a_turn_with_any_user_prompt_is_not_a_system_turn(crew, store):
+    gate = asyncio.Event()
+    busy = ScriptedCrew(store, crew.runner.crew.home, *crew.runner.crew.bots.values(), gate=gate)
+    busy.script["chief"] = lambda spec, me: [Done(final_text=NO_REPLY)]
+    chat = busy.runner.wake("chief", "Looking around on your own.")
+    await wait_until(lambda: len(busy.specs_for("chief")) == 1)
+    busy.runner.wake("chief", "Crew activity since the last notice")  # queued behind the running turn
+    busy.runner.say("chief", "and me")
+    gate.set()
+    await wait_until(idle(busy))
+    marks = [e.data for e in store.events(chat.id) if e.kind == "turn_start"]
+    assert marks == [{"system": True}, {"system": False}]
+
+
+async def test_a_resumed_user_turn_keeps_its_turn_start_and_is_not_a_system_turn(tmp_path):
+    path = tmp_path / "resume.db"
+    store = Store(path)
+    bots = (bot("chief"),)
+    gate = asyncio.Event()
+    before = ScriptedCrew(store, tmp_path, *bots, gate=gate)
+    chat = before.runner.say("chief", "build it")
+    await wait_until(lambda: len(before.specs_for("chief")) == 1)
+    before.runner._state_notice("chief", "State changed: 1 item needs you.")  # arrives during the user's turn
+    await before.runner.shutdown()
+    store.close()
+
+    store = Store(path)
+    store.mark_interrupted()
+    after = ScriptedCrew(store, tmp_path, *bots)
+    after.script["chief"] = lambda spec, me: [Done(final_text=NO_REPLY)]
+    assert after.runner.resume_interrupted() == [chat.id]
+    await wait_until(idle(after))
+    marks = [e.data for e in store.events(chat.id) if e.kind == "turn_start"]
+    assert marks == [{"system": False}]  # one logical turn, not a second one for the resume
+    await after.runner.shutdown()
+    store.close()
+
+
+async def test_a_resumed_system_turn_that_carries_a_user_message_gets_a_user_mark(tmp_path):
+    path = tmp_path / "resume-waiting.db"
+    store = Store(path)
+    bots = (bot("chief"),)
+    gate = asyncio.Event()
+    before = ScriptedCrew(store, tmp_path, *bots, gate=gate)
+    chat = before.runner.wake("chief", "Looking around on your own.")
+    await wait_until(lambda: len(before.specs_for("chief")) == 1)
+    before.runner.say("chief", "please build it")  # queued behind the crew's own turn
+    await before.runner.shutdown()
+    store.close()
+
+    store = Store(path)
+    store.mark_interrupted()
+    after = ScriptedCrew(store, tmp_path, *bots)
+    after.script["chief"] = lambda spec, me: [Done(final_text=NO_REPLY)]
+    assert after.runner.resume_interrupted() == [chat.id]
+    await wait_until(idle(after))
+    marks = [e.data for e in store.events(chat.id) if e.kind == "turn_start"]
+    assert marks == [{"system": True}, {"system": False}]
+    await after.runner.shutdown()
+    store.close()

@@ -15,7 +15,7 @@ import { PushCard } from "./PushCard";
 import { ReplaceMainCard } from "./ReplaceMainCard";
 import { Question } from "./Question";
 import { AskCard, Brief, Reactions, Steps, VerdictBlock } from "./ThreadParts";
-import { type Block, build, fold, said, summary } from "./threadBlocks";
+import { type Block, build, fold, said, settleWakes, summary } from "./threadBlocks";
 import { WorkCard } from "./WorkCard";
 import "../styles/chat.css";
 import "../styles/cards.css";
@@ -44,7 +44,7 @@ export function Thread(props: {
   // row, so the conversation reads as one; a thread beside it shows it all.
   const blocks = useMemo(() => {
     const built = build(events ?? [], children, crew.tasks);
-    return props.chat ? fold(built) : built;
+    return props.chat ? fold(settleWakes(events ?? [], built)) : built;
   }, [events, children, crew.tasks, props.chat]);
   const active = ACTIVE.includes(task.status);
   // Where time has passed between messages, a centred day and time goes over the next one.

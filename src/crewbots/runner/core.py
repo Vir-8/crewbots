@@ -134,6 +134,8 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
         self._seat_queue_floor: dict[str, int] = {}
         self._seat_dispatch: dict[str, int] = {}
         self._waiting: dict[str, list[str]] = {}
+        self._by_user: set[str] = set()  # tasks with a prompt not from crewbots since their last turn began
+        self._continuing: set[str] = set()  # resumed turns that already have their turn_start
         self._tokens: dict[str, str] = {}  # run or session token → task id, while that run or session lasts
         self._escalated: set[str] = set()
         self.use_sessions = sessions
@@ -222,6 +224,8 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
                     (text, sender, attachments, _record_message, task_id in self._waking))
                 return task
             raise NotAllowed("This task is being cancelled. Please try again after cancellation finishes.")
+        if sender != "crewbots":
+            self._by_user.add(task_id)
         if sender == "user" and task.kind == "seat":
             self._check_seat_answer(task, question_id)
         elif question_id is not None:
@@ -324,6 +328,7 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
             prompt = prompts.text("resume", self.crew.home, request=turn["prompt"]) if turn["started"] else turn["prompt"]
             prompt = "\n\n".join([prompt, *turn["waiting"]])
             self.store.set_pending(task.id, turn["prompt"], resumed=True)
+            self._resume_mark(task.id, turn["started"], bool(turn["waiting"]))
             if turn["started"]:
                 self._record(task.id, kind="restarted", data={"again": False})
             self._set(task.id, status=Status.QUEUED, error=None)
@@ -408,6 +413,7 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
                 if not resumed:  # a turn carried on after a restart keeps the request it carries on
                     self.store.set_pending(task_id, prompt)
                 resumed = False
+                self._turn_start(task_id)  # once a turn, not per retry: the app groups by it
                 await self._tries(task_id, prompt, owed, nudged)
                 waiting = self._waiting.pop(task_id, None)
                 prompt = "\n\n".join(waiting) if waiting else None
@@ -583,7 +589,8 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
             self._flushed.discard(task_id)
             if task_id in self._escalated:
                 self._escalated.discard(task_id)
-                self._set(task_id, status=Status.NEEDS_INPUT, result=done.final_text, turns=task.turns + 1)
+                self._set(task_id, status=Status.NEEDS_INPUT,
+                           result="" if is_no_reply(done.final_text) else done.final_text, turns=task.turns + 1)
             else:
                 if task.kind == "seat" and task.room_id:
                     self._seat_replied(task, done.final_text, self._mentioned(task, cwd, done.final_text, started),

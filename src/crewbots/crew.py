@@ -42,8 +42,10 @@ NO_REPLY = "NO_REPLY"  # a bot's whole reply in a group chat when it has nothing
 
 
 def is_no_reply(text: str) -> bool:
-    """Whether this is a bot's whole reply saying it has nothing to add: any case, bare or in light formatting."""
-    return text.strip().strip("`*_. ").upper() == NO_REPLY
+    """Whether a bot's reply says it has nothing to add: its first non-empty line is NO_REPLY, in any case, bare or in
+    light formatting. Anything after that line (an explanation) is dropped with it."""
+    first = next((ln for ln in text.splitlines() if ln.strip()), "")
+    return first.strip().strip("`*_. ").upper() == NO_REPLY
 
 
 @dataclass(frozen=True)

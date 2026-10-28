@@ -38,7 +38,7 @@ async def test_a_task_runs_on_its_bot_and_keeps_the_transcript(store, tmp_path):
     assert task.result == "did: say hi"
     assert task.session_id == "s-1"
     assert (task.input_tokens, task.output_tokens, task.cost_usd) == (10, 2, 0.01)
-    assert [e.kind for e in store.events(task.id)] == ["message", "session_started", "text", "usage", "done"]
+    assert [e.kind for e in store.events(task.id)] == ["message", "turn_start", "session_started", "text", "usage", "done"]
     assert store.events(task.id)[0].data == {"from": "user", "text": "say hi"}
 
 
