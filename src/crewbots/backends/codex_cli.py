@@ -73,7 +73,8 @@ class CodexExec:
     def config_overrides(self, spec: RunSpec) -> list[str]:
         """The user's servers, plugins and apps switched off, then the bot's own servers added. Codex's own memories
         stay off whatever the user's config says: a bot's notes are crewbots'."""
-        args = ["-c", "features.memories=false"]
+        # No "Co-authored-by: Codex" trailer: the feature that tells the model to add one is off, and its text is empty.
+        args = ["-c", "features.memories=false", "-c", "features.codex_git_commit=false", "-c", 'commit_attribution=""']
         if spec.context_window:
             args += ["-c", f"model_auto_compact_token_limit={compact_limit(spec.context_window)}"]
         args += isolation_overrides(self.command, keep=spec.mcp_servers) if self.isolate else []

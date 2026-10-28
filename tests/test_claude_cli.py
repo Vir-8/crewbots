@@ -79,7 +79,7 @@ def test_a_writing_bot_runs_its_commands_in_the_sandbox_and_no_bot_reads_the_pri
     assert set(caches) <= set(written["permissions"]["allow"]) and "allow" not in read["permissions"]
     env = ClaudeCLI().env(RunSpec(prompt="x", cwd=".", access=Access.WORKSPACE_WRITE))
     assert env["UV_CACHE_DIR"] == str(paths.caches() / "uv") and env["npm_config_cache"] == str(paths.caches() / "npm")
-    assert settings(Access.FULL) is None
+    assert settings(Access.FULL) == {"includeCoAuthoredBy": False, "attribution": {"commit": "", "pr": ""}}
 
 
 def test_access_levels_map_to_permission_modes():

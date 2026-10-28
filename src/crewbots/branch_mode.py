@@ -274,6 +274,7 @@ def leftover_files(repo: Path) -> list[str]:
 def merge(checkout: BranchCheckout, message: str, *, expected_files: list[str] | None = None,
           before_lock=None, before_refs=None) -> tuple[str, str]:
     """Snapshot the task and fast-forward the original branch to one squashed commit."""
+    message = worktree.final_message(message)
     if not on_branch(checkout):
         raise worktree.GitError("HEAD is not on the task branch")
     ref = f"refs/heads/{checkout.original_branch}"
@@ -288,6 +289,8 @@ def merge(checkout: BranchCheckout, message: str, *, expected_files: list[str] |
         ident = ("-c", "user.name=crewbots", "-c", "user.email=crewbots@localhost")
         tip = git(*ident, "commit-tree", tree, "-p", head, input=message).strip()
         commit = git(*ident, "commit-tree", tree, "-p", checkout.base, input=message).strip()
+        worktree.verify_message(checkout.repo, tip, message)
+        worktree.verify_message(checkout.repo, commit, message)
         if not on_branch(checkout):
             raise worktree.GitError("HEAD left the task branch; merge stopped")
         index_path, lock = index_lock_path(checkout.repo)

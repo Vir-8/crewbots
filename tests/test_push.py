@@ -81,6 +81,20 @@ def test_stale_card_refuses_new_commit(setup):
     assert git(remote, "rev-parse", "refs/heads/main") == before
 
 
+def test_a_commit_with_an_ai_trailer_is_not_pushed(setup):
+    runner, client, repo, remote, _ = setup
+    (repo / "two.txt").write_text("two")
+    git(repo, "add", "two.txt")
+    git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm",
+        "Add two\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>")
+    before = git(remote, "rev-parse", "refs/heads/main")
+    proposal = propose(runner, runner.chat("chief").id, "demo", "Add both")
+    error = runner.store.last_event(runner.chat("chief").id, ("push_proposed",)).data["error"]
+    assert "AI co-author trailer" in error and "Add two" in error and "Add one" not in error
+    assert not press(client, proposal)["ok"]
+    assert git(remote, "rev-parse", "refs/heads/main") == before
+
+
 def test_no_upstream_shows_git_reason(setup):
     runner, client, repo, _, _ = setup
     git(repo, "branch", "--unset-upstream")

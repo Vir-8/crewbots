@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from crewbots import paths
+from crewbots import attribution, paths
 from crewbots.runner.common import NotAllowed
 
 REMOTE_TIMEOUT = 15
@@ -102,6 +102,19 @@ def _remote_tip(folder: Path, url: str, destination: str) -> str | None:
     return None
 
 
+def _refuse_ai_attribution(folder: Path, tip: str, head: str) -> None:
+    """What leaves the machine carries no AI trailer: a commit a bot made itself on a task branch can have one."""
+    bad = []
+    for entry in _git(folder, "log", "--format=%h %s%x00%B%x01", f"{tip}..{head}").split("\x01"):
+        subject, _, message = entry.strip().partition("\x00")
+        try:
+            attribution.check(message)
+        except attribution.AttributionError:
+            bad.append(subject)
+    if bad:
+        raise NotAllowed("These commits carry an AI co-author trailer and would be pushed: " + "; ".join(bad))
+
+
 def _destination_snapshot(folder: Path, branch: str, upstream: str, tracking: str) -> dict[str, Any]:
     remote = _git(folder, "config", "--get", f"branch.{branch}.remote")
     destination = _git(folder, "config", "--get", f"branch.{branch}.merge")
@@ -123,6 +136,7 @@ def _destination_snapshot(folder: Path, branch: str, upstream: str, tracking: st
     except GitFailed:
         raise NotAllowed("The remote has commits this folder doesn't; not a fast-forward.") from None
     commits = _git(folder, "log", "--format=%H %s", f"{tip}..{head}").splitlines()
+    _refuse_ai_attribution(folder, tip, head)
     return {"branch": branch, "upstream": upstream, "tracking": tracking, "remote": remote,
             "destination": destination, "push_url_display": _display_url(urls[0]), "url_hash": url_hash,
             "head": head, "tip": tip, "commits": commits}

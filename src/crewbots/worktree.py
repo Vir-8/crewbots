@@ -12,7 +12,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from crewbots import paths
+from crewbots import attribution, paths
 
 BRANCH_PREFIX = "crewbots/"
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
@@ -64,12 +64,35 @@ def changes(wt: Worktree) -> str:
     return _git(wt.path, "diff", "--cached", wt.base, strip=False)
 
 
+def final_message(message: str) -> str:
+    """The text to commit: `message` without AI attribution trailers (GitError if one would remain) and as Git's
+    stripspace leaves it. Commit exactly this, and `verify_message` it afterwards."""
+    try:
+        return attribution.canonical(message)
+    except attribution.AttributionError as e:
+        raise GitError(str(e)) from None
+
+
+NO_HOOKS = ("-c", "core.hooksPath=/dev/null")  # a hook could add a trailer after the message was checked
+
+
+def verify_message(repo: Path, commit: str, message: str) -> None:
+    """GitError unless `commit` has exactly the message that was checked and handed to Git."""
+    try:
+        attribution.verify_stored(repo, commit, message)
+    except attribution.AttributionError as e:
+        raise GitError(str(e)) from None
+
+
 def commit(wt: Worktree, message: str) -> str | None:
     """Commits whatever is uncommitted. Returns the new commit, or None if there was nothing to commit."""
+    message = final_message(message)
     _git(wt.path, "add", "--all")
     if not _git(wt.path, "status", "--porcelain"):
         return None
-    _git(wt.path, "-c", "user.name=crewbots", "-c", "user.email=crewbots@localhost", "commit", "-q", "-m", message)
+    _git(wt.path, *NO_HOOKS, "-c", "user.name=crewbots", "-c", "user.email=crewbots@localhost", "commit", "-q",
+         "--no-verify", "--cleanup=whitespace", "-m", message)
+    verify_message(wt.path, "HEAD", message)
     return _git(wt.path, "rev-parse", "HEAD")
 
 
@@ -83,13 +106,17 @@ def merge(wt: Worktree, message: str, *, tip: str | None = None) -> str:
         into = _git(wt.repo, "symbolic-ref", "--short", "HEAD")
     except GitError:
         raise GitError(f"{wt.repo} is not on a branch (detached HEAD); check out the branch to merge into") from None
+    message = final_message(message)  # the squashed commits' own messages are not carried over, only this one
     try:
         _git(wt.repo, "merge", "--squash", tip or wt.branch)
-        if subprocess.run([paths.git(), "diff", "--cached", "--quiet"], cwd=wt.repo).returncode:
-            _git(wt.repo, "commit", "-q", "--cleanup=whitespace", "-m", message)
+        committed = bool(subprocess.run([paths.git(), "diff", "--cached", "--quiet"], cwd=wt.repo).returncode)
+        if committed:
+            _git(wt.repo, *NO_HOOKS, "commit", "-q", "--no-verify", "--cleanup=whitespace", "-m", message)
     except GitError as e:
         subprocess.run([paths.git(), "reset", "--merge"], cwd=wt.repo, capture_output=True)
         raise GitError(f"merging {wt.branch} into {into} failed, and nothing was changed: {e}") from None
+    if committed:
+        verify_message(wt.repo, "HEAD", message)
     return _git(wt.repo, "rev-parse", "HEAD")
 
 

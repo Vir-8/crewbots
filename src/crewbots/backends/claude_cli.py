@@ -27,17 +27,23 @@ def private_rules(extra: Sequence[Path] = ()) -> list[str]:
     return [rule for path in (*private_paths(), *extra) for rule in (f"Read(/{path})", f"Read(/{path}/**)")]
 
 
+# No "Co-Authored-By: Claude" trailer on commits, nor a "Generated with" line on pull requests. `attribution` is the
+# current setting and `includeCoAuthoredBy` the deprecated one (Claude Code 2.1.310 reads both); both are set so that
+# neither an older nor a newer CLI adds them, whatever the repo's own settings say.
+NO_ATTRIBUTION: dict[str, Any] = {"includeCoAuthoredBy": False, "attribution": {"commit": "", "pr": ""}}
+
+
 def settings(access: Access, write_dirs: Sequence[Path] = (), deny_read: Sequence[Path] = ()) -> dict[str, Any] | None:
     """What a bot that isn't on full access gets on top of the repo's settings: the private paths denied, and the
     folders the user let it write in, for this task, allowed to its file tools (and so to its sandbox's commands), with
     a writing bot's package caches."""
     if access is Access.FULL:
-        return None
+        return NO_ATTRIBUTION
     permissions: dict[str, list[str]] = {"deny": private_rules(deny_read)}
     caches = package_caches().values() if access is Access.WORKSPACE_WRITE else ()
     if folders := [*map(str, write_dirs), *caches]:
         permissions["allow"] = [rule for folder in folders for rule in (f"Edit(/{folder})", f"Edit(/{folder}/**)")]
-    return {"permissions": permissions}
+    return {"permissions": permissions, **NO_ATTRIBUTION}
 
 
 class ClaudeCLI:

@@ -23,7 +23,7 @@ from pathlib import Path
 
 import yaml
 
-from crewbots import paths, timefmt
+from crewbots import attribution, paths, timefmt
 
 CREW_SCOPE = "crew"
 INDEX_LIMIT = 60  # notes listed in a bot's instructions per scope; older ones stay in the folder
@@ -130,14 +130,17 @@ class Memory:
         if not self.root.is_dir():
             return None
         git = [paths.git(), "-C", str(self.root), "-c", "user.name=crewbots", "-c", "user.email=crewbots@localhost",
-               "-c", "commit.gpgsign=false"]
+               "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null"]
         if not (self.root / ".git").exists():
             subprocess.run([*git, "init", "-q"], check=True, capture_output=True)
         subprocess.run([*git, "add", "-A", "--", ".", ":(exclude,glob)**/.state.lock",
                         ":(exclude,glob)**/working-state/.state-*"], check=True, capture_output=True)
         if not subprocess.run([*git, "diff", "--cached", "--quiet"], capture_output=True).returncode:
             return None
-        subprocess.run([*git, "commit", "-q", "-m", message], check=True, capture_output=True)
+        message = attribution.canonical(message)
+        subprocess.run([*git, "commit", "-q", "--no-verify", "--cleanup=whitespace", "-m", message], check=True,
+                       capture_output=True)
+        attribution.verify_stored(self.root, "HEAD", message)  # nothing is undone if it differs
         return subprocess.run([*git, "rev-parse", "--short", "HEAD"], check=True, capture_output=True,
                               text=True).stdout.strip()
 

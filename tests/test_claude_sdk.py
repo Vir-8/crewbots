@@ -236,7 +236,8 @@ def test_full_access_skips_the_policy(tmp_path):
     options = ClaudeAgent(cli_path="/bin/claude").options(spec, ClaudeAgentSession(spec))
 
     assert options.permission_mode == "bypassPermissions" and options.can_use_tool is None
-    assert options.settings is None and options.sandbox is None
+    assert json.loads(options.settings) == {"includeCoAuthoredBy": False, "attribution": {"commit": "", "pr": ""}}
+    assert options.sandbox is None
 
 
 def test_claude_keeps_its_file_tools_and_its_shell_out_of_the_private_paths(tmp_path):
