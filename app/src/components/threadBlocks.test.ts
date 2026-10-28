@@ -45,3 +45,20 @@ it("places a child with a missing tool result at its creation time, without clai
   ];
   expect(build(events, [child], new Map()).map((b) => b.kind === "work" ? b.task.id : b.id)).toEqual([1, child.id, 3]);
 });
+
+it("pairs asks with their own task even when children or results are out of order or missing", () => {
+  const child = (id: string, result: string) => ({ id, kind: "ask", result } as Task);
+  const first = child("t_1111111111", "First answer");
+  const second = child("t_2222222222", "Second answer");
+  const event = (id: number, kind: string, data: Record<string, unknown>): StoredEvent => ({ id, task_id: "chat", kind, data, at: "" });
+  const events = [
+    event(1, "tool_call", { id: "first", name: "mcp__crewbots__ask", input: { bot: "critic", question: "First?" } }),
+    event(2, "tool_call", { id: "missing", name: "mcp__crewbots__ask", input: { bot: "reviewer", question: "Missing?" } }),
+    event(3, "tool_call", { id: "second", name: "mcp__crewbots__ask", input: { bot: "reviewer", question: "Second?" } }),
+    event(4, "tool_result", { id: "second", output: "Asked reviewer (t_2222222222). End your turn." }),
+    event(5, "tool_result", { id: "first", output: "Asked critic (t_1111111111). End your turn." }),
+  ];
+  const asks = build(events, [second, first], new Map()).filter((b) => b.kind === "asked");
+  expect(asks.map((b) => b.kind === "asked" && b.task?.result)).toEqual(["First answer", undefined, "Second answer"]);
+  expect(build(events, [second], new Map()).filter((b) => b.kind === "asked").map((b) => b.kind === "asked" && b.task?.result)).toEqual([undefined, undefined, "Second answer"]);
+});

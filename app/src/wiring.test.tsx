@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 
 // Drive the components' event props with persistent hook state, without a browser.
-const hooks = vi.hoisted(() => ({ values: [] as any[], index: 0, crew: {} as any }));
+const hooks = vi.hoisted(() => ({ values: [] as any[], index: 0, crew: {} as any, effects: [] as (() => any)[] }));
 vi.mock("react", async (original) => {
   const actual = await original<typeof import("react")>();
   return {
@@ -16,7 +16,7 @@ vi.mock("react", async (original) => {
       const i = hooks.index++;
       return hooks.values[i] ??= { current: initial };
     },
-    useEffect: () => {},
+    useEffect: (effect: () => any) => { hooks.effects.push(effect); },
   };
 });
 vi.mock("./state", async (original) => ({ ...await original<typeof import("./state")>(), useCrew: () => hooks.crew }));
@@ -27,7 +27,7 @@ import { DirectChat, GroupChat } from "./components/ChatView";
 import { Panel } from "./components/Panel";
 import { Profile, RoomProfile } from "./components/Profile";
 import { Sidebar } from "./components/Sidebar";
-import { MergeButton } from "./components/WorkCard";
+import { MergeButton, WorkCard } from "./components/WorkCard";
 
 function find(node: any, type: any): ReactElement<any> | undefined {
   if (!node || typeof node !== "object") return undefined;
@@ -35,8 +35,8 @@ function find(node: any, type: any): ReactElement<any> | undefined {
   if (node.type === type) return node;
   return find(node.props?.children, type);
 }
-function render(component: () => ReactElement) { hooks.index = 0; return component(); }
-beforeEach(() => { hooks.values = []; localStorage.clear(); });
+function render(component: () => ReactElement<any>) { hooks.index = 0; return component(); }
+beforeEach(() => { hooks.values = []; hooks.effects = []; localStorage.clear(); });
 
 it("offers no room reply limit by default and lets a room opt in", () => {
   const changeRoom = vi.fn().mockResolvedValue(undefined);
@@ -75,6 +75,34 @@ it("withdraws through the in-app dialog and allows cancellation", async () => {
   tree = draw();
   expect(find(tree, "form")).toBeUndefined();
   expect(withdrawMerge).toHaveBeenCalledTimes(1);
+  find(tree, "button")!.props.onClick();
+  tree = draw();
+  find(tree, "input")!.props.onChange({ target: { value: "Draft" } });
+  tree = draw();
+  const add = vi.fn();
+  const remove = vi.fn();
+  vi.stubGlobal("addEventListener", add);
+  vi.stubGlobal("removeEventListener", remove);
+  const cleanup = hooks.effects.at(-1)!();
+  expect(add).toHaveBeenCalledWith("keydown", expect.any(Function));
+  add.mock.calls[0][1]({ key: "Escape" });
+  cleanup();
+  expect(remove).toHaveBeenCalledWith("keydown", add.mock.calls[0][1]);
+  vi.unstubAllGlobals();
+  tree = draw();
+  expect(find(tree, "form")).toBeUndefined();
+  find(tree, "button")!.props.onClick();
+  expect(find(draw(), "input")!.props.value).toBe("");
+});
+
+it("shows the review cap received for the work", () => {
+  const task = { id: "work", parent_id: "parent", status: "idle", title: "Work", bot: "engineer" } as any;
+  const review = { id: "review", review_of: task.id, review_version: 1, bot: "reviewer" };
+  const crew = { family: () => [], children: new Map([["parent", [review]]]), verdicts: new Map(), tasks: new Map(), latest: new Map(), asks: new Map() } as any;
+  hooks.values[0] = { task: "work", max: 5 };
+  const tree = render(() => WorkCard({ crew, task, onOpen: () => {} }));
+  const foot = (tree.props.children as any[]).find((n) => n?.props?.className === "work-foot");
+  expect(foot.props.children[1].props.children).toEqual(["round ", 1, " of 5"]);
 });
 
 it("composer ignores IME keys and resets the highlighted mention as typing narrows results", () => {

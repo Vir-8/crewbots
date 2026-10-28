@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { api } from "../api";
 import type { Crew } from "../state";
 import { doing, oneLine } from "../state";
 import type { Task } from "../types";
@@ -24,6 +25,12 @@ export function WorkCard({ crew, task, onOpen }: { crew: Crew; task: Task; onOpe
   const reviews = (crew.children.get(task.parent_id ?? "") ?? []).filter((t) => t.review_of === task.id);
   const versions = [...new Set(reviews.flatMap((r) => r.review_version == null ? [] : [r.review_version]))].sort((a, b) => a - b);
   const round = versions.length;
+  const [cap, setCap] = useState<{ task: string; max: number } | null>(null);
+  useEffect(() => {
+    let current = true;
+    if (round) api.review(task.id).then((review) => { if (current) setCap({ task: task.id, max: review.max_rounds }); }, () => { if (current) setCap(null); });
+    return () => { current = false; };
+  }, [task.id, round]);
   const latest = reviews.filter((r) => r.review_version != null && r.review_version === versions.at(-1));
   const verdicts = crew.verdicts.get(task.id) ?? [];
   const verdictOf = (review: Task) => verdicts.filter((v) => v.data.task_id === review.id).at(-1)?.data.verdict as string | undefined;
@@ -67,7 +74,7 @@ export function WorkCard({ crew, task, onOpen }: { crew: Crew; task: Task; onOpe
               </span>
             );
           })}
-          {round > 0 && <span className="faint">round {round} of 3</span>}
+          {round > 0 && <span className="faint">round {round}{cap?.task === task.id ? ` of ${cap.max}` : ""}</span>}
           <span className="grow" />
           <MergeButton crew={crew} task={task} />
         </div>
@@ -80,6 +87,14 @@ export function MergeButton({ crew, task }: { crew: Crew; task: Task }) {
   const [busy, setBusy] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
   const [reason, setReason] = useState("");
+  useEffect(() => {
+    if (!withdrawing || busy) return;
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { setWithdrawing(false); setReason(""); }
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [withdrawing, busy]);
   if (task.merge_state === "merged") {
     return (
       <span className="merged">

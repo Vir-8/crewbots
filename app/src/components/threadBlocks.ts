@@ -91,7 +91,7 @@ export function fold(blocks: Block[]): Block[] {
 export function build(events: StoredEvent[], children: Task[], tasks: Map<string, Task>): Block[] {
   const out: Block[] = [];
   const delegated = children.filter((c) => !c.review_of && c.kind !== "review" && c.kind !== "ask");
-  const asked = children.filter((c) => c.kind === "ask");
+  const asked = new Map(children.filter((c) => c.kind === "ask").map((task) => [task.id, task]));
   const results = new Map(events.filter((e) => e.kind === "tool_result").map((e) => [e.data.id, e]));
   // A successful tool result names the actual child. Other children (for example /new or autonomous work),
   // and calls whose results are missing, are placed at their creation time rather than at the end of the chat.
@@ -135,7 +135,12 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
       } else if (d.name === "mcp__crewbots__ask") {
         flush();
         if (result?.data.is_error) out.push({ kind: "line", id: e.id, text: `Couldn't ask: ${oneLine(result.data.output, 160)}`, icon: "alert", tone: "bad" });
-        else out.push({ kind: "asked", id: e.id, bot: d.input?.bot ?? "", question: d.input?.question ?? "", task: asked.shift() });
+        else {
+          const id = String(result?.data.output ?? "").match(/\bAsked [^\n]*?\((t_[^)]+)\)/)?.[1];
+          const task = id ? asked.get(id) : undefined;
+          if (id) asked.delete(id);
+          out.push({ kind: "asked", id: e.id, bot: d.input?.bot ?? "", question: d.input?.question ?? "", task });
+        }
       } else if (d.name === "mcp__crewbots__post") {
         flush();
         out.push({ kind: "line", id: e.id, text: `Said in a group chat: ${oneLine(d.input?.text ?? "", 160)}`, icon: "message" });
@@ -294,7 +299,7 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
   }
   flush();
   for (const task of unanchored) out.push({ kind: "work", id: task.id, task });
-  for (const left of asked) out.push({ kind: "asked", id: Number.MAX_SAFE_INTEGER - out.length, bot: left.bot, question: left.title, task: left });
+  for (const left of asked.values()) out.push({ kind: "asked", id: Number.MAX_SAFE_INTEGER - out.length, bot: left.bot, question: left.title, task: left });
   return out;
 }
 
