@@ -1,7 +1,10 @@
 """What a bot does with its work: hands it back, asks a question, proposes it for merging, and
 keeps notes."""
 
+import logging
+import os
 import re
+import tempfile
 from datetime import datetime
 from html import escape
 from pathlib import Path
@@ -20,10 +23,40 @@ from crewbots.store import Handoff, Status, Task
 CHOICES = 6  # offered with a question, at most
 LABEL_CHARS, DESCRIPTION_CHARS = 80, 240  # of a choice
 OTHER = {"other", "something else", "other (specify)", "other (please specify)"}  # the app always offers Other
+log = logging.getLogger(__name__)
 
 
 class Work:
     """The part of Runner that takes a bot's handoffs, questions, merge proposals and notes."""
+
+    def _check_worktree_sweep(self) -> None:
+        if not self._worktree_sweep_done.is_set():
+            raise NotAllowed("Worktree maintenance is running; try again when it finishes.")
+
+    def changes(self, task_id: str) -> str | None:
+        """The task's diff against where its worktree started, or None if it has no worktree."""
+        task = self.store.get_task(task_id)
+        self._check_worktree_sweep()
+        if not task.worktree_path:
+            return None
+        wt = worktree.Worktree(repo=Path(task.repo), path=Path(task.worktree_path), branch=task.branch, base=task.base)
+        if task.merge_state == "merged":
+            return worktree._git(wt.repo, "diff", wt.base, self._merged_tip(task), strip=False)
+        if not wt.path.exists():
+            return worktree._git(wt.repo, "diff", wt.base, wt.branch, strip=False)
+        return worktree.changes(wt)
+
+    def _merged_tip(self, task: Task) -> str:
+        if task.merged_tip:
+            return task.merged_tip
+        # Older merge records have no tip. A merge commit's second parent is the original task tip.
+        return worktree._git(Path(task.repo), "rev-parse", "--verify", f"{task.merged_commit}^2")
+
+    def _restore_worktree(self, task: Task) -> None:
+        wt = worktree.Worktree(Path(task.repo), Path(task.worktree_path), task.branch, task.base)
+        if not wt.path.exists():
+            tip = self._merged_tip(task) if task.merge_state == "merged" else None
+            worktree.restore(wt, tip=tip)
 
     def _setting(self, task: Task) -> str | None:
         if task.kind == "chat":
@@ -213,6 +246,7 @@ class Work:
     def merge(self, task_id: str, force: bool = False, *, automatic: bool = False) -> Task:
         """The user's merge: commits the worktree, merges its branch into the repo's current branch, removes the
         worktree. Refuses work that is still running or not approved (unless forced); a conflict changes nothing."""
+        self._check_worktree_sweep()
         work = self.store.get_task(task_id)
         if not work.worktree_path:
             raise MergeError(f"{task_id} has no worktree")
@@ -231,22 +265,24 @@ class Work:
         summary = proposals[0].data.get("summary", "") if proposals else ""
         subject = _merge_subject(summary, work.title)
         try:
+            if not wt.path.exists():
+                self._restore_worktree(work)
             worktree.commit(wt, f"{subject}\n\ncrewbots task {work.id}, by {work.bot}")
+            tip = worktree._git(wt.path, "rev-parse", "HEAD")
             commit = worktree.merge(wt, f"{subject}\n\nReviewed in round {state.round}: "
-                                        f"{reviewers}.{' Merged without approval.' if not state.approved else ''}")
+                                        f"{reviewers}.{' Merged without approval.' if not state.approved else ''}",
+                                    tip=tip)
         except worktree.GitError as e:
             raise MergeError(str(e)) from None
-        task = self._set(task_id, merge_state="merged", merged_commit=commit)
+        task = self._set(task_id, merge_state="merged", merged_commit=commit, merged_tip=tip)
         self._record(task_id, kind="merged", data={"commit": commit, "into": str(wt.repo), "forced": not state.approved,
                                                    "automatic": automatic})
-        try:
-            worktree.remove(wt, delete_branch=True)
-        except worktree.GitError as e:
-            self._record(task_id, kind="merge_cleanup_failed", data={"reason": str(e)})
+        self._cleanup_after_action(task)
         return task
 
     def withdraw_merge(self, task_id: str, reason: str, *, parent_id: str | None = None) -> Task:
-        """Withdraw a proposal without changing its worktree."""
+        """Withdraw a proposal, preserving work on its branch."""
+        self._check_worktree_sweep()
         if parent_id is not None:
             parent = self.store.get_task(parent_id)
             if not self.is_coordinator(parent.bot):
@@ -265,7 +301,103 @@ class Work:
             raise NotAllowed(f"{task_id} has no merge proposal to withdraw")
         task = self._set(task_id, merge_state=None)
         self._record(task_id, kind="merge_withdrawn", data={"by": by, "reason": reason.strip()})
+        self._cleanup_after_action(task)
         return task
+
+    def _cleanup_after_action(self, task: Task) -> None:
+        try:
+            result = self._cleanup_worktree(task)
+            if result["status"] != "removed":
+                log.warning("Worktree cleanup for %s: %s", task.id, result.get("reason"))
+        except Exception:
+            log.exception("Could not clean up worktree for %s", task.id)
+
+    def _cleanup_worktree(self, task: Task, *, sweep: bool = False) -> dict[str, str]:
+        result = {"task_id": task.id, "path": task.worktree_path or "", "branch": task.branch or ""}
+        busy = {Status.QUEUED, Status.RUNNING, Status.NEEDS_INPUT, Status.HELD, Status.INTERRUPTED}
+        if (task.status in busy or task.id in self._runs or task.merge_state == "proposed" or any(
+                r.status in busy or r.id in self._runs for r in self.store.reviewers_of(task.id))):
+            return result | {"status": "kept", "reason": "task or reviewer is active, or proposal is open"}
+        if not all((task.repo, task.worktree_path, task.branch, task.base)):
+            return result | {"status": "kept", "reason": "incomplete worktree metadata"}
+        wt = worktree.Worktree(Path(task.repo), Path(task.worktree_path), task.branch, task.base)
+        original_head = None
+        saved_head = None
+        index_path = None
+        index_before = None
+        removing = False
+        try:
+            if not wt.path.is_dir():
+                return result | {"status": "kept", "reason": "worktree path is missing"}
+            if wt.repo.resolve() == wt.path.resolve():
+                return result | {"status": "kept", "reason": "path is the main checkout"}
+            if worktree._git(wt.path, "symbolic-ref", "--short", "HEAD") != wt.branch:
+                raise worktree.GitError("worktree is not on the task branch")
+            untracked = worktree._git(wt.path, "ls-files", "--others", "--exclude-standard", "-z", strip=False)
+            staged = worktree._git(wt.path, "ls-files", "--stage", "-z", strip=False)
+            gitlinks = [entry.split("\t", 1)[1] for entry in staged.split("\0")
+                        if entry.startswith("160000 ") and "\t" in entry]
+            if any((wt.path / name / ".git").exists() for name in [*untracked.split("\0"), *gitlinks] if name):
+                raise worktree.GitError("worktree contains an untracked nested repository; leaving it in place")
+            if task.merge_state == "merged" and not sweep:
+                if not task.merged_commit:
+                    raise worktree.GitError("merged task has no recorded merge commit")
+            else:
+                original_head = worktree._git(wt.path, "rev-parse", "HEAD")
+                index_path = Path(worktree._git(wt.path, "rev-parse", "--git-path", "index"))
+                if not index_path.is_absolute():
+                    index_path = wt.path / index_path
+                index_before = index_path.read_bytes() if index_path.exists() else None
+                saved_head = worktree.commit(wt, f"Uncommitted work from {task.id}, saved on removal")
+            if worktree._git(wt.path, "status", "--porcelain", "--ignore-submodules=none"):
+                raise worktree.GitError("worktree still has changes; leaving it in place")
+            branch_tip = worktree._git(wt.repo, "rev-parse", f"refs/heads/{wt.branch}")
+            if worktree._git(wt.path, "rev-parse", "HEAD") != branch_tip or (saved_head and saved_head != branch_tip):
+                raise worktree.GitError("task branch changed while saving; leaving the worktree in place")
+            delete_branch = task.merge_state == "merged" and not sweep
+            if delete_branch:
+                worktree._git(wt.repo, "merge-base", "--is-ancestor", branch_tip, task.merged_commit)
+            removing = True
+            deleted = worktree.remove(wt, delete_branch=delete_branch, branch_tip=branch_tip)
+        except (worktree.GitError, OSError) as e:
+            # Once removal was attempted it may have partially removed files. Keep the saved commit so that
+            # tracked and non-ignored untracked work remains recoverable from the branch.
+            if not removing and index_path is not None and wt.path.is_dir():
+                try:
+                    if saved_head:
+                        worktree._git(wt.path, "update-ref", f"refs/heads/{wt.branch}", original_head, saved_head)
+                    index_path = Path(worktree._git(wt.path, "rev-parse", "--git-path", "index"))
+                    if not index_path.is_absolute():
+                        index_path = wt.path / index_path
+                    if index_before is None:
+                        index_path.unlink(missing_ok=True)
+                    else:
+                        with tempfile.NamedTemporaryFile(dir=index_path.parent, delete=False) as temp:
+                            temp.write(index_before)
+                            temporary = temp.name
+                        os.replace(temporary, index_path)
+                except (worktree.GitError, OSError):
+                    log.exception("Could not roll back the worktree save for %s", task.id)
+            log.exception("Could not clean up worktree for %s", task.id)
+            return result | {"status": "kept" if wt.path.exists() else "error", "reason": str(e)}
+        self._removed_worktrees.add(task.id)
+        log.info("Removed worktree for %s; branch %s", task.id, "deleted" if deleted else "kept")
+        return result | {"status": "removed", "branch_status": "deleted" if deleted else "kept"}
+
+    def sweep_worktrees(self) -> dict[str, list[dict[str, str]]]:
+        rows = self.store.db.execute("select id from tasks where worktree_path is not null order by id").fetchall()
+        results = [self._cleanup_worktree(self.store.get_task(row[0]), sweep=True) for row in rows]
+        report = {"removed": [r for r in results if r["status"] == "removed"],
+                  "kept": [r for r in results if r["status"] != "removed"]}
+        log.info("Worktree sweep: %s", report)
+        return report
+
+    def drop_worktree(self, task_id: str) -> dict[str, str]:
+        self._check_worktree_sweep()
+        task = self.store.get_task(task_id)
+        if task.merge_state == "proposed":
+            raise NotAllowed("withdraw the open merge proposal first")
+        return self._cleanup_worktree(task)
 
     def handoff(self, task_id: str, done: str, output: list[str], open: str, needs: str) -> Handoff:
         task = self.store.get_task(task_id)

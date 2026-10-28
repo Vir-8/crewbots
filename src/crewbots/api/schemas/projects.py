@@ -3,15 +3,19 @@
 
 from pydantic import BaseModel
 
+from crewbots.projects import Isolation
+
 
 class ProjectBody(BaseModel):
     folder: str
     about: str = ""
+    isolation: Isolation | None = None
 
 class ProjectOut(BaseModel):
     name: str
     folder: str
     about: str
+    isolation: Isolation
     missing: bool  # its folder isn't there any more
 
 class ProjectsOut(BaseModel):

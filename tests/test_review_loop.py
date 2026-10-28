@@ -3,10 +3,12 @@
 import subprocess
 from pathlib import Path
 
+import httpx
 import pytest
 from fakes import ScriptedCrew, bot, git_repo, wait_until
 
 from crewbots import paths, worktree
+from crewbots.api import create_app
 from crewbots.backends import Access
 from crewbots.events import Done
 from crewbots.runner import MAX_REVIEW_ROUNDS, MergeError, NotAllowed
@@ -272,7 +274,7 @@ async def test_automatic_merge_is_opt_in_and_preserves_failed_proposals(store, t
     assert all("push" not in command for command in commands)
 
 
-async def test_withdraw_proposal_preserves_worktree_and_records_reason(store, tmp_path):
+async def test_withdraw_proposal_saves_work_and_records_reason(store, tmp_path):
     repo = git_repo(tmp_path / "repo")
     crew = crew_for(store, tmp_path)
     parent = store.create_task("chief", "lead", workspace=str(repo), status=Status.IDLE)
@@ -281,6 +283,7 @@ async def test_withdraw_proposal_preserves_worktree_and_records_reason(store, tm
     await review_round(crew, parent, work, Verdict.PASS)
     crew.runner.propose_merge(parent.id, work.id, "Edit the readme")
     path = store.get_task(work.id).worktree_path
+    Path(path, "new.txt").write_text("preserved")
     other = store.create_task("chief", "another coordinator", status=Status.IDLE)
     with pytest.raises(NotAllowed, match="not delegated by this task"):
         crew.runner.withdraw_merge(work.id, "Not mine", parent_id=other.id)
@@ -289,13 +292,79 @@ async def test_withdraw_proposal_preserves_worktree_and_records_reason(store, tm
         crew.runner.withdraw_merge(work.id, " ", parent_id=parent.id)
     task = crew.runner.withdraw_merge(work.id, "Superseded", parent_id=parent.id)
     assert task.merge_state is None and task.worktree_path == path
-    assert Path(path).is_dir()
+    assert not Path(path).exists()
+    assert git(repo, "show", f"{task.branch}:new.txt") == "preserved"
     assert store.events(work.id)[-1].data == {"by": "chief", "reason": "Superseded"}
     with pytest.raises(NotAllowed, match="no merge proposal"):
         crew.runner.withdraw_merge(work.id, "again")
     crew.runner.propose_merge(parent.id, work.id, "Try again")
     assert crew.runner.withdraw_merge(work.id, "No longer needed").merge_state is None
     assert store.events(work.id)[-1].data["by"] == "user"
+
+
+@pytest.mark.parametrize("action", ["withdraw", "merge"])
+async def test_cleanup_failure_does_not_break_action(store, tmp_path, monkeypatch, caplog, action):
+    repo = git_repo(tmp_path / "repo")
+    crew = crew_for(store, tmp_path)
+    parent = store.create_task("chief", "lead", workspace=str(repo), status=Status.IDLE)
+    work = crew.runner.delegate(parent.id, "engineer", "edit")
+    await wait_until(crew.settled(work.id))
+    path = Path(store.get_task(work.id).worktree_path)
+    (path / "new.txt").write_text("content")
+    await review_round(crew, parent, work, Verdict.PASS)
+    crew.runner.propose_merge(parent.id, work.id, "Edit files")
+    original = worktree._git
+
+    def fail_remove(cwd, *args, **kwargs):
+        if args[:2] == ("worktree", "remove"):
+            raise worktree.GitError("simulated remove failure")
+        return original(cwd, *args, **kwargs)
+
+    monkeypatch.setattr(worktree, "_git", fail_remove)
+    result = (crew.runner.merge(work.id) if action == "merge"
+              else crew.runner.withdraw_merge(work.id, "withdrawn"))
+    assert result.merge_state == ("merged" if action == "merge" else None)
+    assert path.is_dir() and (path / "new.txt").read_text() == "content"
+    assert "simulated remove failure" in caplog.text
+
+
+async def test_merged_work_reopens_for_followup_review_and_changes_api(store, tmp_path):
+    repo = git_repo(tmp_path / "repo")
+    crew = crew_for(store, tmp_path)
+    parent = store.create_task("chief", "lead", workspace=str(repo), status=Status.IDLE)
+    crew.script["engineer"] = lambda spec, me: (
+        (spec.cwd / "new.txt").write_text("task work"), [Done(final_text="done")])[1]
+    work = crew.runner.delegate(parent.id, "engineer", "edit")
+    await wait_until(crew.settled(work.id))
+    merged = crew.runner.merge(work.id, force=True)
+    path = Path(merged.worktree_path)
+    assert merged.merged_tip and not path.exists()
+
+    app = create_app(crew.runner, token="admin")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8765/v1") as client:
+        response = await client.get(f"/tasks/{work.id}/changes", headers={"Authorization": "Bearer admin"})
+    assert response.status_code == 200 and "+task work" in response.json()["diff"]
+
+    store.update_task(work.id, merged_tip=None)  # older records recover the tip from the merge commit
+    assert "+task work" in crew.runner.changes(work.id)
+
+    crew.script["engineer"] = lambda spec, me: [Done(final_text=(spec.cwd / "new.txt").read_text())]
+    crew.runner.send(work.id, "follow up")
+    await wait_until(crew.settled(work.id))
+    assert store.get_task(work.id).result == "task work"
+    store.update_task(work.id, merged_tip=merged.merged_tip)
+    assert crew.runner.drop_worktree(work.id)["status"] == "removed"
+    assert not path.exists()
+
+    crew.script["reviewer"] = lambda spec, me: [Done(final_text=(spec.cwd / "new.txt").read_text())]
+    review = crew.runner.delegate(parent.id, "reviewer", "review", review_of=work.id)
+    await wait_until(crew.settled(review.id))
+    assert store.get_task(review.id).result == "task work"
+    assert crew.runner.drop_worktree(work.id)["status"] == "removed"
+    assert not path.exists()
+    crew.runner.send(review.id, "review again")
+    await wait_until(crew.settled(review.id))
+    assert store.get_task(review.id).result == "task work"
 
 
 def test_merge_subject_uses_first_paragraph_and_a_complete_sentence():

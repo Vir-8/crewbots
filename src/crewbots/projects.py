@@ -18,11 +18,13 @@ changes or removes a project.
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import yaml
 
 FOLDER = "projects"
 NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
+Isolation = Literal["branch", "worktree"]
 
 
 class ProjectError(ValueError):
@@ -35,6 +37,13 @@ class Project:
     folder: Path
     about: str  # what it is, for bots choosing where work goes
     path: Path  # its file
+    isolation_setting: Isolation | None = None
+
+    @property
+    def isolation(self) -> Isolation:
+        if self.isolation_setting:
+            return self.isolation_setting
+        return "branch" if (self.folder / "ProjectSettings" / "ProjectVersion.txt").is_file() else "worktree"
 
     @property
     def gist(self) -> str:
@@ -71,7 +80,11 @@ def parse(text: str, path: Path) -> Project:
     name = path.stem
     if not NAME.fullmatch(name):
         raise ProjectError(f"{name!r} isn't a project name: lowercase letters, digits and dashes")
-    return Project(name=name, folder=Path(str(meta["folder"])).expanduser(), about=body.strip(), path=path)
+    isolation = meta.get("isolation")
+    if "isolation" in meta and isolation not in ("branch", "worktree"):
+        raise ProjectError("isolation must be `branch` or `worktree`")
+    return Project(name=name, folder=Path(str(meta["folder"])).expanduser(), about=body.strip(), path=path,
+                   isolation_setting=isolation)
 
 
 def name_for(folder: Path) -> str:
@@ -80,7 +93,9 @@ def name_for(folder: Path) -> str:
     return name or "project"
 
 
-def save(home: Path, name: str, folder: Path, about: str) -> Project:
+def save(home: Path, name: str, folder: Path, about: str, isolation: Isolation | None = None) -> Project:
+    if isolation is not None and isolation not in ("branch", "worktree"):
+        raise ProjectError("isolation must be `branch` or `worktree`")
     if not NAME.fullmatch(name):
         raise ProjectError(f"{name!r} isn't a project name: lowercase letters, digits and dashes, at most 40")
     folder = folder.expanduser()
@@ -90,9 +105,12 @@ def save(home: Path, name: str, folder: Path, about: str) -> Project:
     if folder.resolve() == crew or folder.resolve().is_relative_to(crew) or crew.is_relative_to(folder.resolve()):
         raise ProjectError(f"{folder} holds the crew's own settings, so it can't be a project")
     path = home / FOLDER / f"{name}.md"
+    if isolation is None:
+        isolation = parse(path.read_text(), path).isolation_setting if path.is_file() else None
     path.parent.mkdir(parents=True, exist_ok=True)
     shown = str(folder).replace(str(Path.home()), "~", 1) if folder.is_relative_to(Path.home()) else str(folder)
-    path.write_text(f"---\n{yaml.safe_dump({'folder': shown}, sort_keys=False)}---\n{about.strip()}\n")
+    meta = {"folder": shown, **({"isolation": isolation} if isolation is not None else {})}
+    path.write_text(f"---\n{yaml.safe_dump(meta, sort_keys=False)}---\n{about.strip()}\n")
     return parse(path.read_text(), path)
 
 

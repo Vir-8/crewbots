@@ -73,6 +73,7 @@ class Delegation:
                 "to finish before delegating more.")
         version = None
         if review_of:
+            self._check_worktree_sweep()
             work = self._own_child(parent_id, review_of)
             if work.active or work.id in self._runs:
                 raise NotAllowed(f"{work.id} is still working; ask for a review once it has finished")
@@ -84,6 +85,8 @@ class Delegation:
                 raise NotAllowed(
                     f"stop condition: {work.id} has had {MAX_REVIEW_ROUNDS} review rounds. Report to the user with the "
                     "best version and the open objections, instead of another round (team/rules.md).")
+            if work.worktree_path and not Path(work.worktree_path).exists():
+                self._restore_worktree(work)
             workspace = work.worktree_path or work.workspace
         elif workspace and not project:
             self._check_folder(parent, bot, workspace)

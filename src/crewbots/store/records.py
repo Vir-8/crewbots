@@ -44,6 +44,7 @@ class Task:
     review_version: int | None
     merge_state: str | None
     merged_commit: str | None
+    merged_tip: str | None
     briefing: str | None
     kind: str
     room_id: str | None

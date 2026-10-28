@@ -25,7 +25,7 @@ export function task(id: string, bot: string, title: string, fields: Partial<Tas
     id, bot, title, status: "idle", created_by: "user", parent_id: null, workspace: "~/code/acme-web", repo: null,
     worktree_path: null, branch: null, base: null, session_id: `s-${id}`, result: null, error: null,
     input_tokens: 40_000, output_tokens: 1_200, cost_usd: 0, reported: true, turns: 1, review_of: null,
-    review_version: null, merge_state: null, merged_commit: null, kind: "thread", room_id: null, pr: null, routine: null, budget: null, created_at: at,
+    review_version: null, merge_state: null, merged_commit: null, merged_tip: null, kind: "thread", room_id: null, pr: null, routine: null, budget: null, created_at: at,
     updated_at: at, ...fields,
   };
   tasks.set(id, t);

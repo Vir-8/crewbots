@@ -54,6 +54,26 @@ def test_a_file_that_cant_be_read_doesnt_lose_the_rest(tmp_path):
     assert list(loaded) == ["game"] and "frontmatter" in errors["broken.md"]
 
 
+def test_project_isolation_defaults_and_explicit_settings(tmp_path):
+    home, folder, unity = tmp_path / "crew", tmp_path / "project", tmp_path / "unity"
+    home.mkdir()
+    folder.mkdir()
+    (unity / "ProjectSettings").mkdir(parents=True)
+    (unity / "ProjectSettings" / "ProjectVersion.txt").write_text("m_EditorVersion: 6000.3.12f1\n")
+    old = projects.parse(f"---\nfolder: {folder}\n---\nOld project", home / "old.md")
+    assert old.isolation == "worktree"
+    assert projects.save(home, "game", unity, "A game").isolation == "branch"
+    assert projects.save(home, "game", unity, "A game", isolation="worktree").isolation == "worktree"
+    assert projects.save(home, "game", unity, "Updated").isolation == "worktree"
+    assert projects.save(home, "project", folder, "A project", isolation="branch").isolation == "branch"
+    assert projects.load(home)[0]["project"].isolation == "branch"
+    with pytest.raises(ProjectError, match="isolation must"):
+        projects.parse(f"---\nfolder: {folder}\nisolation: invalid\n---\n", home / "bad.md")
+    with pytest.raises(ProjectError, match="isolation must"):
+        projects.save(home, "project", folder, "A project", isolation="invalid")
+    assert projects.load(home)[0]["project"].isolation == "branch"
+
+
 @pytest.fixture
 def client(tmp_path):
     store = Store(tmp_path / "crew.db")
@@ -76,6 +96,20 @@ def test_the_user_adds_and_removes_projects_and_the_crew_sees_them_at_once(clien
     assert client.put("/projects/home", json={"folder": str(tmp_path / "crew")}, headers=AUTH).status_code == 422
     assert client.delete("/projects/game", headers=AUTH).status_code == 204
     assert client.runner.crew.projects == {}
+
+
+def test_project_isolation_api_validates_and_preserves_setting(client, tmp_path):
+    folder = tmp_path / "game"
+    (folder / "ProjectSettings").mkdir(parents=True)
+    (folder / "ProjectSettings" / "ProjectVersion.txt").write_text("Unity")
+    url = "/projects/game"
+    created = client.put(url, json={"folder": str(folder)}, headers=AUTH)
+    assert created.json()["isolation"] == "branch"
+    changed = client.put(url, json={"folder": str(folder), "isolation": "worktree"}, headers=AUTH)
+    assert changed.json()["isolation"] == "worktree"
+    assert client.put(url, json={"folder": str(folder), "about": "edited"}, headers=AUTH).json()["isolation"] == "worktree"
+    assert client.put(url, json={"folder": str(folder), "isolation": "bad"}, headers=AUTH).status_code == 422
+    assert client.get("/projects", headers=AUTH).json()["projects"][0]["isolation"] == "worktree"
 
 
 def test_bringing_in_what_claude_code_and_codex_know(client, monkeypatch):

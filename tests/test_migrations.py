@@ -78,7 +78,8 @@ def test_previous_version_gains_persistent_direct_chat_mutes(tmp_path):
     path = tmp_path / "crewbots.db"
     store = Store(path)
     store.db.execute("drop table chat_mutes")
-    store.db.execute(f"pragma user_version = {len(db_module.MIGRATIONS) - 1}")
+    before_mutes = next(i for i, (name, _) in enumerate(db_module.MIGRATIONS) if name == "direct chat mute settings")
+    store.db.execute(f"pragma user_version = {before_mutes}")
     store.close()
 
     migrated = Store(path)
@@ -92,6 +93,23 @@ def test_previous_version_gains_persistent_direct_chat_mutes(tmp_path):
     reopened.set_chat_muted("chief", False)
     assert not reopened.chat_muted("chief")
     reopened.close()
+
+
+def test_previous_version_gains_merged_tip_without_changing_tasks(tmp_path):
+    path = tmp_path / "crew.db"
+    store = Store(path)
+    task = store.create_task("worker", "merged task")
+    store.update_task(task.id, merge_state="merged", merged_commit="old-merge")
+    store.db.execute("alter table tasks drop column merged_tip")
+    store.db.execute(f"pragma user_version = {len(db_module.MIGRATIONS) - 1}")
+    store.close()
+
+    migrated = Store(path)
+    result = migrated.get_task(task.id)
+    assert result.merged_commit == "old-merge" and result.merged_tip is None
+    migrated.update_task(task.id, merged_tip="tip")
+    assert migrated.get_task(task.id).merged_tip == "tip"
+    migrated.close()
 
 
 def test_a_database_from_before_numbering_but_up_to_date_is_left_as_it_was(tmp_path):

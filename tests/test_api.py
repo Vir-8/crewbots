@@ -20,6 +20,7 @@ def client(tmp_path):
     store = Store(tmp_path / "crew.db")
     runner = Runner(store, make_crew(tmp_path), {"fake": FakeBackend()})
     with TestClient(create_app(runner, TOKEN, PORT), base_url=f"http://127.0.0.1:{PORT}/v1") as c:
+        c.runner = runner
         yield c
     store.close()
 
@@ -37,6 +38,18 @@ def test_every_request_needs_the_token(client):
     assert client.get("/bots").status_code == 403
     assert client.get("/bots", headers={"Authorization": "Bearer wrong"}).status_code == 403
     assert client.get("/bots", headers=AUTH).status_code == 200
+
+
+def test_worktree_maintenance_is_admin_only(client):
+    assert client.post("/worktrees/sweep").status_code == 403
+    assert client.post("/tasks/t_nope/drop-worktree").status_code == 403
+    task = client.runner.store.create_task("worker", "task")
+    client.runner._tokens["bot-token"] = task.id
+    bot_auth = {"Authorization": "Bearer bot-token"}
+    assert client.post("/worktrees/sweep", headers=bot_auth).status_code == 403
+    assert client.post(f"/tasks/{task.id}/drop-worktree", headers=bot_auth).status_code == 403
+    assert client.post("/worktrees/sweep", headers=AUTH).json() == {"removed": [], "kept": []}
+    assert client.post("/tasks/t_nope/drop-worktree", headers=AUTH).status_code == 404
 
 
 def test_a_page_reaching_localhost_under_another_host_name_is_refused(client):

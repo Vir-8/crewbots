@@ -145,7 +145,9 @@ async def test_room_stopped_by_old_default_can_continue_after_migration(tmp_path
     store.update_room(room["id"], stopped=stop)
     limited = store.create_room("Limited", "engineer", ["engineer", "reviewer"])
     store.update_room(limited["id"], max_depth=4, stopped=stop)
-    store.db.execute(f"pragma user_version = {len(MIGRATIONS) - 2}")
+    before_room_stop = next(i for i, (name, _) in enumerate(MIGRATIONS)
+                            if name == "clear stops from the old default room reply limit")
+    store.db.execute(f"pragma user_version = {before_room_stop}")
     store.close()
 
     store = Store(path)

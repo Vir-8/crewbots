@@ -24,6 +24,7 @@ itself once there's room again, or at once when the user releases it. A turn alr
 
 import asyncio
 import contextlib
+import logging
 import os
 import secrets
 import subprocess
@@ -155,6 +156,9 @@ class Runner(Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds
         self.cold_s = cold_s
         self.flush_idle_s = flush_idle_s
         self._turn_ended: dict[str, float] = {}  # task id → when its last turn ended (time.time())
+        self._removed_worktrees: set[str] = set()  # close stale sessions before reopening a removed checkout
+        self._worktree_sweep_done = asyncio.Event()
+        self._worktree_sweep_done.set()
         self._flushed: set[str] = set()  # tasks whose bot set down where things stand since their last turn
         self._dreaming: set[str] = set()  # bots whose memory is being consolidated now
         self._waking: set[str] = set()  # chats looking around on their own (wakes.py): what they say is said unasked
@@ -373,14 +377,6 @@ class Runner(Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds
         self.bus.publish({"type": "crew", "crew": self.state()})
         self.bus.publish({"type": "bots"})  # names and setups the app shows may have changed
 
-    def changes(self, task_id: str) -> str | None:
-        """The task's diff against where its worktree started, or None if it has no worktree."""
-        task = self.store.get_task(task_id)
-        if not task.worktree_path:
-            return None
-        wt = worktree.Worktree(repo=Path(task.repo), path=Path(task.worktree_path), branch=task.branch, base=task.base)
-        return worktree.changes(wt)
-
     def task_for_token(self, token: str) -> Task | None:
         for known, task_id in self._tokens.items():
             if secrets.compare_digest(known, token):
@@ -436,6 +432,8 @@ class Runner(Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds
     async def _run(self, task_id: str, prompt: str, owed: bool = False, nudged: bool = False) -> Done | None:
         """One turn. Returns its Done if it failed, for `_tries` to settle; None once the task is settled."""
         async with self._turn_slot(task_id):
+            if (task := self.store.get_task(task_id)).worktree_path or task.review_of:
+                await self._worktree_sweep_done.wait()
             if task_id in self._attempts:
                 self._attempts[task_id]["state"] = "running"
             task = self._set(task_id, status=Status.RUNNING, error=None)
@@ -444,6 +442,9 @@ class Runner(Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds
                 bot = self.bot_for(task.bot)
                 if bot is None:
                     raise KeyError(f"no bot named {task.bot!r} in the crew")
+                if task_id in self._removed_worktrees:
+                    await self._close_session(task_id)
+                    self._removed_worktrees.discard(task_id)
                 cwd = self._cwd(task, bot)
             except Exception as e:  # a bot removed from the crew, a missing workspace, a git failure
                 self._record(task_id, Done(final_text="", is_error=True, error=f"crewbots: {e}"))
@@ -639,7 +640,12 @@ class Runner(Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds
         return {MCP_SERVER_NAME: McpServer(command=command, args=list(args), env=env)}
 
     def _cwd(self, task: Task, bot: Bot) -> Path:
+        if task.review_of:
+            reviewed = self.store.get_task(task.review_of)
+            if reviewed.worktree_path and task.workspace == reviewed.worktree_path:
+                self._restore_worktree(reviewed)
         if task.worktree_path:
+            self._restore_worktree(task)
             return Path(task.worktree_path)
         workspace = Path(task.workspace).expanduser() if task.workspace else self.crew.folder_of(bot)
         if not task.workspace and not bot.workspace:
@@ -650,6 +656,10 @@ class Runner(Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds
             return workspace
         if not bot.worktree or not worktree.is_repo(workspace):
             return self._in_place(workspace)
+        matching = [p for p in self.crew.projects.values() if workspace.resolve() == p.folder.resolve()]
+        if matching and matching[0].isolation == "branch":
+            logging.getLogger(__name__).info("Project %s uses branch isolation; using a worktree until it is available",
+                                             matching[0].name)
         wt = worktree.create(workspace, task.id, root=self.worktree_root)
         self._set(task.id, repo=str(wt.repo), worktree_path=str(wt.path), branch=wt.branch, base=wt.base)  # watchers see it now
         self._record(task.id, kind="worktree", data={"path": str(wt.path), "branch": wt.branch, "base": wt.base})

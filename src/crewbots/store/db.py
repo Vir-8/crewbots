@@ -40,6 +40,7 @@ create table if not exists tasks (
     review_version integer,                    -- the work's `turns` when this review was asked for
     merge_state   text,                        -- null, proposed (by its coordinator), or merged (by the user)
     merged_commit text,
+    merged_tip    text,                        -- task branch tip at merge, before its checkout is removed
     briefing      text,                        -- where things stood, carried into a fresh session at rollover
     kind          text not null default 'thread', -- chat, seat or thread
     room_id       text,                        -- a seat's room
@@ -442,6 +443,7 @@ MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] =
     ("clear stops from the old default room reply limit",
      lambda db, _: db.execute("update rooms set stopped = null where max_depth is null")),
     ("direct chat mute settings", lambda db, _: db.executescript(CHAT_MUTES)),
+    ("remember a merged task's branch tip", _add_columns("tasks", {"merged_tip": "text"})),
 ]
 
 

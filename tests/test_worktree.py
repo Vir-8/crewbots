@@ -53,6 +53,23 @@ def test_remove_deletes_the_checkout_and_optionally_the_branch(repo, tmp_path):
     assert "crewbots/task-4" not in branches
 
 
+def test_prune_failure_is_logged_after_checkout_and_branch_are_removed(repo, tmp_path, monkeypatch, caplog):
+    wt = worktree.create(repo, "task-5", root=tmp_path / "wts")
+    original = worktree._git
+
+    def fail(cwd, *args, **kwargs):
+        if args[:2] == ("worktree", "prune"):
+            raise worktree.GitError("prune failed")
+        return original(cwd, *args, **kwargs)
+
+    monkeypatch.setattr(worktree, "_git", fail)
+    assert worktree.remove(wt, delete_branch=True)
+    assert not wt.path.exists()
+    assert "prune failed" in caplog.text
+    with pytest.raises(worktree.GitError):
+        original(repo, "rev-parse", "--verify", wt.branch)
+
+
 def test_names_that_could_escape_the_root_are_refused(repo, tmp_path):
     with pytest.raises(ValueError):
         worktree.create(repo, "../outside", root=tmp_path / "wts")

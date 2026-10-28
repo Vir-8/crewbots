@@ -4,6 +4,7 @@ Worktrees live under ~/.crewbots, not inside the repo, so they never show up as 
 """
 
 import hashlib
+import logging
 import re
 import subprocess
 from dataclasses import dataclass
@@ -41,6 +42,20 @@ def create(repo: Path, name: str, root: Path | None = None) -> Worktree:
     return Worktree(repo=top, path=path, branch=branch, base=base)
 
 
+def restore(wt: Worktree, *, tip: str | None = None) -> None:
+    """Reopen saved work when a task is resumed."""
+    if tip:
+        exists = subprocess.run([paths.git(), "show-ref", "--verify", "--quiet", f"refs/heads/{wt.branch}"],
+                                cwd=wt.repo, capture_output=True)
+        if exists.returncode == 1:
+            _git(wt.repo, "worktree", "add", "-b", wt.branch, str(wt.path), tip)
+            return
+        if exists.returncode != 0:
+            raise GitError(f"could not check task branch {wt.branch}: {exists.stderr.decode(errors='replace').strip()}")
+        _git(wt.repo, "merge-base", "--is-ancestor", tip, wt.branch)
+    _git(wt.repo, "worktree", "add", str(wt.path), wt.branch)
+
+
 def changes(wt: Worktree) -> str:
     """Everything the bot changed since `base`, committed or not, new files included."""
     _git(wt.path, "add", "--all")
@@ -56,7 +71,7 @@ def commit(wt: Worktree, message: str) -> str | None:
     return _git(wt.path, "rev-parse", "HEAD")
 
 
-def merge(wt: Worktree, message: str) -> str:
+def merge(wt: Worktree, message: str, *, tip: str | None = None) -> str:
     """Merges the worktree's branch into whatever branch the main checkout has out, with a merge commit, and returns
     that commit. It refuses a checkout with uncommitted changes, and a conflict is aborted, so it either merges cleanly
     or changes nothing."""
@@ -67,17 +82,30 @@ def merge(wt: Worktree, message: str) -> str:
     except GitError:
         raise GitError(f"{wt.repo} is not on a branch (detached HEAD); check out the branch to merge into") from None
     try:
-        _git(wt.repo, "merge", "--no-ff", "--no-edit", "-m", message, wt.branch)
+        _git(wt.repo, "merge", "--no-ff", "--no-edit", "-m", message, tip or wt.branch)
     except GitError as e:
         subprocess.run([paths.git(), "merge", "--abort"], cwd=wt.repo, capture_output=True)
         raise GitError(f"merging {wt.branch} into {into} failed, and nothing was changed: {e}") from None
     return _git(wt.repo, "rev-parse", "HEAD")
 
 
-def remove(wt: Worktree, delete_branch: bool = False) -> None:
-    _git(wt.repo, "worktree", "remove", "--force", str(wt.path))
+def remove(wt: Worktree, delete_branch: bool = False, *, branch_tip: str | None = None) -> bool:
+    """Remove a checkout; later branch/prune failures are warnings. Return whether the branch was deleted."""
+    if delete_branch and branch_tip is None:
+        branch_tip = _git(wt.repo, "rev-parse", f"refs/heads/{wt.branch}")
+    _git(wt.repo, "worktree", "remove", str(wt.path))
+    branch_deleted = False
     if delete_branch:
-        _git(wt.repo, "branch", "-D", wt.branch)
+        try:
+            _git(wt.repo, "update-ref", "-d", f"refs/heads/{wt.branch}", branch_tip)
+            branch_deleted = True
+        except (GitError, OSError):
+            logging.getLogger(__name__).exception("Could not delete branch %s after worktree removal", wt.branch)
+    try:
+        _git(wt.repo, "worktree", "prune")
+    except (GitError, OSError):
+        logging.getLogger(__name__).exception("Could not prune worktrees after removing %s", wt.path)
+    return branch_deleted
 
 
 def _git(cwd: Path, *args: str, strip: bool = True) -> str:
