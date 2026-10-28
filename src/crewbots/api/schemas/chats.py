@@ -55,9 +55,14 @@ class ChatOut(BaseModel):
     room: RoomOut | None
     last: LastMessage | None
     unread: int
+    muted: bool = False
     working: bool
     updated_at: str
     pinned: int | None = None  # its place among the chats pinned to the top of the sidebar
+
+
+class ChatMute(BaseModel):
+    muted: bool
 
 
 class NewThread(BaseModel):

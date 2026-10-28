@@ -12,6 +12,7 @@ struct TaskLite {
     status: String,
     kind: String, // chat, seat or thread
     parent_id: Option<String>,
+    room_id: Option<String>,
     merge_state: Option<String>,
     result: Option<String>,
 }
@@ -27,6 +28,7 @@ impl TaskLite {
                 status: text("status").unwrap_or_default(),
                 kind: text("kind").unwrap_or_else(|| "thread".into()),
                 parent_id: text("parent_id"),
+                room_id: text("room_id"),
                 merge_state: text("merge_state"),
                 result: text("result"),
             },
@@ -117,6 +119,7 @@ pub struct CrewView {
     tasks: HashMap<String, TaskLite>,
     paused: bool,
     muted: HashSet<String>, // group chats you muted: what's said there isn't announced
+    muted_bots: HashSet<String>,
 }
 
 impl CrewView {
@@ -141,11 +144,32 @@ impl CrewView {
         }
     }
 
+    pub fn set_chat_mute(&mut self, bot: &str, muted: bool) {
+        if muted { self.muted_bots.insert(bot.to_string()); } else { self.muted_bots.remove(bot); }
+    }
+
+    pub fn set_chats(&mut self, response: &Value) {
+        if response["ok"].as_bool() != Some(true) { return; }
+        let Some(chats) = response["data"].as_array() else { return };
+        self.muted_bots.clear();
+        for chat in chats {
+            if let Some(bot) = chat["bot"].as_str() {
+                self.set_chat_mute(bot, chat["muted"].as_bool().unwrap_or(false));
+            }
+        }
+    }
+
+    fn muted_task(&self, task: &TaskLite) -> bool {
+        (task.kind == "chat" && self.muted_bots.contains(&task.bot))
+            || (task.kind == "seat" && task.room_id.as_ref().is_some_and(|room| self.muted.contains(room)))
+    }
+
     /// Takes in one task update and says whether it's worth a notification.
     pub fn update(&mut self, task: &Value) -> Option<Alert> {
         let (id, now) = TaskLite::from(task)?;
         let before = self.tasks.insert(id.clone(), now.clone());
         let before = before?; // a task just created: you made it, or a bot delegated it; nothing to announce
+        if self.muted_task(&now) { return None; }
         if before.merge_state.as_deref() != Some("proposed") && now.merge_state.as_deref() == Some("proposed") {
             return Some(Alert::Merge { title: now.title });
         }
@@ -177,7 +201,9 @@ impl CrewView {
         if event["kind"].as_str()? != "text" || event["data"]["level"].as_str()? != "needs_you" {
             return None;
         }
-        let bot = self.tasks.get(event["task_id"].as_str()?).map(|t| t.bot.clone()).unwrap_or_default();
+        let task = self.tasks.get(event["task_id"].as_str()?);
+        if task.is_some_and(|t| self.muted_task(t)) { return None; }
+        let bot = task.map(|t| t.bot.clone()).unwrap_or_default();
         Some(Alert::NeedsYou { bot, text: event["data"]["text"].as_str().unwrap_or_default().to_string() })
     }
 
@@ -292,6 +318,58 @@ mod tests {
         assert!(matches!(view.said(&shared), Some(Alert::Said { text, .. }) if text == "cut.mp4"));
         view.set_rooms(&[json!({"id": "r1", "muted": false})]);
         assert!(view.said(&said).is_some());
+    }
+
+    #[test]
+    fn a_muted_direct_chat_suppresses_all_its_alerts_until_unmuted() {
+        let mut view = CrewView::default();
+        let mut chat = task("c", "running", None);
+        chat["kind"] = json!("chat");
+        view.load(&[chat.clone()], false);
+        view.set_chats(&json!({"ok": true, "data": [{"bot": "chief", "muted": true}]}));
+        chat["status"] = json!("needs_input");
+        assert_eq!(view.update(&chat), None);
+        let raised = json!({"task_id": "c", "kind": "text", "data": {"level": "needs_you", "text": "hi"}});
+        assert_eq!(view.raised(&raised), None);
+        chat["status"] = json!("running");
+        view.update(&chat);
+        chat["status"] = json!("idle");
+        assert_eq!(view.update(&chat), None);
+        view.set_chat_mute("chief", false);
+        assert!(view.raised(&raised).is_some());
+        chat["status"] = json!("running");
+        view.update(&chat);
+        chat["status"] = json!("idle");
+        assert!(matches!(view.update(&chat), Some(Alert::Replied { .. })));
+    }
+
+    #[test]
+    fn failed_or_invalid_chat_load_keeps_mutes_but_a_valid_empty_list_clears_them() {
+        let mut view = CrewView::default();
+        let mut chat = task("c", "running", None);
+        chat["kind"] = json!("chat");
+        view.load(&[chat], false);
+        view.set_chat_mute("chief", true);
+        let raised = json!({"task_id": "c", "kind": "text", "data": {"level": "needs_you", "text": "hi"}});
+        for response in [json!({"ok": false, "data": {"detail": "offline"}}),
+                         json!({"ok": false, "data": []}), json!({"ok": true, "data": null})] {
+            view.set_chats(&response);
+            assert_eq!(view.raised(&raised), None);
+        }
+        view.set_chats(&json!({"ok": true, "data": []}));
+        assert!(view.raised(&raised).is_some());
+    }
+
+    #[test]
+    fn a_muted_group_seat_does_not_announce_a_hold() {
+        let mut view = CrewView::default();
+        let mut seat = task("s", "running", None);
+        seat["kind"] = json!("seat");
+        seat["room_id"] = json!("r1");
+        view.load(&[seat.clone()], false);
+        view.set_rooms(&[json!({"id": "r1", "muted": true})]);
+        seat["status"] = json!("held");
+        assert_eq!(view.update(&seat), None);
     }
 
     #[test]

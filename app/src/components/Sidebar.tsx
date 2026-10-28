@@ -81,6 +81,12 @@ export function Sidebar(props: {
         setMenu({ key: chat.key, x: e.clientX, y: e.clientY });
       },
       onKeyDown: (e) => {
+        if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+          e.preventDefault();
+          const rect = e.currentTarget.getBoundingClientRect();
+          setMenu({ key: chat.key, x: rect.left, y: rect.bottom });
+          return;
+        }
         if (!e.altKey || place === null || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
         e.preventDefault();
         pin(chat.key, place + (e.key === "ArrowUp" ? -1 : 1));
@@ -114,6 +120,12 @@ export function Sidebar(props: {
   const rowClass = (chat: Chat) =>
     `${dragging === chat.key ? "dragging" : ""} ${drop?.key === chat.key && dragging !== chat.key ? (drop.after ? "drop-after" : "drop-before") : ""}`;
   const waiting = crew.reviewInbox?.assigned?.length ?? 0; // assigned to you; review requests are in the list itself
+  const selected = crew.chats.find((chat) => chat.key === menu?.key);
+  const rowMenu = menu && selected && (
+    <RowMenu at={menu} place={pins.includes(menu.key) ? pins.indexOf(menu.key) : null} last={pins.length - 1}
+      muted={Boolean(selected.muted)} onMute={() => { void crew.muteChat(selected, !selected.muted).catch(() => undefined); }}
+      onPin={(to) => pin(menu.key, to)} onClose={() => setMenu(null)} />
+  );
 
   if (props.rail) {
     return (
@@ -145,13 +157,15 @@ export function Sidebar(props: {
         <div className="rail-sep" />
         <div className="chat-list rail-chats">
           {chats.map((chat) => (
-            <button key={chat.key} className={`rail-chat ${props.current === chat.key ? "on" : ""}`} onClick={() => props.onChat(chat.key)} title={chat.kind === "group" ? chat.title : labelOf(chat.bot!)}>
+            <button key={chat.key} className={`rail-chat ${props.current === chat.key ? "on" : ""}`} onClick={() => props.onChat(chat.key)} title={chat.kind === "group" ? chat.title : labelOf(chat.bot!)} {...rowProps(chat)}>
               {chat.kind === "group" ? <GroupAvatar members={chat.room!.members} size={34} /> : <Avatar name={chat.bot!} size={34} working={chat.working} />}
+              {chat.muted && <Icon name="bellOff" size={12} className="chat-row-muted" />}
               {chat.unread > 0 && props.current !== chat.key && <span className="unread-dot" />}
             </button>
           ))}
         </div>
         <CrewMenu crew={crew} current={props.current} onPage={props.onChat} onNewGroup={props.onNewGroup} rail />
+        {rowMenu}
       </aside>
     );
   }
@@ -211,25 +225,17 @@ export function Sidebar(props: {
             <Icon name="chevronDown" size={12} className={showArchived ? "flip" : ""} />
           </button>
         )}
-        {showArchived && archived.map((chat) => <ChatRow key={chat.key} chat={chat} on={props.current === chat.key} onClick={() => props.onChat(chat.key)} />)}
+        {showArchived && archived.map((chat) => <ChatRow key={chat.key} chat={chat} on={props.current === chat.key} onClick={() => props.onChat(chat.key)} extra={rowProps(chat)} />)}
       </div>
 
       <CrewMenu crew={crew} current={props.current} onPage={props.onChat} onNewGroup={props.onNewGroup} />
-      {menu && (
-        <RowMenu
-          at={menu}
-          place={pins.includes(menu.key) ? pins.indexOf(menu.key) : null}
-          last={pins.length - 1}
-          onPin={(to) => pin(menu.key, to)}
-          onClose={() => setMenu(null)}
-        />
-      )}
+      {rowMenu}
     </aside>
   );
 }
 
 /** A chat's own menu, where you right-clicked it: pin it to the top, unpin it, or move it among the pinned. */
-function RowMenu(props: { at: { x: number; y: number }; place: number | null; last: number; onPin: (to: number | null) => void; onClose: () => void }) {
+export function RowMenu(props: { at: { x: number; y: number }; place: number | null; last: number; muted: boolean; onMute: () => void; onPin: (to: number | null) => void; onClose: () => void }) {
   const { place } = props;
   useEffect(() => {
     const close = (e: Event) => (e instanceof KeyboardEvent ? e.key === "Escape" && props.onClose() : props.onClose());
@@ -253,6 +259,7 @@ function RowMenu(props: { at: { x: number; y: number }; place: number | null; la
   );
   return (
     <div className="row-menu" role="menu" style={{ left: props.at.x, top: props.at.y }} onPointerDown={(e) => e.stopPropagation()}>
+      <button autoFocus role="menuitem" className="row-menu-item" onClick={() => { props.onMute(); props.onClose(); }}>{props.muted ? "Unmute" : "Mute"}</button>
       {place === null ? item("Pin to the top", props.last + 1) : item("Unpin", null)}
       {place !== null && item("Move up", place - 1, place === 0)}
       {place !== null && item("Move down", place + 1, place === props.last)}
@@ -333,7 +340,7 @@ function CrewMenu({ crew, current, onPage, onNewGroup, rail }: { crew: Crew; cur
   );
 }
 
-function ChatRow({ chat, on, onClick, extra, className = "" }: { chat: Chat; on: boolean; onClick: () => void; extra?: HTMLAttributes<HTMLButtonElement>; className?: string }) {
+export function ChatRow({ chat, on, onClick, extra, className = "" }: { chat: Chat; on: boolean; onClick: () => void; extra?: HTMLAttributes<HTMLButtonElement>; className?: string }) {
   const preview = chat.last
     ? `${chat.kind === "group" ? `${chat.last.author === "user" ? "You" : labelOf(chat.last.author)}: ` : chat.last.author === "user" ? "You: " : ""}${oneLine(chat.last.text, 90)}`
     : chat.kind === "group"
@@ -345,12 +352,12 @@ function ChatRow({ chat, on, onClick, extra, className = "" }: { chat: Chat; on:
       <span className="chat-row-text">
         <span className="chat-row-top">
           <span className="chat-row-title">{chat.kind === "group" ? chat.title : labelOf(chat.bot!)}</span>
-          {chat.room?.muted && <Icon name="bellOff" size={12} className="chat-row-muted" />}
+          {chat.muted && <Icon name="bellOff" size={12} className="chat-row-muted" />}
           {chat.last && <span className="chat-row-time">{ago(chat.last.at, true)}</span>}
         </span>
         <span className="chat-row-bottom">
           <span className={`chat-row-preview ${chat.working ? "working" : ""}`}>{chat.working && !chat.unread ? "Working…" : preview}</span>
-          {chat.unread > 0 && !on && <span className={`unread-dot ${chat.room?.muted ? "muted" : ""}`} />}
+          {chat.unread > 0 && !on && <span className={`unread-dot ${chat.muted ? "muted" : ""}`} />}
         </span>
       </span>
     </button>

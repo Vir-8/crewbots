@@ -74,6 +74,7 @@ export const api = {
   threadFor: (bot: string, goal: string) => call<Task>("POST", `/chats/bot/${encodeURIComponent(bot)}/threads`, { goal }),
   rememberFor: (bot: string, text: string) => call<{ title: string; path: string }>("POST", `/chats/bot/${encodeURIComponent(bot)}/notes`, { text }),
   /** Pins chats to the top of the sidebar, in this order; the rest are unpinned. */
+  muteChat: (bot: string, muted: boolean) => call<{ muted: boolean }>("PUT", `/chats/bot/${bot}/mute`, { muted }),
   setPins: (pins: string[]) => call<{ pins: string[] }>("PUT", "/pins", { pins }),
   say: (bot: string, text: string, attachments: string[] = []) => call<Task>("POST", `/chats/bot/${encodeURIComponent(bot)}/messages`, { text, attachments }),
   read: (key: string) => call<{ ok: boolean }>("POST", `/chats/${encodeURIComponent(key)}/read`),

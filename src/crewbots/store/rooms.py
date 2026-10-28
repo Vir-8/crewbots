@@ -71,6 +71,15 @@ class Rooms:
         row = self.db.execute("select seen from reads where key = ?", (key,)).fetchone()
         return row["seen"] if row else 0
 
+    def chat_muted(self, bot: str) -> bool:
+        return bool(self.db.execute("select 1 from chat_mutes where bot = ?", (bot,)).fetchone())
+
+    def set_chat_muted(self, bot: str, muted: bool) -> None:
+        if muted:
+            self.db.execute("insert or ignore into chat_mutes (bot) values (?)", (bot,))
+        else:
+            self.db.execute("delete from chat_mutes where bot = ?", (bot,))
+
     def pins(self) -> list[str]:
         """The chats pinned to the top of the sidebar, in the user's order: `bot:<name>` and `room:<id>`."""
         return [r["key"] for r in self.db.execute("select key from pins order by position")]

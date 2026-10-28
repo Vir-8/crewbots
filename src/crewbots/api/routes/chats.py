@@ -19,6 +19,7 @@ from crewbots.api.schemas import (
     RoomOut,
     TaskOut,
 )
+from crewbots.api.schemas.chats import ChatMute
 from crewbots.store import Status
 
 MAX_PINS = 50
@@ -44,7 +45,8 @@ def routes(c: Context) -> APIRouter:
             last = {"author": bot, "text": _said(said.data), "at": said.at}
         unread = store.count_events_after(chat.id, store.seen(f"chat:{chat.id}"), ("text", "shared", "escalation"))
         return {"key": f"bot:{bot}", "kind": "direct", "title": runner.crew.bots[bot].title, "bot": bot,
-                "task_id": chat.id, "room": None, "last": last, "unread": unread, "working": busy(chat.id),
+                "task_id": chat.id, "room": None, "last": last, "unread": unread,
+                "muted": store.chat_muted(bot), "working": busy(chat.id),
                 "updated_at": last["at"] if last else chat.created_at}
 
     def group(room: dict[str, Any]) -> dict[str, Any]:
@@ -55,7 +57,8 @@ def routes(c: Context) -> APIRouter:
         last = {"author": message["author"], "text": _said(message), "at": message["at"]} if message else None
         return {"key": f"room:{room['id']}", "kind": "group", "title": room["title"], "bot": None, "task_id": None,
                 "room": room, "last": last,
-                "unread": unread, "working": any(s and busy(s.id) for s in seats), "updated_at": room["updated_at"]}
+                "unread": unread, "muted": room["muted"], "working": any(s and busy(s.id) for s in seats),
+                "updated_at": room["updated_at"]}
 
     def room_or_404(room_id: str) -> dict[str, Any]:
         try:
@@ -71,6 +74,14 @@ def routes(c: Context) -> APIRouter:
         pinned = {key: n for n, key in enumerate(store.pins())}
         listed = [direct(b) for b in runner.crew.bots] + [group(r) for r in store.rooms()]
         return [{**c, "pinned": pinned.get(c["key"])} for c in listed]
+
+    @v1.put("/chats/bot/{bot}/mute", response_model=ChatMute)
+    async def mute_chat(bot: str, body: ChatMute):
+        if bot not in runner.crew.bots:
+            raise HTTPException(404, f"no bot named {bot!r}")
+        store.set_chat_muted(bot, body.muted)
+        runner.bus.publish({"type": "chat_mute", "bot": bot, "muted": body.muted})
+        return body
 
     @v1.get("/pins", response_model=Pins)
     async def pins():

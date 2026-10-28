@@ -81,6 +81,11 @@ async function request(method: string, path: string, body?: any) {
     }
     return ok({ pins });
   }
+  if (method === "PUT" && parts[0] === "chats" && parts[1] === "bot" && parts[3] === "mute") {
+    if (body.muted) demo.mutedBots.add(parts[2]); else demo.mutedBots.delete(parts[2]);
+    publish({ type: "chat_mute", bot: parts[2], muted: body.muted });
+    return ok({ muted: body.muted });
+  }
   if (method === "POST" && parts[0] === "chats" && parts[1] === "bot" && parts[3] === "threads") {
     const thread = demo.task(`t_new${Date.now().toString(16).slice(-7)}`, parts[2], body.goal, { parent_id: demo.chatIds[parts[2]], status: "running", reported: false });
     say(thread.id, "message", { from: "user", text: body.goal });

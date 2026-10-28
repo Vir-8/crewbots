@@ -94,7 +94,7 @@ export function useCrew() {
           reloadChats();
           return;
         }
-        if (message.type === "pins") {
+        if (message.type === "pins" || message.type === "chat_mute") {
           reloadChats();
           return;
         }
@@ -189,6 +189,8 @@ export function useCrew() {
     read: (key: string) => api.read(key).then(reloadChats, () => undefined),
     carryOn: (roomId: string) => act(api.carryOn(roomId)),
     react: (id: number, reaction: "up" | "down") => act(api.react(id, reaction)),
+    muteChat: (chat: Chat, muted: boolean) => (chat.kind === "group"
+      ? act(api.changeRoom(chat.room!.id, { muted })) : act(api.muteChat(chat.bot!, muted))).then(() => loadChats()),
     changeRoom: (roomId: string, change: RoomChange) => act(api.changeRoom(roomId, change)),
     deleteRoom: (roomId: string) => act(api.deleteRoom(roomId)),
     threadFor: (bot: string, goal: string) => act(api.threadFor(bot, goal)),

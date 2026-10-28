@@ -144,7 +144,7 @@ async def test_room_stopped_by_old_default_can_continue_after_migration(tmp_path
     store.update_room(room["id"], stopped=stop)
     limited = store.create_room("Limited", "engineer", ["engineer", "reviewer"])
     store.update_room(limited["id"], max_depth=4, stopped=stop)
-    store.db.execute(f"pragma user_version = {len(MIGRATIONS) - 1}")
+    store.db.execute(f"pragma user_version = {len(MIGRATIONS) - 2}")
     store.close()
 
     store = Store(path)
@@ -353,6 +353,24 @@ def test_group_chats_bots_open_stay_small_and_only_members_bring_others_in(crew,
 
 
 # Over the API.
+
+
+def test_direct_mute_persists_and_is_served_without_erasing_unread(crew, store, tmp_path):
+    with TestClient(create_app(crew.runner, "t", 8765), base_url="http://127.0.0.1:8765/v1") as client:
+        auth = {"Authorization": "Bearer t"}
+        chat = crew.runner.chat("engineer")
+        store.append_event(chat.id, kind="text", data={"text": "hello"})
+        with crew.runner.bus.subscribe() as queue:
+            assert client.put("/chats/bot/engineer/mute", json={"muted": True}, headers=auth).json() == {"muted": True}
+            assert queue.get_nowait() == {"type": "chat_mute", "bot": "engineer", "muted": True}
+        listed = next(c for c in client.get("/chats", headers=auth).json() if c["bot"] == "engineer")
+        assert listed["muted"] and listed["unread"] == 1
+        other = Store(tmp_path / "crew.db")
+        assert other.chat_muted("engineer") and not other.chat_muted("chief")
+        other.close()
+        assert client.put("/chats/bot/missing/mute", json={"muted": True}, headers=auth).status_code == 404
+        assert client.put("/chats/bot/engineer/mute", json={"muted": False}, headers=auth).json() == {"muted": False}
+        assert not store.chat_muted("engineer")
 
 
 def test_the_app_sees_every_conversation_with_what_is_unread(crew, store):

@@ -27,7 +27,7 @@ import { Composer } from "./components/Composer";
 import { DirectChat, GroupChat } from "./components/ChatView";
 import { Panel } from "./components/Panel";
 import { Profile, RoomProfile } from "./components/Profile";
-import { Sidebar } from "./components/Sidebar";
+import { ChatRow, RowMenu, Sidebar } from "./components/Sidebar";
 import { MergeButton, WorkCard } from "./components/WorkCard";
 import { Question } from "./components/Question";
 import { UpdatesDialog } from "./components/UpdatesDialog";
@@ -40,6 +40,35 @@ function find(node: any, type: any): ReactElement<any> | undefined {
 }
 function render(component: () => ReactElement<any>) { hooks.index = 0; return component(); }
 beforeEach(() => { hooks.values = []; hooks.effects = []; localStorage.clear(); });
+
+it("toggles mute from the existing chat menu", () => {
+  const onMute = vi.fn();
+  const onClose = vi.fn();
+  const props = { at: { x: 0, y: 0 }, place: null, last: -1, onPin: vi.fn(), onMute, onClose };
+  const mute = find(render(() => RowMenu({ ...props, muted: false })), "button")!;
+  expect(mute.props.children).toBe("Mute");
+  mute.props.onClick();
+  expect(onMute).toHaveBeenCalledOnce();
+  expect(onClose).toHaveBeenCalledOnce();
+  expect(find(render(() => RowMenu({ ...props, muted: true })), "button")!.props.children).toBe("Unmute");
+});
+
+it("opens the row menu with a right click or keyboard and mutes the selected chat", () => {
+  const chat = { key: "bot:chief", kind: "direct", bot: "chief", title: "Chief", muted: false, unread: 0, working: false, updated_at: "" } as any;
+  const muteChat = vi.fn().mockResolvedValue(undefined);
+  const props = { crew: { chats: [chat], inbox: [], bots: [], muteChat } as any, current: null, rail: false,
+    onChat: vi.fn(), onOpen: vi.fn(), onNewGroup: vi.fn(), onExpand: vi.fn() };
+  const draw = () => render(() => Sidebar(props));
+  find(draw(), ChatRow)!.props.extra.onContextMenu({ preventDefault: vi.fn(), clientX: 20, clientY: 30 });
+  const menu = find(draw(), RowMenu)!;
+  expect(menu.props.at).toMatchObject({ key: chat.key, x: 20, y: 30 });
+  menu.props.onMute();
+  expect(muteChat).toHaveBeenCalledWith(chat, true);
+  menu.props.onClose();
+  find(draw(), ChatRow)!.props.extra.onKeyDown({ key: "F10", shiftKey: true, preventDefault: vi.fn(),
+    currentTarget: { getBoundingClientRect: () => ({ left: 12, bottom: 45 }) } });
+  expect(find(draw(), RowMenu)!.props.at).toMatchObject({ x: 12, y: 45 });
+});
 
 it("opens and sends an Other answer from a question", () => {
   const send = vi.fn().mockResolvedValue(undefined);

@@ -25,6 +25,11 @@ class LiveRoomMessage(BaseModel):
     type: Literal["room_message"]
     message: RoomMessageOut
 
+class LiveChatMute(BaseModel):
+    type: Literal["chat_mute"]
+    bot: str
+    muted: bool
+
 class LivePins(BaseModel):
     type: Literal["pins"]
     pins: list[str]
@@ -46,4 +51,4 @@ class LiveEvent(BaseModel):
     event: EventOut
 
 LiveMessage = Annotated[LiveTask | LiveEvent | LiveCrew | LiveBots | LiveRoom | LiveRoomGone | LiveRoomMessage | LivePins
-                        | LivePage, Field(discriminator="type")]
+                        | LivePage | LiveChatMute, Field(discriminator="type")]

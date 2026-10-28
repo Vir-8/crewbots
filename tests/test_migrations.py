@@ -74,6 +74,26 @@ def test_a_new_database_starts_with_every_step_done(tmp_path, monkeypatch):
     assert ran == [] and store.db.execute("pragma user_version").fetchone()[0] == 1
 
 
+def test_previous_version_gains_persistent_direct_chat_mutes(tmp_path):
+    path = tmp_path / "crewbots.db"
+    store = Store(path)
+    store.db.execute("drop table chat_mutes")
+    store.db.execute(f"pragma user_version = {len(db_module.MIGRATIONS) - 1}")
+    store.close()
+
+    migrated = Store(path)
+    assert migrated.db.execute("pragma user_version").fetchone()[0] == len(db_module.MIGRATIONS)
+    assert not migrated.chat_muted("chief")
+    migrated.set_chat_muted("chief", True)
+    migrated.close()
+
+    reopened = Store(path)
+    assert reopened.chat_muted("chief")
+    reopened.set_chat_muted("chief", False)
+    assert not reopened.chat_muted("chief")
+    reopened.close()
+
+
 def test_a_database_from_before_numbering_but_up_to_date_is_left_as_it_was(tmp_path):
     path = tmp_path / "crewbots.db"
     store = Store(path)

@@ -237,6 +237,13 @@ create table if not exists pins (
 """
 SCHEMA += PINS
 
+CHAT_MUTES = """
+create table if not exists chat_mutes (
+    bot text primary key
+);
+"""
+SCHEMA += CHAT_MUTES
+
 WAKES = """
 create table if not exists wakes (  -- an always-on bot's own looks around (runner/wakes.py)
     bot       text primary key,
@@ -422,6 +429,7 @@ MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] =
     ("crew settings", lambda db, _: db.executescript(SETTINGS)),
     ("clear stops from the old default room reply limit",
      lambda db, _: db.execute("update rooms set stopped = null where max_depth is null")),
+    ("direct chat mute settings", lambda db, _: db.executescript(CHAT_MUTES)),
 ]
 
 

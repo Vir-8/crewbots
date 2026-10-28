@@ -160,6 +160,14 @@
   color: var(--faint);
 }
 
+.rail-chat .chat-row-muted {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  background: var(--side);
+  border-radius: 3px;
+}
+
 /* Archived group chats, below the list and folded away */
 .archived-toggle {
   display: flex;

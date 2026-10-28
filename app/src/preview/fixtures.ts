@@ -19,13 +19,13 @@ export function chats() {
     return {
       key: `bot:${b.name}`, kind: "direct", title: b.title, bot: b.name, task_id: id, room: null,
       last: last ? { author: last.kind === "text" ? b.name : "user", text: String(last.data.text), at: last.at } : null,
-      unread: b.name === "engineer" ? 1 : 0, working: family.some((t) => t.status === "running") || b.name === "engineer",
+      muted: demo.mutedBots.has(b.name), unread: b.name === "engineer" ? 1 : 0, working: family.some((t) => t.status === "running") || b.name === "engineer",
       updated_at: last?.at ?? "",
     };
   });
   const groups = demo.rooms.map((room) => {
     const last = demo.roomMessages.get(room.id)?.at(-1);
-    return { key: `room:${room.id}`, kind: "group", title: room.title, bot: null, task_id: null, room, last: last ? { author: last.author, text: last.text, at: last.at } : null, unread: 0, working: false, updated_at: last?.at ?? room.updated_at };
+    return { key: `room:${room.id}`, kind: "group", title: room.title, bot: null, task_id: null, room, muted: Boolean(room.muted), last: last ? { author: last.author, text: last.text, at: last.at } : null, unread: 0, working: false, updated_at: last?.at ?? room.updated_at };
   });
   return [...direct, ...groups].map((c) => ({ ...c, pinned: pins.includes(c.key) ? pins.indexOf(c.key) : null }));
 }

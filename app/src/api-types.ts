@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "39c235867460";
+export const API_SCHEMA = "e44cc46c909c";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -163,6 +163,10 @@ export interface ChangesOut {
   diff: string | null;
 }
 
+export interface ChatMute {
+  muted: boolean;
+}
+
 export interface ChatOut {
   key: string;
   kind: "direct" | "group";
@@ -172,6 +176,7 @@ export interface ChatOut {
   room: RoomOut | null;
   last: LastMessage | null;
   unread: number;
+  muted?: boolean;
   working: boolean;
   updated_at: string;
   pinned?: number | null;
@@ -430,6 +435,12 @@ export interface LeaseRef {
 
 export interface LiveBots {
   type: "bots";
+}
+
+export interface LiveChatMute {
+  type: "chat_mute";
+  bot: string;
+  muted: boolean;
 }
 
 export interface LiveCrew {

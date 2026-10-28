@@ -4,6 +4,7 @@ import { files, made } from "./files";
 import { bots, done, emit, message, say, task, tasks, tick, tool } from "./make";
 import type { Attachment, Room } from "../../types";
 
+export const mutedBots = new Set(["reviewer"]);
 export const chatIds: Record<string, string> = {};
 const overflowExample = "A long code line stays in its block:\n\n```text\n" + "export_column_name_".repeat(12) + "\n```\n\nThe URL https://example.com/" + "long-path-segment-".repeat(10) + " and inline code `" + "long_identifier_".repeat(12) + "` wrap inside this message. The paragraph remains visible.";
 for (const b of bots) {
