@@ -40,6 +40,7 @@ class BrowserSession:
     loaded: asyncio.Event = field(default_factory=asyncio.Event)
     auth_requests: deque = field(default_factory=lambda: deque(maxlen=200))
     idle: asyncio.Task | None = None
+    failure: str | None = None
 
 
 class Browser:
@@ -76,10 +77,11 @@ class Browser:
                 f"--user-data-dir={self.profile}", "--no-first-run", "--no-default-browser-check",
                 "--disable-background-networking", "--disable-component-update", "--disable-sync",
                 "--disable-extensions", "--disable-quic", "--disable-features=MediaRouter",
+                # NetworkContext proxy overrides are not restored after a network service restart.
+                "--enable-features=NetworkServiceInProcess2",
                 "--disable-breakpad", "--disable-crash-reporter",
                 "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
-                "--proxy-server=http://127.0.0.1:9", "--proxy-bypass-list=<-loopback>",
-                "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost",
+                "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1",
                 "--password-store=basic", "--use-mock-keychain", "about:blank",
             ], self._log, self.profile)
             self.cdp = CDP(transport)
@@ -166,10 +168,21 @@ class Browser:
             if not session and attached is not None and not attached.done() and info.get("url") == "about:blank":
                 attached.set_result((info["targetId"], data["sessionId"]))
             elif not session and info["targetId"] in self._startup_targets:
-                # Chrome's initial blank tab is not task-owned. Release its debugger rather
-                # than closing the last startup window while our first context is being made.
+                # Keep the initial blank tab, but fail all its requests: it has no task proxy.
                 self._startup_targets.discard(info["targetId"])
-                await self.cdp.call("Target.detachFromTarget", {"sessionId": data["sessionId"]})
+                try:
+                    await self.cdp.call("Fetch.enable", {"patterns": [{"urlPattern": "*"}]}, data["sessionId"])
+                except Exception:
+                    # Leave it paused unless it can be closed; never resume without interception.
+                    try:
+                        result = await self.cdp.call("Target.closeTarget", {"targetId": info["targetId"]})
+                        if result.get("success") is False:
+                            raise BrowserError("Target.closeTarget returned false")
+                    except Exception:
+                        self._startup_targets.add(info["targetId"])
+                        raise
+                    return
+                await self.cdp.call("Runtime.runIfWaitingForDebugger", session=data["sessionId"])
             else:
                 # Unrequested targets, including about:blank popups, must never stay paused indefinitely.
                 try:
@@ -224,9 +237,29 @@ class Browser:
 
     async def _event_error(self, message, error):
         session = message.get("sessionId")
+        target = message.get("params", {}).get("targetInfo", {}).get("targetId")
+        unsafe_startup = not session and target in self._startup_targets
+        if unsafe_startup:
+            # We could neither protect nor close the default target. Stop every proxy
+            # and break pending calls before waiting for the action lock.
+            for other in list(self.sessions.values()):
+                await other.proxy.close()
+            self.cdp.transport.abort()
+            if self.process and self.process.returncode is None:
+                with contextlib.suppress(ProcessLookupError):
+                    self.process.terminate()
+        tab = next((t for t in self.sessions.values() if t.session == session), None)
+        if tab:
+            # Stop network traffic and release a pending navigation before waiting for the action lock.
+            tab.failure = f"Chrome event handler failed: {error}"
+            tab.loaded.set()
+            self.cdp.fail_session(session, str(error))
+            await tab.proxy.close()
         async with self._lock:
-            tab = next((t for t in self.sessions.values() if t.session == session), None)
-            if tab:
+            if unsafe_startup:
+                await self._stop()
+                return
+            if tab and self.sessions.get(tab.task_id) is tab:
                 await self._close_task(tab.task_id)  # fail closed for this context only
             if not self.sessions:
                 await self._stop()
@@ -273,17 +306,23 @@ class Browser:
                 await self._stop()
 
     async def _perform(self, tab, folder, action, args):
+        if tab.failure:
+            raise BrowserError(tab.failure)
         if action == "open":
             tab.loaded.clear()
-            result = await self.cdp.call("Page.navigate", {"url": args["url"]}, tab.session)
-            if result.get("errorText"):
-                raise BrowserError(result["errorText"])
             try:
+                result = await self.cdp.call("Page.navigate", {"url": args["url"]}, tab.session)
+                if result.get("errorText"):
+                    raise BrowserError(result["errorText"])
                 async with asyncio.timeout(10):
                     await tab.loaded.wait()
+                if tab.failure:
+                    raise BrowserError(tab.failure)
             except TimeoutError:
-                raise BrowserError(f"Chrome timed out: Page.loadEventFired for {args['url']} "
-                                   f"(session {tab.session}); {self.cdp.waiting()}") from None
+                error = f"Chrome timed out: Page.loadEventFired for {args['url']} (session {tab.session}); {self.cdp.waiting()}"
+                raise BrowserError(f"{error}; proxy {tab.proxy.address}; proxy log: {json.dumps(list(tab.proxy.log))}") from None
+            except BrowserError as error:
+                raise BrowserError(f"{error}; proxy {tab.proxy.address}; proxy log: {json.dumps(list(tab.proxy.log))}") from None
         elif action == "screenshot":
             width, height = args.get("width", 1400), args.get("height", 860)
             if type(width) is not int or type(height) is not int or not (320 <= width <= 3840 and 240 <= height <= 2160):

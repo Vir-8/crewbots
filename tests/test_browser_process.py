@@ -1,10 +1,12 @@
 """No Chrome is launched: a tiny Python child exercises inherited CDP fds 3/4."""
 
 import asyncio
+import fnmatch
 import json
 import os
 import signal
 import sys
+from urllib.parse import urlsplit
 
 import pytest
 from test_browser import FakeCDP, pipe_pair
@@ -85,8 +87,23 @@ async def test_browser_launch_has_pipe_and_no_debugging_port(tmp_path, monkeypat
     monkeypatch.setattr(module, "launch", start)
     service = Browser(tmp_path / "browser")
     try:
-        await service._start()
+        await service.action("task", tmp_path, False, "open", {"url": "http://localhost"})
         assert "--remote-debugging-pipe" in command
+        assert not any(arg.startswith(("--proxy-server", "--proxy-bypass-list", "--no-proxy-server")) for arg in command)
+        tab = service.sessions["task"]
+        context = next(c["params"] for c in fake.calls if c["method"] == "Target.createBrowserContext")
+        assert context["proxyServer"] == tab.proxy.address
+        assert context["proxyBypassList"] == "<-loopback>" and tab.proxy.server.is_serving()
+        rules = next(arg.split("=", 1)[1] for arg in command if arg.startswith("--host-resolver-rules="))
+        rules = [rule.strip() for rule in rules.split(",")]
+        assert "MAP * ~NOTFOUND" in rules
+        excluded = [rule.removeprefix("EXCLUDE ") for rule in rules if rule.startswith("EXCLUDE ")]
+        proxy_host = urlsplit(context["proxyServer"]).hostname
+        assert any(fnmatch.fnmatchcase(proxy_host, pattern) for pattern in excluded)
+        assert not any(fnmatch.fnmatchcase("external.example", pattern) for pattern in excluded)
+        assert "--enable-features=NetworkServiceInProcess2" in command
+        target = next(c["params"] for c in fake.calls if c["method"] == "Target.createTarget")
+        assert target["browserContextId"] == tab.context and target["url"] == "about:blank"
         assert not any("remote-debugging-port" in arg or "remote-debugging-address" in arg for arg in command)
         assert not hasattr(service, "port")
         assert not list((tmp_path / "browser").rglob("DevToolsActivePort"))
@@ -100,6 +117,40 @@ async def test_browser_launch_has_pipe_and_no_debugging_port(tmp_path, monkeypat
 
 def write_owner(profile, pid, started):
     (profile / "crewbots-owner.json").write_text(json.dumps({"pid": pid, "start_time": started}))
+
+
+async def test_sweep_removes_only_old_ownerless_profiles(tmp_path, monkeypatch, caplog):
+    import time
+
+    from crewbots import browser_process as module
+
+    root = tmp_path / "browser"
+    old, recent, linked = (root / name for name in ("chrome-old", "chrome-recent", "chrome-linked"))
+    for profile in (old, recent, linked):
+        profile.mkdir(parents=True)
+    (linked / module.OWNER_FILE).symlink_to(root / "missing")
+    old_time = time.time() - 3700
+    os.utime(old, (old_time, old_time))
+    os.utime(linked, (old_time, old_time))
+    monkeypatch.setattr(module.os, "kill", lambda *args: pytest.fail("must not signal ownerless processes"))
+    profiles = Profiles(root)
+    await profiles.acquire()
+    profiles.close()
+    assert not old.exists() and recent.exists() and linked.exists()
+    assert "owner file missing" in caplog.text
+
+
+async def test_sweep_logs_parent_of_skipped_process(tmp_path, monkeypatch, caplog):
+    from crewbots import browser_process as module
+
+    profile = tmp_path / "browser" / "chrome-live"
+    profile.mkdir(parents=True)
+    write_owner(profile, 123, "start")
+    monkeypatch.setattr(module, "process_info", lambda pid: module.ProcessInfo(456, os.getuid(), "start"))
+    profiles = Profiles(profile.parent)
+    await profiles.acquire()
+    profiles.close()
+    assert profile.exists() and "PID 123 PPID 456" in caplog.text
 
 
 async def test_startup_sweep_stops_only_recorded_orphans_and_removes_confirmed_dead(tmp_path, monkeypatch):

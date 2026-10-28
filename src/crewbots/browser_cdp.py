@@ -3,11 +3,13 @@
 import asyncio
 import contextlib
 import json
+import logging
 from collections import deque
 from datetime import UTC, datetime
 
 from crewbots.browser_pipe import OversizedFrame
 
+log = logging.getLogger(__name__)
 
 class BrowserError(Exception):
     pass
@@ -60,32 +62,11 @@ class CDP:
     async def _read(self):
         try:
             async for raw in self.transport:
-                if isinstance(raw, OversizedFrame):
-                    number = response_id(raw.prefix)
-                    self.note("oversized_frame", id=number)
-                    future = self.pending.get(number)
-                    if future and not future.done():
-                        future.set_exception(BrowserError("Chrome CDP response exceeds the message size limit"))
-                    continue
-                message = json.loads(raw)
-                if "id" in message:
-                    self.note("response", id=message["id"], error=message.get("error"))
-                    future = self.pending.get(message["id"])
-                    if future and not future.done():
-                        if "error" in message:
-                            future.set_exception(BrowserError(message["error"].get("message", "CDP error")))
-                        else:
-                            future.set_result(message.get("result", {}))
-                elif self.on_event:
-                    data, session = message.get("params", {}), message.get("sessionId")
-                    method = message.get("method")
-                    self.note("event", method=method, session=session,
-                              **{k: data[k] for k in ("requestId", "sessionId", "targetInfo") if k in data})
-                    if method == "Fetch.requestPaused":
-                        self.paused[(session, data["requestId"])] = data["request"]["url"]
-                    task = asyncio.create_task(self._dispatch(message))
-                    self.events.add(task)
-                    task.add_done_callback(self.events.discard)
+                try:
+                    self._frame(raw)
+                except Exception as e:
+                    self.note("malformed_frame", error=str(e))
+                    log.warning("Ignoring malformed Chrome CDP frame: %s", e)
         except Exception as e:
             self.note("disconnected", error=str(e))
         finally:
@@ -93,6 +74,36 @@ class CDP:
                 if not future.done():
                     detail = f"; event handler failed: {self.event_error}" if self.event_error else ""
                     future.set_exception(BrowserError("Chrome disconnected; open the page again" + detail))
+
+    def _frame(self, raw):
+        if isinstance(raw, OversizedFrame):
+            number = response_id(raw.prefix)
+            self.note("oversized_frame", id=number)
+            future = self.pending.get(number)
+            if future and not future.done():
+                future.set_exception(BrowserError("Chrome CDP response exceeds the message size limit"))
+            return
+        message = json.loads(raw)
+        if not isinstance(message, dict):
+            raise ValueError("CDP frame is not an object")
+        if "id" in message:
+            self.note("response", id=message["id"], error=message.get("error"))
+            future = self.pending.get(message["id"])
+            if future and not future.done():
+                if "error" in message:
+                    future.set_exception(BrowserError(message["error"].get("message", "CDP error")))
+                else:
+                    future.set_result(message.get("result", {}))
+        elif self.on_event:
+            data, session = message.get("params", {}), message.get("sessionId")
+            method = message.get("method")
+            self.note("event", method=method, session=session,
+                      **{k: data[k] for k in ("requestId", "sessionId", "targetInfo") if k in data})
+            if method == "Fetch.requestPaused":
+                self.paused[(session, data["requestId"])] = data["request"]["url"]
+            task = asyncio.create_task(self._dispatch(message))
+            self.events.add(task)
+            task.add_done_callback(self.events.discard)
 
     async def _dispatch(self, message):
         try:
@@ -114,6 +125,12 @@ class CDP:
 
     def note(self, kind, **data):
         self.trace.append({"at": datetime.now(UTC).isoformat(), "kind": kind, **data})
+
+    def fail_session(self, session, error):
+        for number, command in list(self.commands.items()):
+            future = self.pending.get(number)
+            if command["session"] == session and future and not future.done():
+                future.set_exception(BrowserError(f"Chrome event handler failed: {error}"))
 
     def waiting(self) -> str:
         requests = [f"{request}: {url} (session {session})" for (session, request), url in self.paused.items()]
@@ -159,7 +176,8 @@ def response_id(prefix: bytes) -> int | None:
                 return None
             value, index = decoder.raw_decode(text, skip_space(index + 1))
             if key == "id":
-                return value if type(value) is int else None
+                end = skip_space(index)
+                return value if type(value) is int and end < len(text) and text[end] in ",}" else None
             index = skip_space(index)
             if text[index] != ",":
                 return None

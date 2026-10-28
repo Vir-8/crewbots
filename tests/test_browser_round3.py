@@ -17,6 +17,37 @@ from crewbots.browser_process import launch
 from crewbots.browser_proxy import BrowserProxy
 
 
+async def test_malformed_frames_do_not_disconnect_other_calls(caplog):
+    transport, peer = await pipe_pair()
+    cdp = CDP(transport)
+
+    async def fake():
+        command = json.loads(await anext(peer))
+        await peer.send('{bad json}\0[]\0' + json.dumps({"id": command["id"], "result": {"ok": True}}))
+
+    worker = asyncio.create_task(fake())
+    try:
+        assert await cdp.call("AfterBadFrames") == {"ok": True}
+        assert not cdp.reader.done()
+        assert sum(item["kind"] == "malformed_frame" for item in cdp.trace) == 2
+        assert "Ignoring malformed Chrome CDP frame" in caplog.text
+    finally:
+        await cdp.close()
+        await peer.close()
+        await worker
+
+
+@pytest.mark.parametrize("prefix,expected", [
+    (b'{"id":1', None), (b'{"id":1 ', None), (b'{"id":1,', 1),
+    (b'{"id":1}', 1), (b'{"id":1e', None), (b'{"id":1.2,', None),
+    (b'{"params":{"id":1},"id":12', None),
+])
+def test_oversized_prefix_requires_complete_top_level_integer_id(prefix, expected):
+    from crewbots.browser_cdp import response_id
+
+    assert response_id(prefix) == expected
+
+
 @pytest.mark.parametrize("size", [100, 1_000_000])
 async def test_close_interrupts_blocked_write_and_terminates_child(tmp_path, size):
     script = tmp_path / "no_reader.py"

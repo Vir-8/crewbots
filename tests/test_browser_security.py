@@ -158,6 +158,93 @@ async def test_handler_failure_closes_only_its_context(browser, tmp_path, anothe
         await wait_until(lambda: service.cdp is None)
 
 
+async def test_event_failure_interrupts_navigation_without_waiting_for_action_lock(browser, tmp_path):
+    service, fake = browser
+    await service.action("a", tmp_path, False, "open", {"url": "http://localhost"})
+    await service.action("b", tmp_path, False, "open", {"url": "http://localhost"})
+    tab = service.sessions["a"]
+    original = service.cdp.on_event
+
+    async def fail_request(message):
+        if message.get("method") == "Fetch.requestPaused" and message.get("sessionId") == tab.session:
+            raise BrowserError("interception failed")
+        await original(message)
+
+    service.cdp.on_event = fail_request
+    async with asyncio.timeout(1):
+        with pytest.raises(BrowserError, match="interception failed"):
+            await service.action("a", tmp_path, False, "open", {"url": "http://localhost/next"})
+        await wait_until(lambda: "a" not in service.sessions)
+    assert not tab.proxy.server.is_serving()
+    assert "b" in service.sessions and await service.action("b", tmp_path, False, "console", {})
+
+
+async def test_event_failure_interrupts_wait_for_load(browser, tmp_path, monkeypatch):
+    service, fake = browser
+    await service.action("a", tmp_path, False, "open", {"url": "http://localhost"})
+    tab = service.sessions["a"]
+    original = service.cdp.call
+    navigating = asyncio.Event()
+
+    async def no_load(method, params=None, session=None):
+        if method == "Page.navigate":
+            navigating.set()
+            return {}
+        return await original(method, params, session)
+
+    monkeypatch.setattr(service.cdp, "call", no_load)
+    fake.fail_requests.add("bad-load")
+    action = asyncio.create_task(service.action("a", tmp_path, False, "open", {"url": "http://localhost/next"}))
+    async with asyncio.timeout(1):
+        await navigating.wait()
+        await fake.event("Fetch.requestPaused", {"requestId": "bad-load", "request": {"url": "http://localhost"}}, tab.session)
+        with pytest.raises(BrowserError, match="Session is already disposed"):
+            await action
+        await wait_until(lambda: "a" not in service.sessions)
+    assert not tab.proxy.server.is_serving()
+
+
+async def test_startup_interception_failure_closes_only_startup_target(browser, tmp_path, monkeypatch):
+    service, fake = browser
+    await service.action("a", tmp_path, False, "open", {"url": "http://localhost"})
+    original = service.cdp.call
+
+    async def fail_initial(method, params=None, session=None):
+        if method == "Fetch.enable" and session == "initial":
+            raise BrowserError("cannot intercept")
+        return await original(method, params, session)
+
+    monkeypatch.setattr(service.cdp, "call", fail_initial)
+    service._startup_targets.add("initial-tab")
+    await fake.event("Target.attachedToTarget", {"sessionId": "initial", "waitingForDebugger": True,
+        "targetInfo": {"targetId": "initial-tab", "url": "about:blank", "type": "page"}})
+    await wait_until(lambda: any(c["method"] == "Target.closeTarget" and c["params"]["targetId"] == "initial-tab"
+                                 for c in fake.calls))
+    assert not any(c["method"] == "Runtime.runIfWaitingForDebugger" and c.get("sessionId") == "initial" for c in fake.calls)
+    assert await service.action("a", tmp_path, False, "console", {})
+
+
+async def test_uncloseable_unprotected_startup_tab_shuts_down_service(browser, tmp_path, monkeypatch):
+    service, fake = browser
+    await service.action("a", tmp_path, False, "open", {"url": "http://localhost"})
+    tab = service.sessions["a"]
+    original = service.cdp.call
+
+    async def fail_initial(method, params=None, session=None):
+        if method == "Fetch.enable" and session == "initial":
+            raise BrowserError("cannot intercept")
+        if method == "Target.closeTarget":
+            return {"success": False}
+        return await original(method, params, session)
+
+    monkeypatch.setattr(service.cdp, "call", fail_initial)
+    service._startup_targets.add("initial-tab")
+    await fake.event("Target.attachedToTarget", {"sessionId": "initial", "waitingForDebugger": True,
+        "targetInfo": {"targetId": "initial-tab", "url": "about:blank", "type": "page"}})
+    await wait_until(lambda: service.cdp is None)
+    assert not tab.proxy.server.is_serving() and not service.sessions
+
+
 @pytest.mark.parametrize("url", ["", "about:blank"])
 async def test_blank_popups_are_closed_without_being_left_paused(browser, tmp_path, url):
     service, fake = browser

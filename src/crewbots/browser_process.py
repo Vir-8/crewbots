@@ -17,6 +17,7 @@ import shutil
 import signal
 import stat
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -197,16 +198,26 @@ class Profiles:
             if not profile.is_dir() or profile.is_symlink():
                 continue
             try:
-                pid, started = read_owner(profile)
+                try:
+                    pid, started = read_owner(profile)
+                except FileNotFoundError:
+                    # The launcher records ownership before exec. Old ownerless profiles
+                    # can be removed without guessing or signalling a process.
+                    if time.time() - profile.stat().st_mtime > 3600:
+                        shutil.rmtree(profile)
+                    else:
+                        log.warning("Leaving unverified browser profile %s: owner file missing", profile)
+                    continue
                 info = process_info(pid)
                 if info is not None:
                     if info.start_time != started or info.uid != os.getuid() or info.parent != 1:
-                        log.warning("Leaving browser profile %s: PID %s does not match a verified orphan", profile, pid)
+                        log.warning("Leaving browser profile %s: PID %s PPID %s does not match a verified orphan",
+                                    profile, pid, info.parent)
                         continue
                     await self._terminate(pid, started)
                     info = process_info(pid)
                     if info is not None:
-                        log.warning("Leaving browser profile %s: PID %s is still present", profile, pid)
+                        log.warning("Leaving browser profile %s: PID %s PPID %s is still present", profile, pid, info.parent)
                         continue
                 if not profile.is_symlink():
                     shutil.rmtree(profile)

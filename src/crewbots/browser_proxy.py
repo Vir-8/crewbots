@@ -118,7 +118,7 @@ class BrowserProxy:
                     await writer.drain()
                     return
                 self.note("connecting", host=parsed.hostname, port=port)
-                remote, upstream = await asyncio.open_connection(parsed.hostname, port, happy_eyeballs_delay=0.25)
+                remote, upstream = await asyncio.open_connection(parsed.hostname, port)
                 self.streams.add(upstream)
                 if self.closing:
                     return

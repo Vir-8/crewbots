@@ -248,6 +248,50 @@ async def test_proxy_forwards_local_preview_and_closes_tunnels(host):
         assert not proxy.connections
 
 
+@pytest.mark.parametrize("loop_name", ["asyncio", "uvloop"])
+@pytest.mark.parametrize("host", ["127.0.0.1", "::1"])
+def test_proxy_upstream_connect_on_event_loops(loop_name, host):
+    if loop_name == "uvloop":
+        loop_factory = pytest.importorskip("uvloop").new_event_loop
+    else:
+        loop_factory = asyncio.new_event_loop
+
+    async def exercise():
+        async def origin(reader, writer):
+            await reader.readuntil(b"\r\n\r\n")
+            writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK")
+            await writer.drain()
+            writer.close()
+            await writer.wait_closed()
+
+        async with await asyncio.start_server(origin, host, 0) as server:
+            port = server.sockets[0].getsockname()[1]
+            proxy = BrowserProxy(False)
+            address = await proxy.start()
+            try:
+                async with httpx.AsyncClient(proxy=httpx.Proxy(address, auth=(proxy.username, proxy.password))) as client:
+                    response = await client.get(f"http://localhost:{port}")
+                    assert response.text == "OK"
+                reader, writer = await asyncio.open_connection("127.0.0.1", int(address.rsplit(":", 1)[1]))
+                try:
+                    writer.write(f"CONNECT localhost:{port} HTTP/1.1\r\n".encode()
+                                 + b"Proxy-Authorization: " + proxy.authorization + b"\r\n\r\n")
+                    await writer.drain()
+                    assert b"200 Connection Established" in await reader.readuntil(b"\r\n\r\n")
+                    writer.write(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+                    await writer.drain()
+                    assert b"OK" in await reader.read()
+                finally:
+                    writer.close()
+                    await writer.wait_closed()
+                assert host in next(entry["peer"] for entry in proxy.log if entry["kind"] == "connected")
+            finally:
+                await proxy.close()
+
+    with asyncio.Runner(loop_factory=loop_factory) as runner:
+        runner.run(exercise())
+
+
 async def test_tools_api_auth_logging_and_mcp_images(browser, tmp_path):
     service, fake = browser
     store = Store(tmp_path / "crew.db")
@@ -408,13 +452,29 @@ async def test_blocked_intercepted_navigation_finishes_with_an_error(browser, tm
             await asyncio.sleep(0.01)
 
 
-async def test_initial_blank_tab_debugger_is_detached(browser):
+async def test_initial_blank_tab_rejects_unowned_requests(browser):
     service, fake = browser
     await service._start()
     service._startup_targets.add("initial-tab")
     await fake.event("Target.attachedToTarget", {"sessionId": "initial", "waitingForDebugger": True,
                      "targetInfo": {"targetId": "initial-tab", "url": "about:blank", "type": "page"}})
     async with asyncio.timeout(1):
-        while not any(c["method"] == "Target.detachFromTarget" for c in fake.calls):
+        while not any(c["method"] == "Runtime.runIfWaitingForDebugger" for c in fake.calls):
+            await asyncio.sleep(0.01)
+    assert any(c["method"] == "Fetch.enable" and c["sessionId"] == "initial" for c in fake.calls)
+    await fake.event("Fetch.requestPaused", {"requestId": "initial-request", "request": {"url": "http://localhost"}}, "initial")
+    async with asyncio.timeout(1):
+        while not any(c["method"] == "Fetch.failRequest" and c["params"]["requestId"] == "initial-request" for c in fake.calls):
             await asyncio.sleep(0.01)
     assert not any(c["method"] == "Target.closeTarget" for c in fake.calls)
+
+
+async def test_navigation_error_includes_task_proxy_diagnostics(browser, tmp_path):
+    service, fake = browser
+    fake.intercept_url = "https://denied.example"
+    with pytest.raises(BrowserError) as caught:
+        await service.action("a", tmp_path, False, "open", {"url": "http://localhost"})
+    tab = service.sessions["a"]
+    assert "ERR_BLOCKED_BY_CLIENT" in str(caught.value)
+    assert tab.proxy.address in str(caught.value) and '"listening"' in str(caught.value)
+    assert tab.proxy.password not in str(caught.value)
