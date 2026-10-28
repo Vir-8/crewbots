@@ -17,6 +17,7 @@ crew, and what bots asked the user to allow; `db.py` has the database itself and
 import json
 from pathlib import Path
 
+from crewbots import timefmt
 from crewbots.store.db import Connection, migrate
 from crewbots.store.drafts import Drafts
 from crewbots.store.events import Events
@@ -34,6 +35,7 @@ class Store(Tasks, Events, Rooms, Search, Drafts, Routines, Happenings, Permissi
         self.db.execute("pragma journal_mode=wal")
         self.db.execute("pragma foreign_keys=on")
         migrate(self.db, self._index_history)
+        timefmt.set_zone(self.timezone())
 
     def close(self) -> None:
         self.db.close()
@@ -45,6 +47,19 @@ class Store(Tasks, Events, Rooms, Search, Drafts, Routines, Happenings, Permissi
     def set_auto_merge(self, enabled: bool) -> None:
         self.db.execute("insert into crew_settings (key, value) values ('auto_merge', ?) "
                         "on conflict(key) do update set value = excluded.value", (int(enabled),))
+
+    def timezone(self) -> str | None:
+        """The crew's chosen time zone; None until one is chosen, when the machine's own is used."""
+        row = self.db.execute("select value from crew_settings where key = 'timezone'").fetchone()
+        return str(row[0]).removeprefix("zone:") if row else None
+
+    def set_timezone(self, name: str | None) -> None:
+        if name is None:
+            self.db.execute("delete from crew_settings where key = 'timezone'")
+        else:  # the value column has INTEGER affinity; the prefix keeps any name as text
+            self.db.execute("insert into crew_settings (key, value) values ('timezone', ?) "
+                            "on conflict(key) do update set value = excluded.value", ("zone:" + name,))
+        timefmt.set_zone(name)
 
     def chief(self) -> str | None:
         row = self.db.execute("select value from crew_settings where key = 'chief'").fetchone()

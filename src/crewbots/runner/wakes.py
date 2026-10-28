@@ -14,6 +14,7 @@ conversation, or through quiet hours (unless something failed), and news alone a
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from crewbots import timefmt
 from crewbots.runner.common import NotAllowed
 from crewbots.store import Status, Task
 
@@ -39,7 +40,7 @@ class Wakes:
             raise NotAllowed("only the crew's coordinator looks around on its own")
         at = datetime.now(UTC) + timedelta(minutes=min(max(float(minutes), SOONEST), LATEST))
         self.store.set_wake(task.bot, next_at=at.isoformat(timespec="seconds"), next_why=" ".join(why.split())[:300])
-        return at.astimezone()
+        return timefmt.to_local(at)
 
     def news_for(self, bot: str, since: str) -> tuple[list[dict[str, Any]], list[Task], bool]:
         """What happened since `since` (UTC ISO) that's worth the bot's look: crew events that wake it, other than its

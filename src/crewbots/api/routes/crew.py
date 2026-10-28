@@ -9,7 +9,7 @@ from collections import deque
 from fastapi import APIRouter, HTTPException, Query
 
 from crewbots import crew as crew_module
-from crewbots import typescript
+from crewbots import timefmt, typescript
 from crewbots.api.context import API_VERSION, PROJECT, Context, checkout_commit, started_from
 from crewbots.api.schemas import (
     AgentLogOut,
@@ -24,6 +24,8 @@ from crewbots.api.schemas import (
     Reaction,
     RestartBody,
     TaskOut,
+    TimezoneIn,
+    TimezoneOut,
     UpdateBody,
     UpdateOut,
     VersionOut,
@@ -50,6 +52,20 @@ def routes(c: Context) -> APIRouter:
     async def set_merge_settings(body: MergeSettings):
         c.store.set_auto_merge(body.auto_merge)
         return {"auto_merge": c.store.auto_merge()}
+
+    def zone_out() -> dict:
+        return {"timezone": timefmt.zone_name(), "system": timefmt.system_zone(), "custom": c.store.timezone() is not None}
+
+    @v1.get("/crew/timezone", response_model=TimezoneOut)
+    async def timezone_setting():
+        return zone_out()
+
+    @v1.put("/crew/timezone", response_model=TimezoneOut)
+    async def set_timezone(body: TimezoneIn):
+        if body.timezone is not None and not timefmt.valid(body.timezone):
+            raise HTTPException(422, f"{body.timezone!r} isn't a time zone name (for example Asia/Kolkata)")
+        c.store.set_timezone(body.timezone)
+        return zone_out()
 
     @v1.get("/crew/chief")
     async def chief_setting():

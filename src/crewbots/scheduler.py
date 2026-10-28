@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from crewbots import checkins, prompts, sources
+from crewbots import checkins, prompts, sources, timefmt
 from crewbots import crew as crew_module
 from crewbots import github as github_module
 from crewbots import routines as routines_module
@@ -140,7 +140,7 @@ class Scheduler:
             if chief:
                 chat = self.runner.chat(chief.name)
                 self.runner._record(chat.id, kind="text", data={"away": True, "text": prompts.text(
-                    "away", crew.home, since=datetime.fromisoformat(last).astimezone().strftime("%a %d %b"))})
+                    "away", crew.home, since=timefmt.to_local(last).strftime("%a %d %b"))})
                 self.store.routine_ran("away", now.isoformat(timespec="seconds"), chat.id)
         elif not away and said:
             self.store.routine_ran("away", "", "")  # back: routines carry on, and next time it's said again
@@ -206,9 +206,9 @@ class Scheduler:
                    looked: datetime, now: datetime, due: bool) -> str:
         reason = (f"You asked to look again now: {state['next_why'] or 'no reason given'}." if due else
                   f"Something new since you last looked, at {_human(looked)}.")
-        lines = [f"- {e['at'][11:16]} {e['kind']}: {e['text']}" for e in events]
+        lines = [f"- {_clock(e['at'])} {e['kind']}: {e['text']}" for e in events]
         lines += [f"- {t.id} {t.bot}'s {t.title!r} is {t.status.value.replace('_', ' ')}" for t in stopped]
-        seen = "\n".join(f"- {e['at'][11:16]} {e['kind']}: {e['text']}" for e in self.store.crew_events(_utc(looked))
+        seen = "\n".join(f"- {_clock(e['at'])} {e['kind']}: {e['text']}" for e in self.store.crew_events(_utc(looked))
                          if e not in events)
         news = ("# New\n\n" + prompts.untrusted("events", "\n".join(lines)) + "\n\n" if lines else "") + (
             "# Also\n\n" + prompts.untrusted("events", seen) + "\n\n" if seen else "") + activity(
@@ -224,7 +224,7 @@ class Scheduler:
             raise ValueError(f"{bot} has no checklist: write one in {checkins.path(self.runner.crew.home, bot)}")
         last = (self.runner.store.routine_state(f"checkin:{bot}") or {}).get("last_run_at")
         since = datetime.fromisoformat(last) if last else now - timedelta(days=1)
-        happened = "\n".join(f"- {e['at'][11:16]} {e['kind']}: {e['text']}" for e in self.store.crew_events(_utc(since)))
+        happened = "\n".join(f"- {_clock(e['at'])} {e['kind']}: {e['text']}" for e in self.store.crew_events(_utc(since)))
         changes = ("# Events\n\n" + prompts.untrusted("events", happened) + "\n\n" if happened else "") + activity(
             self.runner.store, since, chars=CHECKIN_CHARS)
         return self.runner.check_in(bot, items if items is not None else checklist.items, changes, now)
@@ -391,8 +391,12 @@ def _utc(t: datetime) -> str:
     return t.astimezone(UTC).isoformat(timespec="milliseconds")
 
 
+def _clock(at: str) -> str:
+    return timefmt.minute(at)[11:16]
+
+
 def _human(t: datetime) -> str:
-    return t.astimezone().strftime("%a %d %b %H:%M")
+    return timefmt.to_local(t).strftime("%a %d %b %H:%M")
 
 
 def _clip(text: str, limit: int = EVENT_CHARS) -> str:

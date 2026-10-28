@@ -8,7 +8,7 @@ most a few delegations deep, a cap on how many tasks one bot has out at once, an
 from pathlib import Path
 from typing import Any
 
-from crewbots import cards, prompts, worktree
+from crewbots import cards, prompts, timefmt, worktree
 from crewbots import crew as crew_module
 from crewbots.backends import Access
 from crewbots.crew import Bot, CrewError
@@ -248,7 +248,8 @@ class Delegation:
         return child
 
     def _summary(self, task: Task, include_result: bool = False) -> dict[str, Any]:
-        summary: dict[str, Any] = {"id": task.id, "bot": task.bot, "title": task.title, "status": task.status}
+        summary: dict[str, Any] = {"id": task.id, "bot": task.bot, "title": task.title, "status": task.status,
+                                   "updated_at": timefmt.stamp(task.updated_at)}
         if task.branch:
             summary |= {"worktree": task.worktree_path, "branch": task.branch}
         if include_result:

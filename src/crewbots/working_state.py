@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
+from crewbots import timefmt
 from crewbots.memory import MemoryError
 
 SECTIONS = ("User's rules", "Decisions", "Commitments", "Needs me", "Open questions", "Elsewhere")
@@ -198,7 +199,7 @@ def room_mentions(path: Path, room: dict, messages: list[dict], *, add: bool = F
             entry_id = "a" + f"{time.time_ns():016x}{uuid4().hex[:8]}"
             title = " ".join(room["title"].split())[:80]
             author = " ".join(message["author"].split())[:32]
-            entries.append(f"- [ ] `{entry_id}` {title} ({room['id']}) · {message['at'][:16]} · {author}"
+            entries.append(f"- [ ] `{entry_id}` {title} ({room['id']}) · {timefmt.minute(message['at'])} · {author}"
                            f" · room mention {room['id']} · last {message['id']} · count {count}")
             automatic = [line for line in entries if _room_need(line)]
             while automatic and (len(automatic) > AUTO_LIMIT or len(render(sections)) > LIMIT):

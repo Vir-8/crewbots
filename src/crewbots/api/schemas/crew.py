@@ -11,6 +11,16 @@ class MergeSettings(BaseModel):
     auto_merge: bool
 
 
+class TimezoneIn(BaseModel):
+    timezone: str | None  # an IANA name such as Asia/Kolkata; null goes back to the machine's own
+
+
+class TimezoneOut(BaseModel):
+    timezone: str  # the zone in use
+    system: str  # the machine's own
+    custom: bool  # whether the crew's setting is in use, rather than the machine's
+
+
 
 class PlanLimitOut(BaseModel):
     plan: str

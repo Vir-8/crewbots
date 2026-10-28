@@ -9,6 +9,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from crewbots import timefmt
 from crewbots.events import RateLimit
 from crewbots.runner.common import _iso, _plan
 from crewbots.store import Status, Task
@@ -118,7 +119,7 @@ class Holds:
         plan = _plan(bot.backend)
         for limit in self.limits.get(plan, {}).values():
             if limit.status == "limited" and limit.resets_at and limit.resets_at > time.time():
-                resets = datetime.fromtimestamp(limit.resets_at).strftime("%a %H:%M")
+                resets = datetime.fromtimestamp(limit.resets_at, timefmt.zone()).strftime("%a %H:%M")
                 window = LIMIT_WINDOWS.get(limit.window, limit.window.replace("_", " "))
                 return f"the {plan.title()} plan's {window} limit is reached; it resets {resets}."
         return None

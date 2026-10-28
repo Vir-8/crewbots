@@ -12,12 +12,16 @@ export function Settings({ crew }: { crew: Crew }) {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [autoMerge, setAutoMerge] = useState<boolean | null>(null);
   const [mergeError, setMergeError] = useState<string | null>(null);
+  const [zone, setZone] = useState<{ timezone: string; system: string; custom: boolean } | null>(null);
+  const [zoneDraft, setZoneDraft] = useState("");
+  const [zoneError, setZoneError] = useState<string | null>(null);
   const [repos, setRepos] = useState<Record<string, string>>({});
   const [repo, setRepo] = useState("");
   const [repoError, setRepoError] = useState<string | null>(null);
   useEffect(() => {
     bridge.startAtLogin().then(setLogin, () => setLogin(null));
     api.reviewRepos().then(setRepos, () => setRepos({}));
+    api.timezone().then((z) => { setZone(z); setZoneDraft(z.timezone); }, (e) => setZoneError(String(e)));
     api.mergeSettings().then((s) => setAutoMerge(s.auto_merge), (e) => setMergeError(String(e)));
   }, []);
 
@@ -90,6 +94,30 @@ export function Settings({ crew }: { crew: Crew }) {
               try { setAutoMerge((await api.setMergeSettings(on)).auto_merge); }
               catch (e) { setMergeError(String(e)); }
             }} />
+          </div>
+          <div className="list-row">
+            <span className="list-text">
+              <span className="list-title">Time zone</span>
+              <span className="faint">
+                The zone the bots see every time in, and the clock they're told. {zone ? `This Mac's own is ${zone.system}.` : ""} The app shows times in this Mac's zone.
+              </span>
+              {zoneError && <span className="error-text">{zoneError}</span>}
+            </span>
+            <input className="inline-input" list="time-zones" value={zoneDraft} disabled={zone === null} aria-label="Time zone"
+              onChange={(e) => setZoneDraft(e.target.value.trim())} placeholder={zone?.system} />
+            <datalist id="time-zones">
+              {(Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf?.("timeZone").map((z) => <option key={z} value={z} />)}
+            </datalist>
+            <button className="button small" disabled={zone === null || zoneDraft === zone.timezone} onClick={async () => {
+              setZoneError(null);
+              try {
+                const next = await api.setTimezone(zoneDraft && zoneDraft !== zone?.system ? zoneDraft : null);
+                setZone(next);
+                setZoneDraft(next.timezone);
+              } catch (e) { setZoneError(String(e)); }
+            }}>
+              Save
+            </button>
           </div>
           <div className="list-row">
             <span className="list-text">

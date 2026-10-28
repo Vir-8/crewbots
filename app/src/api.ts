@@ -30,7 +30,7 @@ import type {
   Submitted,
   Attachment,
 } from "./types";
-import type { BroughtIn, FoundOut, PageOut, PermissionOut, ProjectOut, ProjectsOut, UpdateOut, VersionOut } from "./api-types";
+import type { BroughtIn, FoundOut, PageOut, PermissionOut, ProjectOut, ProjectsOut, TimezoneOut, UpdateOut, VersionOut } from "./api-types";
 
 import { bridge } from "./bridge";
 
@@ -69,6 +69,8 @@ export const api = {
   crew: () => call<CrewState>("GET", "/crew"),
   mergeSettings: () => call<{ auto_merge: boolean }>("GET", "/crew/merge-settings"),
   setMergeSettings: (auto_merge: boolean) => call<{ auto_merge: boolean }>("PUT", "/crew/merge-settings", { auto_merge }),
+  timezone: () => call<TimezoneOut>("GET", "/crew/timezone"),
+  setTimezone: (timezone: string | null) => call<TimezoneOut>("PUT", "/crew/timezone", { timezone }),
   routines: () => call<Routines>("GET", "/routines"),
   budgets: () => call<Budget[]>("GET", "/budgets"),
   chats: () => call<Chat[]>("GET", "/chats"),

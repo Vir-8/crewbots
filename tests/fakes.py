@@ -12,6 +12,11 @@ from crewbots.crew import Bot, Crew
 from crewbots.events import Done, SessionStarted, Text, Usage
 from crewbots.runner import MCP_SERVER_NAME, Runner
 
+# The turn header carries the clock, so it would put a different first line in every prompt the tests compare. Tests of
+# the header put `REAL_WITH_UPDATES` back with monkeypatch.
+REAL_WITH_UPDATES = Runner._with_updates
+Runner._with_updates = Runner._updates
+
 
 def reply(spec: RunSpec):
     """A run that says back what it was asked."""

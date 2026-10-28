@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from crewbots import attachments as attachments_module
-from crewbots import prompts, working_state
+from crewbots import prompts, timefmt, working_state
 from crewbots.crew import NO_REPLY
 from crewbots.runner.common import NotAllowed, UnknownBot, _iso
 from crewbots.store import Status, Task
@@ -61,7 +61,8 @@ class Rooms:
                 if last_activity is not None and time.monotonic() - last_activity >= self.stall_s:
                     attempt["state"] = "stalled"
                 entries.append({"task_id": seat.id, "bot": seat.bot, "status": seat.status.value,
-                                "updated_at": seat.updated_at, "error": _safe_error(error) if error else None,
+                                "updated_at": timefmt.minute(seat.updated_at),
+                                "error": _safe_error(error) if error else None,
                                 "attempt": attempt or None})
             result.append({"room_id": room["id"], "title": room["title"][:200], "seats": entries,
                            "seats_truncated": len(seats) > 50})

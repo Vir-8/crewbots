@@ -1,3 +1,4 @@
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -94,7 +95,9 @@ def test_needs_me_is_capped_and_done_removes_entry(tmp_path):
     assert "item 12" not in read(path) and "handled" not in read(path)
 
 
-def test_clearing_room_mentions_preserves_other_entries(tmp_path):
+def test_clearing_room_mentions_preserves_other_entries(tmp_path, monkeypatch):
+    monkeypatch.setenv("TZ", "UTC")
+    time.tzset()
     from crewbots.working_state import room_mentions
 
     path = tmp_path / "state.md"

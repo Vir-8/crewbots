@@ -23,7 +23,7 @@ from pathlib import Path
 
 import yaml
 
-from crewbots import paths
+from crewbots import paths, timefmt
 
 CREW_SCOPE = "crew"
 INDEX_LIMIT = 60  # notes listed in a bot's instructions per scope; older ones stay in the folder
@@ -176,7 +176,7 @@ class Memory:
 
     def log(self, scope: str, line: str) -> None:
         """Adds a line to the scope's log for today."""
-        now = datetime.now().astimezone()
+        now = timefmt.now()
         path = self._scope_dir(scope) / "daily" / f"{now.date().isoformat()}.md"
         path.parent.mkdir(parents=True, exist_ok=True)
         new = not path.exists()
@@ -186,7 +186,7 @@ class Memory:
     def recent(self, scope: str) -> str | None:
         """The scope's logs for the last RECENT_DAYS days, oldest first."""
         folder = self._scope_dir(scope) / "daily"
-        today = datetime.now().astimezone().date()
+        today = timefmt.now().date()
         days = [(today - timedelta(days=n)).isoformat() for n in range(RECENT_DAYS - 1, -1, -1)]
         logs = [(folder / f"{day}.md").read_text().strip() for day in days if (folder / f"{day}.md").is_file()]
         return "\n\n".join(logs) or None

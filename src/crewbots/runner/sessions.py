@@ -13,7 +13,7 @@ from contextlib import aclosing
 from pathlib import Path
 from typing import Any
 
-from crewbots import prompts, working_state, worktree
+from crewbots import prompts, timefmt, working_state, worktree
 from crewbots.backends import Backend
 from crewbots.crew import NO_REPLY, Bot
 from crewbots.events import Compacted, Done, Event, Usage
@@ -114,7 +114,7 @@ class Sessions:
                 "and closed.kind = 'questions_closed' and closed.id > asked.id where asked.task_id = t.id "
                 "and asked.kind = 'permission' and json_extract(asked.data, '$.permission') = p.id) "
                 "order by p.id", (bot, *pending)).fetchall()
-            questions = [f"- {r['id']} · {r['at'][:16]} · {' '.join((r['question'] or '').split())[:120]}"
+            questions = [f"- {r['id']} · {timefmt.minute(r['at'])} · {' '.join((r['question'] or '').split())[:120]}"
                          for r in sorted([*escalations, *permissions], key=lambda r: r['at'])]
             rows = db.execute(
                 "select t.id, t.kind, t.status, t.updated_at, t.room_id from tasks t "
@@ -124,7 +124,8 @@ class Sessions:
                 "and t.status in ('idle', 'queued', 'running', 'held', 'needs_input', 'interrupted', 'failed'))) "
                 "order by t.updated_at desc, t.id limit 12", (bot,)).fetchall()
             question_tasks = {r["id"] for r in [*escalations, *permissions]}
-            elsewhere = [f"- {r['kind']} {r['room_id'] or r['id']} · {r['updated_at'][:16]} · {r['status']}"
+            elsewhere = [f"- {r['kind']} {r['room_id'] or r['id']} · {timefmt.minute(r['updated_at'])}"
+                         f" · {r['status']}"
                          + (" · question open" if r["id"] in question_tasks else "") for r in rows]
             working_state.sync(self.crew.memory.root / bot / "working-state" / "state.md", questions, elsewhere)
             return True
@@ -133,6 +134,11 @@ class Sessions:
             return False
 
     def _with_updates(self, task: Task, bot: Bot, prompt: str) -> tuple[str, dict[str, str] | None]:
+        """`_updates`, under a first line saying what the time is: in the turn rather than the cached instructions."""
+        prompt, primed = self._updates(task, bot, prompt)
+        return f"{timefmt.header()}\n\n{prompt}", primed
+
+    def _updates(self, task: Task, bot: Bot, prompt: str) -> tuple[str, dict[str, str] | None]:
         """The turn's message, with what changed in the bot's instructions since its session began put in front of it,
         and what to record as seen once the turn has gone through. A session keeps the instructions it started with
         (both CLIs do), so a changed note, team file or role card reaches it here, in the turn, and the cached start

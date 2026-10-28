@@ -1,6 +1,7 @@
 """Chats, threads and group chats: each bot's one ongoing conversation, the work it opens, and bots talking together."""
 
 import asyncio
+import time
 
 import pytest
 from fakes import ScriptedCrew, bot, wait_until
@@ -1037,7 +1038,9 @@ async def test_one_seat_refusal_does_not_stop_other_wakes(crew, store, monkeypat
     await crew.runner.shutdown()
 
 
-async def test_room_mention_needs_me_is_shared_and_cleared_by_seat_reply(crew, store):
+async def test_room_mention_needs_me_is_shared_and_cleared_by_seat_reply(crew, store, monkeypatch):
+    monkeypatch.setenv("TZ", "UTC")
+    time.tzset()
     from crewbots.working_state import read
 
     room = crew.runner.create_room("Engineering", ["chief", "engineer"], lead="engineer")

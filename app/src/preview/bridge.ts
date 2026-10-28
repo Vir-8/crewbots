@@ -31,6 +31,7 @@ const steps = [
   { name: "shell", input: { command: "npm test -- ExportButton" } },
   { name: "Read", input: { file_path: "web/src/reports/Reports.tsx" } },
 ];
+let previewZone: string | null = null;
 let step = 0;
 let ticking: number | undefined; // from the first listener on: nothing runs just because this module was imported
 const still = new URLSearchParams(globalThis.location?.search ?? "").has("still"); // ?still: no live activity, for comparing screens
@@ -74,6 +75,10 @@ async function request(method: string, path: string, body?: any) {
     crewState.paused = url.pathname === "/crew/pause";
     setTimeout(() => publish({ type: "crew", crew: { ...crewState } as never }), 0);
     return ok({ ...crewState });
+  }
+  if (url.pathname === "/crew/timezone") {
+    if (method === "PUT") previewZone = body?.timezone ?? null;
+    return ok({ timezone: previewZone ?? "Asia/Kolkata", system: "Asia/Kolkata", custom: previewZone !== null });
   }
   if (method === "GET" && url.pathname === "/version") return ok({ api: API_VERSION, schema_hash: API_SCHEMA, build: "preview", source_changed: false });
   if (url.pathname === "/crew/restart") {

@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "62af20e9aad5";
+export const API_SCHEMA = "719bab94d1c9";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -1183,6 +1183,16 @@ export interface ThreadBody {
   title: string;
   goal: string;
   project?: string | null;
+}
+
+export interface TimezoneIn {
+  timezone: string | null;
+}
+
+export interface TimezoneOut {
+  timezone: string;
+  system: string;
+  custom: boolean;
 }
 
 export interface UpdateBody {

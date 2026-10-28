@@ -12,7 +12,7 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
-from crewbots import branch_mode, cards, pages, prompts, worktree
+from crewbots import branch_mode, cards, pages, prompts, timefmt, worktree
 from crewbots.crew import NO_REPLY
 from crewbots.events import Notice
 from crewbots.memory import CREW_SCOPE, MemoryError, Note
@@ -182,7 +182,7 @@ class Work:
         hits += [{"task_id": "", "kind": m["kind"], "at": m["day"], "snippet": m["text"], "bot": m["scope"],
                   "title": m["path"]} for m in self.crew.memory.search([bot, CREW_SCOPE], query)]
         self.store.log_recall(task_id, bot, query, [h["task_id"] or h["title"] for h in hits])
-        return hits
+        return [h | {"at": timefmt.stamp(h["at"])} if h.get("at") else h for h in hits]
 
     def happened(self, kind: str, subject: str, text: str) -> dict[str, Any]:
         """Something happened around the crew (`sources.py`): it's kept, for check-ins to read, and each standing
@@ -571,7 +571,7 @@ class Work:
             from crewbots.working_state import edit
 
             edit(self.crew.memory.root / task.bot / "working-state" / "state.md", "Decisions", "add",
-                 f"{event.at[:10]} {task.id}: {question} — {answer}", automatic=True)
+                 f"{timefmt.minute(event.at)[:10]} {task.id}: {question} — {answer}", automatic=True)
         except (MemoryError, OSError) as e:
             self._record(task.id, kind="notice", data={"message": f"Could not record decision: {e}"})
         return True, nudge
