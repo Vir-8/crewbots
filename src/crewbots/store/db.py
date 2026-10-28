@@ -77,7 +77,7 @@ create table if not exists rooms (
     members    text not null,  -- JSON list of bot names
     created_at text not null,
     updated_at text not null,
-    max_depth  integer,        -- bot replies in a row before the bots stop; null for MAX_ROOM_DEPTH
+    max_depth  integer,        -- bot replies in a row before the bots stop; null for no limit
     stopped    text,           -- JSON {after, waiting, owed} once the bots stopped there, until someone carries on
     muted      integer not null default 0,  -- no notifications from it
     archived_at text,                       -- while it's archived: kept, out of the way, and its bots quiet
@@ -420,6 +420,8 @@ MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] =
     ("memories brought in from Claude Code and Codex", lambda db, _: db.executescript(BROUGHT_IN)),
     ("what bots ask the user to allow", lambda db, _: db.executescript(PERMISSIONS)),
     ("crew settings", lambda db, _: db.executescript(SETTINGS)),
+    ("clear stops from the old default room reply limit",
+     lambda db, _: db.execute("update rooms set stopped = null where max_depth is null")),
 ]
 
 

@@ -213,7 +213,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
                 </span>
               </div>
             )}
-            {room.stopped && typing.length === 0 && (
+            {room.max_depth != null && room.stopped && typing.length === 0 && (
               <div className="room-stopped">
                 The bots stopped after {room.stopped.after} replies.
                 <button className="button small" onClick={() => crew.carryOn(room.id)} title={`Let ${room.stopped.waiting.map(labelOf).join(", ")} answer, with a fresh count`}>

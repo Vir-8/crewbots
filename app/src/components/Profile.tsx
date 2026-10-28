@@ -299,8 +299,8 @@ export function RoomProfile(props: { crew: Crew; room: Room; onOpen: (id: string
           <label className="room-setting">
             <span className="room-setting-label">Bots reply to each other</span>
             <select value={room.max_depth ?? ""} onChange={(e) => change({ max_depth: e.target.value ? Number(e.target.value) : null })}>
-              <option value="">4 times (default)</option>
-              {[1, 2, 3, 6, 8, 12].map((n) => (
+              <option value="">No limit</option>
+              {Array.from(new Set([...Array.from({ length: 20 }, (_, i) => i + 1), 50, 100, ...(room.max_depth ? [room.max_depth] : [])])).sort((a, b) => a - b).map((n) => (
                 <option key={n} value={n}>
                   {n === 1 ? "Once" : `${n} times`}
                 </option>

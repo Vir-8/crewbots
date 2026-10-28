@@ -305,10 +305,11 @@ Each step leaves the system working.
   messages it hasn't seen as `[name]: text`; its final message is posted back as its reply, or nothing if it answers
   `NO_REPLY`. The user's message wakes whoever it mentions (`@everyone` is every member), or the lead, who triages:
   answers, hands it on with an @mention (one owner per piece of work), or stays out of it. A bot's reply wakes whoever
-  it mentions, up to `MAX_ROOM_DEPTH` (4) replies from the user's message, or the room's own `max_depth`, so bots
-  can't talk forever. A reply cut off there records `stopped` on the room (who was waiting); the app shows "The bots
+  it mentions, with no reply limit by default. A room can opt into a `max_depth` limit; a reply cut off there records
+  `stopped` on the room (who was waiting), and the app shows "The bots
   stopped after N replies" with Continue (`POST /rooms/{id}/continue`, waking them with a fresh count), and the
-  user's next message clears it. A bot @mentioned by name owes a reply: a `NO_REPLY` from it gets one nudge
+  user's next message clears it. Removing the limit wakes the waiting bots unless the room is archived. A migration clears stops caused by the old
+  default limit; a new message can continue those rooms. A bot @mentioned by name owes a reply: a `NO_REPLY` from it gets one nudge
   (`mentioned.md`), and a second is accepted. The user manages a room with `PATCH /rooms/{id}` (title, lead, members,
   `max_depth`, muted, archived): a change to its title, lead or members closes its seats' idle sessions, so each
   bot's next turn starts from the room as it is (resuming its session with the new setting). Muted rooms aren't

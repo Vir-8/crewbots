@@ -8,7 +8,7 @@ from crewbots.api import create_app
 from crewbots.crew import NO_REPLY
 from crewbots.crew_tools import CrewTools
 from crewbots.events import Done
-from crewbots.runner import MAX_ROOM_DEPTH, NotAllowed
+from crewbots.runner import NotAllowed
 from crewbots.store import Status, Store
 
 
@@ -92,26 +92,77 @@ async def test_mentions_wake_those_bots_and_bots_bring_each_other_in(crew, store
     assert "[user]: @engineer add the endpoint" in reviewer_saw and "[engineer]: Done." in reviewer_saw
 
 
-async def test_bots_stop_waking_each_other_a_few_replies_deep_until_the_user_carries_on(crew, store):
+async def test_unlimited_room_continues_past_four_replies(crew, store):
     room = crew.runner.create_room("Loop", ["engineer", "reviewer"], lead="engineer")
+
+    def answer(spec, me):
+        count = len([m for m in store.room_messages(room["id"]) if m["author"] != "user"])
+        other = "reviewer" if me.bot == "engineer" else "engineer"
+        return [Done(final_text=f"@{other} your turn" if count < 5 else "Done.")]
+
+    crew.script["engineer"] = answer
+    crew.script["reviewer"] = answer
+    crew.runner.post(room["id"], "user", "go")
+    await wait_until(idle(crew), timeout=10)
+    assert [m["depth"] for m in store.room_messages(room["id"])[1:]] == [1, 2, 3, 4, 5, 6]
+    assert store.room(room["id"])["stopped"] is None
+
+
+async def test_explicit_room_limit_stops_until_carried_on_or_removed(crew, store):
+    room = crew.runner.create_room("Loop", ["engineer", "reviewer"], lead="engineer")
+    crew.runner.set_room_limit(room["id"], 2)
     replies(crew, {"engineer": "@reviewer your turn", "reviewer": "@engineer no, yours"})
 
     crew.runner.post(room["id"], "user", "go")
     await wait_until(idle(crew), timeout=10)
 
     bot_messages = [m for m in store.room_messages(room["id"]) if m["author"] != "user"]
-    assert len(bot_messages) == MAX_ROOM_DEPTH and bot_messages[-1]["depth"] == MAX_ROOM_DEPTH
-    assert store.room(room["id"])["stopped"] == {"after": MAX_ROOM_DEPTH, "waiting": ["engineer"], "owed": ["engineer"]}
+    assert [m["depth"] for m in bot_messages] == [1, 2]
+    assert store.room(room["id"])["stopped"] == {"after": 2, "waiting": ["engineer"], "owed": ["engineer"]}
 
-    crew.runner.set_room_limit(room["id"], 2)
     crew.runner.carry_on(room["id"])  # the user's "Continue": the one waiting is woken, with a fresh count
     await wait_until(idle(crew), timeout=10)
     bot_messages = [m for m in store.room_messages(room["id"]) if m["author"] != "user"]
-    assert [m["depth"] for m in bot_messages[MAX_ROOM_DEPTH:]] == [1, 2] and store.room(room["id"])["stopped"]
+    assert [m["depth"] for m in bot_messages[2:]] == [1, 2] and store.room(room["id"])["stopped"]
 
-    crew.runner.post(room["id"], "user", "@engineer stop there")  # saying something new carries on too
+    replies(crew, {"engineer": "Continuing."})
+    crew.runner.set_room_limit(room["id"], None)
     await wait_until(idle(crew), timeout=10)
-    assert store.room(room["id"])["stopped"]["after"] == 2 and store.room(room["id"])["max_depth"] == 2
+    assert store.room_messages(room["id"])[-1]["text"] == "Continuing."
+    assert store.room(room["id"])["stopped"] is None
+
+
+async def test_room_stopped_by_old_default_can_continue_after_migration(tmp_path):
+    from crewbots.store.db import MIGRATIONS
+
+    path = tmp_path / "old.db"
+    store = Store(path)
+    room = store.create_room("Old", "engineer", ["engineer", "reviewer"])
+    stop = {"after": 4, "waiting": ["engineer"], "owed": ["engineer"]}
+    store.update_room(room["id"], stopped=stop)
+    limited = store.create_room("Limited", "engineer", ["engineer", "reviewer"])
+    store.update_room(limited["id"], max_depth=4, stopped=stop)
+    store.db.execute(f"pragma user_version = {len(MIGRATIONS) - 1}")
+    store.close()
+
+    store = Store(path)
+    assert store.room(room["id"])["stopped"] is None
+    assert store.room(limited["id"])["stopped"] == stop
+    crew = ScriptedCrew(store, tmp_path, bot("engineer"), bot("reviewer"))
+    crew.script["engineer"] = lambda spec, me: [Done(final_text="Continuing.")]
+    crew.runner.post(room["id"], "user", "@engineer continue")
+    await wait_until(idle(crew))
+    assert store.room_messages(room["id"])[-1]["text"] == "Continuing."
+    store.close()
+
+
+async def test_removing_limit_does_not_wake_an_archived_room(crew, store):
+    room = crew.runner.create_room("Archived", ["engineer", "reviewer"])
+    store.update_room(room["id"], max_depth=2, stopped={"after": 2, "waiting": ["reviewer"], "owed": ["reviewer"]},
+                      archived_at="2026-10-27T00:00:00Z")
+    crew.runner.set_room_limit(room["id"], None)
+    assert store.room(room["id"])["stopped"] is None
+    assert not crew.runner.running()
 
 
 async def test_everyone_wakes_the_whole_room_and_a_mention_gets_a_reply(crew, store):
@@ -217,5 +268,6 @@ def test_the_app_sees_every_conversation_with_what_is_unread(crew, store):
         assert client.patch(f"/rooms/{room['id']}", json={}, headers=auth).json()["max_depth"] == 2
         assert client.patch(f"/rooms/{room['id']}", json={"max_depth": None}, headers=auth).json()["max_depth"] is None
         assert client.patch(f"/rooms/{room['id']}", json={"max_depth": 0}, headers=auth).status_code == 422
+        assert client.patch(f"/rooms/{room['id']}", json={"max_depth": 100}, headers=auth).json()["max_depth"] == 100
         assert client.post(f"/rooms/{room['id']}/continue", headers=auth).json()["id"] == room["id"]
         assert client.post("/rooms/r_nope/continue", headers=auth).status_code == 404

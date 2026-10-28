@@ -38,6 +38,20 @@ function find(node: any, type: any): ReactElement<any> | undefined {
 function render(component: () => ReactElement) { hooks.index = 0; return component(); }
 beforeEach(() => { hooks.values = []; localStorage.clear(); });
 
+it("offers no room reply limit by default and lets a room opt in", () => {
+  const changeRoom = vi.fn().mockResolvedValue(undefined);
+  const room = { id: "room", title: "Room", lead: "chief", members: ["chief"], max_depth: null } as any;
+  const crew = { tasks: new Map(), bots: [{ name: "chief" }], changeRoom } as any;
+  const draw = () => render(() => RoomProfile({ crew, room, onOpen: () => {}, onChat: () => {}, onClose: () => {}, onGone: () => {} }));
+  const select = find(draw(), "select")!;
+  expect(select.props.value).toBe("");
+  expect(select.props.children[0].props.children).toBe("No limit");
+  select.props.onChange({ target: { value: "50" } });
+  expect(changeRoom).toHaveBeenCalledWith("room", { max_depth: 50 });
+  select.props.onChange({ target: { value: "" } });
+  expect(changeRoom).toHaveBeenCalledWith("room", { max_depth: null });
+});
+
 it("withdraws through the in-app dialog and allows cancellation", async () => {
   const withdrawMerge = vi.fn().mockResolvedValue(undefined);
   const task = { id: "work", status: "idle", merge_state: "proposed" } as any;

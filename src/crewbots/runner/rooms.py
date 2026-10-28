@@ -1,5 +1,4 @@
-"""Group chats: posting, waking the bots a message mentions (or the lead, or @everyone), and posting a bot's reply back,
-a few replies deep at most. A bot @mentioned by name owes the room a reply."""
+"""Group chats: posting and waking mentioned bots, the lead, or @everyone. A bot mentioned by name owes a reply."""
 
 import re
 from datetime import UTC, datetime
@@ -11,7 +10,6 @@ from crewbots.crew import NO_REPLY
 from crewbots.runner.common import NotAllowed, UnknownBot, _iso
 from crewbots.store import Status, Task
 
-MAX_ROOM_DEPTH = 4  # bot replies in a row in a room, after the user's message, before the bots stop waking each other
 CREW_ROOM = "Crew"  # the group chat every bot is in, made when the crew first needs one
 MENTION = re.compile(r"@([\w-]+)")
 EVERYONE = "everyone"  # @everyone wakes every bot in the room
@@ -158,7 +156,7 @@ class Rooms:
             wake = room["members"] if everyone else named or [room["lead"]]
         else:
             wake = [m for m in (room["members"] if everyone else named) if m != author]
-            if wake and depth >= (room["max_depth"] or MAX_ROOM_DEPTH):
+            if wake and room["max_depth"] is not None and depth >= room["max_depth"]:
                 self._set_room(room_id, stopped={"after": depth, "waiting": wake, "owed": [m for m in wake if m in named]})
                 wake = []
         for bot in wake:
@@ -176,9 +174,13 @@ class Rooms:
         return room
 
     def set_room_limit(self, room_id: str, max_depth: int | None) -> dict[str, Any]:
-        """How many bot replies in a row the room allows before the bots stop; None for the crew's default."""
-        self.store.room(room_id)
-        return self._set_room(room_id, max_depth=max_depth)
+        """How many bot replies in a row the room allows before the bots stop; None means no limit."""
+        room = self._set_room(room_id, max_depth=max_depth)
+        if max_depth is None and room["stopped"]:
+            if room["archived_at"]:
+                return self._set_room(room_id, stopped=None)
+            return self.carry_on(room_id)
+        return room
 
     def _set_room(self, room_id: str, **changes: Any) -> dict[str, Any]:
         room = self.store.update_room(room_id, **changes)

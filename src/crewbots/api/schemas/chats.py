@@ -18,7 +18,7 @@ class RoomOut(BaseModel):
     members: list[str]
     created_at: str
     updated_at: str
-    max_depth: int | None = None  # bot replies in a row before they stop; None for the crew's default (4)
+    max_depth: int | None = None  # bot replies in a row before they stop; None for no limit
     stopped: RoomStop | None = None  # set once the bots stopped, until the user carries on or says something
     muted: bool = False  # no notifications from it
     archived_at: str | None = None  # while it's archived
@@ -101,6 +101,6 @@ class RoomChange(BaseModel):
     title: str | None = None
     lead: str | None = None
     members: list[str] | None = None
-    max_depth: int | None = Field(None, ge=1, le=20)  # null for the crew's default
+    max_depth: int | None = Field(None, ge=1)  # null for no limit
     muted: bool | None = None
     archived: bool | None = None
