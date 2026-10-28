@@ -51,8 +51,15 @@ class Bus:
 
     def __init__(self) -> None:
         self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
+        self._loop: asyncio.AbstractEventLoop | None = None  # where subscribers read, for publishing from a thread
 
     def publish(self, message: dict[str, Any]) -> None:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:  # a worker thread (a merge running off the loop): hand over to the loop's thread
+            if self._loop and not self._loop.is_closed():
+                self._loop.call_soon_threadsafe(self.publish, message)
+                return
         for queue in list(self._subscribers):
             try:
                 queue.put_nowait(message)
@@ -62,6 +69,8 @@ class Bus:
     @contextlib.contextmanager
     def subscribe(self) -> Iterator[asyncio.Queue[dict[str, Any]]]:
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(SUBSCRIBER_QUEUE)
+        with contextlib.suppress(RuntimeError):  # sync callers have no loop, and nothing to wake
+            self._loop = asyncio.get_running_loop()
         self._subscribers.add(queue)
         try:
             yield queue

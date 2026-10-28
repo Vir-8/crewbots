@@ -33,9 +33,10 @@ log = logging.getLogger(__name__)
 class Work(MergeStatus):
     """The part of Runner that takes a bot's handoffs, questions, merge proposals and notes."""
 
-    def _check_worktree_sweep(self) -> None:
+    def _check_worktree_sweep(self, task_id: str | None = None) -> None:
         if not self._worktree_sweep_done.is_set():
             raise NotAllowed("Worktree maintenance is running; try again when it finishes.")
+        self.check_not_merging(task_id)  # the task's own merge, for withdraw and drop
 
     def changes(self, task_id: str) -> str | None:
         """The task's diff against where its worktree started, or None if it has no worktree."""
@@ -292,18 +293,18 @@ class Work(MergeStatus):
                              "withdraw the proposal instead")
         wt = worktree.Worktree(repo=Path(work.repo), path=Path(work.worktree_path), branch=work.branch, base=work.base)
         proposals = self.store.last_events(task_id, ("merge_proposed",), 1)
-        summary = proposals[0].data.get("summary", "") if proposals else ""
-        message = merge_message(summary, work.title, unreviewed=not state.approved)
+        last = proposals[0].data if proposals else {}
+        message = merge_message(last.get("summary", ""), work.title, unreviewed=not state.approved)
         try:
             if work.base_branch:
                 def mark_merging(commit: str, tip: str) -> str:
+                    self.ci_gate(work, work.base_branch, commit=commit)
                     marker = f"{time.time_ns()}:{secrets.token_hex(16)}"
                     self._set(task_id, merge_state="merging", merged_commit=commit, merged_tip=tip,
                               merge_lock=None, merge_marker=marker)
                     return marker
 
-                commit, tip = branch_mode.merge(self._branch_checkout(work), message,
-                                                expected_files=proposals[0].data.get("files") if proposals else None,
+                commit, tip = branch_mode.merge(self._branch_checkout(work), message, expected_files=last.get("files"),
                                                 before_lock=mark_merging)
                 try:
                     leftovers, check_error = branch_mode.leftover_files(wt.repo), None
@@ -319,8 +320,7 @@ class Work(MergeStatus):
             if not wt.path.exists():
                 self._restore_worktree(work)
             worktree.commit(wt, f"{message.splitlines()[0]}\n\ncrewbots task {work.id}, by {work.bot}")
-            tip = worktree._git(wt.path, "rev-parse", "HEAD")
-            commit = worktree.merge(wt, message, tip=tip)
+            tip, commit = self.merge_gated(work, wt, message)
         except worktree.GitError as e:
             current = self.store.get_task(task_id)
             if branch_mode.LOCK_LEFT in str(e) or branch_mode.LOCK_STUCK in str(e):
@@ -352,7 +352,7 @@ class Work(MergeStatus):
 
     def withdraw_merge(self, task_id: str, reason: str, *, parent_id: str | None = None) -> Task:
         """Withdraw a proposal, preserving work on its branch."""
-        self._check_worktree_sweep()
+        self._check_worktree_sweep(task_id)
         if parent_id is not None:
             parent = self.store.get_task(parent_id)
             if not self.is_coordinator(parent.bot):
@@ -525,7 +525,7 @@ class Work(MergeStatus):
         return await self.run_worktree_sweep(dry_run)
 
     def drop_worktree(self, task_id: str) -> dict[str, str]:
-        self._check_worktree_sweep()
+        self._check_worktree_sweep(task_id)
         task = self.store.get_task(task_id)
         if task.merge_state == "merging":
             raise NotAllowed("a merge is being recovered; the checkout cannot be dropped")

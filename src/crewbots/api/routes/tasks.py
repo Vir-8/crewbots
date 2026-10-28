@@ -102,7 +102,7 @@ def routes(c: Context) -> APIRouter:
     @v1.post("/tasks/{task_id}/merge", response_model=MergeResultOut)
     async def merge(task_id: str, body: MergeRequest | None = None):
         task_or_404(task_id)
-        task = runner.merge(task_id, force=bool(body and body.force))
+        task = await runner.merge_off_loop(task_id, force=bool(body and body.force))
         event = store.last_event(task_id, ("merged",))
         data = event.data if event and event.data.get("commit") == task.merged_commit else {}
         return task.to_json() | {"leftover_files": data.get("leftover_files"),

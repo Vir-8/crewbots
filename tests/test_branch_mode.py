@@ -1426,3 +1426,16 @@ async def test_branch_mode_proposal_already_on_main_is_not_merged(game, monkeypa
     assert (git("status", "--porcelain"), git("for-each-ref", "--format=%(refname) %(objectname)")) == before
     assert store.get_task(task.id).merge_state == "proposed"
     await crew.runner.shutdown()
+
+
+async def test_failing_ci_refuses_a_branch_mode_merge_and_leaves_the_proposal(game, monkeypatch):
+    crew, store, path, git, gate = game
+    task = await prepared_merge(game, monkeypatch)
+    crew.runner.crew.projects["game"] = projects.Project("game", path, "", path / "game.md", ci=("echo boom >&2; test -f nope",))
+    with pytest.raises(MergeError, match="(?s)CI did not pass.*boom"):
+        crew.runner.merge(task.id)
+    after = store.get_task(task.id)
+    assert after.merge_state == "proposed" and after.merge_marker is None
+    assert not (path / ".git" / "index.lock").exists()
+    assert git("branch", "--show-current") == task.branch and git("rev-parse", "main") == task.base
+    await crew.runner.shutdown()

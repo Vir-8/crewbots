@@ -109,7 +109,7 @@ def routes(c: Context) -> APIRouter:
 
     @v1.post("/bot/propose_merge")
     async def bot_propose_merge(request: Request, body: MergeProposal):
-        task = runner.propose_merge(request.state.task.id, body.task_id, body.summary)
+        task = await runner.propose_merge_off_loop(request.state.task.id, body.task_id, body.summary)
         event = runner.store.last_event(task.id, ("merged",)) if task.merge_state == "merged" else None
         data = event.data if event and event.data.get("commit") == task.merged_commit else {}
         return {"id": task.id, "merge_state": task.merge_state, "merged_commit": task.merged_commit,

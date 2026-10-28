@@ -222,13 +222,14 @@ def _run_step(step: Step, checkout: Path, timeout: int, base_env: dict[str, str]
 
 
 def check(folder: Path, sha: str, branch: str, project_commands: tuple[str, ...] = (),
-          timeout: int = STEP_TIMEOUT) -> dict[str, Any]:
+          timeout: int = STEP_TIMEOUT, optional: bool = False) -> dict[str, Any]:
     """Run the CI steps on `sha` in a clean checkout. Returns what to record on the card, or raises CIFailed with the
-    failing step and the end of its output. Blocking: call it off the event loop."""
+    failing step and the end of its output. With `optional`, a repo that has no CI steps for the branch passes with
+    status "none" instead of failing (merges; a push still needs CI). Blocking: call it off the event loop."""
     paths.temp().mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="ci-", dir=paths.temp()))
     try:
-        result = _run(folder, sha, branch, project_commands, timeout, work)
+        result = _run(folder, sha, branch, project_commands, timeout, work, optional)
     except CIFailed as e:
         leftover = _remove(work)
         raise CIFailed(f"{e}\n{leftover}" if leftover else str(e)) from None
@@ -236,7 +237,7 @@ def check(folder: Path, sha: str, branch: str, project_commands: tuple[str, ...]
         _remove(work)
         raise
     leftover = _remove(work)
-    if leftover:
+    if leftover and result["status"] == "passed":
         result["cleanup"] = leftover
         result["note"] += f" ({leftover})"
     return result
@@ -251,7 +252,7 @@ def _remove(work: Path) -> str:
 
 
 def _run(folder: Path, sha: str, branch: str, project_commands: tuple[str, ...], timeout: int,
-         work: Path) -> dict[str, Any]:
+         work: Path, optional: bool = False) -> dict[str, Any]:
     checkout = work / "checkout"
     try:
         for args in (["clone", "-q", "--shared", "--no-checkout", str(folder), str(checkout)],
@@ -260,6 +261,8 @@ def _run(folder: Path, sha: str, branch: str, project_commands: tuple[str, ...],
     except (subprocess.SubprocessError, OSError) as e:
         raise CIFailed(f"CI could not check out {sha[:12]}: {getattr(e, 'stderr', None) or e}") from None
     plan = plan_for(checkout, branch, project_commands)
+    if not plan.steps and optional:
+        return {"status": "none", "sha": sha, "steps": [], "skipped": [], "node": [], "note": "no CI configured"}
     if not plan.steps:
         raise CIFailed(f"no CI configured for {branch}; add a ci: list to the project")
     nodes = {major: find_node(major) for major in dict.fromkeys(s.node for s in plan.steps if s.node)}

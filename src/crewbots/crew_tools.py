@@ -217,7 +217,7 @@ class CrewTools:
                     proposal = await propose(r, me, args["project"], args["branch"], args["summary"])
                     return proposal_message(r, proposal)
                 case "propose_merge":
-                    task = r.propose_merge(me, args["task_id"], args["summary"])
+                    task = await r.propose_merge_off_loop(me, args["task_id"], args["summary"])
                     event = r.store.last_event(task.id, ("merged",)) if task.merge_state == "merged" else None
                     details = event.data if event and event.data.get("commit") == task.merged_commit else {}
                     return merge_text(task.id, task.merge_state, task.merged_commit, details)

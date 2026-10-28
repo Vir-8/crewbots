@@ -96,16 +96,22 @@ def commit(wt: Worktree, message: str) -> str | None:
     return _git(wt.path, "rev-parse", "HEAD")
 
 
-def merge(wt: Worktree, message: str, *, tip: str | None = None) -> str:
+def merge(wt: Worktree, message: str, *, tip: str | None = None, tested: tuple[str, str] | None = None) -> str:
     """Squashes the worktree's branch into whatever branch the main checkout has out, as one commit with `message`,
     and returns that commit (the current one, if the branch adds nothing). It refuses a checkout with uncommitted
-    changes, and a conflict is reset, so it either merges cleanly or changes nothing."""
+    changes, and a conflict is reset, so it either merges cleanly or changes nothing. `tested` is the (branch, commit)
+    CI ran against: if the checkout has since switched branch it
+    refuses, and if that branch moved it raises Moved; either way nothing changes."""
     if _git(wt.repo, "status", "--porcelain", "--untracked-files=no"):
         raise GitError(f"{wt.repo} has uncommitted changes; commit or stash them, then merge again")
     try:
         into = _git(wt.repo, "symbolic-ref", "--short", "HEAD")
     except GitError:
         raise GitError(f"{wt.repo} is not on a branch (detached HEAD); check out the branch to merge into") from None
+    if tested and into != tested[0]:  # never land on a branch nobody chose
+        raise GitError(f"the checkout switched from {tested[0]} to {into} while CI ran, so nothing was merged; propose again")
+    if tested and _git(wt.repo, "rev-parse", "--verify", f"refs/heads/{into}") != tested[1]:
+        raise Moved(f"{into} moved while CI ran")
     message = final_message(message)  # the squashed commits' own messages are not carried over, only this one
     try:
         _git(wt.repo, "merge", "--squash", tip or wt.branch)
@@ -185,3 +191,7 @@ def _git(cwd: Path, *args: str, strip: bool = True, env: dict[str, str] | None =
 
 class GitError(RuntimeError):
     pass
+
+
+class Moved(GitError):
+    """The branch CI tested moved, or the checkout switched branch, before the merge landed."""

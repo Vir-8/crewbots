@@ -1,11 +1,19 @@
 """Whether a proposed task's changes are already on the branch they would merge into."""
 
+import asyncio
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from crewbots import worktree
+from crewbots import ci, worktree
 from crewbots.crew import is_no_reply
 from crewbots.events import Notice
+from crewbots.runner.common import MergeError, NotAllowed
 from crewbots.store import Task
+
+_MERGE_LOCK = threading.Lock()  # one merge at a time, in the daemon
+_MERGING_LOCK = threading.Lock()  # guards the per-task in-flight counts
+_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="merge")
 
 
 class MergeStatus:
@@ -31,6 +39,84 @@ class MergeStatus:
             return into if worktree.already_in(repo, f"refs/heads/{into}", tip, task.base) else None
         except worktree.GitError:
             return None
+
+    def ci_gate(self, task: Task, into: str, tip: str | None = None, *, commit: str | None = None) -> tuple[str, str]:
+        """Run the repo's CI steps on what a merge would land on `into`: `commit` if given (already the squash
+        result), else the squash of `tip` on top of `into`, built with merge-tree so no ref or file moves. Returns
+        (branch, commit of it) that was tested. Raises MergeError naming the failing step, or if the result can't be
+        built (a conflict included): CI is never skipped. A repo with no CI steps passes. Blocking, like the merge."""
+        repo = Path(task.repo)
+        target = f"refs/heads/{into}"
+        try:
+            tested = worktree._git(repo, "rev-parse", "--verify", target)
+            if commit is None:
+                tree = worktree.git_read(repo, "merge-tree", "--write-tree", target, tip).split("\n", 1)[0].strip()
+                commit = worktree._git(repo, "-c", "user.name=crewbots", "-c", "user.email=crewbots@localhost",
+                                       "commit-tree", tree, "-p", target, "-m", "merge check")
+        except worktree.GitError as e:
+            if "CONFLICT" in str(e):  # no result to check: refuse, with the conflict as the reason
+                raise MergeError(f"merging {task.branch} into {into} failed, and nothing was changed: {e}") from None
+            raise MergeError(f"could not build the merged result to run CI on, so nothing was merged: {e}") from None
+        project = next((p for p in self.crew.projects.values() if p.folder.resolve() == repo.resolve()), None)
+        try:
+            ci.check(repo, commit, into, project.ci if project else (), optional=True)
+        except ci.CIFailed as e:
+            raise MergeError(f"CI did not pass on the merged result, so nothing was merged: {e}") from None
+        return into, tested
+
+    async def merge_off_loop(self, task_id: str, force: bool = False):
+        """Runner.merge in a thread, so a long CI run doesn't freeze the daemon."""
+        return await self._off_loop(task_id, self.merge, task_id, force)
+
+    async def propose_merge_off_loop(self, parent_id: str, task_id: str, summary: str):
+        return await self._off_loop(task_id, self.propose_merge, parent_id, task_id, summary)
+
+    async def _off_loop(self, task_id: str, call, *args):
+        """Merges run one at a time, whichever task: the worker thread holds _MERGE_LOCK for the whole operation (CI and
+        landing), so a caller that gives up can't release it, a retry waits its turn (and finds the task merged), and
+        two merges never use one checkout together. Until the worker finishes, the task counts as being merged."""
+        merging = self.__dict__.setdefault("_merging_now", {})
+        with _MERGING_LOCK:
+            merging[task_id] = merging.get(task_id, 0) + 1
+
+        def worker():
+            with _MERGE_LOCK:
+                return call(*args)
+
+        def finished(_):  # runs once: when the worker ends, or when a still-queued job is cancelled
+            with _MERGING_LOCK:
+                merging[task_id] -= 1
+
+        try:
+            cf = _EXECUTOR.submit(worker)
+        except BaseException:
+            finished(None)
+            raise
+        cf.add_done_callback(finished)
+        return await asyncio.wrap_future(cf)
+
+    def check_not_merging(self, task_id: str | None) -> None:
+        """Refuse to withdraw or drop a task while a merge of it is waiting or running."""
+        if task_id and self.__dict__.get("_merging_now", {}).get(task_id):
+            raise NotAllowed("a merge of this task is running; try again when it finishes")
+
+    def merge_gated(self, task: Task, wt: worktree.Worktree, message: str) -> tuple[str, str]:
+        """Run CI on the squash of the worktree's committed tip, then land it; returns (tip, merge commit).
+        worktree.merge checks that the branch CI tested is still where it was. If main moved during CI, CI runs once
+        more on the new squash; if that moves again too, the merge is refused. A proposal that changed while CI ran
+        (withdrawn) is not landed."""
+        for attempt in (1, 2):
+            tip = worktree._git(wt.path, "rev-parse", "HEAD")
+            tested = self.ci_gate(task, worktree._git(wt.repo, "symbolic-ref", "--short", "HEAD"), tip)
+            if self.store.get_task(task.id).merge_state != task.merge_state:
+                raise MergeError("the proposal changed while CI ran, so nothing was merged; propose again")
+            try:
+                return tip, worktree.merge(wt, message, tip=tip, tested=tested)
+            except worktree.Moved as e:
+                if attempt == 2:
+                    raise worktree.GitError(f"{e}, and again during the second CI run, so nothing was merged; "
+                                            "propose again") from None
+        raise AssertionError("unreachable")
 
     def wrong_branch(self, task: Task) -> str | None:
         """What to tell a worktree task whose HEAD is not on its own branch (another branch, or detached), or None."""
