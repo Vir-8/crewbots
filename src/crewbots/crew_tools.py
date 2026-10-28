@@ -85,6 +85,7 @@ SPECS: dict[str, Spec] = {
     "tasks": Spec(_object({}, [])),
     "message": Spec(_object({"task_id": STRING, "text": STRING}, ["task_id", "text"])),
     "propose_merge": Spec(_object({"task_id": STRING, "summary": STRING}, ["task_id", "summary"]), coordinator_only=True),
+    "withdraw_merge": Spec(_object({"task_id": STRING, "reason": STRING}, ["task_id", "reason"]), coordinator_only=True),
     "next_check": Spec(_object({"minutes": {"type": "number"}, "why": STRING}, ["minutes", "why"]), coordinator_only=True),
 }
 
@@ -172,6 +173,9 @@ class CrewTools:
                     task = r.propose_merge(me, args["task_id"], args["summary"])
                     return (f"Merged {task.id} locally as {task.merged_commit}." if task.merge_state == "merged"
                             else f"Proposed {task.id} to the user for merging.")
+                case "withdraw_merge":
+                    task = r.withdraw_merge(args["task_id"], args["reason"], parent_id=me)
+                    return f"Withdrew the merge proposal for {task.id}."
                 case "remember":
                     note = r.remember(me, args["title"], args["body"], shared=bool(args.get("shared")))
                     return f"Remembered: {note.title} ({note.path})."

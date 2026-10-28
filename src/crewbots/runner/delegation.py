@@ -18,6 +18,7 @@ from crewbots.runner.common import NotAllowed, UnknownBot, _clip
 from crewbots.runner.reviews import MAX_REVIEW_ROUNDS, _review_findings, _round_status
 from crewbots.store import Handoff, Review, Status, Task
 
+# A concurrency cap: finished threads don't consume resources, so no lifetime limit is needed.
 MAX_CHILDREN = 12  # unfinished children of one task
 MAX_DEPTH = 3  # delegations in a row: chief → engineer → helper → one more, and no further
 MAX_OUT = 4  # tasks one bot has delegated that aren't finished yet, across all its work
@@ -137,6 +138,15 @@ class Delegation:
 
     def message_child(self, parent_id: str, task_id: str, text: str) -> Task:
         child = self._own_child(parent_id, task_id)
+        if child.status not in {Status.QUEUED, Status.RUNNING, Status.HELD, Status.NEEDS_INPUT}:
+            parent = self.store.get_task(parent_id)
+            if self.store.unfinished_children(parent_id) >= self.max_children:
+                raise NotAllowed(f"stop condition: this task already has {self.max_children} unfinished child tasks.")
+            if child.bot != parent.bot and child.created_by == parent.bot:
+                out = self.store.delegated_out(parent.bot)
+                if out >= self.max_out:
+                    raise NotAllowed(f"stop condition: you already have {out} delegated tasks that haven't finished, "
+                                     f"and the most is {self.max_out}.")
         if child.status is not Status.NEEDS_INPUT and self.review_state(task_id).out_of_rounds:
             raise NotAllowed(
                 f"stop condition: {task_id} failed review in all {MAX_REVIEW_ROUNDS} rounds. Report to the user with "

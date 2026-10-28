@@ -10,6 +10,7 @@ from crewbots.api.schemas.bot import (
     GroupMember,
     HandoffBody,
     MergeProposal,
+    MergeWithdrawal,
     NameBody,
     NextCheck,
     OpenGroup,
@@ -26,6 +27,7 @@ from crewbots.api.schemas.bot import (
     ShareBody,
     StateBody,
     ThreadBody,
+    WithdrawalReason,
 )
 from crewbots.api.schemas.bots import (
     Avatar,
@@ -243,6 +245,8 @@ __all__ = [
     "McpServerBody",
     "McpServerOut",
     "MergeProposal",
+    "MergeWithdrawal",
+    "WithdrawalReason",
     "MergeRequest",
     "Message",
     "ModelOut",

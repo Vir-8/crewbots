@@ -117,7 +117,7 @@ export function Thread(props: {
         ))}
         </Finding.Provider>
         {active && (
-          <div className="working">
+          <div className="working-indicator">
             <span className="working-dot" />
             <span className="shimmer">{(props.working && task.status !== "running" ? "" : doing(crew.latest.get(task.id))) || props.working || `${labelOf(task.bot)} is thinking`}</span>
           </div>

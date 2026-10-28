@@ -1,6 +1,7 @@
 """The review loop and the merge: verdicts, rounds counted in code, the stop condition, and merging approved work."""
 
 import subprocess
+from pathlib import Path
 
 import pytest
 from fakes import ScriptedCrew, bot, git_repo, wait_until
@@ -194,7 +195,7 @@ async def test_approved_work_is_proposed_and_the_user_merges_it(store, tmp_path)
     assert (repo / "hello.py").read_text().startswith("def hello")
     assert git(repo, "rev-parse", "HEAD") == merged.merged_commit
     message = git(repo, "log", "-1", "--format=%B")
-    assert message.startswith("add hello.py\n") and "reviewer (pass)" in message
+    assert message.startswith("adds hello.py; reviewed\n") and "reviewer (pass)" in message
     assert not tmp_path.joinpath(work.worktree_path).exists()
     assert work.branch not in git(repo, "branch")
     with pytest.raises(MergeError, match="already merged"):
@@ -245,14 +246,48 @@ async def test_automatic_merge_is_opt_in_and_preserves_failed_proposals(store, t
         assert result.merge_state == ("merged" if enabled else "proposed")
         assert (repo / "README.md").read_text() == ("bot edit\n" if enabled else "hello\n")
         if enabled:
-            assert git(repo, "log", "-1", "--format=%s") == "Improve the readme"
-            assert git(repo, "log", "-1", "--format=%s", "HEAD^2") == "Improve the readme"
+            assert git(repo, "log", "-1", "--format=%s") == "Improve readme"
+            assert git(repo, "log", "-1", "--format=%s", "HEAD^2") == "Improve readme"
             assert [e.data["automatic"] for e in store.events(work.id) if e.kind == "merged"] == [True]
             with pytest.raises(NotAllowed, match="already merged"):
                 crew.runner.propose_merge(parent.id, work.id, "again")
         else:
             assert git(repo, "rev-parse", "HEAD") == head
     assert all("push" not in command for command in commands)
+
+
+async def test_withdraw_proposal_preserves_worktree_and_records_reason(store, tmp_path):
+    repo = git_repo(tmp_path / "repo")
+    crew = crew_for(store, tmp_path)
+    parent = store.create_task("chief", "lead", workspace=str(repo), status=Status.IDLE)
+    work = crew.runner.delegate(parent.id, "engineer", "edit")
+    await wait_until(crew.settled(work.id))
+    await review_round(crew, parent, work, Verdict.PASS)
+    crew.runner.propose_merge(parent.id, work.id, "Edit the readme")
+    path = store.get_task(work.id).worktree_path
+    other = store.create_task("chief", "another coordinator", status=Status.IDLE)
+    with pytest.raises(NotAllowed, match="not delegated by this task"):
+        crew.runner.withdraw_merge(work.id, "Not mine", parent_id=other.id)
+    assert store.get_task(work.id).merge_state == "proposed"
+    with pytest.raises(NotAllowed, match="reason"):
+        crew.runner.withdraw_merge(work.id, " ", parent_id=parent.id)
+    task = crew.runner.withdraw_merge(work.id, "Superseded", parent_id=parent.id)
+    assert task.merge_state is None and task.worktree_path == path
+    assert Path(path).is_dir()
+    assert store.events(work.id)[-1].data == {"by": "chief", "reason": "Superseded"}
+    with pytest.raises(NotAllowed, match="no merge proposal"):
+        crew.runner.withdraw_merge(work.id, "again")
+    crew.runner.propose_merge(parent.id, work.id, "Try again")
+    assert crew.runner.withdraw_merge(work.id, "No longer needed").merge_state is None
+    assert store.events(work.id)[-1].data["by"] == "user"
+
+
+def test_merge_subject_uses_first_line_at_word_boundary():
+    from crewbots.runner.work import _merge_subject
+
+    assert _merge_subject("A useful subject\nDetails", "title") == "A useful subject"
+    assert _merge_subject("", "Fallback title") == "Fallback title"
+    assert _merge_subject("A long subject with several words", "title", 17) == "A long subject"
 
 
 def engineer_wrote(crew, store, tmp_path, repo, content="new\n"):

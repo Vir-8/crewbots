@@ -254,11 +254,12 @@ export function Composer(props: {
         value={text}
         placeholder={props.placeholder}
         onChange={(e) => {
-          if (mentionTyped(text) === undefined && mentionTyped(e.target.value) !== undefined) setPick(0);
+          if (mentionTyped(text) !== mentionTyped(e.target.value)) setPick(0);
           setDismissedMention(null);
           setText(e.target.value);
         }}
         onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing) return;
           const menu = commands.length ? "commands" : suggestions.length ? "mentions" : null;
           const length = menu === "commands" ? commands.length : suggestions.length;
           const choice = pickerKey(e.key, e.shiftKey, pick, length);
@@ -282,7 +283,7 @@ export function Composer(props: {
           } else if (e.key === "Escape" && panel) {
             e.preventDefault();
             setPanel(null);
-          } else if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+          } else if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             send();
           }

@@ -16,6 +16,7 @@ from crewbots.api.schemas import (
     ReviewStateOut,
     TaskOut,
     TaskStatus,
+    WithdrawalReason,
 )
 from crewbots.store import Status
 
@@ -90,5 +91,10 @@ def routes(c: Context) -> APIRouter:
     async def merge(task_id: str, body: MergeRequest | None = None):
         task_or_404(task_id)
         return runner.merge(task_id, force=bool(body and body.force)).to_json()
+
+    @v1.post("/tasks/{task_id}/withdraw-merge", response_model=TaskOut)
+    async def withdraw_merge(task_id: str, body: WithdrawalReason):
+        task_or_404(task_id)
+        return runner.withdraw_merge(task_id, body.reason).to_json()
 
     return v1

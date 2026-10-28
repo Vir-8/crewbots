@@ -165,9 +165,12 @@ class Work:
                 f"current version {state.version}); pass force to merge anyway")
         wt = worktree.Worktree(repo=Path(work.repo), path=Path(work.worktree_path), branch=work.branch, base=work.base)
         reviewers = ", ".join(f"{t.bot} ({r.verdict if r else 'no verdict'})" for t, r in state.latest) or "none"
+        proposals = self.store.last_events(task_id, ("merge_proposed",), 1)
+        summary = proposals[0].data.get("summary", "") if proposals else ""
+        subject = _merge_subject(summary, work.title)
         try:
-            worktree.commit(wt, f"{work.title}\n\ncrewbots task {work.id}, by {work.bot}")
-            commit = worktree.merge(wt, f"{work.title}\n\nReviewed in round {state.round}: "
+            worktree.commit(wt, f"{subject}\n\ncrewbots task {work.id}, by {work.bot}")
+            commit = worktree.merge(wt, f"{subject}\n\nReviewed in round {state.round}: "
                                         f"{reviewers}.{' Merged without approval.' if not state.approved else ''}")
         except worktree.GitError as e:
             raise MergeError(str(e)) from None
@@ -178,6 +181,28 @@ class Work:
             worktree.remove(wt, delete_branch=True)
         except worktree.GitError as e:
             self._record(task_id, kind="merge_cleanup_failed", data={"reason": str(e)})
+        return task
+
+    def withdraw_merge(self, task_id: str, reason: str, *, parent_id: str | None = None) -> Task:
+        """Withdraw a proposal without changing its worktree."""
+        if parent_id is not None:
+            parent = self.store.get_task(parent_id)
+            if parent.bot not in self.crew.bots or not self.crew.bots[parent.bot].can_delegate:
+                raise NotAllowed("only a coordinator can withdraw a merge")
+            self._own_child(parent_id, task_id)
+            by = parent.bot
+        else:
+            by = "user"
+        if not reason.strip():
+            raise NotAllowed("give a reason for withdrawing the proposal")
+        try:
+            task = self.store.get_task(task_id)
+        except KeyError:
+            raise NotAllowed(f"no task {task_id}") from None
+        if task.merge_state != "proposed":
+            raise NotAllowed(f"{task_id} has no merge proposal to withdraw")
+        task = self._set(task_id, merge_state=None)
+        self._record(task_id, kind="merge_withdrawn", data={"by": by, "reason": reason.strip()})
         return task
 
     def handoff(self, task_id: str, done: str, output: list[str], open: str, needs: str) -> Handoff:
@@ -226,6 +251,16 @@ def _choices(given: list[Any] | None) -> list[dict[str, str]]:
 def _short(text: str, chars: int) -> str:
     text = " ".join(text.split())
     return text if len(text) <= chars else text[:chars - 1] + "…"
+
+
+def _merge_subject(summary: str, title: str, limit: int = 72) -> str:
+    line = summary.strip().splitlines()[0].strip() if summary.strip() else title.strip()
+    if len(line) <= limit:
+        return line
+    prefix = line[:limit]
+    if line[limit].isspace():
+        return prefix.rstrip()
+    return prefix.rsplit(" ", 1)[0] if " " in prefix else prefix
 
 
 def _mentions(match: str, text: str) -> bool:

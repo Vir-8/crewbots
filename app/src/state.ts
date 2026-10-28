@@ -232,6 +232,7 @@ export function useCrew() {
     send: (taskId: string, text: string, attachments: string[] = []) => act(api.send(taskId, text, attachments)),
     cancel: (taskId: string) => act(api.cancel(taskId)),
     merge: (taskId: string, force: boolean) => act(api.merge(taskId, force)),
+    withdrawMerge: (taskId: string, reason: string) => act(api.withdrawMerge(taskId, reason)),
     release: (taskId: string) => act(api.release(taskId)),
     addStarter: async (name: string) => {
       await act(api.addStarter(name));

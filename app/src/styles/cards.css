@@ -108,6 +108,7 @@
 }
 
 .ask .md pre {
+  border: 1px solid var(--line);
   margin: 6px 0;
   padding: 8px 10px;
   font-size: 12px;

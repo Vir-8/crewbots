@@ -208,6 +208,11 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
         return (f"Merged {task_id} locally as {task['merged_commit']}." if task["merge_state"] == "merged"
                 else f"Proposed {task_id} to the user for merging.")
 
+    @server.tool(description=describe("withdraw_merge"))
+    def withdraw_merge(task_id: str, reason: str) -> str:
+        call("POST", "/bot/withdraw_merge", {"task_id": task_id, "reason": reason})
+        return f"Withdrew the merge proposal for {task_id}."
+
 
     return server
 

@@ -28,7 +28,7 @@ export type Block =
 
 // Crew tools that are shown as what they did (a card, a verdict, a question, a note kept, a page), not as steps.
 const SHOWN_ELSEWHERE = new Set(
-  ["delegate", "start_thread", "post", "share", "handoff", "review", "escalate", "propose_merge", "message", "ask", "remember",
+  ["delegate", "start_thread", "post", "share", "handoff", "review", "escalate", "propose_merge", "withdraw_merge", "message", "ask", "remember",
     "forget", "update_state", "write_page", "edit_page", "next_check", "set_name"].map((t) => `mcp__crewbots__${t}`),
 );
 const COMPACTED = "compacted its conversation"; // the gist of the lines about a conversation grown long
@@ -54,7 +54,7 @@ export function said(block: Block): string {
     case "page":
       return block.page;
     case "permission":
-      return [shown(block.what), shown(block.why), block.folder ?? ""].filter(Boolean).join("\n");
+      return [shown(block.what), shown(block.why), (block.folder ?? "").replace(/^\/Users\/[^/]+/, "~")].filter(Boolean).join("\n");
     case "activity":
       return block.items.map(said).filter(Boolean).join("\n");
     default:
@@ -213,6 +213,10 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
       case "merge_proposed":
         flush();
         out.push({ kind: "line", id: e.id, text: `${d.by} proposed it for merging`, icon: "merge" });
+        break;
+      case "merge_withdrawn":
+        flush();
+        out.push({ kind: "line", id: e.id, text: `${d.by === "user" ? "You" : d.by} withdrew the merge proposal: ${d.reason}`, icon: "merge" });
         break;
       case "memory":
         flush();

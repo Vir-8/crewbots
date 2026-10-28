@@ -14,6 +14,7 @@ from crewbots.api.schemas import (
     GroupMember,
     HandoffBody,
     MergeProposal,
+    MergeWithdrawal,
     NameBody,
     NextCheck,
     OpenGroup,
@@ -89,6 +90,11 @@ def routes(c: Context) -> APIRouter:
     async def bot_propose_merge(request: Request, body: MergeProposal):
         task = runner.propose_merge(request.state.task.id, body.task_id, body.summary)
         return {"id": task.id, "merge_state": task.merge_state, "merged_commit": task.merged_commit}
+
+    @v1.post("/bot/withdraw_merge")
+    async def bot_withdraw_merge(request: Request, body: MergeWithdrawal):
+        task = runner.withdraw_merge(body.task_id, body.reason, parent_id=request.state.task.id)
+        return {"id": task.id, "merge_state": task.merge_state}
 
     @v1.post("/bot/remember", status_code=201)
     async def bot_remember(request: Request, body: Remember):

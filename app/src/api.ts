@@ -62,6 +62,7 @@ export const api = {
   send: (taskId: string, text: string, attachments: string[] = []) => call<Task>("POST", `/tasks/${taskId}/messages`, { text, attachments }),
   cancel: (taskId: string) => call<Task>("POST", `/tasks/${taskId}/cancel`),
   merge: (taskId: string, force = false) => call<Task>("POST", `/tasks/${taskId}/merge`, { force }),
+  withdrawMerge: (taskId: string, reason: string) => call<Task>("POST", `/tasks/${taskId}/withdraw-merge`, { reason }),
   release: (taskId: string) => call<Task>("POST", `/tasks/${taskId}/release`),
   answerPermission: (id: number, allowed: boolean) => call<PermissionOut>("POST", `/permissions/${id}`, { allowed }),
   crew: () => call<CrewState>("GET", "/crew"),

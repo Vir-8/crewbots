@@ -32,6 +32,25 @@ def messages(store, task_id):
     return [e.data for e in store.events(task_id) if e.kind == "message"]
 
 
+async def test_resuming_finished_child_obeys_both_concurrency_caps(store, tmp_path):
+    crew = ScriptedCrew(store, tmp_path, chief(), bot("engineer"), gate=asyncio.Event())
+    parent = store.create_task("chief", "lead", status=Status.IDLE)
+    child = store.create_task("engineer", "finished", parent_id=parent.id, created_by="chief", status=Status.IDLE)
+    crew.runner.max_children = 1
+    active = store.create_task("chief", "thread", parent_id=parent.id, created_by="chief", status=Status.HELD)
+    with pytest.raises(NotAllowed, match="unfinished child"):
+        crew.runner.message_child(parent.id, child.id, "resume")
+    store.update_task(active.id, status=Status.IDLE)
+    crew.runner.max_out = 1
+    elsewhere = store.create_task("engineer", "other", created_by="chief", status=Status.NEEDS_INPUT)
+    with pytest.raises(NotAllowed, match="delegated tasks"):
+        crew.runner.message_child(parent.id, child.id, "resume")
+    assert messages(store, child.id) == []
+    store.update_task(elsewhere.id, status=Status.IDLE)
+    assert crew.runner.message_child(parent.id, child.id, "resume").status == Status.QUEUED
+    await crew.runner.shutdown()
+
+
 async def test_the_chief_delegates_and_hears_back_once_everything_is_done(store, tmp_path):
     crew = ScriptedCrew(store, tmp_path, chief(), bot("engineer"), bot("writer"))
     children = []

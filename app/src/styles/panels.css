@@ -246,12 +246,12 @@
   font-size: 12px;
 }
 
-button.verdict {
+.review button.verdict {
   text-align: left;
   width: 100%;
 }
 
-button.verdict:hover {
+.review button.verdict:hover {
   border-color: color-mix(in srgb, var(--soft) 30%, var(--line));
 }
 

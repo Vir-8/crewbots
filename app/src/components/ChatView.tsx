@@ -206,7 +206,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
               ),
             )}
             {typing.length > 0 && (
-              <div className="working">
+              <div className="working-indicator">
                 <span className="working-dot" />
                 <span className="shimmer">
                   {typing.map(labelOf).join(", ")} {typing.length === 1 ? "is" : "are"} replying

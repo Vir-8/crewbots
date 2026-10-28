@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "bf1df486f094";
+export const API_SCHEMA = "a63f8ea4bda4";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -504,6 +504,11 @@ export interface MergeRequest {
 
 export interface MergeSettings {
   auto_merge: boolean;
+}
+
+export interface MergeWithdrawal {
+  task_id: string;
+  reason: string;
 }
 
 export interface Message {
@@ -1192,4 +1197,8 @@ export interface VersionOut {
   schema_hash: string;
   build: string | null;
   source_changed: boolean;
+}
+
+export interface WithdrawalReason {
+  reason: string;
 }

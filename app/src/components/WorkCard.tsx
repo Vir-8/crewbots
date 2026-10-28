@@ -78,6 +78,8 @@ export function WorkCard({ crew, task, onOpen }: { crew: Crew; task: Task; onOpe
 
 export function MergeButton({ crew, task }: { crew: Crew; task: Task }) {
   const [busy, setBusy] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [reason, setReason] = useState("");
   if (task.merge_state === "merged") {
     return (
       <span className="merged">
@@ -92,10 +94,39 @@ export function MergeButton({ crew, task }: { crew: Crew; task: Task }) {
     await crew.merge(task.id, false).catch(() => undefined);
     setBusy(false);
   };
+  const withdraw = async () => {
+    if (!reason.trim() || busy) return;
+    setBusy(true);
+    try {
+      await crew.withdrawMerge(task.id, reason.trim());
+      setWithdrawing(false);
+      setReason("");
+    } catch {
+      // The crew displays the error; keep the reason for another try.
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
-    <button className="button primary small" disabled={busy || ACTIVE.includes(task.status)} onClick={merge}>
-      <Icon name="merge" size={13} />
-      {busy ? "Merging…" : "Merge"}
-    </button>
+    <>
+      <button className="button small" disabled={busy} onClick={() => setWithdrawing(true)}>Withdraw</button>
+      <button className="button primary small" disabled={busy || ACTIVE.includes(task.status)} onClick={merge}>
+        <Icon name="merge" size={13} />
+        {busy ? "Merging…" : "Merge"}
+      </button>
+      {withdrawing && (
+        <div className="dialog-backdrop" onClick={(e) => { e.stopPropagation(); if (!busy) setWithdrawing(false); }}>
+          <form className="dialog" role="dialog" aria-modal="true" aria-labelledby="withdraw-title" onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); void withdraw(); }}>
+            <h2 id="withdraw-title">Withdraw merge proposal</h2>
+            <label className="dialog-label" htmlFor="withdraw-reason">Reason</label>
+            <input id="withdraw-reason" className="dialog-input" value={reason} onChange={(e) => setReason(e.target.value)} autoFocus />
+            <div className="dialog-actions">
+              <button type="button" className="button" disabled={busy} onClick={() => { setWithdrawing(false); setReason(""); }}>Cancel</button>
+              <button type="submit" className="button primary" disabled={busy || !reason.trim()}>{busy ? "Withdrawing…" : "Withdraw"}</button>
+            </div>
+          </form>
+        </div>
+      )}
+    </>
   );
 }

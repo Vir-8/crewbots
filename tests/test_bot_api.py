@@ -126,6 +126,28 @@ def test_worker_cannot_call_propose_merge_directly(crew_app):
     response = client.post("/bot/propose_merge", headers=as_bot(token), json={"task_id": "t_any", "summary": "work"})
     assert response.status_code == 403
     assert "only a coordinator" in response.json()["detail"]
+    response = client.post("/bot/withdraw_merge", headers=as_bot(token), json={"task_id": "t_any", "reason": "old"})
+    assert response.status_code == 403
+    assert "only a coordinator" in response.json()["detail"]
+
+
+def test_coordinator_and_user_can_withdraw_proposals(crew_app):
+    client, backend, store = crew_app
+    chief_id, token = start(client, backend, "chief")
+    work = store.create_task("engineer", "old work", parent_id=chief_id, created_by="chief")
+    store.update_task(work.id, merge_state="proposed")
+    other = store.create_task("engineer", "other work", created_by="chief")
+    store.update_task(other.id, merge_state="proposed")
+    refused = client.post("/bot/withdraw_merge", headers=as_bot(token), json={"task_id": other.id, "reason": "old"})
+    assert refused.status_code == 403 and store.get_task(other.id).merge_state == "proposed"
+    assert not store.events(other.id)
+    result = client.post("/bot/withdraw_merge", headers=as_bot(token), json={"task_id": work.id, "reason": "Superseded"})
+    assert result.status_code == 200 and store.get_task(work.id).merge_state is None
+    assert store.events(work.id)[-1].data == {"by": "chief", "reason": "Superseded"}
+    store.update_task(work.id, merge_state="proposed")
+    result = client.post(f"/tasks/{work.id}/withdraw-merge", headers=as_bot(ADMIN), json={"reason": "Dismissed"})
+    assert result.status_code == 200 and result.json()["merge_state"] is None
+    assert store.events(work.id)[-1].data == {"by": "user", "reason": "Dismissed"}
 
 
 def test_a_run_token_stops_working_when_its_run_ends(crew_app):
@@ -178,7 +200,7 @@ async def test_workers_delegate_but_only_coordinators_add_bots_and_propose_merge
                       "propose_routine", "share", "write_page", "edit_page", "set_name",
                       "ask_permission", "browser_open", "browser_screenshot", "browser_click",
                       "browser_type", "browser_evaluate", "browser_console"}
-    assert coordinator == worker | {"add_bot", "propose_merge", "next_check"}
+    assert coordinator == worker | {"add_bot", "propose_merge", "withdraw_merge", "next_check"}
 
 
 def test_a_verdict_from_a_task_that_is_not_a_review_is_refused_with_a_reason(crew_app):

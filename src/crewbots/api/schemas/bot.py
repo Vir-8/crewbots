@@ -138,3 +138,12 @@ class SearchHit(BaseModel):
 class MergeProposal(BaseModel):
     task_id: str
     summary: str
+
+
+class MergeWithdrawal(BaseModel):
+    task_id: str
+    reason: str
+
+
+class WithdrawalReason(BaseModel):
+    reason: str
