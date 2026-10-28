@@ -245,6 +245,8 @@ class Work(MergeStatus):
             raise NotAllowed(f"{task_id} is already merged")
         if work.merge_state == "merging":
             raise NotAllowed(f"{task_id} has a merge awaiting recovery")
+        if wrong := self.wrong_branch(work):
+            raise NotAllowed(f"{task_id} cannot be proposed: {wrong}")
         state = self.review_state(task_id)
         if not state.approved:
             raise NotAllowed(
@@ -415,8 +417,19 @@ class Work(MergeStatus):
                 return result | {"status": "kept", "reason": "worktree path is missing"}
             if wt.repo.resolve() == wt.path.resolve():
                 return result | {"status": "kept", "reason": "path is the main checkout"}
-            if worktree._git(wt.path, "symbolic-ref", "--short", "HEAD") != wt.branch:
-                raise worktree.GitError("worktree is not on the task branch")
+            try:
+                head = worktree._git(wt.path, "symbolic-ref", "--short", "HEAD")
+            except worktree.GitError:
+                head = None
+            if head != wt.branch:  # the work was done on a branch of its own naming; the branch is kept either way
+                into = self.foreign_head_removable(task, wt, head)
+                if dry_run:
+                    return result | {"status": "would_remove", "branch_status": "kept",
+                                     "reason": f"on {head}, whose work is already on {into}; branch kept"}
+                worktree.remove(wt)
+                self._removed_worktrees.add(task.id)
+                log.info("Removed worktree for %s; its branch %s is kept", task.id, head)
+                return result | {"status": "removed", "branch_status": "kept"}
             untracked = worktree._git(wt.path, "ls-files", "--others", "--exclude-standard", "-z", strip=False)
             staged = worktree._git(wt.path, "ls-files", "--stage", "-z", strip=False)
             gitlinks = [entry.split("\t", 1)[1] for entry in staged.split("\0")

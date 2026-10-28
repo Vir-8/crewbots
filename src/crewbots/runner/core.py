@@ -603,7 +603,7 @@ class Runner(Branches, Retries, Sessions, Rooms, Delegation, Reviewing, Work, Fi
                 # Not idle yet if messages are waiting: the next turn starts right away, and watchers should not stop.
                 next_status = Status.QUEUED if self._waiting.get(task_id) else Status.IDLE
                 if task.kind != "seat" or self.store.get_task(task_id).status != next_status:
-                    self._set(task_id, status=next_status, result=done.final_text, turns=task.turns + 1)
+                    self._set(task_id, status=next_status, result=self._checked(task, done.final_text), turns=task.turns + 1)
 
     def _spec(self, task: Task, bot: Bot, cwd: Path, token: str, prompt: str, backend: Backend) -> RunSpec:
         if task.kind == "review":  # its own instructions and tools, and nothing of the crew's: no roster, no memory

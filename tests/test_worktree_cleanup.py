@@ -11,6 +11,8 @@ from fakes import ScriptedCrew, bot, git_repo, wait_until
 from crewbots import projects, worktree
 from crewbots.api import create_app
 from crewbots.backends import Access
+from crewbots.crew_tools import CrewTools
+from crewbots.runner.common import NotAllowed
 from crewbots.store import Status, Store
 
 
@@ -345,4 +347,87 @@ async def test_sweep_runs_off_loop_and_waits_to_release_tasks_on_request_cancel(
         await wait_until(crew.runner._worktree_sweep_done.is_set)
         await wait_until(crew.settled(task.id))
         assert store.get_task(task.id).status == Status.IDLE
+    store.close()
+
+
+def on_own_branch(store, repo, tmp_path, name="crewbots/t_own", **fields):
+    """A merged task whose engineer worked on a branch of their own naming, squash-merged into main since."""
+    task, wt = setup_task(store, repo, tmp_path / "wts", merge_state="merged")
+    worktree._git(wt.path, "switch", "-c", name)
+    (wt.path / "work.txt").write_text("work")
+    worktree.commit(wt, "work")
+    worktree._git(repo, "merge", "--squash", name)
+    worktree._git(repo, "commit", "-m", "squashed")
+    store.update_task(task.id, merged_commit=worktree._git(repo, "rev-parse", "HEAD"), **fields)
+    return store.get_task(task.id), wt, name
+
+
+def squash_setup(tmp_path):
+    repo = git_repo(tmp_path / "repo")
+    store = Store(tmp_path / "crew.db")
+    return repo, store, ScriptedCrew(store, tmp_path, bot("engineer")).runner
+
+
+def test_sweep_removes_a_merged_worktree_on_another_crewbots_branch_and_keeps_the_branch(tmp_path):
+    repo, store, runner = squash_setup(tmp_path)
+    task, wt, name = on_own_branch(store, repo, tmp_path)
+    assert worktree._git(repo, "show", "HEAD:work.txt") == "work"
+    dry = runner.sweep_worktrees(dry_run=True)
+    assert dry["would_remove"][0]["task_id"] == task.id and "already on" in dry["would_remove"][0]["reason"]
+    assert wt.path.is_dir()
+    assert runner.sweep_worktrees()["removed"][0]["task_id"] == task.id
+    assert not wt.path.exists()
+    assert worktree._git(repo, "rev-parse", "--verify", f"refs/heads/{name}")
+    store.close()
+
+
+def test_sweep_keeps_a_worktree_on_another_branch_with_unmerged_changes(tmp_path):
+    repo, store, runner = squash_setup(tmp_path)
+    task, wt, name = on_own_branch(store, repo, tmp_path)
+    (wt.path / "more.txt").write_text("more")
+    worktree.commit(wt, "more")
+    for dry in (True, False):
+        kept = runner.sweep_worktrees(dry_run=dry)["kept"]
+        assert kept[0]["task_id"] == task.id and "holds changes not on" in kept[0]["reason"]
+    assert wt.path.is_dir()
+    store.close()
+
+
+def test_sweep_keeps_a_dirty_worktree_on_another_branch(tmp_path):
+    repo, store, runner = squash_setup(tmp_path)
+    task, wt, name = on_own_branch(store, repo, tmp_path)
+    (wt.path / "scratch.txt").write_text("not saved")
+    kept = runner.sweep_worktrees()["kept"]
+    assert kept[0]["task_id"] == task.id and "uncommitted changes" in kept[0]["reason"]
+    assert (wt.path / "scratch.txt").exists()
+    store.close()
+
+
+def test_sweep_keeps_an_unmerged_task_on_another_branch(tmp_path):
+    repo, store, runner = squash_setup(tmp_path)
+    task, wt, name = on_own_branch(store, repo, tmp_path, merge_state=None)
+    assert "task is not merged" in runner.sweep_worktrees()["kept"][0]["reason"]
+    assert wt.path.is_dir()
+    store.close()
+
+
+async def test_handing_back_on_the_wrong_branch_is_told_to_switch_and_cannot_be_proposed(tmp_path):
+    repo = git_repo(tmp_path / "repo")
+    store = Store(tmp_path / "crew.db")
+    runner = ScriptedCrew(store, tmp_path, bot("chief", can_delegate=True), bot("engineer")).runner
+    parent = store.create_task("chief", "lead", status=Status.IDLE)
+    work, wt = setup_task(store, repo, tmp_path / "wts")
+    store.update_task(work.id, parent_id=parent.id)
+    assert runner.wrong_branch(store.get_task(work.id)) is None
+    worktree._git(wt.path, "switch", "-c", "crewbots/t_own")
+    note = runner.wrong_branch(store.get_task(work.id))
+    assert f"git switch {wt.branch}" in note and "crewbots/t_own" in note
+    assert f"git switch {wt.branch}" in runner._checked(store.get_task(work.id), "Done.")
+    assert f"git switch {wt.branch}" in await CrewTools(runner, work.id, can_delegate=False).call("handoff", {"done": "x"})
+    with pytest.raises(NotAllowed, match="cannot be proposed"):
+        runner.propose_merge(parent.id, work.id, "Ready")
+    worktree._git(wt.path, "switch", "--detach")
+    assert "detached HEAD" in runner.wrong_branch(store.get_task(work.id))
+    worktree._git(wt.path, "switch", wt.branch)
+    assert runner.wrong_branch(store.get_task(work.id)) is None
     store.close()

@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from crewbots import worktree
+from crewbots.events import Notice
 from crewbots.store import Task
 
 
@@ -29,3 +30,39 @@ class MergeStatus:
             return into if worktree.already_in(repo, f"refs/heads/{into}", tip, task.base) else None
         except worktree.GitError:
             return None
+
+    def wrong_branch(self, task: Task) -> str | None:
+        """What to tell a worktree task whose HEAD is not on its own branch (another branch, or detached), or None."""
+        if task.base_branch or not (task.worktree_path and task.branch) or not Path(task.worktree_path).is_dir():
+            return None
+        try:
+            head = worktree.git_read(Path(task.worktree_path), "symbolic-ref", "--short", "HEAD")
+        except worktree.GitError:
+            head = None
+        if head == task.branch:
+            return None
+        return (f"Your worktree is {f'on {head}' if head else 'on a detached HEAD'}, not on its task branch {task.branch}. "
+                f"Switch back with `git switch {task.branch}`, bringing over any commits you made elsewhere. "
+                "Until then the work cannot be proposed for merging.")
+
+    def _checked(self, task: Task, result: str) -> str:
+        """A finished turn's result, with the switch-back request added when its worktree is on the wrong branch."""
+        if not (warning := self.wrong_branch(task)):
+            return result
+        self._record(task.id, Notice(message=warning))
+        return f"{result}\n\n{warning}".strip()
+
+    def foreign_head_removable(self, task: Task, wt: worktree.Worktree, head: str | None) -> str:
+        """The branch that already holds the work of a merged task whose clean worktree sits on another crewbots/*
+        branch. Squash merges leave no ancestry, so this goes by the merge record and an empty-squash comparison.
+        Raises GitError with the reason when the worktree has to stay."""
+        if not (head and head.startswith(worktree.BRANCH_PREFIX)):
+            raise worktree.GitError(f"worktree is {f'on {head}' if head else 'on a detached HEAD'}, not the task branch")
+        if task.merge_state != "merged":
+            raise worktree.GitError(f"worktree is on {head}, not the task branch, and the task is not merged")
+        if worktree.git_read(wt.path, "status", "--porcelain", "--ignore-submodules=none"):
+            raise worktree.GitError(f"worktree is on {head}, not the task branch, and has uncommitted changes")
+        into = worktree.git_read(wt.repo, "symbolic-ref", "--short", "HEAD")
+        if not worktree.already_in(wt.repo, f"refs/heads/{into}", worktree.git_read(wt.path, "rev-parse", "HEAD"), task.base):
+            raise worktree.GitError(f"worktree is on {head}, not the task branch, and it holds changes not on {into}")
+        return into

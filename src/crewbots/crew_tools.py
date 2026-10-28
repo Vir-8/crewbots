@@ -169,7 +169,8 @@ class CrewTools:
             match name:
                 case "handoff":
                     r.handoff(me, args["done"], list(args.get("output") or []), args.get("open") or "", args.get("needs") or "")
-                    return "Handoff recorded. End your reply with a short summary."
+                    wrong = r.wrong_branch(r.store.get_task(me))
+                    return "Handoff recorded. End your reply with a short summary." + (f"\n\n{wrong}" if wrong else "")
                 case "escalate":
                     r.escalate(me, args["question"], args.get("choices"), bool(args.get("multiple")))
                     return ("Asked: they see your question, with its choices if it has any, and can answer in their own "
