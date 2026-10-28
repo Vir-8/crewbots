@@ -403,10 +403,23 @@ def test_sweep_keeps_a_dirty_worktree_on_another_branch(tmp_path):
     store.close()
 
 
-def test_sweep_keeps_an_unmerged_task_on_another_branch(tmp_path):
+def test_sweep_removes_an_unmerged_task_whose_work_is_all_on_main(tmp_path):
     repo, store, runner = squash_setup(tmp_path)
     task, wt, name = on_own_branch(store, repo, tmp_path, merge_state=None)
-    assert "task is not merged" in runner.sweep_worktrees()["kept"][0]["reason"]
+    assert runner.sweep_worktrees(dry_run=True)["would_remove"][0]["task_id"] == task.id
+    assert runner.sweep_worktrees()["removed"][0]["task_id"] == task.id
+    assert not wt.path.exists()
+    assert worktree._git(repo, "rev-parse", "--verify", f"refs/heads/{name}")
+    store.close()
+
+
+def test_sweep_keeps_a_branch_matching_an_old_main_commit_but_not_the_current_one(tmp_path):
+    repo, store, runner = squash_setup(tmp_path)
+    task, wt, name = on_own_branch(store, repo, tmp_path)
+    (repo / "work.txt").write_text("later work")  # main moves on from what the branch holds
+    worktree._git(repo, "commit", "-am", "later")
+    kept = runner.sweep_worktrees()["kept"]
+    assert kept[0]["task_id"] == task.id and "holds changes not on" in kept[0]["reason"]
     assert wt.path.is_dir()
     store.close()
 

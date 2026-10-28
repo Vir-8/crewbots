@@ -57,13 +57,12 @@ class MergeStatus:
         return f"{result}\n\n{warning}".strip()
 
     def foreign_head_removable(self, task: Task, wt: worktree.Worktree, head: str | None) -> str:
-        """The branch that already holds the work of a merged task whose clean worktree sits on another crewbots/*
-        branch. Squash merges leave no ancestry, so this goes by the merge record and an empty-squash comparison.
+        """The branch that already holds the work of a task whose clean worktree sits on another crewbots/* branch.
+        Rewritten and squashed history leaves no ancestry, so this asks only whether merging the worktree's HEAD
+        into the current branch would change nothing (worktree.already_in); a conflict or a different tree keeps it.
         Raises GitError with the reason when the worktree has to stay."""
         if not (head and head.startswith(worktree.BRANCH_PREFIX)):
             raise worktree.GitError(f"worktree is {f'on {head}' if head else 'on a detached HEAD'}, not the task branch")
-        if task.merge_state != "merged":
-            raise worktree.GitError(f"worktree is on {head}, not the task branch, and the task is not merged")
         if worktree.git_read(wt.path, "status", "--porcelain", "--ignore-submodules=none"):
             raise worktree.GitError(f"worktree is on {head}, not the task branch, and has uncommitted changes")
         into = worktree.git_read(wt.repo, "symbolic-ref", "--short", "HEAD")
