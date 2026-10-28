@@ -195,6 +195,10 @@ def build_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = F
     if not can_delegate:  # merge proposals are a coordinator's
         return server
 
+    @server.tool(description=describe("room_status"))
+    def room_status(room: str | None = None) -> str:
+        return json.dumps(call("POST", "/bot/room_status", {"room": room} if room else {}), indent=1)
+
     if is_chief:
         @server.tool(description=describe("add_bot"))
         def add_bot(name: str, title: str, description: str, instructions: str, display_name: str | None = None,

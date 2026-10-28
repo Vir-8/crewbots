@@ -218,6 +218,165 @@ async def test_bot_mention_can_end_silently_without_waking_anyone(crew, store, a
     assert not crew.specs_for("chief") and not crew.specs_for("engineer")
 
 
+@pytest.mark.parametrize("answer", [NO_REPLY, ""])
+async def test_silent_seat_stops_being_active_before_compaction_and_keeps_new_wakes(crew, store, answer):
+    room = crew.runner.create_room("Handover", ["engineer", "reviewer"])
+    crew.script["reviewer"] = lambda spec, me: [Done(final_text=answer)]
+    compacting, release = asyncio.Event(), asyncio.Event()
+
+    async def compact(task_id, opened, bot):
+        compacting.set()
+        await release.wait()
+
+    crew.runner._maybe_compact = compact
+    crew.runner.post(room["id"], "engineer", "@reviewer take a look")
+    await asyncio.wait_for(compacting.wait(), 2)
+    seat = store.seat_of(room["id"], "reviewer")
+    assert seat.status == Status.IDLE
+    assert [m["author"] for m in store.room_messages(room["id"])] == ["engineer"]
+    crew.runner.post(room["id"], "engineer", "@reviewer another item")
+    assert store.get_task(seat.id).status == Status.QUEUED
+    store.mark_interrupted()
+    pending = next(turn for turn in store.interrupted_turns() if turn["task_id"] == seat.id)
+    assert "@reviewer another item" in pending["prompt"]
+    store.update_task(seat.id, status=Status.QUEUED)
+    release.set()
+    await wait_until(idle(crew))
+    assert len(crew.specs_for("reviewer")) == 2
+    assert store.get_task(seat.id).status == Status.IDLE
+
+
+@pytest.mark.parametrize("shutdown", [False, True], ids=["crash", "shutdown"])
+@pytest.mark.parametrize("wake", ["none", "before", "during", "both"])
+@pytest.mark.parametrize("answer", ["Finished the first request.", NO_REPLY, ""], ids=["posted", "no-reply", "empty"])
+async def test_restart_during_seat_compaction_only_delivers_new_wakes(tmp_path, shutdown, wake, answer):
+    path = tmp_path / "restart.db"
+    store = Store(path)
+    bots = (bot("engineer"), bot("reviewer"))
+    gate = asyncio.Event()
+    before = ScriptedCrew(store, tmp_path, *bots, gate=gate)
+    before.script["reviewer"] = lambda spec, me: [Done(final_text=answer)]
+    compacting = asyncio.Event()
+
+    async def compact(task_id, opened, bot):
+        compacting.set()
+        await asyncio.Event().wait()
+
+    before.runner._maybe_compact = compact
+    room = before.runner.create_room("Handover", ["engineer", "reviewer"])
+    before.runner.post(room["id"], "engineer", "@reviewer original request")
+    await wait_until(lambda: len(before.specs_for("reviewer")) == 1)
+    if wake in ("before", "both"):
+        before.runner.post(room["id"], "engineer", "@reviewer before compaction")
+    gate.set()
+    await asyncio.wait_for(compacting.wait(), 2)
+    seat = store.seat_of(room["id"], "reviewer")
+    if wake in ("during", "both"):
+        before.runner.post(room["id"], "engineer", "@reviewer during compaction")
+    if shutdown:
+        await before.runner.shutdown()
+    else:
+        # A killed daemon cannot run shutdown; cancel its coroutine without changing persisted status.
+        running = before.runner._runs[seat.id]
+        running.cancel()
+        await asyncio.gather(running, return_exceptions=True)
+    store.close()
+
+    store = Store(path)
+    store.mark_interrupted()
+    after = ScriptedCrew(store, tmp_path, *bots)
+    after.script["reviewer"] = lambda spec, me: [Done(final_text=NO_REPLY)]
+    resumed = after.runner.resume_interrupted()
+    await wait_until(idle(after))
+    prompts = [spec.prompt for spec in after.specs_for("reviewer")]
+    assert len(prompts) == int(wake != "none")
+    assert resumed == ([seat.id] if wake != "none" else [])
+    if wake != "none":
+        assert ("before compaction" in prompts[0]) == (wake in ("before", "both"))
+        assert ("during compaction" in prompts[0]) == (wake in ("during", "both"))
+        assert "original request" not in prompts[0]
+    await after.runner.shutdown()
+    store.close()
+
+
+@pytest.mark.parametrize("shutdown", [False, True], ids=["crash", "shutdown"])
+async def test_restart_during_idle_seat_flush_delivers_queued_wakes(tmp_path, shutdown):
+    path = tmp_path / "flush-restart.db"
+    store = Store(path)
+    bots = (bot("engineer"), bot("reviewer"))
+    before = ScriptedCrew(store, tmp_path, *bots)
+    room = before.runner.create_room("Handover", ["engineer", "reviewer"])
+    seat = store.create_task("reviewer", "Seat", kind="seat", room_id=room["id"], status=Status.IDLE)
+    store.update_task(seat.id, session_id="seat-session")
+    flushing = asyncio.Event()
+
+    async def session(*args):
+        return object()
+
+    async def flush(*args):
+        flushing.set()
+        await asyncio.Event().wait()
+
+    before.runner._session_for = session
+    before.runner._flush = flush
+    before.runner._runs[seat.id] = asyncio.create_task(before.runner._idle_flush(seat.id))
+    await asyncio.wait_for(flushing.wait(), 2)
+    before.runner.post(room["id"], "engineer", "@reviewer first wake")
+    before.runner.post(room["id"], "engineer", "@reviewer second wake")
+    if shutdown:
+        await before.runner.shutdown()
+    else:
+        # A killed process loses its in-memory waiting queue and cannot promote it in the flush's finally block.
+        before.runner._waiting.clear()
+        running = before.runner._runs[seat.id]
+        running.cancel()
+        await asyncio.gather(running, return_exceptions=True)
+    store.close()
+
+    store = Store(path)
+    store.mark_interrupted()
+    after = ScriptedCrew(store, tmp_path, *bots)
+    after.script["reviewer"] = lambda spec, me: [Done(final_text=NO_REPLY)]
+    assert after.runner.resume_interrupted() == [seat.id]
+    await wait_until(idle(after))
+    [prompt] = [spec.prompt for spec in after.specs_for("reviewer")]
+    assert prompt.count("@reviewer first wake") == 1
+    assert prompt.count("@reviewer second wake") == 1
+    await after.runner.shutdown()
+    store.close()
+
+
+def test_seat_completion_rolls_back_pending_record_if_status_update_fails(crew, store, monkeypatch):
+    room = crew.runner.create_room("Handover", ["engineer", "reviewer"])
+    seat = store.create_task("reviewer", "Seat", kind="seat", room_id=room["id"], status=Status.RUNNING)
+    store.set_pending(seat.id, "original request")
+    store.pending_started(seat.id)
+    crew.runner._waiting[seat.id] = ["new request"]
+
+    def fail_update(*args, **kwargs):
+        raise RuntimeError("status update failed")
+
+    monkeypatch.setattr(store, "update_task", fail_update)
+    with pytest.raises(RuntimeError, match="status update failed"):
+        crew.runner._seat_turn_finished(seat, NO_REPLY)
+    row = store.db.execute("select prompt, started from pending_turns where task_id = ?", (seat.id,)).fetchone()
+    assert (row["prompt"], row["started"]) == ("original request", 1)
+    assert store.get_task(seat.id).status == Status.RUNNING
+
+
+def test_seat_maintenance_wake_rolls_back_if_status_update_fails(crew, store, monkeypatch):
+    room = crew.runner.create_room("Handover", ["engineer", "reviewer"])
+    seat = store.create_task("reviewer", "Seat", kind="seat", room_id=room["id"], status=Status.IDLE)
+    def fail_update(*args, **kwargs):
+        raise RuntimeError("status update failed")
+
+    monkeypatch.setattr(store, "update_task", fail_update)
+    with pytest.raises(RuntimeError, match="status update failed"):
+        crew.runner._queue_during_run(seat, "new request")
+    assert store.db.execute("select 1 from pending_turns where task_id = ?", (seat.id,)).fetchone() is None
+    assert store.get_task(seat.id).status == Status.IDLE
+
+
 async def test_thanks_mention_does_not_cause_an_acknowledgement_chain(crew, store):
     room = crew.runner.create_room("Thanks", ["engineer", "reviewer"])
     crew.script["reviewer"] = lambda spec, me: [Done(final_text=NO_REPLY)]

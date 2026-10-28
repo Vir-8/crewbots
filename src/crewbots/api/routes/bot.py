@@ -72,6 +72,10 @@ def routes(c: Context) -> APIRouter:
     async def bot_tasks(request: Request):
         return runner.delegated_by(request.state.task.id)
 
+    @v1.post("/bot/room_status")
+    async def bot_room_status(request: Request, body: dict[str, str]):
+        return runner.room_status(request.state.task.id, body.get("room") or None)
+
     @v1.post("/bot/message")
     async def bot_message(request: Request, body: ChildMessage):
         task = runner.message_child(request.state.task.id, body.task_id, body.text)

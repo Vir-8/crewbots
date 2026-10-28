@@ -133,7 +133,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
           <span className="chat-head-text">
             <span className="chat-head-title">{room.title}</span>
             <span className="chat-head-sub">
-              {typing.length > 0 ? `${typing.map(labelOf).join(", ")} ${typing.length === 1 ? "is" : "are"} replying` : `${room.members.map(labelOf).join(", ")} · ${labelOf(room.lead)} leads`}
+              {typing.length > 0 ? `${typing.map(labelOf).join(", ")} ${typing.length === 1 ? "is" : "are"} working` : `${room.members.map(labelOf).join(", ")} · ${labelOf(room.lead)} leads`}
             </span>
           </span>
         </button>
@@ -209,7 +209,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
               <div className="working-indicator">
                 <span className="working-dot" />
                 <span className="shimmer">
-                  {typing.map(labelOf).join(", ")} {typing.length === 1 ? "is" : "are"} replying
+                  {typing.map(labelOf).join(", ")} {typing.length === 1 ? "is" : "are"} working
                 </span>
               </div>
             )}

@@ -2,6 +2,7 @@
 
 import logging
 import re
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -17,8 +18,54 @@ EVERYONE = "everyone"  # @everyone wakes every bot in the room
 MAX_ROOM_BOTS = 6  # bots in one group chat: more and they talk past each other
 
 
+def _safe_error(error: str) -> str:
+    """Mask common credential forms before limiting error text returned to a bot."""
+    error = re.sub(r"-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?(?:-----END [^-]*PRIVATE KEY-----|$)",
+                   "[redacted private key]", error)
+    error = re.sub(r"(?i)(bearer\s+)[^\s,;\"']+", r"\1[redacted]", error)
+    error = re.sub(r"(?i)([a-z][a-z0-9+.-]*://)[^\s/@]+@", r"\1[redacted]@", error)
+    key = r"(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|password|secret|authorization)"
+    error = re.sub(rf'''(?i)({key}["']?\s*[:=]\s*)(["'])(.*?)(\2)''', r"\1\2[redacted]\4", error)
+    error = re.sub(rf'''(?i)({key}["']?\s*[:=]\s*)([^\s,;"'&}}]+)''', r"\1[redacted]", error)
+    error = re.sub(r"\b(?:sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{12,}|AKIA[A-Z0-9]{16})\b",
+                   "[redacted]", error)
+    return error[:1000] + ("…" if len(error) > 1000 else "")
+
+
 class Rooms:
     """The part of Runner that runs group chats."""
+
+    def room_status(self, task_id: str, room_id: str | None = None) -> dict[str, Any]:
+        bot = self.store.get_task(task_id).bot
+        if not self.is_coordinator(bot):
+            raise NotAllowed("only coordinators can inspect room seats")
+        rooms = self.store.rooms()
+        if room_id:
+            rooms = [room for room in rooms if room["id"] == room_id and bot in room["members"]]
+            if not rooms:
+                raise NotAllowed("room not found or you are not a member")
+        else:
+            rooms = [room for room in rooms if bot in room["members"]]
+        result = []
+        for room in rooms[:50]:
+            seats = self.store.seats_in(room["id"])
+            entries = []
+            for seat in seats[:50]:
+                row = self.store.db.execute(
+                    "select json_extract(data, '$.error') from events where task_id = ? and kind = 'done'"
+                    " and json_extract(data, '$.is_error') = 1 and json_extract(data, '$.error') is not null"
+                    " and json_extract(data, '$.error') != '' order by id desc limit 1", (seat.id,)).fetchone()
+                error = seat.error or (row[0] if row else None)
+                attempt = dict(self._attempts.get(seat.id, {}))
+                last_activity = attempt.pop("last_activity", None)
+                if last_activity is not None and time.monotonic() - last_activity >= self.stall_s:
+                    attempt["state"] = "stalled"
+                entries.append({"task_id": seat.id, "bot": seat.bot, "status": seat.status.value,
+                                "updated_at": seat.updated_at, "error": _safe_error(error) if error else None,
+                                "attempt": attempt or None})
+            result.append({"room_id": room["id"], "title": room["title"][:200], "seats": entries,
+                           "seats_truncated": len(seats) > 50})
+        return {"rooms": result, "rooms_truncated": len(rooms) > 50}
 
     def crew_room(self) -> dict[str, Any]:
         """The group chat with every bot in it, led by the coordinator."""
@@ -314,6 +361,33 @@ class Rooms:
                 self._seat_queue_floor[task_id] = seen
             else:
                 self._seat_queue_floor.pop(task_id, None)
+
+    def _queue_during_run(self, task: Task, text: str) -> Task:
+        self._waiting.setdefault(task.id, []).append(text)
+        # During seat maintenance the completed turn has no pending row. Its first new wake starts one.
+        if task.kind == "seat" and task.status == Status.IDLE:
+            with self.store.db.transaction():
+                self.store.set_pending(task.id, text)
+                self.store.update_task(task.id, status=Status.QUEUED)
+            return self._set(task.id, status=Status.QUEUED)
+        self.store.pending_waiting(task.id, text)
+        return task
+
+    def _seat_turn_finished(self, seat: Task, result: str) -> None:
+        waiting = self._waiting.get(seat.id)
+        status = Status.QUEUED if waiting else Status.IDLE
+        with self.store.db.transaction():
+            if waiting:
+                self.store.set_pending(seat.id, "\n\n".join(waiting))
+            else:
+                self.store.clear_pending(seat.id)
+            self.store.update_task(seat.id, status=status, result=result, turns=seat.turns + 1)
+        self._set(seat.id, status=status, result=result, turns=seat.turns + 1)
+
+    def _interrupt_after_shutdown(self, task_id: str) -> None:
+        task = self.store.get_task(task_id)
+        if task.kind != "seat" or task.status != Status.IDLE:
+            self._set(task_id, status=Status.INTERRUPTED, error="the daemon stopped during this task")
 
     def _seat_replied(self, seat: Task, text: str, files: list[dict[str, Any]] | None = None,
                       owed: bool = False, nudged: bool = False) -> None:

@@ -250,7 +250,7 @@ export function RoomProfile(props: { crew: Crew; room: Room; onOpen: (id: string
                     <span className="member-name">{labelOf(name)}</span>
                     {bot?.display_name && <span className="faint small">{bot.title}</span>}
                   </span>
-                  {replying ? <span className="faint small">Replying…</span> : name === room.lead ? <span className="lead-tag">Lead</span> : null}
+                  {replying ? <span className="faint small">Working…</span> : name === room.lead ? <span className="lead-tag">Lead</span> : null}
                 </button>
                 {name !== room.lead && !replying && (
                   <span className="member-actions">

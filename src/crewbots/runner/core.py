@@ -71,6 +71,7 @@ from crewbots.runner.dreams import Dreams
 from crewbots.runner.files import Files
 from crewbots.runner.holds import Holds
 from crewbots.runner.permissions import Permissions
+from crewbots.runner.retries import Retries
 from crewbots.runner.reviews import Reviewing
 from crewbots.runner.rooms import Rooms
 from crewbots.runner.sessions import Sessions
@@ -90,11 +91,10 @@ RETRY_WAITS_S = (30.0, 120.0, 300.0)
 STALL_S = 1200.0  # no event at all from a turn for this long: it's stuck, so it's stopped and tried again
 
 
-class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams, Checkins, Wakes, Welcome, Permissions):
+class Runner(Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams, Checkins, Wakes, Welcome, Permissions):
     """Runs the crew's tasks. Its parts are by area: sessions, rooms, delegation, reviews, work, files bots show the
     user, holds, dreams (memory consolidated overnight), check-ins, the chief's own looks around (wakes), starting a
     crew off (welcome), and what bots ask the user to allow (permissions)."""
-
     def __init__(
         self,
         store: Store,
@@ -135,6 +135,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         self.bus = Bus()
         self._slots = asyncio.Semaphore(max_parallel)
         self._runs: dict[str, asyncio.Task[None]] = {}
+        self._attempts: dict[str, dict[str, Any]] = {}
         self._cancelling: set[str] = set()
         self._cancel_messages: dict[str, list[tuple[str, str, list[dict[str, Any]] | None, bool, bool]]] = {}
         self._seat_turn_seen: dict[str, int] = {}
@@ -249,9 +250,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         if task.reported:
             self.store.update_task(task_id, reported=False)  # its next outcome goes back to the parent too
         if task_id in self._runs:
-            self._waiting.setdefault(task_id, []).append(text)
-            self.store.pending_waiting(task_id, text)
-            return task
+            return self._queue_during_run(task, text)
         task = self._set(task_id, status=Status.QUEUED, error=None)
         self._start(task_id, text)
         return task
@@ -303,7 +302,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         for task_id in list(self._sessions):
             await self._close_session(task_id)
         for task_id in runs:
-            self._set(task_id, status=Status.INTERRUPTED, error="the daemon stopped during this task")
+            self._interrupt_after_shutdown(task_id)
 
     def resume_interrupted(self) -> list[str]:
         """On start: each turn the last stop cut off, or that was waiting its turn, carries on once. A bot that had
@@ -434,31 +433,11 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         if settled and task.kind == "thread" and not task.active and not self._background(task_id):
             self.happened("thread_done", task_id, f"{task.bot}'s thread {task.title!r} is {task.status.value}")
 
-    async def _tries(self, task_id: str, prompt: str, owed: bool = False, nudged: bool = False) -> None:
-        """Runs a turn, and again when it failed for a passing reason: after a wait, or for a plan's limit, once the
-        limit resets (the hold sees to that). A turn that had started a session picks up where it stopped."""
-        for attempt in range(len(self.retry_waits_s) + 1):
-            done = await self._run(task_id, prompt, owed, nudged)
-            if done is None:
-                return  # settled: finished, or failed for good
-            task = self.store.get_task(task_id)
-            if not done.retry or attempt == len(self.retry_waits_s):
-                self._set(task_id, status=Status.FAILED, result=done.final_text or None, error=done.error)
-                return
-            held = done.retry == "limit" and self.hold_reason(task)
-            wait = 0.0 if held else self.retry_waits_s[attempt]
-            then = "when the limit resets" if held else f"in {_duration(wait)}"
-            # Shown right under the failed turn's own "Stopped: <error>".
-            self._record(task_id, Notice(message=f"Trying again {then} (try {attempt + 2} of "
-                                                 f"{len(self.retry_waits_s) + 1})."))
-            self._set(task_id, status=Status.QUEUED)
-            await asyncio.sleep(wait)
-            if task.session_id:
-                prompt = prompts.text("retry", self.crew.home, error=done.error)
-
     async def _run(self, task_id: str, prompt: str, owed: bool = False, nudged: bool = False) -> Done | None:
         """One turn. Returns its Done if it failed, for `_tries` to settle; None once the task is settled."""
         async with self._turn_slot(task_id):
+            if task_id in self._attempts:
+                self._attempts[task_id]["state"] = "running"
             task = self._set(task_id, status=Status.RUNNING, error=None)
             self.store.pending_started(task_id)
             try:
@@ -493,6 +472,8 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
                     stream = open_session.session.turn(prompt)
                 else:
                     stream = backend.run(self._spec(task, bot, cwd, token, prompt, backend))
+                if task_id in self._attempts:
+                    self._attempts[task_id]["last_activity"] = time.monotonic()
                 async with aclosing(stream) as stream:
                     while True:
                         try:
@@ -502,10 +483,14 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
                             break
                         except TimeoutError:
                             stalled = True
+                            if task_id in self._attempts:
+                                self._attempts[task_id]["state"] = "stalled"
                             done = Done(final_text="", is_error=True, retry="transient",
                                         error=f"nothing came back from {bot.backend} for {_duration(self.stall_s)}")
                             self._record(task_id, done)
                             break
+                        if task_id in self._attempts:
+                            self._attempts[task_id]["last_activity"] = time.monotonic()
                         if (task.kind == "seat" and not isinstance(event, (SessionStarted, Notice, RateLimit))
                                 and not (isinstance(event, Done) and event.is_error)):
                             self._room_prompt_sent(task_id)
@@ -573,10 +558,12 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
                 if task.kind == "seat" and task.room_id:
                     self._seat_replied(task, done.final_text, self._mentioned(task, cwd, done.final_text, started),
                                        owed, nudged)
+                    self._seat_turn_finished(task, done.final_text)
                 await self._maybe_compact(task_id, open_session, bot)
                 # Not idle yet if messages are waiting: the next turn starts right away, and watchers should not stop.
                 next_status = Status.QUEUED if self._waiting.get(task_id) else Status.IDLE
-                self._set(task_id, status=next_status, result=done.final_text, turns=task.turns + 1)
+                if task.kind != "seat" or self.store.get_task(task_id).status != next_status:
+                    self._set(task_id, status=next_status, result=done.final_text, turns=task.turns + 1)
 
     def _spec(self, task: Task, bot: Bot, cwd: Path, token: str, prompt: str, backend: Backend) -> RunSpec:
         if task.kind == "review":  # its own instructions and tools, and nothing of the crew's: no roster, no memory

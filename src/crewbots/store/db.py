@@ -10,6 +10,7 @@ an old database, migrated, ends up laid out like a new one.
 import sqlite3
 import threading
 from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -343,6 +344,17 @@ class Connection:
     def executemany(self, sql: str, rows: list[Any] | Any) -> None:
         with self._lock:
             self._conn.executemany(sql, rows)
+
+    @contextmanager
+    def transaction(self):
+        with self._lock:
+            self._conn.execute("begin immediate")
+            try:
+                yield
+                self._conn.execute("commit")
+            except BaseException:
+                self._conn.execute("rollback")
+                raise
 
     def executescript(self, script: str) -> None:
         with self._lock:

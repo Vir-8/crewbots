@@ -85,6 +85,7 @@ SPECS: dict[str, Spec] = {
     "delegate": Spec(_object({"bot": STRING, "goal": STRING, "project": STRING, "workspace": STRING,
                               "review_of": STRING}, ["bot", "goal"])),
     "tasks": Spec(_object({}, [])),
+    "room_status": Spec(_object({"room": STRING}, []), coordinator_only=True),
     "message": Spec(_object({"task_id": STRING, "text": STRING}, ["task_id", "text"])),
     "propose_push": Spec(_object({"project": STRING, "summary": STRING}, ["project", "summary"]), coordinator_only=True),
     "propose_merge": Spec(_object({"task_id": STRING, "summary": STRING}, ["task_id", "summary"]), coordinator_only=True),
@@ -178,6 +179,10 @@ class CrewTools:
                     import json
 
                     return json.dumps(r.delegated_by(me), indent=1, default=str)
+                case "room_status":
+                    import json
+
+                    return json.dumps(r.room_status(me, args.get("room") or None), indent=1)
                 case "message":
                     task = r.message_child(me, args["task_id"], args["text"])
                     return f"Sent to {task.id} ({task.status})."
