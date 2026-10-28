@@ -284,6 +284,7 @@ impl Crew {
         let crew = self.request("GET", "/crew", None).await;
         let rooms = self.request("GET", "/rooms", None).await;
         let chats = self.request("GET", "/chats", None).await;
+        let bots = self.request("GET", "/bots", None).await;
         let list = tasks["data"].as_array().cloned().unwrap_or_default();
         let paused = crew["data"]["paused"].as_bool().unwrap_or(false);
         let summary = {
@@ -291,6 +292,7 @@ impl Crew {
             view.load(&list, paused);
             view.set_rooms(rooms["data"].as_array().map(Vec::as_slice).unwrap_or_default());
             view.set_chats(&chats);
+            view.set_bots(&bots);
             view.summary()
         };
         crate::show_summary(app, &summary);
@@ -298,12 +300,15 @@ impl Crew {
 
     /// Keeps the menu bar current, and notifies on what needs you.
     async fn watch(&self, app: &AppHandle, message: &Value) {
+        if message["type"].as_str() == Some("bots") { // a name may have changed
+            let bots = self.request("GET", "/bots", None).await;
+            self.view.lock().await.set_bots(&bots);
+        }
         let (alerts, summary) = {
             let mut view = self.view.lock().await;
             let mut alerts = Vec::new();
             match message["type"].as_str() {
                 Some("task") => alerts.extend(view.update(&message["task"])),
-                Some("room_message") => alerts.extend(view.said(&message["message"])),
                 Some("room") => view.set_rooms(std::slice::from_ref(&message["room"])),
                 Some("chat_mute") => if let (Some(bot), Some(muted)) = (message["bot"].as_str(), message["muted"].as_bool()) { view.set_chat_mute(bot, muted); },
                 Some("event") => alerts.extend(view.raised(&message["event"])),

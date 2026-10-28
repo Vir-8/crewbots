@@ -1,5 +1,6 @@
 //! What the menu bar and notifications know about the crew: every task's status, kept current from /v1/live, and the
-//! transitions worth interrupting you for.
+//! things worth interrupting you for: only what waits on you (a question, a permission, a push, a replaced main, a merge
+//! to approve or one that failed, a held budget, something a bot raised as needing you).
 
 use std::collections::{HashMap, HashSet};
 
@@ -54,12 +55,12 @@ impl TaskLite {
 #[derive(Debug, PartialEq)]
 pub enum Alert {
     Question { bot: String, title: String },
+    Permission { bot: String, text: String },
+    Push { title: String },
+    ReplaceMain { title: String },
     Merge { title: String },
-    Failed { bot: String, title: String },
+    MergeFailed { title: String, error: String },
     Held { bot: String, title: String },
-    Done { title: String },
-    Replied { bot: String, text: String },
-    Said { author: String, text: String },
     NeedsYou { bot: String, text: String },
 }
 
@@ -67,12 +68,12 @@ impl Alert {
     pub fn text(&self) -> (String, String) {
         match self {
             Alert::Question { bot, title } => (format!("{bot} has a question"), title.clone()),
+            Alert::Permission { bot, text } => (format!("{bot} needs your permission"), preview(text)),
+            Alert::Push { title } => ("Ready to push".into(), title.clone()),
+            Alert::ReplaceMain { title } => ("Ready to replace main".into(), title.clone()),
             Alert::Merge { title } => ("Ready to merge".into(), title.clone()),
-            Alert::Failed { bot, title } => (format!("{bot} couldn't finish"), title.clone()),
+            Alert::MergeFailed { title, error } => (format!("Merge failed: {title}"), preview(error)),
             Alert::Held { bot, title } => (format!("{bot} is waiting on a budget or plan limit"), title.clone()),
-            Alert::Done { title } => ("Done".into(), title.clone()),
-            Alert::Replied { bot, text } => (bot.clone(), preview(text)),
-            Alert::Said { author, text } => (format!("{author} in a group chat"), preview(text)),
             Alert::NeedsYou { bot, text } => (format!("{bot} needs you"), preview(text)),
         }
     }
@@ -120,11 +121,14 @@ pub struct CrewView {
     paused: bool,
     muted: HashSet<String>, // group chats you muted: what's said there isn't announced
     muted_bots: HashSet<String>,
+    names: HashMap<String, String>, // bot handle -> what the app calls it
+    asked: HashSet<String>, // tasks that asked permission: their wait is announced as that, not as a question
 }
 
 impl CrewView {
     pub fn load(&mut self, tasks: &[Value], paused: bool) {
         self.tasks = tasks.iter().filter_map(TaskLite::from).collect();
+        self.asked.clear(); // a reconnect: what was asked before is answered or gone
         self.paused = paused;
     }
 
@@ -142,6 +146,19 @@ impl CrewView {
                 self.muted.remove(id);
             }
         }
+    }
+
+    /// Takes in the bots, to call each by its display name rather than its handle.
+    pub fn set_bots(&mut self, bots: &Value) {
+        let Some(bots) = bots["data"].as_array() else { return };
+        self.names = bots
+            .iter()
+            .filter_map(|b| Some((b["name"].as_str()?.to_string(), b["display_name"].as_str().filter(|n| !n.is_empty())?.to_string())))
+            .collect();
+    }
+
+    fn name(&self, handle: &str) -> String {
+        self.names.get(handle).cloned().unwrap_or_else(|| handle.to_string())
     }
 
     pub fn set_chat_mute(&mut self, bot: &str, muted: bool) {
@@ -169,56 +186,64 @@ impl CrewView {
         let (id, now) = TaskLite::from(task)?;
         let before = self.tasks.insert(id.clone(), now.clone());
         let before = before?; // a task just created: you made it, or a bot delegated it; nothing to announce
-        if self.muted_task(&now) { return None; }
-        if before.merge_state.as_deref() != Some("proposed") && now.merge_state.as_deref() == Some("proposed") {
-            return Some(Alert::Merge { title: now.title });
+        if matches!(now.status.as_str(), "idle" | "failed" | "cancelled" | "interrupted") {
+            self.asked.remove(&id); // its turn ended without waiting on the permission it asked
         }
-        if before.status == now.status || now.kind == "seat" {
+        if self.muted_task(&now) { return None; }
+        if before.status == now.status {
+            return None;
+        }
+        let bot = self.name(&now.bot);
+        if now.status == "held" {
+            return Some(Alert::Held { bot, title: now.title }); // at any depth, a group chat's seat too
+        }
+        if now.kind == "seat" {
             return None; // a bot in a group chat is heard through what it says there
         }
-        if now.status == "held" {
-            return Some(Alert::Held { bot: now.bot, title: now.title }); // at any depth: it holds up its goal
+        if now.status == "needs_input" && self.asked.remove(&id) {
+            return None; // it asked permission, which was announced as that
         }
-        if !now.top_level() {
+        if now.top_level() && now.status == "needs_input" {
+            return Some(Alert::Question { bot, title: now.title });
+        }
+        None
+    }
+
+    /// What an event says that waits on you: a bot's own "needs you", a permission to give, a push or a replaced main
+    /// to press, a merge to approve (unless it merges by itself) or one that failed.
+    pub fn raised(&mut self, event: &Value) -> Option<Alert> {
+        let kind = event["kind"].as_str()?;
+        let data = &event["data"];
+        let task_id = event["task_id"].as_str()?;
+        if kind == "permission_answer" {
+            self.asked.remove(task_id); // before any mute check: muting never keeps a marker alive
             return None;
         }
-        match now.status.as_str() {
-            "needs_input" => Some(Alert::Question { bot: now.bot, title: now.title }),
-            // A bot's chat going quiet means it replied; the reply is the notification.
-            "idle" if now.kind == "chat" && before.active() && !self.busy_below(&id) => {
-                Some(Alert::Replied { bot: now.bot, text: now.result.unwrap_or_default() })
+        let task = self.tasks.get(task_id);
+        // A seat's question is judged by its room's mute below, not by the main chat it is shown in.
+        if kind != "seat_escalation" && task.is_some_and(|t| self.muted_task(t)) { return None; }
+        let title = task.map(|t| t.title.clone()).unwrap_or_default();
+        let text = |k: &str| data[k].as_str().unwrap_or_default().to_string();
+        match kind {
+            "text" if data["level"].as_str() == Some("needs_you") => {
+                Some(Alert::NeedsYou { bot: self.name(&task.map(|t| t.bot.clone()).unwrap_or_default()), text: text("text") })
             }
-            "failed" => Some(Alert::Failed { bot: now.bot, title: now.title }),
-            // A goal is done when its bot goes idle with nothing it delegated still going. The chief going idle after
-            // handing out work isn't it; its last reply, once the work is back, is.
-            "idle" if before.active() && !self.busy_below(&id) => Some(Alert::Done { title: now.title }),
+            "seat_escalation" => {
+                let seat = data["task"].as_str().and_then(|id| self.tasks.get(id));
+                if seat.is_some_and(|t| t.room_id.as_ref().is_some_and(|room| self.muted.contains(room))) { return None; }
+                let bot = self.name(&task.map(|t| t.bot.clone()).unwrap_or_default());
+                Some(Alert::Question { bot, title: format!("{}: {}", text("room"), text("question")) })
+            }
+            "permission" if data["task"].as_str() == Some(task_id) => {
+                self.asked.insert(task_id.to_string());
+                Some(Alert::Permission { bot: self.name(&text("bot")), text: text("what") })
+            }
+            "push_proposed" if data["error"].is_null() => Some(Alert::Push { title: text("summary") }),
+            "replace_main_proposed" if data["error"].is_null() => Some(Alert::ReplaceMain { title: text("summary") }),
+            "merge_proposed" if data["auto"].as_bool() != Some(true) => Some(Alert::Merge { title }),
+            "merge_failed" => Some(Alert::MergeFailed { title, error: text("error") }),
             _ => None,
         }
-    }
-
-    /// Something a bot raised on its own, as "needs you": the crew already kept it to a few a day, outside quiet hours.
-    pub fn raised(&self, event: &Value) -> Option<Alert> {
-        if event["kind"].as_str()? != "text" || event["data"]["level"].as_str()? != "needs_you" {
-            return None;
-        }
-        let task = self.tasks.get(event["task_id"].as_str()?);
-        if task.is_some_and(|t| self.muted_task(t)) { return None; }
-        let bot = task.map(|t| t.bot.clone()).unwrap_or_default();
-        Some(Alert::NeedsYou { bot, text: event["data"]["text"].as_str().unwrap_or_default().to_string() })
-    }
-
-    /// A message in a group chat: one from a bot is worth a notification, unless you muted the chat.
-    pub fn said(&self, message: &Value) -> Option<Alert> {
-        let author = message["author"].as_str()?;
-        if author == "user" || message["room_id"].as_str().is_some_and(|room| self.muted.contains(room)) {
-            return None;
-        }
-        let mut text = message["text"].as_str().unwrap_or_default().to_string();
-        if text.is_empty() {
-            let files = message["attachments"].as_array().into_iter().flatten().filter_map(|f| f["name"].as_str());
-            text = files.collect::<Vec<_>>().join(", "); // it shared files and said nothing
-        }
-        Some(Alert::Said { author: author.to_string(), text })
     }
 
     pub fn summary(&self) -> Summary {
@@ -227,10 +252,6 @@ impl CrewView {
             needs_you: self.tasks.values().filter(|t| t.needs_you()).count(),
             paused: self.paused,
         }
-    }
-
-    fn busy_below(&self, id: &str) -> bool {
-        self.tasks.iter().any(|(child, t)| t.parent_id.as_deref() == Some(id) && (t.active() || self.busy_below(child)))
     }
 }
 
@@ -258,42 +279,157 @@ mod tests {
         assert_eq!(view.update(&task("g", "needs_input", None)), None);
     }
 
-    #[test]
-    fn a_goal_is_done_only_when_its_delegated_work_is_done_too() {
-        let mut view = CrewView::default();
-        view.load(&[task("g", "running", None), task("c", "running", Some("g"))], false);
-        assert_eq!(view.update(&task("g", "idle", None)), None); // the chief handed out work and went idle
-        assert_eq!(view.update(&task("c", "idle", Some("g"))), None); // the work came back; the chief wakes
-        view.update(&task("g", "running", None));
-        assert!(matches!(view.update(&task("g", "idle", None)), Some(Alert::Done { .. }))); // its last reply
+    fn event(task: &str, kind: &str, data: Value) -> Value {
+        json!({"task_id": task, "kind": kind, "data": data})
     }
 
     #[test]
-    fn a_proposed_merge_is_announced_whoever_owns_it() {
+    fn a_merge_to_approve_is_announced_unless_it_merges_by_itself() {
         let mut view = CrewView::default();
         view.load(&[task("c", "idle", Some("g"))], false);
-        let mut proposed = task("c", "idle", Some("g"));
-        proposed["merge_state"] = json!("proposed");
-        assert!(matches!(view.update(&proposed), Some(Alert::Merge { .. })));
+        let proposed = |auto: bool| event("c", "merge_proposed", json!({"summary": "s", "auto": auto}));
+        assert!(matches!(view.raised(&proposed(false)), Some(Alert::Merge { .. })));
+        assert_eq!(view.raised(&proposed(true)), None);
+        // the status change that comes with a proposal is not an announcement of its own
+        let mut now = task("c", "idle", Some("g"));
+        now["merge_state"] = json!("proposed");
+        assert_eq!(view.update(&now), None);
     }
 
     #[test]
-    fn a_reply_in_a_chat_is_announced_with_what_it_said() {
+    fn a_failed_merge_is_announced() {
+        let mut view = CrewView::default();
+        view.load(&[task("c", "idle", Some("g"))], false);
+        let failed = event("c", "merge_failed", json!({"error": "conflict in a.txt", "automatic": true}));
+        assert_eq!(view.raised(&failed).map(|a| a.text()), Some(("Merge failed: title c".into(), "conflict in a.txt".into())));
+    }
+
+    #[test]
+    fn permissions_pushes_and_replaced_mains_are_announced() {
+        let mut view = CrewView::default();
+        view.load(&[task("g", "running", None)], false);
+        let ask = event("g", "permission", json!({"task": "g", "bot": "chief", "what": "write in ~/x"}));
+        assert!(matches!(view.raised(&ask), Some(Alert::Permission { .. })));
+        // its wait on the answer is not also announced as a question
+        assert_eq!(view.update(&task("g", "needs_input", None)), None);
+        assert!(matches!(view.raised(&event("g", "push_proposed", json!({"summary": "ship it"}))), Some(Alert::Push { .. })));
+        assert_eq!(view.raised(&event("g", "push_proposed", json!({"summary": "x", "error": "no upstream"}))), None);
+        assert!(matches!(view.raised(&event("g", "replace_main_proposed", json!({"summary": "s"}))),
+                         Some(Alert::ReplaceMain { .. })));
+    }
+
+    #[test]
+    fn a_room_seats_escalation_in_the_main_chat_is_announced_unless_muted() {
+        let mut view = CrewView::default();
+        let mut chat = task("c", "idle", None);
+        chat["kind"] = json!("chat");
+        let mut seat = task("s", "running", None);
+        seat["kind"] = json!("seat");
+        seat["room_id"] = json!("r1");
+        view.load(&[chat, seat], false);
+        let escalation = event("c", "seat_escalation", json!({"task": "s", "room": "Eng", "question": "Ship?"}));
+        assert_eq!(view.raised(&escalation).unwrap().text(), ("chief has a question".into(), "Eng: Ship?".into()));
+        view.set_rooms(&[json!({"id": "r1", "muted": true})]);
+        assert_eq!(view.raised(&escalation), None);
+    }
+
+    #[test]
+    fn muting_the_main_chat_does_not_silence_a_room_seats_escalation() {
+        let mut view = CrewView::default();
+        let mut chat = task("c", "idle", None);
+        chat["kind"] = json!("chat");
+        let mut seat = task("s", "running", None);
+        seat["kind"] = json!("seat");
+        seat["room_id"] = json!("r1");
+        view.load(&[chat, seat], false);
+        view.set_chat_mute("chief", true);
+        view.set_rooms(&[json!({"id": "r1", "muted": false})]);
+        let escalation = event("c", "seat_escalation", json!({"task": "s", "room": "Eng", "question": "Ship?"}));
+        assert!(matches!(view.raised(&escalation), Some(Alert::Question { .. })));
+    }
+
+    #[test]
+    fn muting_does_not_keep_a_permission_marker_alive() {
         let mut view = CrewView::default();
         let mut chat = task("c", "running", None);
         chat["kind"] = json!("chat");
         view.load(&[chat.clone()], false);
-        chat["status"] = json!("idle");
-        chat["result"] = json!("Merged.   The CSV export is with the engineer.");
-        assert_eq!(view.update(&chat), Some(Alert::Replied { bot: "chief".into(), text: "Merged.   The CSV export is with the engineer.".into() }));
-        assert_eq!(Alert::Replied { bot: "chief".into(), text: "a  b".into() }.text().1, "a b");
+        view.raised(&event("c", "permission", json!({"task": "c", "bot": "chief", "what": "w"})));
+        view.set_chat_mute("chief", true);
+        view.raised(&event("c", "permission_answer", json!({"permission": 1, "allowed": true})));
+        view.set_chat_mute("chief", false);
+        chat["status"] = json!("needs_input");
+        assert!(matches!(view.update(&chat), Some(Alert::Question { .. })));
+        // the same for a turn that ends while muted
+        chat["status"] = json!("running");
+        view.update(&chat);
+        view.raised(&event("c", "permission", json!({"task": "c", "bot": "chief", "what": "w"})));
+        view.set_chat_mute("chief", true);
+        chat["status"] = json!("failed");
+        view.update(&chat);
+        view.set_chat_mute("chief", false);
+        chat["status"] = json!("running");
+        view.update(&chat);
+        chat["status"] = json!("needs_input");
+        assert!(matches!(view.update(&chat), Some(Alert::Question { .. })));
     }
 
     #[test]
-    fn bots_speaking_in_group_chats_are_announced_but_not_you() {
-        let view = CrewView::default();
-        assert!(matches!(view.said(&json!({"author": "engineer", "text": "done"})), Some(Alert::Said { .. })));
-        assert_eq!(view.said(&json!({"author": "user", "text": "hi"})), None);
+    fn a_seat_that_becomes_held_is_announced() {
+        let mut view = CrewView::default();
+        let mut seat = task("s", "running", None);
+        seat["kind"] = json!("seat");
+        view.load(&[seat.clone()], false);
+        seat["status"] = json!("held");
+        assert!(matches!(view.update(&seat), Some(Alert::Held { .. })));
+        seat["status"] = json!("needs_input");
+        assert_eq!(view.update(&seat), None);
+    }
+
+    #[test]
+    fn a_permission_marker_does_not_outlive_its_permission() {
+        let ask = |id: &str| event(id, "permission", json!({"task": id, "bot": "chief", "what": "w"}));
+        let mut view = CrewView::default();
+        view.load(&[task("g", "running", None)], false);
+        view.raised(&ask("g"));
+        view.update(&task("g", "failed", None)); // the turn failed with the permission unanswered
+        view.update(&task("g", "running", None));
+        assert!(matches!(view.update(&task("g", "needs_input", None)), Some(Alert::Question { .. })));
+        view.raised(&ask("g"));
+        view.raised(&event("g", "permission_answer", json!({"permission": 1, "allowed": false})));
+        view.update(&task("g", "running", None));
+        assert!(matches!(view.update(&task("g", "needs_input", None)), Some(Alert::Question { .. })));
+        view.raised(&ask("g"));
+        view.load(&[task("g", "running", None)], false); // reconnect
+        assert!(matches!(view.update(&task("g", "needs_input", None)), Some(Alert::Question { .. })));
+    }
+
+    #[test]
+    fn a_reply_a_finished_goal_and_a_failure_are_not_announced() {
+        let mut view = CrewView::default();
+        let mut chat = task("c", "running", None);
+        chat["kind"] = json!("chat");
+        view.load(&[chat.clone(), task("g", "running", None)], false);
+        chat["status"] = json!("idle");
+        chat["result"] = json!("NO_REPLY");
+        assert_eq!(view.update(&chat), None);
+        assert_eq!(view.update(&task("g", "idle", None)), None);
+        assert_eq!(view.update(&task("g", "failed", None)), None);
+    }
+
+    #[test]
+    fn titles_use_display_names_not_handles() {
+        let mut view = CrewView::default();
+        view.load(&[task("g", "running", None), task("h", "running", Some("g"))], false);
+        view.set_bots(&json!({"ok": true, "data": [{"name": "chief", "display_name": "Roger"},
+                                                    {"name": "eng-lead", "display_name": null}]}));
+        assert_eq!(view.update(&task("g", "needs_input", None)).unwrap().text().0, "Roger has a question");
+        assert_eq!(view.update(&task("h", "held", Some("g"))).unwrap().text().0, "Roger is waiting on a budget or plan limit");
+        let raised = json!({"task_id": "g", "kind": "text", "data": {"text": "CI is red", "level": "needs_you"}});
+        assert_eq!(view.raised(&raised).unwrap().text().0, "Roger needs you");
+        let ask = event("g", "permission", json!({"task": "g", "bot": "chief", "what": "w"}));
+        assert_eq!(view.raised(&ask).unwrap().text().0, "Roger needs your permission");
+        assert_eq!(view.name("eng-lead"), "eng-lead"); // no display name: the handle
     }
 
     #[test]
@@ -308,19 +444,6 @@ mod tests {
     }
 
     #[test]
-    fn a_muted_group_chat_is_not_announced_until_unmuted() {
-        let mut view = CrewView::default();
-        let said = json!({"room_id": "r1", "author": "engineer", "text": "done"});
-        view.set_rooms(&[json!({"id": "r1", "muted": true}), json!({"id": "r2", "muted": false})]);
-        assert_eq!(view.said(&said), None);
-        assert!(view.said(&json!({"room_id": "r2", "author": "engineer", "text": "done"})).is_some());
-        let shared = json!({"room_id": "r2", "author": "engineer", "text": "", "attachments": [{"name": "cut.mp4"}]});
-        assert!(matches!(view.said(&shared), Some(Alert::Said { text, .. }) if text == "cut.mp4"));
-        view.set_rooms(&[json!({"id": "r1", "muted": false})]);
-        assert!(view.said(&said).is_some());
-    }
-
-    #[test]
     fn a_muted_direct_chat_suppresses_all_its_alerts_until_unmuted() {
         let mut view = CrewView::default();
         let mut chat = task("c", "running", None);
@@ -331,16 +454,12 @@ mod tests {
         assert_eq!(view.update(&chat), None);
         let raised = json!({"task_id": "c", "kind": "text", "data": {"level": "needs_you", "text": "hi"}});
         assert_eq!(view.raised(&raised), None);
-        chat["status"] = json!("running");
-        view.update(&chat);
-        chat["status"] = json!("idle");
-        assert_eq!(view.update(&chat), None);
         view.set_chat_mute("chief", false);
         assert!(view.raised(&raised).is_some());
         chat["status"] = json!("running");
         view.update(&chat);
-        chat["status"] = json!("idle");
-        assert!(matches!(view.update(&chat), Some(Alert::Replied { .. })));
+        chat["status"] = json!("needs_input");
+        assert!(matches!(view.update(&chat), Some(Alert::Question { .. })));
     }
 
     #[test]

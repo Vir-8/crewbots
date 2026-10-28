@@ -46,6 +46,17 @@ async def test_each_bot_has_one_chat_that_carries_on(crew, store):
     assert "ongoing chat with the user" in crew.specs_for("chief")[0].system_prompt
 
 
+@pytest.mark.parametrize("answer", ["NO_REPLY", "no_reply", "  **No_Reply**  "])
+async def test_a_no_reply_turn_in_a_chat_leaves_no_message_and_no_result(crew, store, answer):
+    crew.script["chief"] = lambda spec, me: [Text(text=answer), Done(final_text=answer)]
+    chat = crew.runner.say("chief", "anything?")
+    await wait_until(idle(crew))
+
+    assert not [e for e in store.events(chat.id) if e.kind == "text"]
+    assert store.get_task(chat.id).result == ""
+    assert store.get_task(chat.id).status == Status.IDLE
+
+
 async def test_a_bot_opens_a_thread_for_real_work_and_hears_back_in_its_chat(crew, store):
     chat = crew.runner.chat("engineer")
     opened = []

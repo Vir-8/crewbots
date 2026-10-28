@@ -41,6 +41,11 @@ BUDGET_WINDOWS = {"day": timedelta(days=1), "week": timedelta(days=7)}
 NO_REPLY = "NO_REPLY"  # a bot's whole reply in a group chat when it has nothing to add
 
 
+def is_no_reply(text: str) -> bool:
+    """Whether this is a bot's whole reply saying it has nothing to add: any case, bare or in light formatting."""
+    return text.strip().strip("`*_. ").upper() == NO_REPLY
+
+
 @dataclass(frozen=True)
 class Budget:
     """Tokens a bot may use over a rolling window, e.g. 2,000,000 a week. Once they're used, its next turns wait."""

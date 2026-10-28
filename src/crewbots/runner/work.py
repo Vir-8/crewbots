@@ -257,13 +257,15 @@ class Work(MergeStatus):
             files = branch_mode.changed_files(self._branch_checkout(work)) if work.base_branch else None
         except worktree.GitError as e:
             raise NotAllowed(str(e)) from None
+        auto = self.store.auto_merge()  # the app asks the user to merge only when it isn't going to happen by itself
         task = self._set(task_id, merge_state="proposed")
-        self._record(task_id, kind="merge_proposed", data={"by": parent.bot, "summary": summary,
+        self._record(task_id, kind="merge_proposed", data={"by": parent.bot, "summary": summary, "auto": auto,
                                                           **({"files": files} if files is not None else {})})
-        if self.store.auto_merge():
+        if auto:
             try:
                 return self.merge(task_id, automatic=True)
             except MergeError as e:
+                self._record(task_id, kind="merge_failed", data={"error": str(e), "automatic": True})
                 raise MergeError(f"Automatic merge failed; the proposal is waiting for the user: {e}") from None
         return task
 

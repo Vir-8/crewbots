@@ -8,7 +8,7 @@ from typing import Any
 
 from crewbots import attachments as attachments_module
 from crewbots import prompts, timefmt, working_state
-from crewbots.crew import NO_REPLY
+from crewbots.crew import is_no_reply
 from crewbots.runner.common import NotAllowed, UnknownBot, _iso
 from crewbots.store import Status, Task
 
@@ -389,6 +389,7 @@ class Rooms:
 
     def _seat_turn_finished(self, seat: Task, result: str) -> None:
         waiting = self._waiting.get(seat.id)
+        result = "" if is_no_reply(result) else result
         status = Status.QUEUED if waiting else Status.IDLE
         with self.store.db.transaction():
             if waiting:
@@ -407,7 +408,7 @@ class Rooms:
                       owed: bool = False, nudged: bool = False) -> None:
         text = text.strip()
         self._clear_room_mentions(seat.bot, seat.room_id, self._seat_turn_seen.get(seat.id, 0))
-        if not text or text.strip("`*_. ") == NO_REPLY:
+        if not text or is_no_reply(text):
             if owed:
                 self._nudged.add(seat.id)
                 self.send(seat.id, prompts.text("mentioned", self.crew.home), sender="crewbots")

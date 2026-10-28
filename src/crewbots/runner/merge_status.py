@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from crewbots import worktree
+from crewbots.crew import is_no_reply
 from crewbots.events import Notice
 from crewbots.store import Task
 
@@ -46,7 +47,10 @@ class MergeStatus:
                 "Until then the work cannot be proposed for merging.")
 
     def _checked(self, task: Task, result: str) -> str:
-        """A finished turn's result, with the switch-back request added when its worktree is on the wrong branch."""
+        """A finished turn's result, with the switch-back request added when its worktree is on the wrong branch.
+        A reply of NO_REPLY said nothing, so it is no result."""
+        if is_no_reply(result):
+            result = ""
         if not (warning := self.wrong_branch(task)):
             return result
         self._record(task.id, Notice(message=warning))

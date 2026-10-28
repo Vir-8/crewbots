@@ -15,7 +15,7 @@ from typing import Any
 
 from crewbots import prompts, timefmt, working_state, worktree
 from crewbots.backends import Backend
-from crewbots.crew import NO_REPLY, Bot
+from crewbots.crew import NO_REPLY, Bot, is_no_reply
 from crewbots.events import Compacted, Done, Event, Usage
 from crewbots.runner.common import NotAllowed, OpenSession, _plan, _usage_data
 from crewbots.store import Status, Task
@@ -222,7 +222,7 @@ class Sessions:
         done, _ = await self._hidden(task_id, opened.session.turn(prompts.text("flush", self.crew.home,
                                                                                  no_reply=NO_REPLY)), bot)
         text = (done.final_text if done and not done.is_error else "").strip()
-        lines = [] if text.strip("`*_. ") == NO_REPLY else [ln.strip(" -*") for ln in text.splitlines() if ln.strip(" -*")]
+        lines = [] if is_no_reply(text) else [ln.strip(" -*") for ln in text.splitlines() if ln.strip(" -*")]
         for line in lines[:FLUSH_LINES]:
             self.crew.memory.log(bot.name, f"{task_id} {line}")
         self._flushed.add(task_id)

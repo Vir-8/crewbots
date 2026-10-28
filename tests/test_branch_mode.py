@@ -818,6 +818,42 @@ async def test_automatic_merge_tells_the_coordinator_about_late_saves(game, monk
     await crew.runner.shutdown()
 
 
+@pytest.mark.parametrize("auto", [False, True])
+async def test_proposal_says_whether_it_merges_by_itself(game, monkeypatch, auto):
+    crew, store, path, git, gate = game
+    parent = store.create_task("chief", "work")
+    task = crew.runner.submit("engineer", "work", workspace=str(path), parent_id=parent.id)
+    gate.set()
+    await wait_until(crew.settled(task.id))
+    (path / "file").write_text("pending\n")
+    monkeypatch.setattr(crew.runner, "review_state", lambda _: SimpleNamespace(approved=True, round=1, latest=[]))
+    store.set_auto_merge(auto)
+    crew.runner.propose_merge(parent.id, task.id, "Update game")
+    assert store.last_event(task.id, ("merge_proposed",)).data["auto"] is auto
+    assert store.last_event(task.id, ("merge_failed",)) is None
+    await crew.runner.shutdown()
+
+
+async def test_failed_automatic_merge_is_recorded_for_the_app(game, monkeypatch):
+    crew, store, path, git, gate = game
+    parent = store.create_task("chief", "work")
+    task = crew.runner.submit("engineer", "work", workspace=str(path), parent_id=parent.id)
+    gate.set()
+    await wait_until(crew.settled(task.id))
+    (path / "file").write_text("pending\n")
+    monkeypatch.setattr(crew.runner, "review_state", lambda _: SimpleNamespace(approved=True, round=1, latest=[]))
+    store.set_auto_merge(True)
+
+    def refuse(*args, **kwargs):
+        raise MergeError("conflict in file")
+
+    monkeypatch.setattr(crew.runner, "merge", refuse)
+    with pytest.raises(MergeError, match="Automatic merge failed"):
+        crew.runner.propose_merge(parent.id, task.id, "Update game")
+    assert store.last_event(task.id, ("merge_failed",)).data == {"error": "conflict in file", "automatic": True}
+    await crew.runner.shutdown()
+
+
 async def test_runner_refuses_merge_after_base_moves(game, monkeypatch):
     crew, store, path, git, gate = game
     parent = store.create_task("chief", "work")

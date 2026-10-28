@@ -36,7 +36,7 @@ from crewbots.attention import Attention
 from crewbots.backends import BACKENDS, Access, Backend, McpServer, RunSpec
 from crewbots.browser import Browser
 from crewbots.capacity import Capacity
-from crewbots.crew import NO_REPLY, Bot, Crew
+from crewbots.crew import Bot, Crew, is_no_reply
 from crewbots.crew_tools import CrewTools
 from crewbots.events import (
     Compacted,
@@ -529,7 +529,7 @@ class Runner(Branches, Retries, Sessions, Rooms, Delegation, Reviewing, Work, Fi
                                 kept = await asyncio.to_thread(self._kept_images, event.images, looked_at.get(event.id))
                                 event = replace(event, images=kept)
                             elif isinstance(event, Text):
-                                if event.text.strip("`*_. ") == NO_REPLY:
+                                if is_no_reply(event.text):
                                     continue  # nothing to say: the chat shows nothing
                                 named = self._mentioned(task, cwd, event.text, started)
                                 if named or task_id in self._waking:
