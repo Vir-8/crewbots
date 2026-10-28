@@ -22,6 +22,7 @@ from crewbots.store import Handoff, Review, Status, Task
 MAX_CHILDREN = 12  # unfinished children of one task
 MAX_DEPTH = 3  # delegations in a row: chief → engineer → helper → one more, and no further
 MAX_OUT = 4  # tasks one bot has delegated that aren't finished yet, across all its work
+ROOM_REPORT = 1200  # characters of a finished piece of work's report in the group chat it was handed out in
 
 
 class Delegation:
@@ -227,6 +228,7 @@ class Delegation:
         if parent.kind == "review":  # a review's reviewers: their findings, whole, for the lead to put together
             self.send(parent.id, sender="crewbots", text=_review_findings(parent, finished))
             return
+        self._tell_room(parent, finished)
         sections = "\n\n".join(
             _report_section(s, self.store.latest_handoff(s.id), self.store.latest_review(s.id)) for s in finished)
         reviewed = dict.fromkeys(s.review_of for s in finished if s.review_of)
@@ -237,6 +239,23 @@ class Delegation:
                 else f"Your {asked} questions were answered.")
         self.send(task.parent_id, sender="crewbots", text=(
             f"{head}\n\n{sections}" + (f"\n\n# Review status\n\n{status}" if status else "")))
+
+    def _tell_room(self, parent: Task, finished: list[Task]) -> None:
+        """Work handed out in a group chat reports there too, in its own bot's words, so the room shows who did what.
+        It wakes no one: whoever handed it out hears the full report, as before, and isn't told it twice."""
+        if parent.kind != "seat" or not parent.room_id:
+            return
+        room = self.store.room(parent.room_id)
+        key = f"seat:{parent.id}"
+        for task in finished:
+            if task.bot not in room["members"] or room["archived_at"]:
+                continue
+            last = self.store.last_room_message(room["id"])
+            caught_up = self.store.seen(key) >= (last["id"] if last else 0)
+            said = self.post(room["id"], task.bot, f"@{parent.bot} " + _said_in_room(
+                task, self.store.latest_handoff(task.id), self.store.latest_review(task.id)), recipients=[])
+            if caught_up:
+                self.store.mark_seen(key, said["id"])
 
     def _chain(self, task: Task) -> list[Task]:
         """The task and every task above it, up to the one that started the work."""
@@ -288,6 +307,19 @@ def _report_section(task: Task, handoff: Handoff | None, review: Review | None =
     if task.result:
         lines += ["Final message:", _clip(task.result) or ""]
     return "\n".join(lines)
+
+
+def _said_in_room(task: Task, handoff: Handoff | None, review: Review | None) -> str:
+    """A finished piece of work, as its bot says it in the group chat it was handed out in: what came of it, shortly."""
+    if task.review_of and review:
+        said = f"Review of {task.review_of}: {review.verdict.upper()}. {review.summary}"
+    elif task.status is Status.FAILED:
+        said = f"{task.id} failed: {task.error or 'no reason given'}"
+    elif handoff:
+        said = f"{task.id}: {handoff.done}" + (f"\n\nStill open: {handoff.open}" if handoff.open.strip() else "")
+    else:
+        said = f"{task.id}: {task.result or task.status.value}"
+    return said if len(said) <= ROOM_REPORT else said[:ROOM_REPORT - 1].rstrip() + "…"
 
 
 def _delegated(task: Task) -> bool:
