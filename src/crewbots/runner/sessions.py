@@ -25,6 +25,10 @@ COLD_PERCENT = 30.0  # of its window: an idle conversation this full starts afre
 FLUSH_LINES = 12  # a flush's lines for the daily log, at most
 FRESH_MESSAGES = 8  # of the conversation a fresh session starts with
 MESSAGE_CHARS = 1500  # of each
+# A bot's chat and group chats are woken often, and each turn reads the whole conversation back, so they hold no more
+# than this, compacted at the runner's rollover_percent of it (about 120K); what's folded away stays findable with
+# `recall`.
+CONVERSATION_WINDOW = 170_000
 
 
 class Sessions:
@@ -51,10 +55,17 @@ class Sessions:
             "plan": _plan(bot.backend) if bot else None, "model": bot.model if bot else None,
             "effort": bot.effort if bot else None, "session_id": task.session_id, "open": opened is not None,
             "context_percent": round(percent, 1) if percent is not None else None,
-            "context_window": bot.context_window if bot and task.kind != "review" else None,
+            "context_window": self._window(task, bot) if bot and task.kind != "review" else None,
             "rollover_percent": self.rollover_percent, "turns": task.turns,
             "background": self.capacity.verdict(_plan(bot.backend)).reason if bot else None,
         }
+
+    def _window(self, task: Task, bot: Bot) -> int | None:
+        """The context a task's sessions hold before compacting: its bot's, and at most CONVERSATION_WINDOW for a chat
+        or group chat."""
+        if task.kind in ("chat", "seat"):
+            return min(bot.context_window or CONVERSATION_WINDOW, CONVERSATION_WINDOW)
+        return bot.context_window
 
     async def _session_for(self, task: Task, bot: Bot, cwd: Path, backend: Backend) -> OpenSession | None:
         """The task's open session, or a new one; None to run this turn as its own process."""

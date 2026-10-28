@@ -174,11 +174,13 @@ class Work(Closing, MergeStatus):
         return note
 
     def recall(self, task_id: str, query: str, limit: int = 8) -> list[dict[str, Any]]:
-        """The best matches in the crew's record, one per task, leaving out the asking task's own conversation; then
-        lines from the bot's and the crew's daily logs and notes."""
+        """The best matches in the crew's record, one per task; then lines from the bot's and the crew's daily logs and
+        notes. A thread's own conversation is left out, since it has it all; a chat or group chat is compacted as it
+        goes, so what was folded away is found here again."""
         hits, seen = [], set()
-        for hit in self.store.search(query, limit=limit * 4, exclude_task=task_id):
-            if hit["task_id"] not in seen:
+        own = self.store.get_task(task_id).kind in ("chat", "seat")
+        for hit in self.store.search(query, limit=limit * 4, exclude_task=None if own else task_id):
+            if hit["task_id"] == task_id or hit["task_id"] not in seen:
                 seen.add(hit["task_id"])
                 hits.append(hit)
             if len(hits) == limit:

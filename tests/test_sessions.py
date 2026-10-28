@@ -412,6 +412,36 @@ async def test_status_says_how_full_a_chats_context_is(store, tmp_path):
     assert (await runner.status(task.id))["context_percent"] == 41.3  # as last measured, once it's closed
 
 
+async def test_chats_and_group_chats_compact_within_a_smaller_window_than_threads(store, tmp_path):
+    from crewbots.runner.sessions import CONVERSATION_WINDOW
+
+    backend = SessionBackend()
+    runner, _ = make(store, tmp_path, backend, bot("worker"), bot("helper", context_window=120_000))
+    thread = runner.submit("worker", "build it")
+    chat = runner.say("worker", "hi")
+    small = runner.say("helper", "hi")
+    for task in (thread, chat, small):
+        await wait_until(settled(store, runner, task.id))
+    window = {task: next(s.spec.context_window for s in backend.opened if s.session_id == store.get_task(task).session_id)
+              for task in (thread.id, chat.id, small.id)}
+    assert CONVERSATION_WINDOW == 170_000  # compacted at 70% of it: about 120K
+    assert window[thread.id] is None  # a thread: the model's whole window, as its card says
+    assert window[chat.id] == CONVERSATION_WINDOW and window[small.id] == 120_000  # never more than the bot's own
+    assert (await runner.status(chat.id))["context_window"] == CONVERSATION_WINDOW
+    await runner.shutdown()
+
+
+async def test_a_chat_recalls_what_its_own_compacted_conversation_said(store, tmp_path):
+    runner, _ = make(store, tmp_path, None, bot("worker"))
+    chat = runner.chat("worker")
+    thread = store.create_task("worker", "build it", status=Status.IDLE)
+    for task in (chat, thread):
+        store.append_event(task.id, kind="message", data={"from": "user", "text": "the pelican budget is 40 dollars"})
+    assert {h["task_id"] for h in runner.recall(chat.id, "pelican budget")} == {chat.id, thread.id}
+    assert {h["task_id"] for h in runner.recall(thread.id, "pelican budget")} == {chat.id}  # a thread has its own
+    await runner.shutdown()
+
+
 def test_lately_and_shared_state_reach_open_seat_once(store, tmp_path):
     from crewbots.working_state import edit
 

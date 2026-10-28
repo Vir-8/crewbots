@@ -645,7 +645,7 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
                                                  if d.is_dir()]], timeout_s=bot.timeout_s,
             write_dirs=[Path(g["folder"]) for g in grants if g["kind"] == "folder"],
             network=True if any(g["kind"] == "network" for g in grants) else bot.network,
-            effort=bot.effort, context_window=bot.context_window,
+            effort=bot.effort, context_window=self._window(task, bot),
         )
 
     def _state_denials(self, bot: str) -> list[Path]:
