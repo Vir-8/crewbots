@@ -30,6 +30,10 @@ for (const b of bots) {
   message(chief, "user", "Please ask @engineer to check this with @Roger. Email vir@emberlane.games; `@engineer` is just code.");
   say(chief, "Thanks, I've sent this to @engineer. **@Roger** will follow up. `@engineer` and @unknown are examples, not mentions.\n\n```\n@engineer\n```");
   say(chief, overflowExample);
+  emit(chief, "push_proposed", { project: "crewbots", summary: "The reviewed fixes are ready to share.", branch: "main", upstream: "origin/main", push_url_display: "github.com/emberlane/crewbots.git", commits: ["a1b2c3d Fix the chat sidebar", "d4e5f6a Improve the update message"] });
+  emit(chief, "push_proposed", { project: "sky-islands", summary: "The project is already current.", branch: "main", upstream: "origin/main", push_url_display: "github.com/emberlane/sky-islands.git", commits: [] });
+  const refused = emit(chief, "push_proposed", { project: "base", summary: "The remote needs attention.", branch: "main", upstream: "origin/main", push_url_display: "github.com/emberlane/base.git", commits: ["123abcd Update base"] });
+  emit(chief, "push_result", { proposal: refused.id, ok: false, reason: "The remote changed; make a new proposal." });
   message(chief, "user", "Write up the Q3 retro and a Q4 plan from it.");
   emit(chief, "text", { text: "Done: the retro is `docs/retro/q3-retro.pdf`, and the plan it led to is `docs/retro/q4-plan.md`.", files: [made.retro, made.plan] });
   done(chief);

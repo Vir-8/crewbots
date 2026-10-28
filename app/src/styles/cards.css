@@ -517,3 +517,5 @@
   font-size: 12.5px;
   font-weight: 550;
 }
+.push-commits, .push-error { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.push-error { color: var(--red); }

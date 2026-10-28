@@ -86,6 +86,7 @@ SPECS: dict[str, Spec] = {
                               "review_of": STRING}, ["bot", "goal"])),
     "tasks": Spec(_object({}, [])),
     "message": Spec(_object({"task_id": STRING, "text": STRING}, ["task_id", "text"])),
+    "propose_push": Spec(_object({"project": STRING, "summary": STRING}, ["project", "summary"]), coordinator_only=True),
     "propose_merge": Spec(_object({"task_id": STRING, "summary": STRING}, ["task_id", "summary"]), coordinator_only=True),
     "withdraw_merge": Spec(_object({"task_id": STRING, "reason": STRING}, ["task_id", "reason"]), coordinator_only=True),
     "next_check": Spec(_object({"minutes": {"type": "number"}, "why": STRING}, ["minutes", "why"]), coordinator_only=True),
@@ -97,9 +98,9 @@ def describe(name: str, home: Path | None = None) -> str:
     return prompts.text(f"tools/{name}", home)
 
 
-def tools_for(can_delegate: bool, home: Path | None = None) -> list[ToolDef]:
+def tools_for(can_delegate: bool, home: Path | None = None, *, is_chief: bool = False) -> list[ToolDef]:
     return [ToolDef(name, describe(name, home), spec.schema, spec.coordinator_only) for name, spec in SPECS.items()
-            if can_delegate or not spec.coordinator_only]
+            if (can_delegate or not spec.coordinator_only) and (name != "propose_push" or is_chief)]
 
 
 class ToolRefused(Exception):
@@ -115,7 +116,9 @@ class CrewTools:
         self.can_delegate = can_delegate
 
     def definitions(self) -> list[ToolDef]:
-        return tools_for(self.can_delegate, self.runner.crew.home)
+        chief = self.runner.coordinator() if self.can_delegate else None
+        is_chief = bool(chief and self.runner.store.get_task(self.task_id).bot == chief.name)
+        return tools_for(self.can_delegate, self.runner.crew.home, is_chief=is_chief)
 
     async def call(self, name: str, args: dict[str, Any]) -> str | list[dict[str, Any]]:
         """Runs one tool and returns its result for the bot; raises ToolRefused with the reason it can't."""
@@ -171,6 +174,10 @@ class CrewTools:
                 case "message":
                     task = r.message_child(me, args["task_id"], args["text"])
                     return f"Sent to {task.id} ({task.status})."
+                case "propose_push":
+                    from crewbots.push import proposal_message, propose
+                    proposal = await propose(r, me, args["project"], args["summary"])
+                    return proposal_message(r, proposal)
                 case "propose_merge":
                     task = r.propose_merge(me, args["task_id"], args["summary"])
                     return (f"Merged {task.id} locally as {task.merged_commit}." if task.merge_state == "merged"

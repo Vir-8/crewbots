@@ -59,6 +59,15 @@ async function request(method: string, path: string, body?: any) {
   if (method === "GET" && url.pathname === "/events/recent") return ok(allEvents.slice(-Number(url.searchParams.get("limit") ?? 400)));
   if (method === "GET" && url.pathname === "/events/cursor") return ok({ id: allEvents.at(-1)?.id ?? 0 });
   if (parts[0] === "bot") return { ok: false, status: 0, data: { detail: "not an app path" } };
+  if (method === "POST" && parts[0] === "push-proposals" && parts[2] === "push") {
+    const proposal = allEvents.find((event) => event.id === Number(parts[1]) && event.kind === "push_proposed");
+    if (!proposal) return missing("push proposal");
+    if (allEvents.some((event) => event.kind === "push_result" && event.data.proposal === proposal.id)) return missing("pending push proposal");
+    const pushed = Array.isArray(proposal.data.commits) && proposal.data.commits.length > 0;
+    const result = { proposal: proposal.id, ok: true, pushed, reason: pushed ? "Push completed." : "Everything up-to-date. Nothing was pushed." };
+    say(proposal.task_id, "push_result", result);
+    return ok(result);
+  }
   if (url.pathname === "/update") return ok(previewUpdate(method === "POST"));
   if (method === "GET" && url.pathname === "/crew") return ok(crewState);
   if (method === "POST" && (url.pathname === "/crew/pause" || url.pathname === "/crew/resume")) {

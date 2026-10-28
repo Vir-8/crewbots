@@ -25,7 +25,7 @@ class CrewError(ToolError):
     only as "Error executing tool"."""
 
 
-def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
+def build_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = False) -> MCPServer:
     server = MCPServer(name="crewbots", instructions=INSTRUCTIONS)
 
     def call(method: str, path: str, body: dict[str, Any] | None = None) -> Any:
@@ -207,6 +207,12 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
         return (f"Added {bot['label']} (@{bot['name']}), {bot['title']}, to the crew. It's in the roster now: "
                 "@mention it in a group chat to bring it in.")
 
+    if is_chief:
+        @server.tool(description=describe("propose_push"))
+        def propose_push(project: str, summary: str) -> str:
+            result = call("POST", "/bot/propose_push", {"project": project, "summary": summary})
+            return result["message"]
+
     @server.tool(description=describe("propose_merge"))
     def propose_merge(task_id: str, summary: str) -> str:
         task = call("POST", "/bot/propose_merge", {"task_id": task_id, "summary": summary})
@@ -268,7 +274,8 @@ def main() -> None:
         flags = set(os.environ.get("CREWBOTS_REVIEW", "").split(","))
         build_review_server(client, reads_github="github" in flags, drafting="drafts" in flags).run("stdio")
     else:
-        build_server(client, can_delegate=os.environ.get("CREWBOTS_DELEGATE") == "1").run("stdio")
+        build_server(client, can_delegate=os.environ.get("CREWBOTS_DELEGATE") == "1",
+                     is_chief=os.environ.get("CREWBOTS_CHIEF") == "1").run("stdio")
 
 
 if __name__ == "__main__":

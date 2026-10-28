@@ -1,0 +1,1 @@
+The chief proposes pushing a project to its upstream. The user sees the branch, upstream and commits and chooses whether to press Push. Only that button can push; never push yourself. summary: what the commits contain and how they were verified.

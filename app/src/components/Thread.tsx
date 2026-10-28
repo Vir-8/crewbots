@@ -11,6 +11,7 @@ import { Finding, Marked, count, useCurrentHit } from "./Find";
 import { Icon } from "./Icon";
 import { Offer } from "./Offer";
 import { Permission } from "./Permission";
+import { PushCard } from "./PushCard";
 import { Question } from "./Question";
 import { AskCard, Brief, Reactions, Steps, VerdictBlock } from "./ThreadParts";
 import { type Block, build, fold, said, summary } from "./threadBlocks";
@@ -202,6 +203,8 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
       return <Question crew={props.crew} block={block} onOpen={props.onOpen} />;
     case "permission":
       return <Permission crew={props.crew} block={block} onOpen={props.onOpen} />;
+    case "push":
+      return <PushCard block={block} />;
     case "held": {
       const still = props.crew.tasks.get(block.taskId)?.status === "held";
       return (

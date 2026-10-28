@@ -106,6 +106,7 @@ def test_run_tokens_and_the_users_token_open_different_doors(crew_app):
     _, token = start(client, backend, "chief")
 
     assert client.get("/tasks", headers=as_bot(token)).status_code == 403  # a bot can't act as the user
+    assert client.post("/push-proposals/1/push", headers=as_bot(token)).status_code == 403
     assert client.get("/bot/tasks", headers=as_bot(ADMIN)).status_code == 403  # nor the user as a task
     assert client.get("/bot/tasks", headers=as_bot("made-up")).status_code == 403
     assert client.get("/bot/tasks", headers={**as_bot(token), "Host": "evil.example:8765"}).status_code == 403
@@ -194,6 +195,7 @@ async def test_workers_delegate_but_only_coordinators_add_bots_and_propose_merge
 
     worker = {t.name for t in await build_server(client, can_delegate=False).list_tools()}
     coordinator = {t.name for t in await build_server(client, can_delegate=True).list_tools()}
+    chief = {t.name for t in await build_server(client, can_delegate=True, is_chief=True).list_tools()}
 
     assert worker == {"handoff", "escalate", "review", "remember", "forget", "recall", "start_thread", "post",
                       "delegate", "tasks", "message", "ask", "open_group", "add_to_group", "working_state",
@@ -202,6 +204,7 @@ async def test_workers_delegate_but_only_coordinators_add_bots_and_propose_merge
                       "ask_permission", "browser_open", "browser_screenshot", "browser_click",
                       "browser_type", "browser_evaluate", "browser_console"}
     assert coordinator == worker | {"add_bot", "propose_merge", "withdraw_merge", "next_check"}
+    assert chief == coordinator | {"propose_push"}
 
 
 def test_a_verdict_from_a_task_that_is_not_a_review_is_refused_with_a_reason(crew_app):

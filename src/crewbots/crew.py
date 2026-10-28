@@ -194,7 +194,9 @@ class Crew:
             "when you open a thread for it or delegate it. Your chat isn't any one project's; it runs in your own "
             f"folder, {_home_relative(self.folder_of(bot))}.\n\n{living['projects'][1]}",
             prompts.text("crew-tools", self.home) + "\n\n" + prompts.text("delegation", self.home)
-            + ("\n\n" + prompts.text("coordinating", self.home) if bot.can_delegate else ""),
+            + ("\n\n" + prompts.text("coordinating", self.home) if bot.can_delegate else "")
+            + ("\n\n" + prompts.text("chief-push", self.home)
+               if bot.can_delegate and next((b for b in self.bots.values() if b.can_delegate), None) == bot else ""),
         ]
         if "skills" in living:
             parts.append(

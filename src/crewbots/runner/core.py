@@ -638,6 +638,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
             return {}
         command, *args = self.mcp_command
         env = {"CREWBOTS_URL": self.api_url, "CREWBOTS_TOKEN": token, "CREWBOTS_DELEGATE": "1" if bot.can_delegate else "0",
+               "CREWBOTS_CHIEF": "1" if bot.can_delegate and self.coordinator() == bot else "0",
                "CREWBOTS_TOOLS": tools, "CREWBOTS_REVIEW": flags,
                "CREWBOTS_HOME": str(self.crew.home)}  # for the crew's own tool descriptions (prompts/tools/)
         return {MCP_SERVER_NAME: McpServer(command=command, args=list(args), env=env)}
