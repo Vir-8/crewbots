@@ -100,9 +100,9 @@ export function Steps({ calls }: { calls: { call: StoredEvent; result?: StoredEv
         <span>{summary(calls)}</span>
         {failed && <span className="steps-failed">one failed</span>}
       </button>
-      {images.length > 0 && <Files items={images} compact />}
       {open && (
         <div className="steps-body">
+          {images.length > 0 && <Files items={images} compact />}
           {calls.map(({ call, result }) => (
             <Step key={call.id} call={call} result={result} />
           ))}

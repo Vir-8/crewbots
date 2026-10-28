@@ -1,8 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { bridge } from "../bridge";
 import type { Crew } from "../state";
 import type { StoredEvent, Task } from "../types";
 import { Thread } from "./Thread";
+
+afterEach(() => vi.restoreAllMocks());
 
 // A chat that has been going for weeks: what the app draws when it's opened.
 function chat(size: number): { crew: Crew; task: Task } {
@@ -58,6 +61,27 @@ describe("opening a long chat", () => {
 });
 
 describe("a bot's working, in a chat", () => {
+  it("keeps tool images folded while user attachments and shared images stay visible", () => {
+    vi.spyOn(bridge, "fileSrc").mockImplementation((path) => path);
+    const { crew, task } = chat(0);
+    const at = "2026-10-27T07:00:00Z";
+    const picture = (name: string) => ({ id: name, name, path: `/attachments/${name}`, mime: "image/png", size: 100, kind: "image" });
+    crew.events.set(task.id, [
+      { id: 1, task_id: task.id, kind: "message", data: { from: "user", text: "Check this", attachments: [picture("user.png")] }, at },
+      { id: 2, task_id: task.id, kind: "text", data: { text: "I'll read it." }, at },
+      { id: 3, task_id: task.id, kind: "tool_call", data: { id: "read", name: "Read", input: { file_path: "/attachments/user.png" } }, at },
+      { id: 4, task_id: task.id, kind: "tool_result", data: { id: "read", output: "", images: [picture("tool.png")] }, at },
+      { id: 5, task_id: task.id, kind: "tool_call", data: { id: "share", name: "mcp__crewbots__share", input: { files: ["shared.png"] } }, at },
+      { id: 6, task_id: task.id, kind: "shared", data: { text: "Here's the result.", attachments: [picture("shared.png")] }, at },
+      { id: 7, task_id: task.id, kind: "tool_result", data: { id: "share", output: "Shared" }, at },
+    ]);
+    const html = renderToStaticMarkup(<Thread crew={crew} task={task} onOpen={() => undefined} chat />);
+    expect(html).toContain("Read a file");
+    expect(html).not.toContain('alt="tool.png"');
+    expect(html).toContain('alt="user.png"');
+    expect(html).toContain('alt="shared.png"');
+  });
+
   it("folds into one line between two messages, and stays whole in a thread", () => {
     const { crew, task } = chat(0);
     const at = new Date(Date.UTC(2026, 9, 27, 7)).toISOString();

@@ -31,7 +31,7 @@ export async function check(fetch = false) {
   set({ checking: true });
   try {
     const update = await api.update(fetch);
-    set({ update, checking: false, error: null });
+    set({ update, checking: false });
     if (state.following && ready(update)) {
       set({ following: false });
       await install();
@@ -45,7 +45,10 @@ export async function check(fetch = false) {
 /** An update got ready and not taken in yet: a build of the app to install, or the daemon to restart. */
 export function ready(update: UpdateOut | null): boolean {
   const release = update?.release;
-  return release?.state === "built" && Boolean(update?.available) && (Boolean(release.bundle) || !update!.needs?.app);
+  return release?.state === "built" && Boolean(update?.available)
+    && (update!.pull || Boolean(update!.head && release.commit === update!.head))
+    && (Boolean(release.bundle) || !update!.needs?.app)
+    && (!update!.needs?.app || release.commit !== __APP_COMMIT__);
 }
 
 /** A build of the app to put in this one's place, rather than only the daemon to restart. */
@@ -68,6 +71,20 @@ export function timeLeft(update: UpdateOut | null): string {
   return left > 90 ? `about ${Math.round(left / 60)} minutes left` : left > 10 ? `about ${Math.round(left / 5) * 5} seconds left` : "almost done";
 }
 
+/** A successful restart closes this window. If it stays open, surface the failure instead of waiting forever. */
+export async function restartApp() {
+  let timer: number | undefined;
+  try {
+    await Promise.race([
+      bridge.restartApp(),
+      new Promise<never>((_, reject) => { timer = window.setTimeout(() => reject(new Error("The app didn't close. Quit and reopen it.")), 10000); }),
+    ]);
+    throw new Error("The app didn't close. Quit and reopen it.");
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 /** Takes the update in: puts a new build of the app in this one's place, has the daemon restart once the crew is
  * idle (when its code changed), and restarts the app (when it was built again). */
 export async function install() {
@@ -75,9 +92,14 @@ export async function install() {
   if (!update || !ready(update) || state.installing) return;
   set({ installing: true, error: null });
   try {
-    if (newApp(update)) await bridge.installUpdate(update.release.bundle!);
-    if (update.needs?.daemon) await api.restart(true).catch(() => undefined); // the daemon's own turn: once no turn runs
-    if (newApp(update)) await bridge.restartApp();
+    const current = await api.update();
+    set({ update: current });
+    if (!ready(current) || current.release.commit !== update.release.commit) {
+      throw new Error("The checkout changed since this update was prepared. Check for updates again.");
+    }
+    if (newApp(current)) await bridge.installUpdate(current.release.bundle!);
+    if (current.needs?.daemon) await api.restart(true); // the daemon's own turn: once no turn runs
+    if (newApp(current)) await restartApp();
     else set({ installing: false }); // the app stays open, and reconnects when the daemon's back
   } catch (e) {
     set({ installing: false, error: String(e).replace(/^Error: /, "") });
@@ -118,6 +140,7 @@ export function useUpdates(): State {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
+    () => state,
     () => state,
   );
 }

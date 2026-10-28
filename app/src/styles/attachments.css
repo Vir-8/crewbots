@@ -75,6 +75,11 @@
 
 .message-files.mine {
   justify-content: flex-end;
+  margin-top: 0;
+}
+
+.message-files.mine + .you-text {
+  margin-top: 6px;
 }
 
 .file-chip {

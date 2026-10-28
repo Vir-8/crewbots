@@ -41,6 +41,16 @@
   border: 1px solid color-mix(in srgb, var(--amber) 28%, transparent);
 }
 
+/* Permission cards share the ask shell; keep the quieter treatment specific to questions. */
+.ask:not(.permission) {
+  width: 85%;
+  align-self: flex-start;
+  padding: 10px 12px;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+
 .ask-head {
   display: flex;
   align-items: center;
@@ -60,23 +70,45 @@
   color: var(--faint);
 }
 
+.ask:not(.permission) .ask-head {
+  gap: 6px;
+  font-size: 12px;
+  color: var(--soft);
+}
+
+.ask:not(.permission) .ask-head .icon {
+  color: var(--amber);
+}
+
+.ask.answered:not(.permission) {
+  border-color: var(--line);
+}
+
+.ask.answered:not(.permission) .ask-head .icon {
+  color: var(--soft);
+}
+
+.ask-text {
+  font-size: 14px;
+}
+
 /* A question's choices: one a row, picked with a click (or ticked, when several may be), and Other. */
 .ask-choices {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-top: 10px;
+  gap: 4px;
+  margin-top: 8px;
 }
 
 .ask-choice {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  align-items: center;
+  gap: 8px;
   width: 100%;
-  padding: 8px 12px;
+  padding: 6px 8px;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--bg);
+  border-radius: 8px;
+  background: var(--panel);
   color: var(--text);
   font: inherit;
   text-align: left;
@@ -84,32 +116,34 @@
 }
 
 .ask-choice:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--amber) 45%, var(--line));
+  background: var(--hover);
+  border-color: var(--faint);
+}
+
+.ask-choice:focus-visible {
+  outline: 2px solid var(--soft);
+  outline-offset: 1px;
 }
 
 .ask-choice:disabled {
   cursor: default;
+  opacity: 1;
 }
 
 .ask.answered .ask-choice:not(.picked) {
-  opacity: 0.5;
+  color: var(--soft);
 }
 
 .ask-choice.picked {
-  border-color: color-mix(in srgb, var(--amber) 60%, var(--line));
-}
-
-.ask.answered .ask-choice.picked {
-  border-color: var(--line);
+  border-color: var(--soft);
 }
 
 .ask-mark {
   display: grid;
   place-items: center;
   flex: none;
-  width: 16px;
-  height: 16px;
-  margin-top: 2px;
+  width: 14px;
+  height: 14px;
   border: 1.5px solid var(--faint);
   border-radius: 50%;
 }
@@ -119,25 +153,26 @@
 }
 
 .ask-choice.picked .ask-mark {
-  border-color: var(--amber);
-  background: var(--amber);
-  color: var(--bg);
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-ink);
 }
 
 .ask-choice-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0;
   min-width: 0;
 }
 
 .ask-label {
-  font-weight: 550;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .ask-description {
-  font-size: 12.5px;
-  color: var(--faint);
+  font-size: 12px;
+  color: var(--soft);
 }
 
 .ask-other {

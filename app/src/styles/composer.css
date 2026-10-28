@@ -279,8 +279,7 @@
   font-size: 13px;
 }
 
-.mention-option:first-child,
-.mention-option:hover {
+.mention-option.on {
   background: var(--hover);
 }
 

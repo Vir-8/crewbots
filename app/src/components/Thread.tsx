@@ -6,7 +6,7 @@ import { ACTIVE } from "../types";
 import { Files } from "./Attachments";
 import { labelOf } from "./Avatar";
 import { Boundary } from "./Boundary";
-import { Markdown, MessageMeta, PageLinkTo, TimeBreak, timeBreaks, useHoveredMessage } from "./bits";
+import { Markdown, MentionText, MessageMeta, PageLinkTo, TimeBreak, timeBreaks, useHoveredMessage } from "./bits";
 import { Finding, Marked, count, useCurrentHit } from "./Find";
 import { Icon } from "./Icon";
 import { Offer } from "./Offer";
@@ -148,8 +148,8 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
           {props.afterBreak && <TimeBreak at={block.at} />}
           <div className="message-row">
             <div className="message-body">
-              {block.text && <div className="you-text"><Marked text={block.text} /></div>}
               <Files items={block.files} mine />
+              {block.text && <div className="you-text"><MentionText text={block.text} plain /></div>}
             </div>
             <MessageMeta at={block.at} text={block.text} />
           </div>

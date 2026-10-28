@@ -118,6 +118,18 @@ def test_a_release_that_stopped_part_way_says_where(checkout):
     assert "linking failed" in release["log"]
 
 
+def test_a_built_release_is_not_ready_after_the_checkout_advances(checkout):
+    project, _ = checkout
+    built = run(project, "rev-parse", "--short=12", "HEAD")
+    updates.status_file().parent.mkdir(parents=True, exist_ok=True)
+    updates.status_file().write_text(json.dumps({"state": "built", "commit": built, "bundle": "/build/crewbots.app"}))
+    assert Updates(project, built).check(built)["release"]["state"] == "built"
+
+    commit(project, "Change the app", "app/src/App.tsx")
+    found = Updates(project, built).check(built)
+    assert found["needs"]["app"] and found["release"] == {}
+
+
 BUILD = """#!/bin/bash
 # stands in for scripts/release started from the app: says the update is ready, as the real one does
 printf '{"state": "built", "step": "Built", "commit": "%s", "pid": %d, "started_at": 100, "at": 178, "kind": "%s"}' \\

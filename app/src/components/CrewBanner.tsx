@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, bridge } from "../api";
 import { API_SCHEMA, API_VERSION, type VersionOut } from "../api-types";
 import type { Crew } from "../state";
-import { install, ready, running, start, timeLeft, useUpdates } from "../updates";
+import { install, ready, restartApp, running, start, timeLeft, useUpdates } from "../updates";
 import { Icon } from "./Icon";
 
 const VERSION_EVERY_MS = 5 * 60_000;
@@ -57,9 +57,9 @@ export function CrewBanner({ crew, onUpdates }: { crew: Crew; onUpdates: () => v
     );
   }
   const failed = own?.release.state === "failed" && own.release.commit !== __APP_COMMIT__;
-  const update: Update | null = versions ?? (
-    ownState.error && ready(own) ? { text: `Couldn't install the update: ${ownState.error}`, bad: true, action: { label: "Try again", run: () => void install() } }
-    : ready(own) ? { text: "A new version of crewbots is ready", why: own!.commits.map((c) => `· ${c.subject}`).join("\n"), action: { label: "Restart to update", run: () => void install() } }
+  const update: Update | null = ownState.error ? { text: `Couldn't update crewbots: ${ownState.error}`, bad: true, action: { label: "Try again", run: () => void start() } }
+    : versions ?? (
+    ready(own) ? { text: "A new version of crewbots is ready", why: own!.commits.map((c) => `· ${c.subject}`).join("\n"), action: { label: "Restart to update", run: () => void install() } }
     : failed ? { text: `The update stopped at ${own!.release.step?.toLowerCase()}`, why: own!.release.log ?? undefined, bad: true, action: { label: "Try again", run: () => void start() } }
     : own?.available ? { text: "A new version of crewbots is available", why: own.commits.map((c) => `· ${c.subject}`).join("\n"), action: { label: "See what's new", run: onUpdates } }
     : null);
@@ -92,6 +92,7 @@ function useUpdate(crew: Crew): Update | null {
   const connected = crew.status.state === "connected";
   const [daemon, setDaemon] = useState<VersionOut | "unversioned" | null>(null);
   const [installedNewer, setInstalledNewer] = useState(false);
+  const [restartError, setRestartError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!connected) return;
@@ -113,7 +114,14 @@ function useUpdate(crew: Crew): Update | null {
     };
   }, []);
 
-  if (installedNewer) return { text: "A new version of crewbots is installed", action: { label: "Restart to update", run: () => void bridge.restartApp() } };
+  if (installedNewer) return {
+    text: restartError ? `Couldn't restart crewbots: ${restartError}` : "A new version of crewbots is installed",
+    bad: Boolean(restartError),
+    action: { label: restartError ? "Try again" : "Restart to update", run: () => {
+      setRestartError(null);
+      void restartApp().catch((e) => setRestartError(String(e).replace(/^Error: /, "")));
+    } },
+  };
   if (!daemon) return null;
   const restartDaemon = { label: "Restart it when idle", run: () => void crew.restart(true) };
   if (daemon === "unversioned" || daemon.api < API_VERSION)

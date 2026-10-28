@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { argumentOf, commandsFor, finishMention, insertMention, mentionAt, mentionTyped } from "./typing";
+import { argumentOf, commandsFor, finishMention, insertMention, mentionAt, mentionTyped, pickerKey } from "./typing";
 
 describe("slash commands", () => {
   const all = () => true;
@@ -25,7 +25,7 @@ describe("slash commands", () => {
   });
 });
 
-describe("mentions in a group chat", () => {
+describe("mentions in a composer", () => {
   it("sees the name being typed after an @ at the end", () => {
     expect(mentionTyped("hey @rev")).toBe("rev");
     expect(mentionTyped("@")).toBe("");
@@ -35,6 +35,23 @@ describe("mentions in a group chat", () => {
 
   it("finishes the name with a space after it", () => {
     expect(finishMention("hey @rev", "reviewer")).toBe("hey @reviewer ");
+  });
+
+  it("moves through suggestions with arrows and chooses the highlighted name", () => {
+    const names = ["chief", "engineer", "reviewer"];
+    let pick = 0;
+    pick = pickerKey("ArrowDown", false, pick, names.length) as number;
+    expect(pick).toBe(1);
+    expect(pickerKey("Enter", false, pick, names.length)).toBe("choose");
+    expect(finishMention("hey @", names[pick])).toBe("hey @engineer ");
+    pick = pickerKey("ArrowUp", false, pick, names.length) as number;
+    pick = pickerKey("ArrowUp", false, pick, names.length) as number;
+    expect(pick).toBe(2);
+    expect(pickerKey("Tab", false, pick, names.length)).toBe("choose");
+    expect(finishMention("@", names[pick])).toBe("@reviewer ");
+    expect(pickerKey("Escape", false, pick, names.length)).toBe("close");
+    expect(pickerKey("Enter", true, pick, names.length)).toBeUndefined();
+    expect(pickerKey("ArrowDown", false, 8, 2)).toBe(0);
   });
 });
 

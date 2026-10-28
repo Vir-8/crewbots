@@ -142,8 +142,8 @@ export const resetsAt = Math.floor(Date.now() / 1000) + 2 * 3600;
 // 5. Working right now.
 {
   const g = task("t_csv0000001", "chief", "Add CSV export to the reports page", { status: "idle" });
-  message(g.id, "user", "Add a CSV export button to the reports page. Exports should respect the current filters.");
-  say(g.id, "I'll find where the report data and the filters come from.");
+  message(g.id, "user", "Add a CSV export button to the reports page. @engineer should check that exports respect the current filters.");
+  say(g.id, "I'll find where the report data and the filters come from, then ask @engineer.");
   tool(g.id, "Grep", { pattern: "useReportFilters" }, "src/reports/Reports.tsx:12");
   tool(g.id, "Read", { file_path: "src/reports/Reports.tsx" });
   tool(g.id, "Read", { file_path: "src/api/reports.ts" });

@@ -6,10 +6,10 @@ import { ACTIVE } from "../types";
 import { Files } from "./Attachments";
 import { Avatar, GroupAvatar, labelOf } from "./Avatar";
 import { Boundary } from "./Boundary";
-import { Markdown, MessageMeta, PageOpener, TimeBreak, ago, fullDate, timeBreaks, useHoveredMessage } from "./bits";
+import { Markdown, MentionText, MessageMeta, PageOpener, TimeBreak, ago, fullDate, timeBreaks, useHoveredMessage } from "./bits";
 import { crewCommands } from "./CommandPreview";
 import { Composer } from "./Composer";
-import { FindBar, Finding, Marked, count, shown, useCurrentHit, useFind } from "./Find";
+import { FindBar, Finding, count, shown, useCurrentHit, useFind } from "./Find";
 import { Icon } from "./Icon";
 import { Welcoming } from "./Offer";
 import { Thread } from "./Thread";
@@ -73,6 +73,7 @@ export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string)
           key={chat.key}
           placeholder={task?.status === "needs_input" ? `Answer ${labelOf(chat.bot!)}` : `Message ${labelOf(chat.bot!)}`}
           asking={task?.status === "needs_input"}
+          mentions={crew.bots.map((b) => b.name)}
           onSend={(text, files) => crew.say(chat.bot!, text, files)}
           task={task?.id}
           draft={chat.key}
@@ -166,8 +167,8 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
                       {breaks.has(m.id) && <TimeBreak at={m.at} />}
                       <div className="message-row">
                         <div className="message-body">
-                          {m.text && <div className="you-text">{withMentions(m.text)}</div>}
                           <Files items={m.attachments ?? []} mine />
+                          {m.text && <div className="you-text"><MentionText text={m.text} everyone plain /></div>}
                         </div>
                         <MessageMeta at={m.at} text={m.text} />
                       </div>
@@ -190,7 +191,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
                             <div className="message-body">
                               {m.text && (
                                 <div className="room-bubble">
-                                  <Markdown text={m.text} onSelect={props.onOpen} />
+                                  <Markdown text={m.text} onSelect={props.onOpen} everyone />
                                 </div>
                               )}
                               <Files items={m.attachments ?? []} />
@@ -267,7 +268,7 @@ function GroupWelcome({ crew, room, onSay }: { crew: Crew; room: Room; onSay: (t
       <div className="welcome-starts">
         {starts.map((text) => (
           <button key={text} className="welcome-start" onClick={() => onSay(text)}>
-            {withMentions(text)}
+            <MentionText text={text} everyone plain />
           </button>
         ))}
       </div>
@@ -318,8 +319,4 @@ function byAuthor(messages: RoomMessage[], breaks: Set<number>): { author: strin
     else groups.push({ author: m.author, messages: [m] });
   }
   return groups;
-}
-
-function withMentions(text: string) {
-  return text.split(/(@[\w-]+)/g).map((part, i) => (part.startsWith("@") ? <span key={i} className="mention"><Marked text={part} /></span> : <Marked key={i} text={part} />));
 }

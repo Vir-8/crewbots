@@ -71,7 +71,11 @@ class Updates:
         ahead, behind = (int(n[1:]) for n in branch.get("branch.ab", "+0 -0").split())
         out["pull"] = behind > 0 and ahead == 0  # it comes in as a fast-forward
         target = "@{u}" if out["pull"] else "HEAD"
-        at, app_at, daemon_at = self._resolve(target, app, self.running)
+        at, app_at, daemon_at, release_at = self._resolve(target, app, self.running, out["release"].get("commit"))
+        # A completed build is only ready for the checkout it actually built. HEAD (or its upstream) can move
+        # after a build, including when someone merges by hand; an older bundle must never stand in for it.
+        if out["release"].get("state") == "built" and (not at or release_at != at):
+            out["release"] = {}
         new: dict[str, dict[str, str]] = {}  # what each part doesn't have, of what it runs
         for part, built, built_at, where in (("app", app, app_at, APP), ("daemon", self.running, daemon_at, DAEMON)):
             out["needs"][part] = self._behind(built, built_at, at, target, where)

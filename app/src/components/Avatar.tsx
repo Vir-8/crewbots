@@ -37,12 +37,18 @@ const SHAPES: Record<string, (color: string) => ReactElement> = {
 let crew: string[] = [];
 let chosen = new Map<string, { color?: string; shape?: string }>();
 let labels = new Map<string, string>();
+let mentionNames: string[] = [];
 
 /** Called whenever the crew is (re)loaded: its order picks default colors, and each card's own choices win. */
 export function setCrew(bots: Bot[]) {
   crew = bots.map((b) => b.name).sort();
   chosen = new Map(bots.map((b) => [b.name, b.avatar ?? {}]));
   labels = new Map(bots.map((b) => [b.name, b.display_name || b.title || b.name]));
+  mentionNames = [...new Set(bots.flatMap((b) => [b.name, ...(b.display_name ? [b.display_name] : [])]))];
+}
+
+export function crewMentionNames(): string[] {
+  return mentionNames;
 }
 
 /** What you call a bot: the name you gave it, else its title. */

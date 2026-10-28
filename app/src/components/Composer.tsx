@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { bridge } from "../api";
 import { readDraft, writeDraft } from "../drafts";
-import { argumentOf, commandsFor, finishMention, mentionTyped } from "../typing";
+import { argumentOf, commandsFor, finishMention, mentionTyped, pickerKey } from "../typing";
 import { type Actions, CommandPreview } from "./CommandPreview";
 import type { Bot } from "../types";
 import { labelOf } from "./Avatar";
@@ -11,8 +11,7 @@ import { StatusPanel } from "./StatusPanel";
 import { UsagePanel } from "./UsagePanel";
 import "../styles/composer.css";
 
-/** The one place you type, or talk: the mic dictates into it. In a group chat, typing @ suggests who to mention, and
- * anywhere, typing / offers the app's own commands. */
+/** The one place you type, or talk: @ suggests who to mention, / offers commands, and the mic dictates into it. */
 /** Asks the open chat's message box to show one of its panels, as typing its command there would. */
 export const PANEL_EVENT = "crewbots:panel";
 // The mic is one for the whole app: what's heard goes into the box whose mic is on, of all the boxes open (a chat's,
@@ -65,9 +64,12 @@ export function Composer(props: {
   const area = useRef<HTMLTextAreaElement>(null);
   const before = useRef(""); // what was typed before dictation started; what's heard goes after it
 
+  const [dismissedMention, setDismissedMention] = useState<string | null>(null);
   const typing = mentionTyped(text);
-  const suggestions = typing === undefined ? [] : (props.mentions ?? []).filter((m) => m.toLowerCase().startsWith(typing.toLowerCase()));
+  const suggestions = typing === undefined || dismissedMention === text ? [] : (props.mentions ?? []).filter((m) => m.toLowerCase().startsWith(typing.toLowerCase()));
   const mention = (name: string) => {
+    setPick(0);
+    setDismissedMention(null);
     setText(finishMention(text, name));
     area.current?.focus();
   };
@@ -231,9 +233,9 @@ export function Composer(props: {
         </div>
       )}
       {suggestions.length > 0 && (
-        <div className="mentions">
-          {suggestions.map((name) => (
-            <button key={name} className="mention-option" onMouseDown={(e) => e.preventDefault()} onClick={() => mention(name)}>
+        <div className="mentions" role="listbox">
+          {suggestions.map((name, i) => (
+            <button key={name} role="option" aria-selected={i === Math.min(pick, suggestions.length - 1)} className={`mention-option ${i === Math.min(pick, suggestions.length - 1) ? "on" : ""}`} onMouseDown={(e) => e.preventDefault()} onMouseEnter={() => setPick(i)} onClick={() => mention(name)}>
               {name === "everyone" ? "Everyone" : labelOf(name)} <span className="faint">@{name}</span>
             </button>
           ))}
@@ -251,27 +253,35 @@ export function Composer(props: {
         rows={1}
         value={text}
         placeholder={props.placeholder}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          if (mentionTyped(text) === undefined && mentionTyped(e.target.value) !== undefined) setPick(0);
+          setDismissedMention(null);
+          setText(e.target.value);
+        }}
         onKeyDown={(e) => {
+          const menu = commands.length ? "commands" : suggestions.length ? "mentions" : null;
+          const length = menu === "commands" ? commands.length : suggestions.length;
+          const choice = pickerKey(e.key, e.shiftKey, pick, length);
           if (preview && e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             setConfirmed((n) => n + 1);
           } else if (preview && e.key === "Escape") {
             e.preventDefault();
             setPreview(null);
-          } else if (commands.length > 0 && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) {
+          } else if (choice !== undefined) {
             e.preventDefault();
-            run(commands[Math.min(pick, commands.length - 1)].name);
-          } else if (commands.length > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+            if (typeof choice === "number") setPick(choice);
+            else if (choice === "choose") {
+              if (menu === "commands") run(commands[Math.min(pick, length - 1)].name);
+              else mention(suggestions[Math.min(pick, length - 1)]);
+            } else if (menu === "commands") setText("");
+            else {
+              setDismissedMention(text);
+              setPick(0);
+            }
+          } else if (e.key === "Escape" && panel) {
             e.preventDefault();
-            setPick((Math.min(pick, commands.length - 1) + (e.key === "ArrowDown" ? 1 : commands.length - 1)) % commands.length);
-          } else if (e.key === "Escape" && (commands.length > 0 || panel)) {
-            e.preventDefault();
-            if (commands.length > 0) setText("");
-            else setPanel(null);
-          } else if ((e.key === "Tab" || e.key === "Enter") && suggestions.length > 0) {
-            e.preventDefault();
-            mention(suggestions[0]);
+            setPanel(null);
           } else if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault();
             send();

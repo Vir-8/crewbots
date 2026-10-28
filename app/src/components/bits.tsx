@@ -1,6 +1,7 @@
 import { createContext, useContext, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import type { Status } from "../types";
-import { Marked } from "./Find";
+import { Finding, Marked } from "./Find";
+import { crewMentionNames } from "./Avatar";
 import { Icon } from "./Icon";
 
 const STATUS_LABEL: Record<Status, string> = {
@@ -27,14 +28,54 @@ export function StatusPill({ status }: { status: Status }) {
   );
 }
 
+/** Crew mentions with find marks kept across their boundaries. Plain messages keep their code syntax. */
+export function MentionText({ text, everyone = false, plain = false }: { text: string; everyone?: boolean; plain?: boolean }) {
+  const query = useContext(Finding);
+  const names = [...crewMentionNames(), ...(everyone ? ["everyone"] : [])].sort((a, b) => b.length - a.length);
+  const escaped = names.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const mentions: { start: number; end: number }[] = [];
+  const code = plain ? [...text.matchAll(/```[\s\S]*?(?:```|$)|`[^`\n]*`/g)].map((m) => [m.index, m.index + m[0].length]) : [];
+  if (escaped.length) {
+    const pattern = new RegExp(`@(?:${escaped.join("|")})`, "giu");
+    for (const m of text.matchAll(pattern)) {
+      const start = m.index, end = start + m[0].length;
+      if ((start && /[\p{L}\p{N}_.+%@-]/u.test(text[start - 1])) || /[\p{L}\p{N}_@-]/u.test(text[end] ?? "") || code.some(([a, b]) => start < b && end > a)) continue;
+      mentions.push({ start, end });
+    }
+  }
+  const draw = (start: number, end: number): ReactNode[] => {
+    const parts: ReactNode[] = [];
+    let at = start;
+    for (const m of mentions) {
+      const a = Math.max(start, m.start), b = Math.min(end, m.end);
+      if (a >= b) continue;
+      if (at < a) parts.push(text.slice(at, a));
+      parts.push(<span className="mention" key={a}>{text.slice(a, b)}</span>);
+      at = b;
+    }
+    if (at < end) parts.push(text.slice(at, end));
+    return parts;
+  };
+  if (!query) return <>{draw(0, text.length)}</>;
+  const parts: ReactNode[] = [];
+  const lower = text.toLowerCase();
+  let from = 0;
+  for (let at = lower.indexOf(query); at >= 0; at = lower.indexOf(query, at + query.length)) {
+    parts.push(...draw(from, at), <mark key={`hit${at}`} className="find-hit">{draw(at, at + query.length)}</mark>);
+    from = at + query.length;
+  }
+  parts.push(...draw(from, text.length));
+  return <>{parts}</>;
+}
+
 const TASK_ID = /\bt_[0-9a-f]{10}\b/g;
 
 /** Text with task ids turned into links to those tasks; whitespace is kept. */
-export function Linked({ text, onSelect }: { text: string; onSelect: (id: string) => void }) {
+export function Linked({ text, onSelect, everyone = false }: { text: string; onSelect: (id: string) => void; everyone?: boolean }) {
   const parts: ReactNode[] = [];
   let last = 0;
   for (const match of text.matchAll(TASK_ID)) {
-    parts.push(<Marked key={`t${last}`} text={text.slice(last, match.index)} />);
+    parts.push(<MentionText key={`t${last}`} text={text.slice(last, match.index)} everyone={everyone} />);
     const id = match[0];
     parts.push(
       <a key={`${id}-${match.index}`} className="task-link" onClick={() => onSelect(id)}>
@@ -43,7 +84,7 @@ export function Linked({ text, onSelect }: { text: string; onSelect: (id: string
     );
     last = match.index! + id.length;
   }
-  parts.push(<Marked key="end" text={text.slice(last)} />);
+  parts.push(<MentionText key="end" text={text.slice(last)} everyone={everyone} />);
   return <>{parts}</>;
 }
 
@@ -188,11 +229,11 @@ async function toClipboard(text: string) {
  * The Markdown bots write: paragraphs, headings, lists (nested, and numbered from where they start), fenced code,
  * `code` and **bold**. Built as React elements, never as HTML, so nothing a bot writes can run in the window.
  */
-export function Markdown({ text, onSelect }: { text: string; onSelect: (id: string) => void }) {
+export function Markdown({ text, onSelect, everyone = false }: { text: string; onSelect: (id: string) => void; everyone?: boolean }) {
   const blocks: ReactNode[] = [];
   const lines = text.split(/\r\n?|\n|\u2028|\u2029/); // GitHub's text often has Windows line endings
   let i = 0;
-  const inline = (s: string) => <Inline text={s} onSelect={onSelect} />;
+  const inline = (s: string) => <Inline text={s} onSelect={onSelect} everyone={everyone} />;
   while (i < lines.length) {
     const line = lines[i];
     const at = i;
@@ -300,12 +341,12 @@ export function PageLinkTo({ page }: { page: string }) {
   return <PageLink raw={`[[${page}]]`} />;
 }
 
-export function Inline({ text, onSelect }: { text: string; onSelect: (id: string) => void }) {
+export function Inline({ text, onSelect, everyone = false }: { text: string; onSelect: (id: string) => void; everyone?: boolean }) {
   const parts: ReactNode[] = [];
   const pattern = /(`[^`]+`|\*\*[^*]+\*\*|\[\[[^\]\n]+\]\])/g;
   let last = 0;
   for (const match of text.matchAll(pattern)) {
-    parts.push(<Linked key={`t${last}`} text={text.slice(last, match.index)} onSelect={onSelect} />);
+    parts.push(<Linked key={`t${last}`} text={text.slice(last, match.index)} onSelect={onSelect} everyone={everyone} />);
     const token = match[0];
     parts.push(
       token.startsWith("`") ? (
@@ -314,12 +355,12 @@ export function Inline({ text, onSelect }: { text: string; onSelect: (id: string
         <PageLink key={`p${match.index}`} raw={token} />
       ) : (
         <strong key={`b${match.index}`}>
-          <Linked text={token.slice(2, -2)} onSelect={onSelect} />
+          <Linked text={token.slice(2, -2)} onSelect={onSelect} everyone={everyone} />
         </strong>
       ),
     );
     last = match.index! + token.length;
   }
-  parts.push(<Linked key="end" text={text.slice(last)} onSelect={onSelect} />);
+  parts.push(<Linked key="end" text={text.slice(last)} onSelect={onSelect} everyone={everyone} />);
   return <span className="pre">{parts}</span>;
 }

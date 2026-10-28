@@ -33,7 +33,7 @@ export function argumentOf(text: string): string {
   return /^\/\S*\s+([\s\S]*)$/.exec(text)?.[1].trim() ?? "";
 }
 
-/** In a group chat's box: the name being typed after an @ at the end of the text, if one is. */
+/** The name being typed after an @ at the end of the text, if one is. */
 export function mentionTyped(text: string): string | undefined {
   return /(?:^|\s)@([\w-]*)$/.exec(text)?.[1];
 }
@@ -41,6 +41,15 @@ export function mentionTyped(text: string): string | undefined {
 /** That name, finished: `@na` becomes `@name `. */
 export function finishMention(text: string, name: string): string {
   return text.replace(/@([\w-]*)$/, `@${name} `);
+}
+
+/** Keyboard selection shared by the command and mention menus. */
+export function pickerKey(key: string, shift: boolean, pick: number, length: number): number | "choose" | "close" | undefined {
+  if (!length) return undefined;
+  if (key === "ArrowDown" || key === "ArrowUp") return (Math.min(pick, length - 1) + (key === "ArrowDown" ? 1 : length - 1)) % length;
+  if (key === "Tab" || (key === "Enter" && !shift)) return "choose";
+  if (key === "Escape") return "close";
+  return undefined;
 }
 
 /** In a review comment: the @mention the caret is in, as where its @ is and what's typed after it. Not one inside

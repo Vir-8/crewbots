@@ -222,7 +222,7 @@
   color: var(--amber);
 }
 
-.working {
+div.working {
   display: flex;
   align-items: center;
   gap: 10px;

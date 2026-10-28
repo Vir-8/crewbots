@@ -118,7 +118,7 @@ export function ReviewPane({ crew, pull, reviews, onStarted, onSettings }: { cre
           </div>
           {shown.id === lead.id ? (
             <div className="review-composer">
-              <Composer key={lead.id} placeholder="Ask about this review" onSend={(text, files) => crew.send(lead.id, text, files)} task={lead.id} draft={`task:${lead.id}`} />
+              <Composer key={lead.id} placeholder="Ask about this review" mentions={crew.bots.map((b) => b.name)} onSend={(text, files) => crew.send(lead.id, text, files)} task={lead.id} draft={`task:${lead.id}`} />
             </div>
           ) : (
             <p className="review-hint review-peek faint">

@@ -90,6 +90,7 @@ export function Panel(props: { crew: Crew; task: Task; onOpen: (id: string) => v
           draft={`task:${task.id}`}
           placeholder={task.status === "needs_input" ? `Answer ${task.bot}` : `Message ${task.bot}`}
           asking={task.status === "needs_input"}
+          mentions={crew.bots.map((b) => b.name)}
           onSend={(text, files) => crew.send(task.id, text, files)}
           task={task.id}
           actions={{ stop: ACTIVE.includes(task.status) ? () => crew.cancel(task.id) : undefined, ...crewCommands(crew) }}

@@ -25,6 +25,8 @@ for (const b of bots) {
   message(chief, "user", "Merge the login fix. Then add CSV export to the reports page; exports should respect the filters.");
   tool(chief, "mcp__crewbots__start_thread", { title: "Add CSV export", goal: "…" }, "Opened thread");
   say(chief, "Merged. The CSV export is with the engineer now, and the reviewer and critic will check it before it comes to you.");
+  message(chief, "user", "Please ask @engineer to check this with @Roger. Email vir@emberlane.games; `@engineer` is just code.");
+  say(chief, "Thanks, I've sent this to @engineer. **@Roger** will follow up. `@engineer` and @unknown are examples, not mentions.\n\n```\n@engineer\n```");
   message(chief, "user", "Write up the Q3 retro and a Q4 plan from it.");
   emit(chief, "text", { text: "Done: the retro is `docs/retro/q3-retro.pdf`, and the plan it led to is `docs/retro/q4-plan.md`.", files: [made.retro, made.plan] });
   done(chief);
@@ -44,6 +46,17 @@ for (const b of bots) {
   say(chatIds.engineer, "That's everything for the release: the notes are ready for you to read, and the page has the numbers.");
   done(chatIds.engineer);
 
+  // Reading an attached image stays inside the steps; deliberately shared files stay in the conversation.
+  emit(chatIds.engineer, "message", { from: "user", text: "Check this image and show me the export chart.", attachments: [files.viewport] });
+  say(chatIds.engineer, "I'll read the image and check the export files.");
+  emit(chatIds.engineer, "tool_call", { id: "read-image", name: "Read", input: { file_path: files.viewport.path } });
+  emit(chatIds.engineer, "tool_result", { id: "read-image", output: "", is_error: false, images: [files.viewport] });
+  for (const file of ["README.md", "src/export.py", "tests/test_export.py"]) tool(chatIds.engineer, "Read", { file_path: file }, "File contents");
+  tool(chatIds.engineer, "inspect_exports", {}, "Checked the export counts");
+  tool(chatIds.engineer, "mcp__crewbots__share", { files: [files.chart.path] }, "Shared");
+  emit(chatIds.engineer, "shared", { text: "The image looks correct. Here's the export chart.", attachments: [files.chart] });
+  done(chatIds.engineer);
+
   message(chatIds.engineer, "user", "Can you keep the test suite under 30 seconds?");
   say(chatIds.engineer, "It's at 18s now. The slowest file is `test_reports.py` (6s), mostly fixtures; I can trim that if it grows.");
   done(chatIds.engineer);
@@ -57,7 +70,7 @@ for (const b of bots) {
   say(answered.id, answered.result!);
   done(answered.id);
   message(chatIds.engineer, "crewbots", "Your question was answered.");
-  say(chatIds.engineer, "The critic ran it 2,000 times with no failures, an empty filter included, so yes: it's safe for Friday. I've asked the reviewer whether release days are in our standards.");
+  say(chatIds.engineer, "The critic ran 2,000 tests without a failure, including an empty filter, so the export is safe for Friday. I've asked the reviewer about release days.");
   const rule = "Anything in team/standards.md about which days we release on?";
   tool(chatIds.engineer, "mcp__crewbots__ask", { bot: "reviewer", question: rule }, "Asked reviewer (t_ask0000002).");
   task("t_ask0000002", "reviewer", rule, { kind: "ask", parent_id: chatIds.engineer, created_by: "engineer", workspace: null, status: "running", reported: false });
@@ -69,6 +82,41 @@ for (const b of bots) {
   emit(own.id, "message", { from: "crewbots", text: "Write fuzz tests for the CSV export's filters, on a branch in your own worktree." });
   say(chatIds.reviewer, "That the change does what the task asked, with a test for each edge case. Then `team/standards.md`.");
   done(chatIds.reviewer);
+}
+
+// Questions in a chat: an answer kept in context, a single choice, and several choices with Send.
+{
+  const reviewer = chatIds.reviewer;
+  emit(reviewer, "escalation", {
+    question: "How much detail should the review include?",
+    choices: [{ label: "A short summary" }, { label: "Every finding" }],
+  });
+  message(reviewer, "user", "A short summary");
+  say(reviewer, "I'll keep the summary short and link to the findings.");
+  emit(reviewer, "escalation", {
+    question: "Which change should I review first?",
+    choices: [
+      { label: "CSV export", description: "Check that the downloaded file matches the filtered rows, including their dates, status and column order" },
+      { label: "Login fix", description: "Check the redirect and session tests" },
+    ],
+  });
+  done(reviewer);
+  tasks.set(reviewer, { ...tasks.get(reviewer)!, status: "needs_input" });
+
+  const critic = chatIds.critic;
+  message(critic, "user", "Check the CSV export before Friday's release.");
+  say(critic, "I'll test the export against the rows shown in the reports page. You can pick several cases.");
+  emit(critic, "escalation", {
+    question: "Which cases should I cover?",
+    multiple: true,
+    choices: [
+      { label: "Empty filters", description: "Export every row when no filter is set" },
+      { label: "Combined filters", description: "Match both the date range and selected status, then check that the downloaded file contains only the rows shown" },
+      { label: "Large reports", description: "Check a download with 10,000 rows" },
+    ],
+  });
+  done(critic);
+  tasks.set(critic, { ...tasks.get(critic)!, status: "needs_input" });
 }
 
 // A group chat: the crew's own, where bots talk to each other in the open.
@@ -89,7 +137,7 @@ export const roomMessages = new Map<string, { id: number; room_id: string; autho
   roomMessages.set(room, [
     said("user", "Morning, everyone. @engineer how's CSV export going?"),
     said("engineer", "Endpoint's in and its tests pass. Wiring the button now. @reviewer it'll be yours in a few minutes.", 1),
-    said("reviewer", "Ready when you are. I'll check the filters reach the export.", 2),
+    said("reviewer", "Ready when you are. I'll check the filters reach the export. @everyone can find me at vir@emberlane.games; `@engineer` is code.", 2),
     said("chief", "Thanks both. I'll propose it for merging once both reviews pass.", 1),
     { ...said("engineer", "The launch cut, for anyone who wants a look before Friday:", 1), attachments: [files.cut] },
     { ...said("user", "Here's the copy deck for it."), attachments: [files.notes] },

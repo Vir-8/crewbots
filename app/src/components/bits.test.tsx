@@ -1,10 +1,35 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { Markdown, MessageMeta, dayAndTime, stamp, timeBreaks } from "./bits";
+import { Markdown, MentionText, MessageMeta, dayAndTime, stamp, timeBreaks } from "./bits";
+import { setCrew } from "./Avatar";
+import { Finding, count } from "./Find";
+import { bots } from "../preview/demo/make";
 
 const html = (text: string) => renderToStaticMarkup(<Markdown text={text} onSelect={() => undefined} />);
 
 describe("Markdown", () => {
+  it("styles crew handles and display names, but not emails, unknown words, or code", () => {
+    setCrew(bots);
+    const out = html("@engineer and **@Roger**; vir@engineer.games @engineer-extra @unknown `@engineer`\n\n```\n@Roger\n```");
+    expect(out.match(/class="mention"/g)).toHaveLength(2);
+    expect(out).toContain('<span class="mention">@engineer</span>');
+    expect(out).toContain('<span class="mention">@Roger</span>');
+    expect(out).toContain('vir@engineer.games @engineer-extra @unknown <code>@engineer</code>');
+    expect(out).toContain('<pre>@Roger</pre>');
+  });
+
+  it("preserves find hits across mention boundaries and skips code in plain messages", () => {
+    setCrew(bots);
+    const text = "Ask @engineer now. `@engineer`\n```\n@Roger\n```";
+    const out = renderToStaticMarkup(<Finding.Provider value="ask @engineer now"><MentionText text={text} plain /></Finding.Provider>);
+    expect(out).toContain('<mark class="find-hit">Ask <span class="mention">@engineer</span> now</mark>');
+    expect(out.match(/class="mention"/g)).toHaveLength(1);
+    expect(out.match(/class="find-hit"/g)).toHaveLength(count(text, "ask @engineer now"));
+    const markdown = renderToStaticMarkup(<Finding.Provider value="ask @engineer now"><Markdown text="Ask @engineer now" onSelect={() => {}} /></Finding.Provider>);
+    expect(markdown).toContain('<mark class="find-hit">Ask <span class="mention">@engineer</span> now</mark>');
+    const group = renderToStaticMarkup(<Markdown text="@everyone @unknown" everyone onSelect={() => {}} />);
+    expect(group).toContain('<span class="mention">@everyone</span> @unknown');
+  });
   it("reads Windows and old Mac line endings like Unix ones", () => {
     const unix = html("Intro\n\n- one\n- two\n\nAfter");
     expect(html("Intro\r\n\r\n- one\r\n- two\r\n\r\nAfter")).toBe(unix);
