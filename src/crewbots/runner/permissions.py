@@ -53,6 +53,7 @@ class Permissions:
                  **({"folder": target} if target else {})}
         for where in self._shown_in(task):
             self._record(where, kind="permission", data=shown)
+        self._refresh_working_state(task.bot)
         return asked
 
     def answer_permission(self, permission_id: int, allowed: bool) -> dict[str, Any]:
@@ -62,6 +63,7 @@ class Permissions:
             return asked
         asked = self.store.answer_permission(permission_id, allowed)
         task = self.store.get_task(asked["task_id"])
+        self._refresh_working_state(task.bot)
         for where in self._shown_in(task):
             self._record(where, kind="permission_answer", data={"permission": permission_id, "allowed": allowed})
         if task.status is not Status.CANCELLED:

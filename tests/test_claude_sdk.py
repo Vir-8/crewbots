@@ -384,7 +384,7 @@ async def test_workers_cant_reach_coordinator_tools(store, tmp_path):
 
     assert {d.name for d in tools.definitions()} == {
         "handoff", "escalate", "review", "remember", "forget", "recall", "start_thread", "post", "delegate", "tasks",
-        "message", "ask", "open_group", "add_to_group", "update_state", "remind_on", "propose_routine", "share",
+        "message", "ask", "open_group", "add_to_group", "working_state", "update_state", "remind_on", "propose_routine", "share",
         "write_page", "edit_page", "set_name", "ask_permission", "browser_open", "browser_screenshot",
         "browser_click", "browser_type", "browser_evaluate", "browser_console"}
     with pytest.raises(ToolRefused, match="not one of this bot's crew tools"):
@@ -409,3 +409,50 @@ def test_reasoning_effort_goes_to_claude_when_it_takes_it(worktree):
 
     assert effort("high") == "high" and effort(None) is None
     assert effort("ultra") is None  # a Codex-only level: Claude's own default instead
+
+
+def test_policy_keeps_other_bots_working_state_private(tmp_path):
+    from crewbots.backends.policy import Policy
+
+    root = tmp_path / "memory"
+    own = root / "worker" / "working-state" / "state.md"
+    other = root / "chief" / "working-state" / "state.md"
+    policy = Policy(Access.WORKSPACE_WRITE, tmp_path / "work", set(), deny_read=[other.parent])
+    assert policy.check_tool("Read", {"file_path": str(own)}) is None
+    assert policy.check_tool("Read", {"file_path": str(other)}) is not None
+    assert policy.check_tool("Grep", {"path": str(root), "pattern": "anything"}) is not None
+    assert policy.check_tool("Glob", {"pattern": str(root / "*" / "state.md")}) is not None
+    full_policy = Policy(Access.FULL, tmp_path / "work", set(), deny_read=[other.parent])
+    assert full_policy.check_tool("Read", {"file_path": str(other)}) is not None
+
+
+def test_private_state_paths_are_carried_to_backends(store, tmp_path):
+    from crewbots.backends.claude_cli import settings
+    from crewbots.backends.codex_cli import sandbox_overrides
+    from crewbots.backends.policy import Policy
+
+    crew = ScriptedCrew(store, tmp_path, bot("worker"), bot("chief"))
+    task = crew.runner.chat("worker")
+    spec = crew.runner._spec(task, crew.runner.crew.bots["worker"], tmp_path, "token", "", crew.backend)
+    chief_state = tmp_path / "memory" / "chief" / "working-state" / "state.md"
+    own_state = tmp_path / "memory" / "worker" / "working-state" / "state.md"
+    assert chief_state.parent in spec.deny_read and own_state.parent not in spec.deny_read
+    assert str(chief_state.parent) in str(settings(spec.access, spec.write_dirs, spec.deny_read))
+    assert str(chief_state.parent) in str(sandbox_overrides(spec))
+    policy = Policy(spec.access, spec.cwd, set(), deny_read=spec.deny_read)
+    assert policy.check_tool("Read", {"file_path": str(chief_state)}) is not None
+    assert policy.check_tool("Read", {"file_path": str(own_state)}) is None
+
+
+def test_other_bot_temporary_state_files_are_denied(tmp_path):
+    from crewbots.backends.policy import Policy
+
+    other = tmp_path / "memory" / "chief" / "working-state"
+    other.mkdir(parents=True)
+    temporary = other / ".state-abandoned"
+    temporary.write_text("secret")
+    own = tmp_path / "memory" / "worker" / "working-state" / ".state-own"
+    policy = Policy(Access.WORKSPACE_WRITE, tmp_path, set(), deny_read=[other])
+    assert policy.check_tool("Read", {"file_path": str(temporary)}) is not None
+    assert policy.check_tool("Glob", {"path": str(other), "pattern": ".state-*"}) is not None
+    assert policy.check_tool("Read", {"file_path": str(own)}) is None

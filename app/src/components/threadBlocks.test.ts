@@ -62,3 +62,19 @@ it("pairs asks with their own task even when children or results are out of orde
   expect(asks.map((b) => b.kind === "asked" && b.task?.result)).toEqual(["First answer", undefined, "Second answer"]);
   expect(build(events, [second], new Map()).filter((b) => b.kind === "asked").map((b) => b.kind === "asked" && b.task?.result)).toEqual([undefined, undefined, "Second answer"]);
 });
+
+it("folds a shared-state notice on its own", () => {
+  const notice: StoredEvent = { id: 1, task_id: "chat", kind: "state_notice", data: { message: "State changed: 1 item needs you." }, at: "" };
+  const blocks = build([notice], [], new Map());
+  expect(blocks).toEqual([{ kind: "activity", id: 1, items: [{ kind: "line", id: 1, text: "State changed: 1 item needs you.", gist: "State changed: 1 item needs you." }] }]);
+});
+
+it("keeps a question open after a teammate message until the user answers", () => {
+  const events: StoredEvent[] = [
+    { id: 1, task_id: "chat", kind: "escalation", data: { question: "Which?" }, at: "" },
+    { id: 2, task_id: "chat", kind: "message", data: { from: "helper", text: "Suggestion" }, at: "" },
+  ];
+  expect(build(events, [], new Map())[0]).toMatchObject({ kind: "ask", answer: undefined });
+  events.push({ id: 3, task_id: "chat", kind: "message", data: { from: "user", text: "Yes" }, at: "" });
+  expect(build(events, [], new Map())[0]).toMatchObject({ kind: "ask", answer: "Yes" });
+});

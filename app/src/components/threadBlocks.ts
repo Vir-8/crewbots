@@ -292,6 +292,10 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
           out.push({ kind: "line", id: e.id, text: `Stopped: ${d.error}`, icon: "alert", tone: "bad" });
         }
         break;
+      case "state_notice":
+        flush();
+        out.push({ kind: "activity", id: e.id, items: [{ kind: "line", id: e.id, text: oneLine(d.message, 200), gist: oneLine(d.message, 200) }] });
+        break;
       case "notice":
         out.push({ kind: "line", id: e.id, text: oneLine(d.message, 200) });
         break;
@@ -303,10 +307,9 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
   return out;
 }
 
-/** What a question was answered with: the next message to its task from the user or a teammate, if one came. */
+/** What a question was answered with: the next message to its task from the user, if one came. */
 function answerTo(events: StoredEvent[], id: number): string | undefined {
-  const person = (from: unknown) => typeof from === "string" && from !== "crewbots" && from !== "room" && !from.startsWith("routine");
-  return events.find((x) => x.id > id && x.kind === "message" && person(x.data.from))?.data.text;
+  return events.find((x) => x.id > id && x.kind === "message" && x.data.from === "user")?.data.text;
 }
 
 function minutes(n: number): string {

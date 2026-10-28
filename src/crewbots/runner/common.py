@@ -38,6 +38,7 @@ class OpenSession:
     cwd: Path
     last_used: float
     grants: tuple[int, ...] = ()  # what the user had allowed its task when it opened (runner/permissions.py)
+    deny_read: tuple[Path, ...] = ()
 
 
 class Bus:

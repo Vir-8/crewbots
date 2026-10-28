@@ -197,6 +197,25 @@ class Rooms:
         said = [m.lower() for m in MENTION.findall(text)]
         return list(dict.fromkeys(members[m] for m in said if m in members)), EVERYONE in said
 
+    def _chief_room_item(self, room: dict[str, Any], author: str, kind: str, source: str) -> None:
+        """Wake the main chat with metadata, keeping the room's conversation in the room."""
+        from crewbots.memory import MemoryError
+        from crewbots.working_state import edit
+
+        chief = self.coordinator()
+        if chief is None:
+            return
+        chat = self.chat(chief.name)
+        try:
+            _, trimmed = edit(self.crew.memory.root / chief.name / "working-state" / "state.md", "Needs me", "add",
+                              f"{room['title']} ({room['id']}): @{author} {kind} · {source}")
+            notice = ("State changed: 1 item needs you; older entries were trimmed." if trimmed
+                      else "State changed: 1 item needs you.")
+        except (MemoryError, OSError):
+            notice = f"State full or unavailable: @{author} needs you in room {room['id']} ({source}); tidy state."
+        self._record(chat.id, kind="state_notice", data={"message": notice})
+        self.send(chat.id, notice, sender="crewbots", _record_message=False)
+
     def post_from(self, task_id: str, text: str, room_id: str | None = None,
                   attachments: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         """The `post` tool: a bot says something in a room, from wherever it's working."""

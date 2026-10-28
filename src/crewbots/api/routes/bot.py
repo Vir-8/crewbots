@@ -135,6 +135,13 @@ def routes(c: Context) -> APIRouter:
     async def bot_remind_on(request: Request, body: RemindOn):
         return runner.remind_on(request.state.task.id, body.event, body.match, body.then)
 
+    @v1.post("/bot/working_state")
+    async def bot_working_state(request: Request, body: dict[str, Any]):
+        try:
+            return {"result": await CrewTools(runner, request.state.task.id, False).call("working_state", body)}
+        except ToolRefused as e:
+            raise HTTPException(422, str(e)) from None
+
     @v1.post("/bot/update_state")
     async def bot_update_state(request: Request, body: StateBody):
         return {"path": str(runner.update_state(request.state.task.id, body.state))}

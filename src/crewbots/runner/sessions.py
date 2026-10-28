@@ -5,6 +5,7 @@ it sat idle past its cache, carried on in a fresh session from memory)."""
 import asyncio
 import contextlib
 import hashlib
+import logging
 import secrets
 import time
 from collections.abc import AsyncIterator
@@ -12,7 +13,7 @@ from contextlib import aclosing
 from pathlib import Path
 from typing import Any
 
-from crewbots import prompts
+from crewbots import prompts, working_state
 from crewbots.backends import Backend
 from crewbots.crew import NO_REPLY, Bot
 from crewbots.events import Compacted, Done, Event, Usage
@@ -59,7 +60,9 @@ class Sessions:
         """The task's open session, or a new one; None to run this turn as its own process."""
         current = self._sessions.get(task.id)
         grants = tuple(g["id"] for g in self.store.grants(task.id))
-        if current and current.session.alive and current.cwd == cwd and current.grants == grants:
+        deny_read = tuple(self._state_denials(bot.name))
+        if (current and current.session.alive and current.cwd == cwd and current.grants == grants
+                and current.deny_read == deny_read):
             return current  # one that opened before the user allowed something opens again, with it
         if current:
             await self._close_session(task.id)
@@ -76,9 +79,56 @@ class Sessions:
                                                                   "running this turn on its own"})
             return None
         opened = OpenSession(session=session, token=token, cwd=cwd, last_used=asyncio.get_running_loop().time(),
-                             grants=grants)
+                             grants=grants, deny_read=deny_read)
         self._sessions[task.id] = opened
         return opened
+
+    def _refresh_working_state(self, bot: str) -> None:
+        try:
+            self._sync_working_state(bot)
+        except Exception:
+            logging.getLogger(__name__).exception("Could not sync working state for %s", bot)
+
+    def _sync_working_state(self, bot: str) -> bool:
+        """Refresh metadata without letting a failed state write stop the turn."""
+        try:
+            db = self.store.db
+            pending = list(self._escalated)
+            placeholders = ",".join("?" for _ in pending) or "null"
+            active = ("t.status in ('idle', 'running', 'queued', 'held', 'needs_input', 'interrupted') "
+                      f"or t.id in ({placeholders})")
+            escalations = db.execute(
+                "select t.id, e.at, json_extract(e.data, '$.question') as question from events e "
+                "join tasks t on t.id = e.task_id where t.bot = ? and t.parent_id is null "
+                "and e.kind = 'escalation' and t.status not in ('failed', 'cancelled') and (" + active + ") "
+                "and not exists (select 1 from events a where a.task_id = t.id and a.id > e.id "
+                "and ((a.kind = 'message' and json_extract(a.data, '$.from') = 'user') "
+                "or a.kind = 'questions_closed')) order by e.id",
+                (bot, *pending)).fetchall()
+            permissions = db.execute(
+                "select t.id, p.asked_at as at, p.what as question from permissions p join tasks t on t.id = p.task_id "
+                "where t.bot = ? and p.allowed is null and t.status not in ('failed', 'cancelled') and (" + active + ") "
+                "and not exists (select 1 from events asked join events closed on closed.task_id = asked.task_id "
+                "and closed.kind = 'questions_closed' and closed.id > asked.id where asked.task_id = t.id "
+                "and asked.kind = 'permission' and json_extract(asked.data, '$.permission') = p.id) "
+                "order by p.id", (bot, *pending)).fetchall()
+            questions = [f"- {r['id']} · {r['at'][:16]} · {' '.join((r['question'] or '').split())[:120]}"
+                         for r in sorted([*escalations, *permissions], key=lambda r: r['at'])]
+            rows = db.execute(
+                "select t.id, t.kind, t.status, t.updated_at, t.room_id from tasks t "
+                "left join rooms r on r.id = t.room_id where t.bot = ? "
+                "and ((t.kind = 'chat') or (t.kind = 'seat' and r.id is not null and r.archived_at is null) "
+                "or (t.kind not in ('chat', 'seat') "
+                "and t.status in ('idle', 'queued', 'running', 'held', 'needs_input', 'interrupted', 'failed'))) "
+                "order by t.updated_at desc, t.id limit 12", (bot,)).fetchall()
+            question_tasks = {r["id"] for r in [*escalations, *permissions]}
+            elsewhere = [f"- {r['kind']} {r['room_id'] or r['id']} · {r['updated_at'][:16]} · {r['status']}"
+                         + (" · question open" if r["id"] in question_tasks else "") for r in rows]
+            working_state.sync(self.crew.memory.root / bot / "working-state" / "state.md", questions, elsewhere)
+            return True
+        except Exception:
+            logging.getLogger(__name__).exception("Could not sync working state for %s", bot)
+            return False
 
     def _with_updates(self, task: Task, bot: Bot, prompt: str) -> tuple[str, dict[str, str] | None]:
         """The turn's message, with what changed in the bot's instructions since its session began put in front of it,
@@ -87,15 +137,29 @@ class Sessions:
         of the conversation stays as it was."""
         if task.kind == "review":  # its own instructions, none of the crew's
             return prompt, None
-        living = self.crew.living_parts(bot)
+        try:
+            synced = self._sync_working_state(bot.name)
+        except Exception:
+            logging.getLogger(__name__).exception("Could not sync working state for %s", bot.name)
+            synced = False
+        try:
+            living = self.crew.living_parts(bot)
+        except Exception:
+            logging.getLogger(__name__).exception("Could not prepare instruction updates for %s", bot.name)
+            return prompt, None
         if task.kind == "seat" and (setting := self._setting(task)):
             living["room-setting"] = ("Group chat setting", setting)
-        now = {key: hashlib.sha256(text.encode()).hexdigest()[:16] for key, (_, text) in living.items()}
         seen = self.store.primed(task.id) if task.session_id else None
+        if not synced:
+            living.pop("working-state", None)
+        now = {key: hashlib.sha256(text.encode()).hexdigest()[:16] for key, (_, text) in living.items()}
+        if seen and "working-state" not in living and "working-state" in seen:
+            now["working-state"] = seen["working-state"]
         if seen is None:
-            if task.session_id and "room-setting" in living:
-                return prompts.text("crew-updates", self.crew.home,
-                                    updates=f"## Group chat setting\n\n{living['room-setting'][1]}", message=prompt), now
+            if task.session_id:
+                keys = [key for key in ("lately", "working-state", "room-setting") if key in living]
+                updates = "\n\n".join(f"## {living[key][0]}\n\n{living[key][1]}" for key in keys)
+                return prompts.text("crew-updates", self.crew.home, updates=updates, message=prompt), now
             return prompt, now  # a new session starts from these (or one from before they were kept: from now on)
         changed = [key for key in now if seen.get(key) != now[key]] + [key for key in seen if key not in now]
         if not changed:

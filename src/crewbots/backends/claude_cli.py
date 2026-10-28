@@ -21,19 +21,19 @@ EDIT_TOOLS = "Edit,Write,MultiEdit"  # for a read-only bot, only in the folders 
 SANDBOX = {"enabled": True, "autoAllowBashIfSandboxed": False, "allowUnsandboxedCommands": False}
 
 
-def private_rules() -> list[str]:
+def private_rules(extra: Sequence[Path] = ()) -> list[str]:
     """Claude Code's deny rules for the private paths (backends/credentials.py), as the files they are or the folders
     they might be. Its file tools obey them, and its sandbox keeps commands out of the same paths."""
-    return [rule for path in private_paths() for rule in (f"Read(/{path})", f"Read(/{path}/**)")]
+    return [rule for path in (*private_paths(), *extra) for rule in (f"Read(/{path})", f"Read(/{path}/**)")]
 
 
-def settings(access: Access, write_dirs: Sequence[Path] = ()) -> dict[str, Any] | None:
+def settings(access: Access, write_dirs: Sequence[Path] = (), deny_read: Sequence[Path] = ()) -> dict[str, Any] | None:
     """What a bot that isn't on full access gets on top of the repo's settings: the private paths denied, and the
     folders the user let it write in, for this task, allowed to its file tools (and so to its sandbox's commands), with
     a writing bot's package caches."""
     if access is Access.FULL:
         return None
-    permissions: dict[str, list[str]] = {"deny": private_rules()}
+    permissions: dict[str, list[str]] = {"deny": private_rules(deny_read)}
     caches = package_caches().values() if access is Access.WORKSPACE_WRITE else ()
     if folders := [*map(str, write_dirs), *caches]:
         permissions["allow"] = [rule for folder in folders for rule in (f"Edit(/{folder})", f"Edit(/{folder}/**)")]
@@ -94,7 +94,7 @@ class ClaudeCLI:
                 Path("/tmp/claude").mkdir(exist_ok=True)  # the sandbox's TMPDIR, which it doesn't create
             case Access.FULL:
                 args += ["--permission-mode", "bypassPermissions"]
-        if extra := settings(spec.access, spec.write_dirs):
+        if extra := settings(spec.access, spec.write_dirs, spec.deny_read):
             args += ["--settings", json.dumps(extra | ({"sandbox": SANDBOX} if spec.access is Access.WORKSPACE_WRITE else {}))]
         for path in [*spec.read_dirs, *spec.write_dirs]:
             args += ["--add-dir", str(path)]

@@ -99,6 +99,7 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
       CLIs' sign-ins, configs holding MCP servers' keys) and crewbots' own (the daemon's admin token, `mcp.json`, the
       database, the logs). Both CLIs' sandboxes keep commands out of them, and Claude's file tools are refused them.
     - work a bot starts on its own (a check-in, a thread from one) gets none of its MCP servers, only crewbots' own.
+  - Other bots' working state is isolated only in sandboxed or policy-checked sessions; `Access.FULL` can read it.
   - **How it's enforced:** Claude asks on every tool call. Codex's sandbox is the boundary, and every request to leave it is declined. Writing bots' shell commands are OS-sandboxed on both.
   - **Claude's tools run inside the daemon.**
   - **Interrupts:** a cancelled or timed-out Claude turn is interrupted, not killed, so its session stays warm.

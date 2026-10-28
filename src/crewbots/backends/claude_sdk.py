@@ -120,7 +120,7 @@ class ClaudeAgent:
             if spec.access is Access.READ_ONLY else None,
             permission_mode="bypassPermissions" if full else "default",
             can_use_tool=None if full else session.policy,
-            settings=json.dumps(extra) if (extra := settings(spec.access, spec.write_dirs)) else None,
+            settings=json.dumps(extra) if (extra := settings(spec.access, spec.write_dirs, spec.deny_read)) else None,
             env=env,
             sandbox=sandbox,
             effort=spec.effort if spec.effort in CLAUDE_EFFORTS else None,
@@ -141,7 +141,7 @@ class ClaudeAgentSession:
         self.session_id = spec.resume_session_id
         self.timeout_s = spec.timeout_s
         self.policy = ClaudePolicy(spec.access, Path(spec.cwd), set(spec.mcp_servers) | {CREW_SERVER},
-                                   network=spec.network, write_dirs=spec.write_dirs)
+                                   network=spec.network, write_dirs=spec.write_dirs, deny_read=spec.deny_read)
         self.stderr_lines: list[str] = []
         self.temp: Path | None = None
         self._broken = False

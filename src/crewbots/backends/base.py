@@ -71,6 +71,7 @@ class RunSpec:
     system_prompt: str | None = None  # appended to the CLI's own system prompt, never replacing it
     resume_session_id: str | None = None
     mcp_servers: dict[str, McpServer] = field(default_factory=dict)
+    deny_read: list[Path] = field(default_factory=list)  # other bots' working-state files
     read_dirs: list[Path] = field(default_factory=list)  # outside cwd, readable even when read-only (e.g. skills)
     write_dirs: list[Path] = field(default_factory=list)  # outside cwd, where the user let it write, for this task
     crew: Any = None  # the crew tools as Python (crewbots.crew_tools.CrewTools), for backends that host them in-process

@@ -56,13 +56,14 @@ STAY_IN_SANDBOX = f"commands run inside this bot's sandbox, which a bot can't wi
 
 class Policy:
     def __init__(self, access: Access, cwd: Path, granted_servers: set[str], network: bool | tuple[str, ...] = False,
-                 write_dirs: tuple[Path, ...] | list[Path] = ()):
+                 write_dirs: tuple[Path, ...] | list[Path] = (), deny_read: tuple[Path, ...] | list[Path] = ()):
         self.access = access
         self.cwd = Path(cwd).resolve()
         self.granted = granted_servers
         self.network = network
         self.write_dirs = tuple(Path(d).resolve() for d in write_dirs)
-        self.private = tuple(p.resolve() for p in private_paths())
+        self.private = tuple(p.resolve() for p in (*private_paths(), *deny_read))
+        self.deny_read = tuple(p.resolve() for p in deny_read)
         self._refusals: list[str] = []
 
     # Claude: one decision per tool call.
@@ -122,17 +123,22 @@ class Policy:
     def check_read(self, args: dict[str, Any]) -> str | None:
         """A file tool's read: anywhere but the private paths. A search names the folder it starts from, or a pattern
         whose folder part is where it looks."""
-        if self.access is Access.FULL:
-            return None
         pattern = os.path.expanduser(str(args.get("pattern", "")))
-        where = pattern.split("*")[0] if os.path.isabs(pattern) else ""
+        where = pattern.split("*")[0] if "*" in pattern else ""
         for target in (args.get("file_path"), args.get("notebook_path"), args.get("path"), where):
             if target and self._private(str(target)):
+                return PRIVATE
+        if self.deny_read and ("pattern" in args or "path" in args):
+            base = Path(os.path.expanduser(str(args.get("path") or where or self.cwd)))
+            base = (base if base.is_absolute() else self.cwd / base).resolve()
+            if any(path.is_relative_to(base) for path in self.deny_read):
                 return PRIVATE
         return None
 
     def check_write(self, path: str) -> str | None:
         """A write: in the task's own folder, or in a folder the user allowed it (a read-only bot only there)."""
+        if path and any(self._inside(path, private) for private in self.deny_read):
+            return PRIVATE
         if self.access is Access.FULL:
             return None
         if path and self._private(path):
@@ -162,7 +168,8 @@ class Policy:
             target = target.resolve()
         except OSError:
             return True
-        return any(target.is_relative_to(p) for p in self.private)
+        paths = self.deny_read if self.access is Access.FULL else self.private
+        return any(target.is_relative_to(p) for p in paths)
 
     def _inside(self, path: str, folder: Path) -> bool:
         target = Path(path) if os.path.isabs(path) else self.cwd / path

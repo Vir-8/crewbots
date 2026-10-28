@@ -99,7 +99,7 @@ class Dreams:
     async def _dream_call(self, task: Task, bot: Bot, materials: str, weekly: bool) -> tuple[dict[str, Any], str | None]:
         spec = RunSpec(prompt=materials, cwd=self.crew.home, access=Access.READ_ONLY, model=bot.model,
                        system_prompt=prompts.text("dream-setting", self.crew.home), effort=bot.effort,
-                       timeout_s=bot.timeout_s, network=False)
+                       timeout_s=bot.timeout_s, network=False, deny_read=self._state_denials(bot.name))
         done: Done | None = None
         async for event in self.backends[bot.backend].run(spec):
             if isinstance(event, Usage):

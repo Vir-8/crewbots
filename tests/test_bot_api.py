@@ -196,7 +196,8 @@ async def test_workers_delegate_but_only_coordinators_add_bots_and_propose_merge
     coordinator = {t.name for t in await build_server(client, can_delegate=True).list_tools()}
 
     assert worker == {"handoff", "escalate", "review", "remember", "forget", "recall", "start_thread", "post",
-                      "delegate", "tasks", "message", "ask", "open_group", "add_to_group", "update_state", "remind_on",
+                      "delegate", "tasks", "message", "ask", "open_group", "add_to_group", "working_state",
+                      "update_state", "remind_on",
                       "propose_routine", "share", "write_page", "edit_page", "set_name",
                       "ask_permission", "browser_open", "browser_screenshot", "browser_click",
                       "browser_type", "browser_evaluate", "browser_console"}

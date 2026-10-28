@@ -133,7 +133,8 @@ class Memory:
                "-c", "commit.gpgsign=false"]
         if not (self.root / ".git").exists():
             subprocess.run([*git, "init", "-q"], check=True, capture_output=True)
-        subprocess.run([*git, "add", "-A"], check=True, capture_output=True)
+        subprocess.run([*git, "add", "-A", "--", ".", ":(exclude,glob)**/.state.lock",
+                        ":(exclude,glob)**/working-state/.state-*"], check=True, capture_output=True)
         if not subprocess.run([*git, "diff", "--cached", "--quiet"], capture_output=True).returncode:
             return None
         subprocess.run([*git, "commit", "-q", "-m", message], check=True, capture_output=True)

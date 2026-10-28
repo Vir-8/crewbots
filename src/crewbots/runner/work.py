@@ -1,17 +1,18 @@
 """What a bot does with its work: hands it back, asks a question, proposes it for merging, and
 keeps notes."""
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from crewbots import cards, pages, prompts, worktree
-from crewbots.memory import CREW_SCOPE, Note
+from crewbots.memory import CREW_SCOPE, MemoryError, Note
 from crewbots.pages import Page
 from crewbots.routines import RoutineError
 from crewbots.runner.common import MergeError, NotAllowed
 from crewbots.runner.reviews import MAX_REVIEW_ROUNDS
 from crewbots.sources import KINDS
-from crewbots.store import Handoff, Task
+from crewbots.store import Handoff, Status, Task
 
 CHOICES = 6  # offered with a question, at most
 LABEL_CHARS, DESCRIPTION_CHARS = 80, 240  # of a choice
@@ -209,9 +210,46 @@ class Work:
         task = self.store.get_task(task_id)
         handoff = self.store.add_handoff(task_id, task.bot, done, output, open, needs)
         self._record(task_id, kind="handoff", data=handoff.to_json())
+        self._close_questions(task_id)
+        self._refresh_working_state(task.bot)
         self.crew.memory.log(task.bot, f"{task_id} {task.title}: {_short(done, 300)}"
                              + (f" Open: {_short(open, 200)}" if open.strip() else ""))
         return handoff
+
+    def _answer_decision(self, task: Task, text: str) -> tuple[bool, bool]:
+        """Record only selected choices or an answer reference, and nudge the session for free text."""
+        if task.status in (Status.FAILED, Status.CANCELLED):
+            return False, False
+        event = self.store.last_event(task.id, ("escalation",))
+        resolved = event and self.store.db.execute(
+            "select 1 from events where task_id = ? and id > ? and "
+            "(kind = 'questions_closed' or (kind = 'message' and json_extract(data, '$.from') = 'user')) limit 1",
+            (task.id, event.id)).fetchone()
+        if not event or resolved:
+            return False, False
+        question = " ".join(event.data.get("question", "").split())[:160]
+        choices = {str(c.get("label", "")) for c in event.data.get("choices", []) if isinstance(c, dict)}
+        # The app sends a single label, or (for multiple choice) one "- label" per line.
+        # It sends Other through the same message API, so only a complete match is safe to share.
+        selected = [text] if text in choices else []
+        if not selected and event.data.get("multiple"):
+            lines = text.split("\n")
+            if all(line.startswith("- ") and line[2:] in choices for line in lines):
+                selected = [line[2:] for line in lines]
+        nudge = not selected
+        if selected:
+            answer = ", ".join(selected)
+        else:
+            where = "room" if task.kind == "seat" else "chat" if task.kind == "chat" else "thread"
+            answer = f"answered in {where} on {datetime.now().astimezone().date()} (task {task.id})"
+        try:
+            from crewbots.working_state import edit
+
+            edit(self.crew.memory.root / task.bot / "working-state" / "state.md", "Decisions", "add",
+                 f"{event.at[:10]} {task.id}: {question} — {answer}", automatic=True)
+        except (MemoryError, OSError) as e:
+            self._record(task.id, kind="notice", data={"message": f"Could not record decision: {e}"})
+        return True, nudge
 
     def escalate(self, task_id: str, question: str, choices: list[Any] | None = None, multiple: bool = False) -> None:
         """Marks the task as waiting on an answer: a decision that isn't its bot's, or what's wanted when it's unsure.
@@ -222,7 +260,14 @@ class Work:
         self._escalated.add(task_id)
         self._record(task_id, kind="escalation", data={"question": question} | (
             {"choices": offered, "multiple": bool(multiple)} if offered else {}))
+        self._refresh_working_state(task.bot)
+        if task.kind == "seat" and task.room_id and (chief := self.coordinator()) and task.bot != chief.name:
+            self._chief_room_item(self.store.room(task.room_id), task.bot, "escalated", f"task {task.id}")
         if task.parent_id:
+            parent = self.store.get_task(task.parent_id)
+            chief = self.coordinator()
+            if task.kind != "seat" and parent.kind == "seat" and parent.room_id and chief and parent.bot == chief.name:
+                self._chief_room_item(self.store.room(parent.room_id), task.bot, "escalated", f"task {task.id}")
             listed = "".join(f"\n- {c['label']}" + (f": {c['description']}" if "description" in c else "") for c in offered)
             self.store.update_task(task_id, reported=True)
             self.send(task.parent_id, sender="crewbots", text=(

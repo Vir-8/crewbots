@@ -82,7 +82,7 @@ class Checkins:
                     system_prompt=prompts.text("checkin-setting", self.crew.home, bot=f"{bot.label}, the {bot.title}",
                                                role=bot.description),
                     mcp_servers={}, timeout_s=bot.timeout_s,  # on its own: nothing outside crewbots (runner/core.py)
-                    network=bot.network, proactive=True)
+                    network=bot.network, proactive=True, deny_read=self._state_denials(bot.name))
                 report = await self._checkin_run(task, spec)
             for item in items:
                 self.store.routine_ran(f"checkin:{task.bot}:{item.id}", now.isoformat(timespec="seconds"), task.id)

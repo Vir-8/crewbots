@@ -137,6 +137,11 @@ def build_server(client: httpx.Client, can_delegate: bool) -> MCPServer:
         intent = call("POST", "/bot/remind_on", {"event": event, "match": match, "then": then})
         return f"Standing intent {intent['id']} set: on {intent['kind']} {intent['match']}".rstrip() + "."
 
+    @server.tool(description=describe("working_state"))
+    def working_state(section: str, action: str, text: str = "", entry_id: str = "", done: bool = False) -> str:
+        return call("POST", "/bot/working_state", {"section": section, "action": action, "text": text,
+                                                  "entry_id": entry_id, "done": done})["result"]
+
     @server.tool(description=describe("update_state"))
     def update_state(state: str) -> str:
         return f"Kept this task's state ({call('POST', '/bot/update_state', {'state': state})['path']})."

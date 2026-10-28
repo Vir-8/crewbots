@@ -31,11 +31,12 @@ import time
 from collections.abc import Callable, Mapping
 from contextlib import aclosing
 from dataclasses import asdict, replace
+from html import escape
 from pathlib import Path
 from typing import Any
 
 from crewbots import attachments as attachments_module
-from crewbots import prompts, worktree
+from crewbots import prompts, working_state, worktree
 from crewbots.attention import Attention
 from crewbots.backends import BACKENDS, Access, Backend, McpServer, RunSpec
 from crewbots.browser import Browser
@@ -200,13 +201,20 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         return self.send(self.chat(bot).id, text, sender=sender, attachments=attachments)
 
     def send(self, task_id: str, text: str, sender: str = "user",
-             attachments: list[dict[str, Any]] | None = None) -> Task:
+             attachments: list[dict[str, Any]] | None = None, *, _record_message: bool = True) -> Task:
         """A message to a task. Attachments are shown with it, and listed, with where they are, in what the bot gets.
         One from a teammate reaches the bot marked as a teammate's, so it isn't taken for the user's word."""
         task = self.store.get_task(task_id)
-        self._message(task_id, sender, text, attachments)
+        answered_escalation, nudge_decision = self._answer_decision(task, text) if sender == "user" else (False, False)
+        if _record_message:
+            self._message(task_id, sender, text, attachments)
         if sender == "user":
+            if answered_escalation:
+                self._clear_room_need(task_id)
+            self._refresh_working_state(task.bot)
             self.attention.user_wrote = time.time()  # mid-conversation: questions wait for a break
+        if nudge_decision:
+            text += "\n\nRecord the decision in your working state, distilled, with no private detail."
         if sender in self.crew.bots and sender != task.bot:
             text = prompts.text("from-teammate", self.crew.home, teammate=sender, text=text)
         text += attachments_module.listing(attachments or [])
@@ -230,6 +238,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         self._waiting.pop(task_id, None)
         self._owed.discard(task_id)
         self._nudged.discard(task_id)
+        self._escalated.discard(task_id)
         self.store.clear_pending(task_id)  # what the user stopped isn't carried on after a restart
         if run := self._runs.get(task_id):
             run.cancel()
@@ -419,6 +428,8 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
                 self._set(task_id, status=Status.FAILED, error=str(e))
                 return None
             backend = self.backends[bot.backend]
+            if task.kind != "review":
+                self._refresh_working_state(bot.name)
             if self._gone_cold(task):
                 await self._fresh_start(task_id, "idle")
                 task = self.store.get_task(task_id)
@@ -527,7 +538,8 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
             system = review_prompt("lead", self.crew.home) if task.parent_id is None else bot.instructions
             return RunSpec(prompt=prompt, cwd=cwd, access=bot.access, model=bot.model, system_prompt=system,
                            resume_session_id=task.session_id, timeout_s=bot.timeout_s, effort=bot.effort,
-                           mcp_servers=servers, crew=tools if in_process else None, network=bot.network)
+                           mcp_servers=servers, crew=tools if in_process else None, network=bot.network,
+                           deny_read=self._state_denials(bot.name))
         # A backend that hosts tools in-process gets the crew tools as Python; any other, as an MCP server with a token.
         in_process = getattr(backend, "in_process_tools", False) and self.api_url is not None
         grants = self.store.grants(task.id)  # what the user allowed this task beyond its bot's role card
@@ -547,6 +559,7 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
                          **({} if in_process else self._crew_tools(token, bot))},
             proactive=proactive,
             crew=CrewTools(self, task.id, bot.can_delegate) if in_process else None,
+            deny_read=self._state_denials(bot.name),
             read_dirs=[*self.crew.skill_dirs, *[d for d in (self.crew.memory.root, self.crew.home / attachments_module.FOLDER,
                                                             self.crew.pages_of(bot))
                                                  if d.is_dir()]], timeout_s=bot.timeout_s,
@@ -554,6 +567,21 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
             network=True if any(g["kind"] == "network" for g in grants) else bot.network,
             effort=bot.effort, context_window=bot.context_window,
         )
+
+    def _state_denials(self, bot: str) -> list[Path]:
+        root = self.crew.memory.root
+        names = set(self.crew.bots) | {p.name for p in root.glob("*") if p.is_dir() and not p.name.startswith(".")}
+        return [root / ".git", *[root / name / "working-state" for name in sorted(names) if name != bot]]
+
+    def _clear_room_need(self, task_id: str) -> None:
+        import logging
+
+        chief = self.coordinator()
+        if chief:
+            try:
+                working_state.clear_need(self.crew.memory.root / chief.name / "working-state" / "state.md", task_id)
+            except Exception:
+                logging.getLogger(__name__).exception("Could not clear a resolved room escalation")
 
     def _stay_awake(self) -> None:
         """Holds a power assertion while any task is running, and only then: work in progress shouldn't stall
@@ -583,8 +611,8 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
                     f"one member best placed for it with a short handover that @mentions them, or reply {NO_REPLY} if "
                     f"someone already has it." if room["lead"] == task.bot
                     else f"{room['lead']} leads it; you're woken when someone mentions you.")
-            return prompts.text("seat-setting", self.crew.home, title=repr(room["title"]), lead=lead, no_reply=NO_REPLY,
-                                others=", ".join(others) or "no other bots")
+            return prompts.text("seat-setting", self.crew.home, title=repr(escape(room["title"], quote=False)),
+                                lead=lead, no_reply=NO_REPLY, others=", ".join(others) or "no other bots")
         return None
 
     def _crew_tools(self, token: str, bot: Bot, tools: str = "crew", flags: str = "") -> dict[str, McpServer]:
@@ -631,8 +659,19 @@ class Runner(Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams,
         stored = self.store.append_event(task_id, event, kind=kind, data=data)
         self.bus.publish({"type": "event", "event": stored.to_json()})
 
+    def _close_questions(self, task_id: str) -> None:
+        asked = self.store.last_event(task_id, ("escalation", "permission"))
+        closed = self.store.last_event(task_id, ("questions_closed",))
+        if asked and (closed is None or asked.id > closed.id):
+            self._record(task_id, kind="questions_closed", data={})
+        self._clear_room_need(task_id)
+
     def _set(self, task_id: str, **fields: Any) -> Task:
         task = self.store.update_task(task_id, **fields)
+        if task.bot in self.crew.bots and fields.get("status") in (Status.IDLE, Status.FAILED, Status.CANCELLED):
+            if fields["status"] in (Status.FAILED, Status.CANCELLED):
+                self._close_questions(task.id)
+            self._refresh_working_state(task.bot)
         self.bus.publish({"type": "task", "task": task.to_json()})
         if self.restarting and "status" in fields:  # how many turns the restart still waits for
             self.bus.publish({"type": "crew", "crew": self.state()})

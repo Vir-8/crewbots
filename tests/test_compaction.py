@@ -198,5 +198,7 @@ async def test_a_big_conversation_is_flushed_ahead_of_time_while_its_cache_is_wa
     await wait_until(lambda: len(backend.opened[0].turns) == 3 and idle(store, runner, task.id)())
     await runner._flush_idle()  # once per idle spell: nothing more until its next turn
 
-    assert backend.opened[0].turns == ["the big one", "<flush>", "meanwhile"]
+    first, flush, after = backend.opened[0].turns
+    assert (first, flush) == ("the big one", "<flush>")
+    assert "## Lately" in after and "Added the CSV export" in after and after.endswith("meanwhile")
     assert kinds(store, task.id) == ["flushed"] and "Added the CSV export" in runner.crew.memory.recent("worker")

@@ -63,6 +63,8 @@ SPECS: dict[str, Spec] = {
     "edit_page": Spec(_object({"page": STRING, "find": STRING, "replace": STRING}, ["page", "find", "replace"])),
     "forget": Spec(_object({"name": STRING, "shared": {"type": "boolean"}}, ["name"])),
     "recall": Spec(_object({"query": STRING}, ["query"])),
+    "working_state": Spec(_object({"section": STRING, "action": STRING, "text": STRING, "entry_id": STRING,
+                                    "done": {"type": "boolean"}}, ["section", "action"])),
     "update_state": Spec(_object({"state": STRING}, ["state"])),
     "set_name": Spec(_object({"name": STRING}, ["name"])),
     "remind_on": Spec(_object({"event": STRING, "match": STRING, "then": STRING}, ["event", "then"])),
@@ -176,6 +178,14 @@ class CrewTools:
                 case "withdraw_merge":
                     task = r.withdraw_merge(args["task_id"], args["reason"], parent_id=me)
                     return f"Withdrew the merge proposal for {task.id}."
+                case "working_state":
+                    from crewbots.working_state import edit
+                    task = r.store.get_task(me)
+                    entry_id, pruned = edit(r.crew.memory.root / task.bot / "working-state" / "state.md",
+                                            args["section"], args["action"],
+                                            args.get("text", ""), args.get("entry_id", ""), bool(args.get("done")))
+                    return (f"Working state entry {entry_id} updated."
+                            + (" State entries were trimmed; tidy up your state." if pruned else ""))
                 case "remember":
                     note = r.remember(me, args["title"], args["body"], shared=bool(args.get("shared")))
                     return f"Remembered: {note.title} ({note.path})."

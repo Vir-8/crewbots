@@ -125,6 +125,7 @@ Worktrees keep bots from colliding, not from misbehaving. A bot reading a hostil
      `~/.gitconfig` stay readable, and the keychain is out of reach; on Claude an indirect read of `daemon.json` and
      `mcp.json` is blocked, the Read tool is refused the token but reads `team/rules.md`, and the keychain and the
      daemon's port are out of reach. A bot on full access has no sandbox, so none of this holds for it.
+   - Other bots' working state is isolated only in sandboxed or policy-checked sessions; `Access.FULL` can read it.
    - **Remaining difference:** Claude's sandbox allows `/tmp`, which it needs for its own temp folder.
 3. **Separate checkouts.** Every writing task works in its own worktree, and the user's checkout is only ever touched by the user's merge.
 4. **The user for anything irreversible.** Merges, pushes, publishing and anything outside the crew need you, as team/rules.md says, and the harness enforces it.

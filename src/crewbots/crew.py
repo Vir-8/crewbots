@@ -6,6 +6,7 @@ servers); the body is the card itself (mission, owns, does not own, done means),
 """
 
 import json
+import logging
 import re
 import shutil
 from dataclasses import dataclass, field, replace
@@ -17,7 +18,7 @@ from typing import Any
 import yaml
 
 from crewbots import pages as pages_module
-from crewbots import paths, prompts
+from crewbots import paths, prompts, working_state
 from crewbots import projects as projects_module
 from crewbots.backends import BACKENDS, Access, McpServer
 from crewbots.memory import CREW_SCOPE, Memory
@@ -168,6 +169,13 @@ class Crew:
                                                                  ("The crew's", memory.core(CREW_SCOPE))) if text]:
             parts["core"] = ("Core memory", "\n\n".join(core))
         parts["notes"] = ("Notes", memory.prompt(bot.name) or "No notes yet.")
+        logs = [(whose, memory.recent(scope)) for whose, scope in (("Yours", bot.name), ("The crew's", CREW_SCOPE))]
+        parts["lately"] = ("Lately", "\n\n".join(f"## {whose}\n\n{text}" for whose, text in logs if text) or "No recent logs.")
+        try:
+            parts["working-state"] = ("Working state", working_state.prompt_data(
+                working_state.read(memory.root / bot.name / "working-state" / "state.md")))
+        except Exception:
+            logging.getLogger(__name__).exception("Could not read working state for %s", bot.name)
         parts["scratchpad"] = ("Your scratchpad", pages_module.for_instructions(self.pages_of(bot)))
         return parts
 
@@ -197,9 +205,11 @@ class Crew:
         parts += [f"# {heading}\n\n{text}" for key, (heading, text) in living.items() if key.startswith("team/")]
         if "core" in living:
             parts.append(f"# Core memory\n\nWhat matters most, kept short and always here.\n\n{living['core'][1]}")
+        if living["lately"][1] != "No recent logs.":
+            parts.append(f"# Lately\n\n{living['lately'][1]}")
+        if "working-state" in living:
+            parts.append(f"# Working state\n\n{living['working-state'][1]}")
         parts.append(prompts.text("memory-guide", self.home) + f"\n\n{living['notes'][1]}")
-        if recent:
-            parts.append(f"# Lately\n\nThe last two days' logs, yours and the crew's, as this session began:\n\n{recent}")
         parts.append(prompts.text("scratchpad-guide", self.home, folder=_home_relative(self.pages_of(bot)))
                      + f"\n\n## Scratchpad\n\n{living['scratchpad'][1]}")
         parts.append("# This task\n\n" + (

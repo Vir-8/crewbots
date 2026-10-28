@@ -15,3 +15,5 @@ the crew, and read a note's file when it bears on the task.
 
 Your core memory, if you have one, is what matters most, kept short. Your daily log gets a line for each task you
 finish; a new session starts with the last two days of it.
+
+Use `working_state` immediately to record the user's rules, decisions, and commitments shared by your sessions. Check Open questions before asking again.

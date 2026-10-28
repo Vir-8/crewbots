@@ -236,6 +236,7 @@ def sandbox_overrides(spec: RunSpec, temp: Path | None = None) -> list[str]:
     files |= {str(folder): "write" for folder in spec.write_dirs}
     if spec.access is Access.WORKSPACE_WRITE:
         files |= {folder: "write" for folder in package_caches().values()}
+    files |= {str(path): "deny" for path in spec.deny_read}
     table = ", ".join(f"{json.dumps(key)} = {json.dumps(access)}" for key, access in files.items())
     network = spec.network is True and spec.access is Access.WORKSPACE_WRITE
     return ["-c", f'default_permissions="{PROFILE}"',
