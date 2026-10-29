@@ -80,7 +80,8 @@ A check that was inconclusive, or ran in the wrong place (another project's Edit
 ## 5. Cleanup
 
 Play mode stopped; the scene the user had open, open again; scenes and prefabs saved only when your change meant to
-change them. `git status` shows only what the change meant to change, and every new asset has its `.meta`.
+change them. What your change changed is exactly what you list in the handoff's `output` (in a shared folder,
+`git status` shows others' work too), and every new asset has its `.meta`.
 
 ## The project's VERIFY.md
 

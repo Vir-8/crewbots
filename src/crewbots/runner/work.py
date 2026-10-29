@@ -19,6 +19,7 @@ from crewbots.runner.checks import MAX_CHECKS
 from crewbots.runner.closing import Closing
 from crewbots.runner.common import MergeError, NotAllowed
 from crewbots.runner.editors import Editors
+from crewbots.runner.in_place import InPlace
 from crewbots.runner.landed import Landed
 from crewbots.runner.merge_message import merge_message
 from crewbots.runner.merge_status import MergeStatus
@@ -34,7 +35,7 @@ DROPPED = re.compile(r"\s*dropped\s*:\s*(.*)", re.IGNORECASE | re.DOTALL)  # a h
 log = logging.getLogger(__name__)
 
 
-class Work(Landed, Closing, MergeStatus, SharedApps, Editors):
+class Work(Landed, Closing, MergeStatus, SharedApps, Editors, InPlace):
     """The part of Runner that takes a bot's handoffs, questions, merge proposals and notes."""
 
     def _check_worktree_sweep(self, task_id: str | None = None) -> None:
@@ -46,8 +47,9 @@ class Work(Landed, Closing, MergeStatus, SharedApps, Editors):
         """The task's diff against where its worktree started, or None if it has no worktree."""
         task = self.store.get_task(task_id)
         self._check_worktree_sweep()
-        if not task.worktree_path:
-            return None
+        if not task.worktree_path:  # committed in place, its commit; uncommitted in place, nothing of its own to show
+            return worktree._git(Path(task.repo), "diff", task.base, task.merged_commit, strip=False) if (
+                task.merge_state == "merged" and task.repo and task.merged_commit) else None
         wt = worktree.Worktree(repo=Path(task.repo), path=Path(task.worktree_path), branch=task.branch, base=task.base)
         if task.merge_state == "merged":
             return worktree._git(wt.repo, "diff", wt.base, self._merged_tip(task), strip=False)
@@ -248,9 +250,12 @@ class Work(Landed, Closing, MergeStatus, SharedApps, Editors):
         if not self.is_coordinator(parent.bot):
             raise NotAllowed("only a coordinator can propose a merge")
         work = self._own_child(parent_id, task_id)
-        if not work.worktree_path:
-            raise NotAllowed(f"{task_id} has no worktree or branch: it worked in its folder itself, so its changes are "
-                             "there already and there's nothing to merge. Once its review passes, report what it changed")
+        repo = None if work.worktree_path else self._in_place_repo(work)
+        if not work.worktree_path and repo is None:
+            raise NotAllowed(f"{task_id} has no worktree, and changed no git folder in place, so there's nothing to merge")
+        if repo and not self._in_place_files(work, repo):
+            raise NotAllowed(f"{task_id} worked in its project's folder itself, and handed back none of the files it changed "
+                             "as its output, so there's nothing of its to commit: have it hand back again listing them")
         if work.merge_state == "merged":
             raise NotAllowed(f"{task_id} is already merged")
         if work.merge_state == "merging":
@@ -279,7 +284,8 @@ class Work(Landed, Closing, MergeStatus, SharedApps, Editors):
         worktree. Refuses work that is still running or not approved (unless forced); a conflict changes nothing."""
         self._check_worktree_sweep()
         work = self.store.get_task(task_id)
-        if not work.worktree_path:
+        in_place = None if work.worktree_path else self._in_place_repo(work)
+        if not work.worktree_path and in_place is None:
             raise MergeError(f"{task_id} has no worktree")
         if work.merge_state == "merged":
             raise MergeError(f"{task_id} is already merged ({work.merged_commit})")
@@ -295,10 +301,15 @@ class Work(Landed, Closing, MergeStatus, SharedApps, Editors):
         if into := self.already_on(work):
             raise MergeError(f"{task_id} is already on {into}: its changes are all there, so there is nothing to merge; "
                              "withdraw the proposal instead")
-        wt = worktree.Worktree(repo=Path(work.repo), path=Path(work.worktree_path), branch=work.branch, base=work.base)
         proposals = self.store.last_events(task_id, ("merge_proposed",), 1)
         last = proposals[0].data if proposals else {}
         message = merge_message(last.get("summary", ""), work.title, unreviewed=not state.approved)
+        if in_place:
+            try:
+                return self._commit_in_place(work, in_place, message, forced=not state.approved, automatic=automatic)
+            except worktree.GitError as e:
+                raise MergeError(str(e)) from None
+        wt = worktree.Worktree(repo=Path(work.repo), path=Path(work.worktree_path), branch=work.branch, base=work.base)
         try:
             if not wt.path.exists():
                 self._restore_worktree(work)
@@ -467,7 +478,9 @@ class Work(Landed, Closing, MergeStatus, SharedApps, Editors):
         rather than taking the author's word, and "tests pass" alone isn't evidence of what the change does."""
         task = self.store.get_task(task_id)
         evidence = [line.strip() for line in evidence or [] if line.strip()]
-        if task.branch and not evidence and not DROPPED.match(done):
+        in_place = None if task.branch else self._in_place_repo(task)
+        code = task.branch or (in_place and self._in_place_files(task, in_place, output))
+        if code and not evidence and not DROPPED.match(done):
             raise NotAllowed("hand back your evidence too: what you ran or looked at to prove it works and what it "
                              "showed (a command and its output, a measurement, a screenshot you shared), or what you "
                              "couldn't check and why. For crewbots, the verify-crewbots skill says how")

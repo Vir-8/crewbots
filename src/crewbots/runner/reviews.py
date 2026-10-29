@@ -128,12 +128,15 @@ class Reviewing(Checks):
                  "and the change itself (the project's verify skill, if it has one, says how). Nothing you change "
                  "there reaches the work, so report what you find rather than fixing it." if self._in_review_copy(task)
                  else "Its work is in your working directory.")
+        what = "The uncommitted changes (`git diff`, and new files) are"
+        if (repo := self._in_place_repo(work)) and (files := self._in_place_files(work, repo)):
+            what = ("It was done in the project's folder itself, beside other work in progress there, so only the files "
+                    f"it handed back are its own: {', '.join(files)}. Their uncommitted changes are")
         return (f"This task is review round {n} of {MAX_REVIEW_ROUNDS} of task {work.id} ({work.bot}: {work.title}). "
-                f"{where} The uncommitted changes (`git diff`, and new files) are what you review, against the "
-                "handback's evidence. Finish by calling `review(verdict, summary, findings)`: verdict `pass` or "
-                "`fail`, one finding per problem, each with its location, the problem, a failure scenario, and proof "
-                "(the command you ran and what it showed). A pass with remaining risks is still a pass; list them as "
-                "findings.")
+                f"{where} {what} what you review, against the handback's evidence. Finish by calling "
+                "`review(verdict, summary, findings)`: verdict `pass` or `fail`, one finding per problem, each with its "
+                "location, the problem, a failure scenario, and proof (the command you ran and what it showed). A pass "
+                "with remaining risks is still a pass; list them as findings.")
 
 
 def _round_status(state: ReviewState, work: Task) -> str:

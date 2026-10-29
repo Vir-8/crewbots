@@ -116,6 +116,9 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
     at a time: another's are answered that it's busy, and by whom, and the first one turned away is told when
     it's free. A task keeps it while its turn runs, until five minutes after its last call. A task in a worktree of
     its own doesn't wait: Unity opens a folder in one Editor only, so the Editor opened on its worktree is its own.
+  - Work done in a project's folder itself is proposed like any other: once approved, crewbots commits just the files
+    it handed back as its output (with their Unity .meta files) on the folder's branch, leaving everything else in
+    progress there uncommitted. It shows on the Landed page, and the chief proposes the push as usual.
   - A task in a worktree of a Unity project gets its Editor with `open_unity_editor`: crewbots starts the version the
     project names (no Unity Hub, no screen control), turns on MCP for Unity's "Auto-Start on Editor Load" so it
     connects by itself, tells the task once it has, and closes it before the worktree goes or after 30 idle minutes.
