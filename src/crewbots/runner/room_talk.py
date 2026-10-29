@@ -1,12 +1,11 @@
 """Work handed out in a group chat is talked about there: the handover, questions and answers between the bots doing it,
 fix requests, and what each hands back are posted in the room by whoever said them, so its members and the user can
-follow it and weigh in. Each still reaches whoever it's for directly, so posting it wakes no one."""
+follow it and weigh in, whole. Each still reaches whoever it's for directly, so posting it wakes no one."""
 
 from typing import Any
 
 from crewbots.store import Handoff, Review, Status, Task
 
-ROOM_SAY = 1200  # characters of one such message in the room
 TOLD = (Status.IDLE, Status.FAILED, Status.CANCELLED)  # how a turn ends that's said in the room
 
 
@@ -37,7 +36,6 @@ class RoomTalk:
         key = f"seat:{seat.id}" if seat else ""
         caught_up = seat and not any(m["author"] != to for m in self.store.room_messages(room["id"],
                                                                                          after=self.store.seen(key)))
-        text = text if len(text) <= ROOM_SAY else text[:ROOM_SAY - 1].rstrip() + "…"
         said = self.post(room["id"], author, text if to == author else f"@{to} {text}", recipients=[])
         if caught_up:
             self.store.mark_seen(key, said["id"])

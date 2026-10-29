@@ -44,9 +44,10 @@ def app(tmp_path, monkeypatch):
     store.close()
 
 
-def running(client, backend, name):
-    """A task of `name`'s, held mid-turn, and how it reaches Unity."""
-    task = client.post("/tasks", json={"bot": name, "goal": "go"}, headers={"Authorization": f"Bearer {ADMIN}"}).json()
+def running(client, backend, name, folder=None):
+    """A task of `name`'s, held mid-turn in `folder`, and how it reaches Unity."""
+    body = {"bot": name, "goal": "go"} | ({"workspace": str(folder)} if folder else {})
+    task = client.post("/tasks", json=body, headers={"Authorization": f"Bearer {ADMIN}"}).json()
     for _ in range(200):
         for spec in backend.specs:
             if f"You are the {name}." in spec.system_prompt:
@@ -60,10 +61,12 @@ def call(client, server, method, id=1):
                        json={"jsonrpc": "2.0", "id": id, "method": method, "params": {}})
 
 
-def test_one_task_at_a_time_drives_a_shared_app(app):
+def test_one_task_at_a_time_drives_a_projects_app(app, tmp_path):
     client, runner, store, backend, reached = app
-    first, through_first = running(client, backend, "engineer-1")
-    second, through_second = running(client, backend, "engineer-2")
+    game = tmp_path / "game"
+    game.mkdir()
+    first, through_first = running(client, backend, "engineer-1", game)
+    second, through_second = running(client, backend, "engineer-2", game)
     assert through_first.url == f"http://127.0.0.1:{PORT}/v1/bot/mcp/UnityMCP" and through_first.url == through_second.url
     assert through_first.headers["Authorization"] != through_second.headers["Authorization"]  # each as its own task
 
@@ -71,16 +74,27 @@ def test_one_task_at_a_time_drives_a_shared_app(app):
     assert answer.json()["result"] == {"ok": True} and answer.headers["mcp-session-id"] == "s1"
     busy = call(client, through_second, "tools/call", id=7).json()
     assert busy["id"] == 7 and busy["result"]["isError"]
-    assert f"UnityMCP is in use by engineer-1 ({first})" in busy["result"]["content"][0]["text"]
+    assert f"UnityMCP is in use for game by engineer-1 ({first})" in busy["result"]["content"][0]["text"]
     assert call(client, through_second, "tools/list").json()["result"] == {"ok": True}  # looking never waits
     assert reached == ["tools/call", "tools/list"]
 
-    runner._apps["UnityMCP"]["last"] -= APP_IDLE_S  # the first has left it alone
+    runner._apps["UnityMCP", str(game.resolve())]["last"] -= APP_IDLE_S  # the first has left it alone
     runner.free_apps()
     told = [e.data["text"] for e in store.events(second) if e.kind == "message" and e.data["from"] == "crewbots"]
-    assert told == ["UnityMCP is free now: go on with what needed it."]
+    assert told == ["UnityMCP is free now for game: go on with what needed it."]
     assert call(client, through_second, "tools/call").json()["result"] == {"ok": True}
-    assert "is in use by engineer-2" in call(client, through_first, "tools/call").json()["result"]["content"][0]["text"]
+    assert "in use for game by engineer-2" in call(client, through_first, "tools/call").json()["result"]["content"][0]["text"]
+
+
+def test_tasks_in_different_projects_drive_their_own_editors_at_once(app, tmp_path):
+    client, runner, store, backend, reached = app
+    (tmp_path / "game").mkdir()
+    (tmp_path / "other").mkdir()
+    _, through_first = running(client, backend, "engineer-1", tmp_path / "game")
+    _, through_second = running(client, backend, "engineer-2", tmp_path / "other")
+    assert call(client, through_first, "tools/call").json()["result"] == {"ok": True}
+    assert call(client, through_second, "tools/call").json()["result"] == {"ok": True}
+    assert reached == ["tools/call", "tools/call"]
 
 
 def test_a_task_in_a_worktree_of_its_own_drives_its_own_editor_without_waiting(app, tmp_path):
@@ -92,7 +106,7 @@ def test_a_task_in_a_worktree_of_its_own_drives_its_own_editor_without_waiting(a
 
     assert call(client, through_first, "tools/call").json()["result"] == {"ok": True}
     assert call(client, through_second, "tools/call").json()["result"] == {"ok": True}  # its own Editor, not the first's
-    assert reached == ["tools/call", "tools/call"] and runner._apps["UnityMCP"]["task"] == first
+    assert reached == ["tools/call", "tools/call"] and [h["task"] for h in runner._apps.values()] == [first]
 
 
 def test_only_a_shared_app_of_the_bots_own_is_reached_this_way(app):

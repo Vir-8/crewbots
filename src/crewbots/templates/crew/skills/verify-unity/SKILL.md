@@ -17,7 +17,8 @@ details. "It compiles" alone isn't done.
   files. The Editor the user keeps open on it sees everyone's work, yours included. **A worktree each**: a checkout of
   your own, so you verify in an Editor of its own: ask for it with `open_unity_editor`. crewbots opens it, tells you
   once it's connected, and closes it when your work is done with.
-- The project's Editor is shared: crewbots lets one task at a time make Unity MCP tool calls, and answers others that
+- The project's Editor is shared: crewbots lets one task at a time make Unity MCP tool calls on it (tasks on other
+  projects use theirs), and answers others that
   it's busy, and with whom. Then do what doesn't need it, or end your turn: you're told when it's free. In a worktree of
   your own, the Editor opened on it is yours, and nobody waits. Keep each check short, so
   the others aren't kept waiting. In a shared folder, a compile error in a file you didn't touch is another engineer's:

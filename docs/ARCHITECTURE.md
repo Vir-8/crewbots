@@ -372,7 +372,7 @@ Each step leaves the system working.
   feedback or "do not remove", unless the line links an issue. team/standards.md says the rest for reviewers.
 - **Shared apps** (`runner/shared_apps.py`, `api/routes/shared_apps.py`). An http MCP server marked `one_at_a_time`
   in mcp.json reaches a bot at `/v1/bot/mcp/<server>`, with its run token, and the daemon passes everything on except a
-  `tools/call` while another task holds the app: that's answered with a tool error naming the holder, and the task
+  `tools/call` while another task holds that project's app (keyed by server and the task's folder): that's answered with a tool error naming the holder, and the task
   queued. A task holds it from its first tool call while its turn runs, until APP_IDLE_S (5 min) after its last call;
   `free_apps` (as turns end, and on the scheduler's tick) lets go and tells the next task in line, one at a time,
   WAKE_AGAIN_S apart. A task working in a worktree under the worktree root (or reviewing one) never waits

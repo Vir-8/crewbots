@@ -143,3 +143,11 @@ def test_a_woken_bot_is_sent_the_newest_of_what_it_missed():
     assert text.startswith("(7 earlier messages you haven't seen are left out.)\n\n[engineer]: 7 ")
     assert text.endswith("[user]: @chief how's it going?") and len(text) <= CATCH_UP + 100
     assert _catch_up(["[user]: " + "y" * (CATCH_UP * 2)]) == "[user]: " + "y" * (CATCH_UP * 2)  # the newest always
+
+
+async def test_a_long_handover_is_said_in_the_room_whole(store, tmp_path):
+    crew, room, seat = crew_in_a_room(store, tmp_path)
+    goal = "Build the export. " + "Here is what matters and why. " * 100
+    child = crew.runner.delegate(seat.id, "engineer", goal)
+    assert said_by(store, room, "lead")[0]["text"] == f"@engineer {child.id}: {goal}"
+    await crew.runner.shutdown()

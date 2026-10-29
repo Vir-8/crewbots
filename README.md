@@ -113,7 +113,7 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
     starts, or a URL (streamable HTTP, or SSE on Claude).
   - A server that drives one running app, such as a Unity Editor's, can be marked `"one_at_a_time": true` in
     `mcp.json` (http servers only). Bots then reach it through the daemon, which lets one task's tool calls through
-    at a time: another's are answered that it's busy, and by whom, and the first one turned away is told when
+    at a time for each project (tasks on different projects drive different Editors): another's are answered that it's busy, and by whom, and the first one turned away is told when
     it's free. A task keeps it while its turn runs, until five minutes after its last call. A task in a worktree of
     its own doesn't wait: Unity opens a folder in one Editor only, so the Editor opened on its worktree is its own.
   - Code work isn't handed back with comments that excuse or defer (TODO, FIXME, HACK, workaround, "for now",
