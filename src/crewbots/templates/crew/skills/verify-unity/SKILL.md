@@ -69,11 +69,13 @@ a compile error anywhere, nothing else you check counts: fix it first.
 - **Saves are real.** Play mode reads and writes the game's real saves and settings (`Application.persistentDataPath`,
   and PlayerPrefs in `~/Library/Preferences/unity.<company>.<product>.plist`). Before playing, copy them to a fresh
   folder in `$TMPDIR` and check each copy; after, put back what changed and remove what the run created. A read-only
-  sandbox can't write there: do it through the Editor, as play did (`execute_code`: `System.IO.File.Copy(backup,
-  save, true)`, and `File.Delete` for a file the run made), then check each against its hash. Never touch a save
-  the run didn't change. A game that syncs saves to a cloud (Steam Cloud) can upload them mid-run: if its client is
-  running, stop and say so. Your sandbox doesn't allow `ps` or `pgrep`: ask the Editor, which isn't sandboxed,
-  through `execute_code` (`System.Diagnostics.Process.GetProcessesByName(name).Length`).
+  sandbox can't write there: do it through the Editor, as play did, in one `execute_code` call with
+  `safety_checks: false` (it refuses deletes otherwise), for this restore only: `System.IO.File.Copy(backup, save,
+  true)` and then `File.SetLastWriteTimeUtc` from the backup's (a cloud sync compares it), and `System.IO.File.Delete`
+  for a file the run made. Then check each against its hash. Never touch a save the run didn't change. A game that
+  syncs saves to a cloud (Steam Cloud) can upload them mid-run: if its client is running, stop and say so. Your
+  sandbox doesn't allow `ps` or `pgrep`: ask the Editor, which isn't sandboxed, through `execute_code`
+  (`System.Diagnostics.Process.GetProcessesByName(name).Length`).
 - **Code in play mode.** `execute_code` is CodeDom C# 6: no `$""`, `?.`, `out var` or local functions; write
   `UnityEngine.Object.FindFirstObjectByType<T>()`, never a bare `Object`, and read private members by reflection.
   Values kept between calls go in `System.AppDomain.CurrentDomain.SetData`/`GetData`.
