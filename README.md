@@ -51,7 +51,7 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
   (`~/.crewbots/crew/prompts/review/lead.md`); delete it to go back. `{name}` placeholders are filled in, and an edit
   counts from the next turn.
 - **Skills** are [Agent Skills](https://agentskills.io) folders (a `SKILL.md` each). A role card lists the ones its bot gets, and the bot sees each skill's name, description and path, then reads the `SKILL.md` when a task matches.
-  - The starter crew ships `interrogate`, `arena` and `swarm`: crew versions of [pstack](https://github.com/cursor/plugins/tree/main/pstack)'s multi-agent skills. They use real model diversity, a Claude reviewer and a Codex critic.
+  - The starter crew ships `interrogate`, `arena` and `swarm`: crew versions of [pstack](https://github.com/cursor/plugins/tree/main/pstack)'s multi-agent skills. They use real model diversity, a Claude reviewer and a Codex critic. It also ships `verify-unity`, for proving a change to any Unity project in the open Editor through the Unity MCP (doctor, a clean compile, tests, play mode, measurements and screenshots, cleanup), with what's learned about each project kept in its `VERIFY.md`.
   - Whole skill packs can be dropped in with `crewbots skills add`, and are namespaced (`pstack:tdd`).
 - **Memory.** Every bot can `remember` a fact for later tasks (its own, or `shared` with the crew), `forget` one, and `recall` what the crew said or decided before.
   - Notes are files in `crew/memory/<bot>/notes/`, listed in each bot's instructions, so you can read, edit or delete them.
