@@ -321,6 +321,21 @@
   color: var(--soft);
 }
 
+.handoff-evidence {
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+.handoff-evidence > div {
+  color: var(--soft);
+}
+
+.handoff-evidence ul {
+  margin: 2px 0 0;
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+}
+
 .verdict {
   padding: 12px 14px;
   border-radius: 12px;

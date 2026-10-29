@@ -436,7 +436,8 @@ async def test_handing_back_on_the_wrong_branch_is_told_to_switch_and_cannot_be_
     note = runner.wrong_branch(store.get_task(work.id))
     assert f"git switch {wt.branch}" in note and "crewbots/t_own" in note
     assert f"git switch {wt.branch}" in runner._checked(store.get_task(work.id), "Done.")
-    assert f"git switch {wt.branch}" in await CrewTools(runner, work.id, can_delegate=False).call("handoff", {"done": "x"})
+    assert f"git switch {wt.branch}" in await CrewTools(runner, work.id, can_delegate=False).call(
+        "handoff", {"done": "x", "evidence": ["pytest -q: 3 passed"]})
     with pytest.raises(NotAllowed, match="cannot be proposed"):
         runner.propose_merge(parent.id, work.id, "Ready")
     worktree._git(wt.path, "switch", "--detach")

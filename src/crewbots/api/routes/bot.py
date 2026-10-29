@@ -89,7 +89,8 @@ def routes(c: Context) -> APIRouter:
 
     @v1.post("/bot/handoff", status_code=201)
     async def bot_handoff(request: Request, body: HandoffBody):
-        return runner.handoff(request.state.task.id, body.done, body.output, body.open, body.needs).to_json()
+        return runner.handoff(request.state.task.id, body.done, body.output, body.open, body.needs,
+                              body.evidence).to_json()
 
     @v1.post("/bot/review", status_code=201)
     async def bot_review(request: Request, body: ReviewBody):

@@ -2,7 +2,7 @@
 
 import json
 import sqlite3
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
@@ -82,6 +82,7 @@ class Handoff:
     open: str
     needs: str
     at: str
+    evidence: list[str] = field(default_factory=list)  # what was run or seen to prove it works, and what it showed
 
     def to_json(self) -> dict[str, Any]:
         return asdict(self)

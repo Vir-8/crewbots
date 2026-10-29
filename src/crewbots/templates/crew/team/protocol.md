@@ -11,8 +11,9 @@ How work moves between bots.
    Output: file paths, branches
    Open:   anything unfinished or uncertain
    Needs:  what the next bot must do
+   Evidence: what was run or seen to prove it works, and what it showed
    ```
 
    The next bot works from the handoff and the files it points to, nothing else.
-3. **Review is separate from doing.** Work that changes code goes to a reviewer before the user sees it. A reviewer ends with the `review` tool: a pass or fail verdict, and findings with locations. Objections go back to the owner as a message, at most three rounds. The user merges work that passes, or crewbots merges approved work when the user has turned that on.
+3. **Review is separate from doing.** Work that changes code goes to a reviewer before the user sees it. The reviewer checks the handoff's evidence and reruns what matters. It ends with the `review` tool: a pass or fail verdict, and findings with locations and proof. A finding nobody could show is a question, not a failure. Objections go back to the owner as a message, at most three rounds. The user merges work that passes, or crewbots merges approved work when the user has turned that on.
 4. **Questions go to the owner, decisions go up.** If you need information, ask the bot that owns it. If you need a decision, use the `escalate` tool; it goes to the chief. The chief escalates to the user only when the decision really is theirs.

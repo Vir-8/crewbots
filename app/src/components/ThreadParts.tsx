@@ -52,6 +52,7 @@ export function VerdictBlock({ data }: { data: Record<string, any> }) {
             <li key={i}>
               <code>{f.location}</code> {f.problem}
               {f.scenario && <div className="faint">When {f.scenario}</div>}
+              {f.proof ? <div className="faint">Shown by: {f.proof}</div> : "proof" in f && <div className="faint">Not reproduced</div>}
             </li>
           ))}
         </ul>

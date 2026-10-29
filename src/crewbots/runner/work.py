@@ -497,9 +497,18 @@ class Work(Closing, MergeStatus):
         if task.merge_state == "dropped" and task.worktree_path:
             self._drop_checkout(task)
 
-    def handoff(self, task_id: str, done: str, output: list[str], open: str, needs: str) -> Handoff:
+    def handoff(self, task_id: str, done: str, output: list[str], open: str, needs: str,
+                evidence: list[str] | None = None) -> Handoff:
+        """Work handed back. Code work (a task with a branch) carries its evidence: what was run or seen to prove it
+        works and what it showed, or what couldn't be checked and why. Whoever checks it next reruns what matters
+        rather than taking the author's word, and "tests pass" alone isn't evidence of what the change does."""
         task = self.store.get_task(task_id)
-        handoff = self.store.add_handoff(task_id, task.bot, done, output, open, needs)
+        evidence = [line.strip() for line in evidence or [] if line.strip()]
+        if task.branch and not evidence and not DROPPED.match(done):
+            raise NotAllowed("hand back your evidence too: what you ran or looked at to prove it works and what it "
+                             "showed (a command and its output, a measurement, a screenshot you shared), or what you "
+                             "couldn't check and why. For crewbots, the verify-crewbots skill says how")
+        handoff = self.store.add_handoff(task_id, task.bot, done, output, open, needs, evidence)
         self._record(task_id, kind="handoff", data=handoff.to_json())
         if (dropped := DROPPED.match(done)) and task.kind == "thread" and task.merge_state in (None, "dropped"):
             reason = next((line for line in dropped[1].splitlines() if line.strip()), "dropped by its own bot")

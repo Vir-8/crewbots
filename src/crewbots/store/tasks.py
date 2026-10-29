@@ -106,20 +106,22 @@ class Tasks:
             "select count(*) from tasks where parent_id = ? and status in (?, ?, ?, ?)",
             (parent_id, Status.QUEUED, Status.RUNNING, Status.HELD, Status.NEEDS_INPUT)).fetchone()[0]
 
-    def add_handoff(self, task_id: str, from_bot: str, done: str, output: list[str], open: str, needs: str) -> Handoff:
+    def add_handoff(self, task_id: str, from_bot: str, done: str, output: list[str], open: str, needs: str,
+                    evidence: list[str] | None = None) -> Handoff:
         now = _now()
         cur = self.db.execute(
-            "insert into handoffs (task_id, from_bot, done, output, open, needs, at) values (?, ?, ?, ?, ?, ?, ?)",
-            (task_id, from_bot, done, json.dumps(output), open, needs, now),
+            "insert into handoffs (task_id, from_bot, done, output, open, needs, at, evidence)"
+            " values (?, ?, ?, ?, ?, ?, ?, ?)",
+            (task_id, from_bot, done, json.dumps(output), open, needs, now, json.dumps(evidence or [])),
         )
         return Handoff(id=cur.lastrowid, task_id=task_id, from_bot=from_bot, done=done, output=output, open=open,
-                       needs=needs, at=now)
+                       needs=needs, at=now, evidence=list(evidence or []))
 
     def latest_handoff(self, task_id: str) -> Handoff | None:
         row = self.db.execute("select * from handoffs where task_id = ? order by id desc limit 1", (task_id,)).fetchone()
         if row is None:
             return None
-        return Handoff(**{**dict(row), "output": json.loads(row["output"])})
+        return Handoff(**{**dict(row), "output": json.loads(row["output"]), "evidence": json.loads(row["evidence"])})
 
     def reviewers_of(self, work_id: str) -> list[Task]:
         """The review tasks of a piece of work, oldest first."""

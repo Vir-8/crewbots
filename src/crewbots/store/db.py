@@ -124,7 +124,8 @@ create table if not exists handoffs (
     output   text not null,  -- JSON list of paths, branches, links
     open     text not null,
     needs    text not null,
-    at       text not null
+    at       text not null,
+    evidence text not null default '[]'  -- JSON list: what was run or seen to prove it works, and what it showed
 );
 create table if not exists review_drafts (  -- line comments for a pull request review, private until the user submits
     id          integer primary key autoincrement,
@@ -469,6 +470,7 @@ MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] =
     ("crew activity waiting for the chief's next notice", lambda db, _: db.executescript(CHIEF_BATCH)),
     ("what an always-on bot had seen at its last look, by id", _add_columns("wakes", {
         "seen_event": "integer"})),
+    ("the evidence a handoff carries", _add_columns("handoffs", {"evidence": "text not null default '[]'"})),
 ]
 
 

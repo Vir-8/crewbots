@@ -314,7 +314,8 @@ def _report_section(task: Task, handoff: Handoff | None, review: Review | None =
         if review:
             lines.append(f"Summary: {review.summary}")
             lines += [f"- {f.get('location', '?')}: {f.get('problem', '')}"
-                      + (f" Scenario: {f['scenario']}" if f.get("scenario") else "") for f in review.findings]
+                      + (f" Scenario: {f['scenario']}" if f.get("scenario") else "")
+                      + (f" Proof: {f['proof']}" if f.get("proof") else " (not reproduced)") for f in review.findings]
     if task.branch:
         lines.append(f"Worktree: {task.worktree_path} (branch {task.branch})")
     if task.error:
@@ -322,6 +323,7 @@ def _report_section(task: Task, handoff: Handoff | None, review: Review | None =
     if handoff:
         lines += ["HANDOFF", f"Done: {handoff.done}", f"Output: {', '.join(handoff.output) or '(none)'}",
                   f"Open: {handoff.open}", f"Needs: {handoff.needs}"]
+        lines += ["Evidence:", *(f"- {e}" for e in handoff.evidence)] if handoff.evidence else ["Evidence: none given"]
     if task.result:
         lines += ["Final message:", _clip(task.result) or ""]
     return "\n".join(lines)
@@ -334,7 +336,8 @@ def _said_in_room(task: Task, handoff: Handoff | None, review: Review | None) ->
     elif task.status is Status.FAILED:
         said = f"{task.id} failed: {task.error or 'no reason given'}"
     elif handoff:
-        said = f"{task.id}: {handoff.done}" + (f"\n\nStill open: {handoff.open}" if handoff.open.strip() else "")
+        said = (f"{task.id}: {handoff.done}" + (f"\n\nStill open: {handoff.open}" if handoff.open.strip() else "")
+                + ("\n\nEvidence: " + "; ".join(handoff.evidence) if handoff.evidence else ""))
     else:
         said = f"{task.id}: {task.result or task.status.value}"
     return said if len(said) <= ROOM_REPORT else said[:ROOM_REPORT - 1].rstrip() + "…"

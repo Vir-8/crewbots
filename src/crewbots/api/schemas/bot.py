@@ -39,6 +39,7 @@ class HandoffBody(BaseModel):
     output: list[str] = []
     open: str = ""
     needs: str = ""
+    evidence: list[str] = []  # what was run or seen to prove it works, and what it showed
 
 class Choice(BaseModel):
     label: str
@@ -53,6 +54,7 @@ class Finding(BaseModel):
     location: str
     problem: str
     scenario: str = ""
+    proof: str = ""  # the command the reviewer ran and what it showed; none: not reproduced
 
 class ReviewBody(BaseModel):
     verdict: Verdict

@@ -242,6 +242,12 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
             </ul>
           )}
           {block.data.open && <div className="handoff-open"><Marked text={`Open: ${block.data.open}`} /></div>}
+          {block.data.evidence?.length > 0 && (
+            <div className="handoff-evidence">
+              <div>Evidence</div>
+              <ul>{block.data.evidence.map((e: string, i: number) => <li key={i}><Marked text={e} /></li>)}</ul>
+            </div>
+          )}
         </div>
       );
     case "verdict":

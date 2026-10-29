@@ -69,8 +69,10 @@ def build_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = F
         return browser("console", {"clear": clear})
 
     @server.tool(description=describe("handoff"))
-    def handoff(done: str, output: list[str] | None = None, open: str = "", needs: str = "") -> str:
-        call("POST", "/bot/handoff", {"done": done, "output": output or [], "open": open, "needs": needs})
+    def handoff(done: str, output: list[str] | None = None, open: str = "", needs: str = "",
+                evidence: list[str] | None = None) -> str:
+        call("POST", "/bot/handoff", {"done": done, "output": output or [], "open": open, "needs": needs,
+                                      "evidence": evidence or []})
         return "Handoff recorded. End your reply with a short summary."
 
     @server.tool(description=describe("escalate"))

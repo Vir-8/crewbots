@@ -59,7 +59,8 @@ SPECS: dict[str, Spec] = {
     "browser_type": Spec(_object({"selector": STRING, "text": STRING, "key": STRING}, [])),
     "browser_evaluate": Spec(_object({"expression": STRING}, ["expression"])),
     "browser_console": Spec(_object({"clear": {"type": "boolean"}}, [])),
-    "handoff": Spec(_object({"done": STRING, "output": STRINGS, "open": STRING, "needs": STRING}, ["done"])),
+    "handoff": Spec(_object({"done": STRING, "output": STRINGS, "open": STRING, "needs": STRING, "evidence": STRINGS},
+                            ["done"])),
     "escalate": Spec(_object({"question": STRING, "choices": CHOICES, "multiple": {"type": "boolean"}}, ["question"])),
     "ask_permission": Spec(_object({"what": STRING, "why": STRING, "kind": {"type": "string", "enum": [
         "action", "folder", "network"]}, "folder": STRING}, ["what"])),
@@ -67,7 +68,7 @@ SPECS: dict[str, Spec] = {
         "verdict": {"type": "string", "enum": ["pass", "fail"]},
         "summary": STRING,
         "findings": {"type": "array", "items": _object(
-            {"location": STRING, "problem": STRING, "scenario": STRING}, ["location", "problem"])},
+            {"location": STRING, "problem": STRING, "scenario": STRING, "proof": STRING}, ["location", "problem"])},
     }, ["verdict", "summary"])),
     "remember": Spec(_object({"title": STRING, "body": STRING, "shared": {"type": "boolean"}}, ["title", "body"])),
     "write_page": Spec(_object({"page": STRING, "text": STRING}, ["page", "text"])),
@@ -175,7 +176,8 @@ class CrewTools:
                 return await browser_call(r, me, name, args)
             match name:
                 case "handoff":
-                    r.handoff(me, args["done"], list(args.get("output") or []), args.get("open") or "", args.get("needs") or "")
+                    r.handoff(me, args["done"], list(args.get("output") or []), args.get("open") or "",
+                              args.get("needs") or "", list(args.get("evidence") or []))
                     wrong = r.wrong_branch(r.store.get_task(me))
                     return "Handoff recorded. End your reply with a short summary." + (f"\n\n{wrong}" if wrong else "")
                 case "escalate":
@@ -191,7 +193,7 @@ class CrewTools:
                         verdict = Verdict(str(args["verdict"]).lower())
                     except ValueError:
                         raise ToolRefused("verdict must be pass or fail") from None
-                    findings = [{k: str(f.get(k, "")) for k in ("location", "problem", "scenario")}
+                    findings = [{k: str(f.get(k, "")) for k in ("location", "problem", "scenario", "proof")}
                                 for f in args.get("findings") or [] if isinstance(f, dict)]
                     r.review(me, verdict, args["summary"], findings)
                     return "Verdict recorded. End your reply with a short summary."

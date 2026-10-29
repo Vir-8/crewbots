@@ -65,3 +65,25 @@ async def test_work_by_a_bot_outside_the_room_reports_only_to_whoever_handed_it_
     await wait_until(lambda: reports(store, seat.id))
     assert not said_by(store, room, "outsider")
     await crew.runner.shutdown()
+
+
+async def test_code_work_is_handed_back_with_its_evidence_and_findings_with_their_proof(store, tmp_path):
+    from crewbots.crew_tools import CrewTools, ToolRefused
+
+    crew, room, seat = crew_in_a_room(store, tmp_path)
+    work = store.create_task("engineer", "build", parent_id=seat.id, created_by="lead", status=Status.IDLE)
+    store.update_task(work.id, branch="crewbots/x", turns=1)
+    tools = CrewTools(crew.runner, work.id, can_delegate=False)
+    with pytest.raises(ToolRefused, match="evidence"):  # code work isn't handed back on its word alone
+        await tools.call("handoff", {"done": "Built the export"})
+    await tools.call("handoff", {"done": "Built the export", "evidence": [
+        "scripts/verify webkit … --js export.js → rows: 3, header: id,name", "couldn't check: Safari download prompt"]})
+    review = crew.runner.delegate(seat.id, "reviewer", "review it", review_of=work.id)
+    crew.runner.review(review.id, Verdict.FAIL, "Quotes break it.", [
+        {"location": "export.py:12", "problem": "commas unquoted", "proof": "export([\"a,b\"]) → 'a,b' (2 columns)"},
+        {"location": "export.py:30", "problem": "may be slow", "proof": ""}])
+    await wait_until(lambda: any("Review of" in r for r in reports(store, seat.id)))
+    text = "\n".join(reports(store, seat.id))
+    assert "Evidence:\n- scripts/verify webkit" in text and "- couldn't check: Safari download prompt" in text
+    assert "Proof: export([\"a,b\"])" in text and "may be slow (not reproduced)" in text
+    await crew.runner.shutdown()
