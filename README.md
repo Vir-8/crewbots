@@ -51,7 +51,7 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
   (`~/.crewbots/crew/prompts/review/lead.md`); delete it to go back. `{name}` placeholders are filled in, and an edit
   counts from the next turn.
 - **Skills** are [Agent Skills](https://agentskills.io) folders (a `SKILL.md` each). A role card lists the ones its bot gets, and the bot sees each skill's name, description and path, then reads the `SKILL.md` when a task matches.
-  - The starter crew ships `interrogate`, `arena` and `swarm`: crew versions of [pstack](https://github.com/cursor/plugins/tree/main/pstack)'s multi-agent skills. They use real model diversity, a Claude reviewer and a Codex critic. It also ships `verify-unity`, for proving a change to any Unity project in the open Editor through the Unity MCP (doctor, a clean compile, tests, play mode, measurements and screenshots, cleanup), with what's learned about each project kept in its `VERIFY.md`.
+  - The starter crew ships `interrogate`, `arena` and `swarm`: crew versions of [pstack](https://github.com/cursor/plugins/tree/main/pstack)'s multi-agent skills. They use real model diversity, a Claude reviewer and a Codex critic. It also ships `verify-unity`, for proving a change to any Unity project in the open Editor through the Unity MCP (doctor, a clean compile, tests, play mode, measurements and screenshots, cleanup), with each project's own map in its `verify/` folder: `create-verification` writes the map (a README and a file per feature, as pstack's feature maps are) and `maintain-verification` keeps it honest, from source and driven live, on the crew's verification routine.
   - Whole skill packs can be dropped in with `crewbots skills add`, and are namespaced (`pstack:tdd`).
 - **Memory.** Every bot can `remember` a fact for later tasks (its own, or `shared` with the crew), `forget` one, and `recall` what the crew said or decided before.
   - Notes are files in `crew/memory/<bot>/notes/`, listed in each bot's instructions, so you can read, edit or delete them.
@@ -116,6 +116,9 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
     at a time: another's are answered that it's busy, and by whom, and the first one turned away is told when
     it's free. A task keeps it while its turn runs, until five minutes after its last call. A task in a worktree of
     its own doesn't wait: Unity opens a folder in one Editor only, so the Editor opened on its worktree is its own.
+  - Code work isn't handed back with comments that excuse or defer (TODO, FIXME, HACK, workaround, "for now",
+    review feedback in the code): the cause gets fixed, or what's unfinished goes in the handoff's `open`. A comment
+    stating an outside constraint with its issue link stays. The standards say the rest, for the reviewer.
   - Work done in a project's folder itself is proposed like any other: once approved, crewbots commits just the files
     it handed back as its output (with their Unity .meta files) on the folder's branch, leaving everything else in
     progress there uncommitted. It shows on the Landed page, and the chief proposes the push as usual. Revert there

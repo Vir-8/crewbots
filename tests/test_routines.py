@@ -133,7 +133,7 @@ def test_the_starter_routines_all_load_and_a_new_crew_has_them(tmp_path):
 
     assert not errors
     assert {r.name: r.enabled for r in loaded} == {"standup": True, "retro": True, "review-requests": False,
-                                                   "ci-failed": False}
+                                                   "ci-failed": False, "verification": True}
 
 
 def test_adding_a_starter_routine_to_an_existing_crew(tmp_path):

@@ -359,7 +359,17 @@ Each step leaves the system working.
   so no computer use. A watcher reads `mcpforunity://instances` until the worktree's folder name shows, then tells the
   task. Editors are found from `ps` by `-projectPath` (import workers run with `-batchMode` and are skipped), closed
   with SIGTERM (1 s), before `_cleanup_worktree` touches the folder and on the tick once no task in the folder has run
-  for EDITOR_IDLE_S. MAX_EDITORS (2) at once: an idle one makes room, or the task is told when there is some.
+  for EDITOR_IDLE_S. MAX_EDITORS (2) at once: an idle one makes room, or the task is told when there is some. Only
+  Editors on this crew's own tasks' worktrees count or are closed (`store.tasks_in`): another crew's, or one opened
+  by hand, is left alone.
+- **Verification maps** (skills `create-verification` and `maintain-verification`, routine `verification`). Each
+  project keeps its map in `verify/` (README + a file per feature, pstack's shape), or in its own verify skill's
+  `features/` (crewbots). The weekday routine has the lead hand each project's pass to an engineer, one at a time
+  for projects sharing an Editor; a pass skips a project whose commit matches the map's "Last walked", and sorts
+  findings into drift (fixed in the map), harness gaps and regressions (reported, handed out as new work).
+- **Excuse comments** (`comments.py`): `handoff` refuses code work whose added lines (the worktree's diff, or in
+  place the listed files') carry a comment with TODO, FIXME, HACK, workaround, temporary, "for now", review
+  feedback or "do not remove", unless the line links an issue. team/standards.md says the rest for reviewers.
 - **Shared apps** (`runner/shared_apps.py`, `api/routes/shared_apps.py`). An http MCP server marked `one_at_a_time`
   in mcp.json reaches a bot at `/v1/bot/mcp/<server>`, with its run token, and the daemon passes everything on except a
   `tools/call` while another task holds the app: that's answered with a tool error naming the holder, and the task

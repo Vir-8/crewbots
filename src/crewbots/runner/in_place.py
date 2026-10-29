@@ -7,7 +7,7 @@ proposes the push. It runs under the merge lock its caller holds (merge_status._
 
 from pathlib import Path
 
-from crewbots import worktree
+from crewbots import comments, worktree
 from crewbots.backends import Access
 from crewbots.runner.common import MergeError
 from crewbots.store import Task
@@ -52,6 +52,22 @@ class InPlace:
                 if entry[0] in "RC" and entries:  # a rename or copy names where it came from next
                     changed.add(entries.pop(0))
         return sorted(changed)
+
+    def _work_diff(self, task: Task, in_place: Path | None, files: list[str]) -> str:
+        """What a piece of code work changes: its worktree's whole diff, or in place, its own files'."""
+        if task.branch and task.worktree_path and Path(task.worktree_path).is_dir():
+            return worktree.changes(worktree.Worktree(Path(task.repo), Path(task.worktree_path), task.branch, task.base))
+        return self._in_place_diff(in_place, files) if in_place and files else ""
+
+    def _in_place_diff(self, repo: Path, files: list[str]) -> str:
+        """What `files` change, from the folder's last commit, without touching the index others share."""
+        if not files:
+            return ""
+        listed = worktree._git(repo, "status", "--porcelain=v1", "-z", "-uall", "--", *files, strip=False).split("\0")
+        new = [entry[3:] for entry in listed if entry.startswith("?? ")]
+        tracked = [f for f in files if f not in new]
+        diff = worktree._git(repo, "diff", "HEAD", "--", *tracked, strip=False) if tracked else ""
+        return diff + "".join(comments.added(repo / name, name) for name in new)
 
     def _commit_in_place(self, work: Task, repo: Path, message: str, *, forced: bool, automatic: bool) -> Task:
         files = self._in_place_files(work, repo)

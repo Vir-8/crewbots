@@ -74,5 +74,6 @@ you started. Keep the evidence files (screenshots, scripts) where your handoff p
 ## Keeping this skill true
 
 When a feature's handles, journeys or gotchas differ from its file, fix the file in the same change. A new feature gets
-a file in [features/](features/README.md). The crew's daily check walks every feature file against the preview and
-fixes what drifted.
+a file in [features/](features/README.md). The crew's verification routine runs `maintain-verification` over it: every
+feature read from source and driven in the preview or a scratch daemon, drift fixed, regressions reported. Its last
+walk is noted at the top of [features/README.md](features/README.md).

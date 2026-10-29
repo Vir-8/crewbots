@@ -125,9 +125,10 @@ class Editors:
         return next((s.url for name, s in (bot.mcp if bot else {}).items() if "unity" in name.lower() and s.url), None)
 
     def _crew_editors(self) -> dict[Path, int]:
-        """The Editors open on a worktree, by its folder: only crewbots opens those."""
+        """The Editors open on this crew's worktrees, by folder: one on any other folder isn't its to count or close."""
         root = (self.worktree_root or paths.worktrees()).resolve()
-        return {folder: pid for folder, pid in unity.editors().items() if folder.is_relative_to(root)}
+        return {folder: pid for folder, pid in unity.editors().items()
+                if folder.is_relative_to(root) and self.store.tasks_in(str(folder))}
 
     def _editor_in_use(self, folder: Path) -> bool:
         """Whether the work in `folder` or a review of it is running, or was in the last EDITOR_IDLE_S."""

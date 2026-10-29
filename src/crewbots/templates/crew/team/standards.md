@@ -4,7 +4,12 @@ What good work looks like. The reviewer checks against this file. A mistake that
 
 - The change does what the task asked, and nothing it didn't ask for.
 - New behaviour has a test, and the project's existing tests still pass.
-- Names, comments and structure match the code around them.
+- Names and structure match the code around them.
+- No comments that excuse or defer: no workaround, hack or "for now" notes, no TODO or FIXME for what's unfinished
+  (that goes in the handoff's `open`), no review feedback written into the code, no commented-out code. Fix the cause
+  instead: the next bot copies a comment as if it were a rule. A comment stays only for a constraint from outside the
+  project (an engine, platform or vendor quirk, with its issue link), a legal header, or a public API's contract.
+  crewbots refuses a handback whose new code adds an excuse comment; the reviewer looks for the rest.
 - No secrets, credentials or personal data in code, logs or commits.
 
 ## Reports

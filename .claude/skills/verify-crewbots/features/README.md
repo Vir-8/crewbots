@@ -8,6 +8,8 @@ One file per feature. Each file has four sections:
 
 Handles are given as CSS selectors, titles or visible text, as checked against the design preview.
 
+Last walked: never (`maintain-verification` sets this to the date and commit of each full pass).
+
 - [chat.md](chat.md): a bot's chat with the user: messages, folded working, cards, the header.
 - [group-chats.md](group-chats.md): group chats: posting, mentions, who answers, the group's panel.
 - [composer.md](composer.md): the message box: growing, sending, slash commands, attachments, the mic.

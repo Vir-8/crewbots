@@ -144,3 +144,15 @@ async def test_waiting_for_its_editor_isnt_reported_as_finished_and_the_wait_sur
     await wait_until(lambda: told(store, task.id))
     assert not crew.runner._waiting_for_editor(task.id)
     await crew.runner.shutdown()
+
+
+async def test_an_editor_on_a_folder_of_no_task_of_ours_is_left_alone(store, unity_crew, tmp_path):
+    crew, work, open_now, said, repo = unity_crew
+    stranger = (tmp_path / "crew" / "wts" / "other-crew" / "t_0000000000").resolve()
+    open_now[stranger] = 999  # another crew's, or opened by hand
+    crew.runner.close_idle_editors()
+    assert open_now == {stranger: 999}
+    first, second = work(), work()
+    crew.runner.open_unity_editor(first.id)
+    assert "Opening Unity" in crew.runner.open_unity_editor(second.id)  # it doesn't count against ours
+    await crew.runner.shutdown()

@@ -38,8 +38,11 @@ details. "It compiles" alone isn't done.
    go on only once `advice.ready_for_tools` is. A branch switch makes Unity reimport, which can take minutes.
 3. `read_console(types=["error"])` and note what's already there (warnings from packages often show as errors), so you
    don't chase errors that aren't yours.
-4. Read `mcpforunity://tests` (whether there are EditMode or PlayMode tests at all) and the project's `VERIFY.md`
-   (below).
+4. Read `mcpforunity://tests` (whether there are EditMode or PlayMode tests at all), and the project's map,
+   `verify/README.md` and the files of the features you'll touch (below).
+5. In the Editor the user has open, `manage_scene(action="get_active")`: while its scene has unsaved changes
+   (`isDirty`), don't open another scene or enter play mode, which would stop on a save dialog of theirs. Check what
+   you can without them, and say what's waiting.
 
 ## 2. After every change: a clean compile
 
@@ -83,12 +86,12 @@ Play mode stopped; the scene the user had open, open again; scenes and prefabs s
 change them. What your change changed is exactly what you list in the handoff's `output` (in a shared folder,
 `git status` shows others' work too), and every new asset has its `.meta`.
 
-## The project's VERIFY.md
+## The project's map
 
-What you learn about verifying a project goes in `VERIFY.md` at its root, which the next bot reads in step 4: the
-scenes and how to reach each feature (scene, objects, the method or menu item that sets it up), test assemblies and how
-long they take, debug or cheat commands that set up a state, and gotchas. Start it the first time you verify in a
-project that has none, and correct what you find wrong in it, in the same change.
+How to reach and drive each feature of this game is in its map, `verify/` at the project's root: `README.md` (where to
+start, setting up states, tests, the feature index) and a file per feature. A project with none needs
+`create-verification` first: say so in your handback, or do it if the lead asked. What you find wrong in the map while
+verifying, correct in the same change; the regular pass over all of it is `maintain-verification`'s.
 
 When reviewing, do steps 1 to 3 yourself against the handback's evidence, read-only: tests, play, measurements and
 screenshots into `Temp/` change nothing in the work. Report what you find rather than fixing it.
