@@ -109,9 +109,10 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
     list in `mcp.json`, never your personal ones. On Claude that's `--strict-mcp-config`. On Codex, which has no such
     switch, every server, plugin and app from your config is turned off by name. A server is a program the CLI
     starts, or a URL (streamable HTTP, or SSE on Claude).
-  - **Skills:** every bot sees the crew's skills and your global ones (`~/.claude/skills`, with those synced from
-    claude.ai, `~/.agents/skills` and `~/.codex/skills`), by name and description, and reads a skill's `SKILL.md` when
-    a task matches it, the way Claude Code does. A role card's `skills:` can name only some, or `none`.
+  - **Skills:** every bot sees the crew's skills and your global ones (`~/.claude/skills`, `~/.agents/skills` and
+    `~/.codex/skills`), by name and description, and reads a skill's `SKILL.md` when a task matches it, the way Claude
+    Code does. Those synced from claude.ai (documents, slides, your morning brief) reach only a bot whose card names
+    them. A role card's `skills:` can name only some, `all`, or `none`: each one listed costs every turn a line.
   - **Adding bots:** the chief (any bot that coordinates) can add a bot when you ask it to (`add_bot`), with a role
     card it writes and whatever it chooses to give: either access short of full, delegation, any of the crew's MCP
     servers (all of them unless it names some), and network unless the chief has none itself. No tool removes or

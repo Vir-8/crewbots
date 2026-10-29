@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -167,7 +168,11 @@ def test_global_skills_are_there_for_every_bot_after_the_crews_own(tmp_path, mon
 
     assert {"pdf", "xlsx"} <= set(loaded.skills) and not {"broken", "imagegen"} & set(loaded.skills)
     assert loaded.skills["arena"].source == "crew" and loaded.skills["pdf"].source == str(mine)
-    assert loaded.skills["pdf"] in loaded.skills_for(loaded.bots["engineer-1"])
+    engineer = loaded.bots["engineer-1"]
+    assert loaded.skills["pdf"] in loaded.skills_for(engineer)
+    assert loaded.skills["xlsx"].synced and loaded.skills["xlsx"] not in loaded.skills_for(engineer)  # the user's own
+    assert loaded.skills["xlsx"] in loaded.skills_for(replace(engineer, skills=("xlsx",)))
+    assert loaded.skills["xlsx"] in loaded.skills_for(replace(engineer, skills=("all",)))
     assert mine in loaded.skill_dirs  # so a Claude bot may read them
     assert [(s.name, s.source) for s in loaded.shadowed_skills] == [("arena", str(mine))]  # listed, not used
 

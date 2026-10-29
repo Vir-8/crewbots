@@ -75,7 +75,7 @@ class Bot:
     mcp: dict[str, McpServer] = field(default_factory=dict)  # once loaded: the crew's servers it names, and its own
     mcp_names: tuple[str, ...] = ()  # the crew's servers (mcp.json) its role card names
     can_delegate: bool = False  # legacy coordinator flag, used once to initialize crew settings
-    skills: tuple[str, ...] = ()  # () or ("all",): every skill, the crew's and global; ("none",); or just these
+    skills: tuple[str, ...] = ()  # (): every skill but the synced ones; ("all",): every one; ("none",); or just these
     budget: Budget | None = None
     network: bool | tuple[str, ...] = False  # web search and pages, and a writer's commands: none, any, or these hosts
     path: Path | None = None  # its role card
@@ -96,6 +96,7 @@ class Skill:
     description: str
     path: Path  # the SKILL.md; bots read it when a task matches
     source: str = "crew"  # the crew's skills/ folder, or the global folder it came from
+    synced: bool = False  # synced to Claude Code from the user's claude.ai account (documents, slides, briefs)
 
     @property
     def gist(self) -> str:
@@ -133,8 +134,12 @@ class Crew:
         return self.home / "skills"
 
     def skills_for(self, bot: Bot) -> list[Skill]:
-        if not bot.skills or "all" in bot.skills:
+        """A bot's skills: the ones its card names, or else every one but those synced from claude.ai, which are for
+        the user's own documents and briefs and only reach a bot whose card names them."""
+        if "all" in bot.skills:
             return list(self.skills.values())
+        if not bot.skills:
+            return [s for s in self.skills.values() if not s.synced]
         return [self.skills[name] for name in bot.skills if name != "none"]
 
     @property
@@ -336,7 +341,8 @@ def load_global_skills(folder: Path) -> dict[str, Skill]:
         name = str(meta.get("name") or path.parent.name)
         if meta.get("description") and name not in skills:
             skills[name] = Skill(name=name, description=" ".join(str(meta["description"]).split()), path=path,
-                                 source=str(folder).replace(str(Path.home()), "~"))
+                                 source=str(folder).replace(str(Path.home()), "~"),
+                                 synced=path.relative_to(folder).parts[0] == "synced")
     return skills
 
 
