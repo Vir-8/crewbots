@@ -164,7 +164,7 @@ async def test_what_changes_in_a_bots_instructions_reaches_its_session_in_the_tu
         assert turn.startswith("<crew-updates>") and turn.rstrip().endswith(message)
         assert "## Your role card\n\nYou are the worker. Be brief." in turn
         assert "## team/rules.md\n\nAsk before merging." in turn
-        assert "Deploys: Deploys go out on Tuesdays." in turn and "Standups" in turn  # the notes' index, as it is now
+        assert "\n- Standups\n- Deploys\n" in turn  # the notes' titles, as they are now
         assert "## The crew" not in turn  # what didn't change isn't repeated
     assert "Deploys" not in backend.opened[0].spec.system_prompt  # the session's own instructions stay as they began
 

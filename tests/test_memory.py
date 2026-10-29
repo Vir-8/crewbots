@@ -67,7 +67,7 @@ def test_a_note_edited_by_hand_is_what_the_bot_sees(memory):
     note = memory.remember("chief", "Release day", "Fridays", "t_1")
     note.path.write_text(note.path.read_text().replace("Fridays", "Thursdays, since October"))
 
-    assert "Thursdays, since October" in memory.prompt("chief")
+    assert "Thursdays, since October" in memory.search(["chief"], "release day")[0]["text"]
 
 
 def test_the_prompt_lists_the_bots_notes_and_the_crews(memory):
@@ -77,8 +77,9 @@ def test_the_prompt_lists_the_bots_notes_and_the_crews(memory):
 
     prompt = memory.prompt("engineer")
 
-    assert "## Your notes" in prompt and "Mine: only mine" in prompt
-    assert "## The crew's notes" in prompt and "Everyone's: for everyone" in prompt
+    assert "## Your notes" in prompt and "\n- Mine" in prompt and "only mine" not in prompt  # titles, not bodies
+    assert f"Files in {memory.root / 'engineer' / 'notes'}: read one" in prompt
+    assert "## The crew's notes" in prompt and "\n- Everyone's" in prompt
     assert "Not mine" not in prompt
     assert memory.prompt("critic").startswith("## The crew's notes")
 
@@ -103,7 +104,7 @@ def test_every_bot_is_told_about_memory_and_shown_its_notes(tmp_path):
 
     prompt = crew.system_prompt(crew.bots["engineer"])
 
-    assert "`remember(title, body, shared?)`" in prompt and "Uses pnpm: not npm" in prompt
+    assert "`remember(title, body, shared?)`" in prompt and "\n- Uses pnpm\n" in prompt
 
 
 # The tools
@@ -187,7 +188,7 @@ def test_logs_and_notes_are_searched_all_words_first(memory):
 
     both = memory.search(["engineer", "crew"], "csv export")  # the PDF line has only one of the words
     assert [(h["kind"], h["text"]) for h in both] == [
-        ("log", both[0]["text"]), ("note", "CSV exports go through the reports API.")]
+        ("log", both[0]["text"]), ("note", "Exports: CSV exports go through the reports API.")]
     assert both[0]["text"].endswith("t_1 Add CSV export: done")
     assert [h["text"] for h in memory.search(["engineer"], "pdf invoices")][0].endswith("Export to PDF: done")
     assert memory.search(["engineer"], "a") == []

@@ -8,9 +8,9 @@
     crew/memory/crew/...                      the same, for things every bot should know
 
 A bot writes notes with the `remember` tool and removes them with `forget`, and keeps its task's state with
-`update_state`. Every session starts with its CORE, its notes' index (title, first line, path), its last two days'
-logs and, for a task it has worked on, that task's state; it reads a note's file when a task needs it, the way skills
-work, and `recall` searches the logs and notes along with the crew's record. Overnight, consolidation (the runner's
+`update_state`. Every session starts with its CORE, its notes' titles, its last two days' logs and, for a task it has
+worked on, that task's state; it reads a note when a task needs it, from its file or with `recall`, the way skills work,
+and `recall` searches the logs and notes along with the crew's record. Overnight, consolidation (the runner's
 dreams) supersedes, merges, shares and rewrites them, and commits the folder, its own git repository. The files are
 the source of truth: edit or delete one and the rest follows.
 """
@@ -32,6 +32,7 @@ CORE_CHARS = 6000  # of each CORE.md, about 1.5K tokens: past that it's cut, sin
 STATE_CHARS = 8000  # of a task's state
 RECENT_DAYS = 2  # of daily logs a fresh session starts with: today's and yesterday's
 RECENT_CHARS = 6000  # of those, the newest lines: a busy bot logs a hundred tasks a day, and `recall` finds the rest
+NOTE_HIT = 600  # characters of a note `recall` finds
 NAME = re.compile(r"[^a-z0-9]+")
 
 
@@ -156,16 +157,18 @@ class Memory:
         return note
 
     def prompt(self, bot: str) -> str | None:
-        """The memory section of a bot's instructions: its notes and the crew's, as an index."""
+        """The memory section of a bot's instructions: its notes' titles and the crew's. Their bodies are read when a
+        task needs one, so they aren't in every session."""
         sections = []
         for scope, heading in ((bot, "Your notes"), (CREW_SCOPE, "The crew's notes")):
             notes = self.notes(scope)
             if not notes:
                 continue
-            lines = [f"- {n.title}: {n.gist} ({n.path})" for n in notes[:INDEX_LIMIT]]
+            lines = [f"- {n.title}" for n in notes[:INDEX_LIMIT]]
             if len(notes) > INDEX_LIMIT:
-                lines.append(f"- … and {len(notes) - INDEX_LIMIT} older notes in {self._notes_dir(scope)}")
-            sections.append(f"## {heading}\n\n" + "\n".join(lines))
+                lines.append(f"- … and {len(notes) - INDEX_LIMIT} older notes")
+            sections.append(f"## {heading}\n\nFiles in {self._notes_dir(scope)}: read one when it bears on the task, "
+                            "or `recall` it.\n\n" + "\n".join(lines))
         if not sections:
             return None
         return "\n\n".join(sections)
@@ -230,7 +233,7 @@ class Memory:
         return path
 
     def search(self, scopes: list[str], query: str, limit: int = 4) -> list[dict[str, str]]:
-        """Lines in the scopes' daily logs, and notes, that have every word of `query`, or else any of them; the
+        """Lines in the scopes' daily logs, and whole notes, that have every word of `query`, or else any of them; the
         newest first."""
         words = [w for w in re.findall(r"\w+", query.lower()) if len(w) > 1]
         if not words:
@@ -238,18 +241,21 @@ class Memory:
         found: list[tuple[int, dict[str, str]]] = []
         for scope in scopes:
             folder = self._scope_dir(scope)
-            for path in sorted(folder.glob("daily/*.md"), reverse=True) + sorted(folder.glob("notes/*.md")):
-                kind = "log" if path.parent.name == "daily" else "note"
+            for path in sorted(folder.glob("daily/*.md"), reverse=True):
                 try:
                     lines = path.read_text().splitlines()
                 except OSError:
                     continue
                 for line in lines:
-                    text = line.lower()
-                    score = sum(w in text for w in words)
-                    if score and not line.startswith(("#", "---", "title:", "created:", "updated:", "source:")):
-                        found.append((score, {"scope": scope, "kind": kind, "day": path.stem if kind == "log" else "",
-                                              "path": str(path), "text": line.strip("- ").strip()}))
+                    score = sum(w in line.lower() for w in words)
+                    if score and not line.startswith("#"):
+                        found.append((score, {"scope": scope, "kind": "log", "day": path.stem, "path": str(path),
+                                              "text": line.strip("- ").strip()}))
+            for note in self.notes(scope, superseded=True):
+                text = " ".join(f"{note.title}: {note.body}".split())
+                if score := sum(w in text.lower() for w in words):
+                    found.append((score, {"scope": scope, "kind": "note", "day": "", "path": str(note.path),
+                                          "text": text if len(text) <= NOTE_HIT else text[:NOTE_HIT - 1] + "…"}))
         best = max((score for score, _ in found), default=0)
         return [hit for score, hit in found if score == best][:limit]
 

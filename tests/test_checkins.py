@@ -88,7 +88,7 @@ async def test_a_check_with_news_says_it_in_the_bots_chat(store, tmp_path):
     assert done.status is Status.IDLE and done.created_by == "crewbots" and done.title == "engineer's check-ins"
     spec = backend.specs[0]  # small, read-only, the bot's own model, no crew tools and none of its MCP servers
     assert spec.access.value == "read_only" and spec.mcp_servers == {} and "in the background" in spec.system_prompt
-    assert "pull requests waiting on the user" in spec.prompt and "The user reviews in the morning." in spec.prompt
+    assert "pull requests waiting on the user" in spec.prompt and "\n- Reviews\n" in spec.prompt  # its notes' titles
     assert len(spec.prompt) < 6000 and store.bot_usage("engineer", "2000-01-01") == 2060
 
     assert scheduler._check_in_due(at(10)) is None  # nothing due again yet
