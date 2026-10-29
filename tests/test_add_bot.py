@@ -54,7 +54,7 @@ async def test_adding_earlier_coordinator_does_not_change_chief(crewed):
 
 async def test_only_a_coordinator_can_add_bots(crewed):
     runner, store = crewed
-    engineer, _ = tools(runner, store, "engineer")
+    engineer, _ = tools(runner, store, "engineer-1")
 
     assert "add_bot" not in {t.name for t in tools_for(can_delegate=False)}
     with pytest.raises(ToolRefused, match="not one of this bot's crew tools"):
@@ -82,9 +82,9 @@ async def test_a_taken_name_is_refused_and_no_tool_removes_or_changes_a_bot(crew
     runner, store = crewed
     chief, _ = tools(runner, store, "chief")
 
-    with pytest.raises(ToolRefused, match="already a bot called engineer"):
-        await chief.call("add_bot", {**MARKETING, "name": "engineer"})
-    assert runner.crew.bots["engineer"].title == "Engineer"
+    with pytest.raises(ToolRefused, match="already a bot called engineer-1"):
+        await chief.call("add_bot", {**MARKETING, "name": "engineer-1"})
+    assert runner.crew.bots["engineer-1"].title == "Engineer"
     changing = [name for name in SPECS if any(w in name for w in ("remove", "delete", "edit", "update", "change"))]
     assert changing == ["edit_page", "update_state"]  # its own pages, and its task's state: neither touches a bot
 

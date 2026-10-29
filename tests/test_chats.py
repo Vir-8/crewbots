@@ -13,6 +13,7 @@ from crewbots.crew import NO_REPLY
 from crewbots.crew_tools import CrewTools
 from crewbots.events import Done, Text
 from crewbots.runner import NotAllowed
+from crewbots.runner.rooms import MAX_ROOM_BOTS
 from crewbots.store import Status, Store
 
 
@@ -523,7 +524,7 @@ def test_group_chats_bots_open_stay_small_and_only_members_bring_others_in(crew,
     with pytest.raises(NotAllowed, match="answering a teammate's question"):
         crew.runner.open_group(store.create_task("engineer", "Q", kind="ask").id, "Side", ["reviewer"])
     with pytest.raises(NotAllowed, match="at most"):
-        crew.runner.open_group(chief, "Everyone", [f"bot{i}" for i in range(6)])
+        crew.runner.open_group(chief, "Everyone", [f"bot{i}" for i in range(MAX_ROOM_BOTS)])
 
 
 # Over the API.

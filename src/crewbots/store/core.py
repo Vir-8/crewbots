@@ -57,6 +57,15 @@ class Store(Tasks, Events, Rooms, Search, Drafts, Routines, Happenings, Permissi
         self.db.execute("insert into crew_settings (key, value) values ('landed_seen', ?) "
                         "on conflict(key) do update set value = excluded.value", (at_ms,))
 
+    def rooms_made(self) -> dict[str, str]:
+        """The crew's group chat files made into group chats so far: file name → the group chat's id."""
+        row = self.db.execute("select value from crew_settings where key = 'rooms_made'").fetchone()
+        return json.loads(row[0]) if row else {}
+
+    def set_rooms_made(self, made: dict[str, str]) -> None:
+        self.db.execute("insert into crew_settings (key, value) values ('rooms_made', ?) "
+                        "on conflict(key) do update set value = excluded.value", (json.dumps(made),))
+
     def stall_minutes(self) -> int:
         """How long a bot with open work may sit idle before the daemon wakes it."""
         row = self.db.execute("select value from crew_settings where key = 'stall_minutes'").fetchone()

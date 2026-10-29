@@ -401,7 +401,8 @@ def parse_card(text: str, default_name: str, source: Path | str = "<card>") -> B
 
 
 def init(home: Path) -> Path:
-    """Writes the starter crew: a chief of staff, an engineer and a reviewer, and the team/ files."""
+    """Writes the starter crew: a chief of staff, an engineering lead with four engineers, a reviewer and a critic, the
+    team/ files, the routines, and the Engineering group chat (rooms/)."""
     home = home.expanduser()
     if (home / "bots").exists():
         raise CrewError(f"{home} already has a crew")

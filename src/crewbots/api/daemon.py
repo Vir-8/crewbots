@@ -72,6 +72,7 @@ def serve(home: Path, port: int = DEFAULT_PORT, max_parallel: int = 4, sessions:
         os.fchmod(fd, 0o600)  # in case an older file was readable by others
         with os.fdopen(fd, "w") as f:
             json.dump({"url": f"http://127.0.0.1:{port}", "token": token, "pid": os.getpid()}, f)
+        runner.make_standing_rooms()
         if resumed := runner.resume_interrupted():
             print(f"carrying on {len(resumed)} turn(s) the last stop cut off", flush=True)
         runner.capacity.source = plans_module.plans  # background work goes by the plans' limits

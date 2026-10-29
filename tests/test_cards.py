@@ -18,17 +18,17 @@ def home(tmp_path):
 
 
 def test_editing_a_card_keeps_what_the_app_doesnt_edit(home):
-    path = home / "bots" / "engineer.md"
+    path = home / "bots" / "engineer-1.md"
     path.write_text(path.read_text().replace("access: workspace_write\n", "access: workspace_write\ntimeout: 900\n"))
 
-    cards.save_card(home, "engineer", {"display_name": "Ada", "avatar": {"color": "orange", "shape": "hex"},
+    cards.save_card(home, "engineer-1", {"display_name": "Ada", "avatar": {"color": "orange", "shape": "hex"},
                                        "network": True}, "## Mission\n\nShip it.")
 
-    bot = crew.load(home).bots["engineer"]
+    bot = crew.load(home).bots["engineer-1"]
     assert bot.label == "Ada" and bot.network is True and bot.timeout_s == 900
     assert bot.instructions.startswith("## Mission\n\nShip it.")
-    cards.save_card(home, "engineer", {"network": False}, None)
-    assert crew.load(home).bots["engineer"].network is False and "network" not in path.read_text()
+    cards.save_card(home, "engineer-1", {"network": False}, None)
+    assert crew.load(home).bots["engineer-1"].network is False and "network" not in path.read_text()
 
 
 def test_a_bad_edit_is_refused_and_the_card_is_unchanged(home):

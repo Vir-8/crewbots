@@ -77,9 +77,9 @@ def home(tmp_path):
     session(claude / "-review" / "review-session.jsonl", tmp_path / "checkout")
     session(claude / "-game" / "mine.jsonl", tmp_path / "game")  # the user's own
     (claude / ".DS_Store").write_bytes(b"")  # Finder's, beside the folders
-    rollout("2026/10/27", "engineer-chat", paths.bot_folders() / "engineer")
+    rollout("2026/10/27", "engineer-chat", paths.bot_folders() / "engineer-1")
     rollout("2026/10/27", "review-codex", tmp_path / "checkout")
-    rollout("2026/10/27", "users-own", paths.bot_folders() / "engineer", originator="codex_cli_rs")
+    rollout("2026/10/27", "users-own", paths.bot_folders() / "engineer-1", originator="codex_cli_rs")
     return home
 
 
@@ -127,7 +127,8 @@ def test_the_setup_and_code_review_stay(home):
     assert store.wake_state("chief")["looked_at"] is None
     assert [r["task_id"] for r in store.search("cozy")] == []
     store.close()
-    assert crew_module.load(home).bots.keys() == {"chief", "engineer", "reviewer", "critic"}
+    assert crew_module.load(home).bots.keys() == {"chief", "eng-lead", *(f"engineer-{n}" for n in range(1, 5)), "reviewer",
+                                                  "critic"}
 
 
 def test_then_the_chief_greets_the_user_again(home):

@@ -92,8 +92,10 @@ class Work(Landed, Closing, MergeStatus):
                     f"one member best placed for it with a short handover that @mentions them, or reply {NO_REPLY} if "
                     f"someone already has it." if room["lead"] == task.bot
                     else f"{room['lead']} leads it; you're woken when someone mentions you.")
-            return prompts.text("seat-setting", self.crew.home, title=repr(escape(room["title"], quote=False)),
-                                lead=lead, no_reply=NO_REPLY, others=", ".join(others) or "no other bots")
+            setting = prompts.text("seat-setting", self.crew.home, title=repr(escape(room["title"], quote=False)),
+                                   lead=lead, no_reply=NO_REPLY, others=", ".join(others) or "no other bots")
+            about = self.room_about(room["id"])
+            return f"{setting}\n\nWhat this group chat is for: {about}" if about else setting
         return None
 
     def _clear_room_need(self, task_id: str) -> None:

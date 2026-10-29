@@ -132,6 +132,7 @@ def _clear(store: Store, done: Reset) -> set[str]:
             db.execute(f"delete from {table}")
         db.execute("delete from pins where key not like 'bot:%'")  # a group chat's: it's gone
         db.execute("delete from routines where name = ?", (STARTED,))
+        db.execute("delete from crew_settings where key in ('rooms_made', 'landed_seen')")  # made again, from the files
         db.execute("update routines set last_task_id = null")
         db.execute(f"delete from tasks where not ({KEPT})")
         for table in ("search", "trigrams"):

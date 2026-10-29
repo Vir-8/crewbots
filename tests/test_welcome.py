@@ -141,6 +141,6 @@ def test_a_bot_takes_the_name_the_user_gives_it_in_its_chat(store, tmp_path):
     assert crew_module.load(home).bots["chief"].mcp == runner.crew.bots["chief"].mcp  # the rest of its card as it was
     with pytest.raises(NotAllowed):  # work isn't where it's named
         runner.set_name(store.create_task("chief", "Plan the launch").id, "Rog")
-    for taken in ("Engineer", "R@ger", "x" * 41):
+    for taken in ("Critic", "R@ger", "x" * 41):
         with pytest.raises(CrewError):
             runner.set_name(chat.id, taken)

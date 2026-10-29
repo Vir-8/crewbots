@@ -417,18 +417,18 @@ async def test_edited_role_cards_count_without_a_reload(store, tmp_path):
     home = crew_module.init(tmp_path / "crew")
     runner = Runner(store, crew_module.load(home), {})
     scheduler = Scheduler(runner)
-    card = home / "bots" / "engineer.md"
-    assert runner.crew.bots["engineer"].network is False and runner.crew.bots["engineer"].path == card
+    card = home / "bots" / "engineer-1.md"
+    assert runner.crew.bots["engineer-1"].network is False and runner.crew.bots["engineer-1"].path == card
 
     card.write_text(card.read_text().replace("access: workspace_write\n", "access: workspace_write\nnetwork: true\n"))
     os_utime_later(card)
-    assert scheduler.reload_if_changed() and runner.crew.bots["engineer"].network is True
+    assert scheduler.reload_if_changed() and runner.crew.bots["engineer-1"].network is True
 
     card.write_text(card.read_text().replace("network: true\n", "network: everywhere\n"))
     os_utime_later(card)
     assert not scheduler.reload_if_changed()
     assert "network is true, or a list of hosts" in scheduler.crew_error
-    assert runner.crew.bots["engineer"].network is True  # the crew carries on as it was
+    assert runner.crew.bots["engineer-1"].network is True  # the crew carries on as it was
 
 
 def os_utime_later(path: Path) -> None:

@@ -324,10 +324,13 @@ Each step leaves the system working.
   post there, and the user's next message brings them back. `DELETE /rooms/{id}` removes the room and its messages
   but keeps its seats, as the record of what they cost, and moves the work they handed out to each bot's chat;
   the app hears `room_gone`. The crew's own room is marked `crew` (migration 3 marks the oldest called "Crew"), so
-  renaming it is safe; it can't be archived or deleted, and bots new to the crew join it. Checked live: asked to
+  renaming it is safe; it can't be archived or deleted, and bots new to the crew join it. Rooms a crew has from the
+  start are files in `crew/rooms/` (`room_files.py`): made at daemon start or when the crew's files change, once each
+  (`rooms_made` in `crew_settings`, cleared by a reset), so what the user changes afterwards stays; a file's body is
+  added to its seats' setting as what the room is for. Checked live: asked to
   introduce themselves, the reviewer brought in the critic with a question, the critic answered, the reviewer
   replied, and it stopped. The user makes a room in the app; a bot makes one with `open_group`, holding at most
-  `MAX_ROOM_BOTS` (6) bots, and any member can bring in another with `add_to_group`. Either way the app hears a
+  `MAX_ROOM_BOTS` (8) bots, and any member can bring in another with `add_to_group`. Either way the app hears a
   `room` message and shows it at once.
 - **Routines:** a scheduled one is a message in its bot's chat, from the routine; a trigger opens a thread under the
   bot's chat, with its per-run budget, and the chat hears how it went.

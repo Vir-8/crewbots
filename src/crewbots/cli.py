@@ -32,7 +32,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="the crew's folder (default: $CREWBOTS_HOME or ~/.crewbots/crew)")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("init", help="create a starter crew: a chief of staff, an engineer, a reviewer and a critic")
+    sub.add_parser("init", help="create a starter crew: a chief of staff, an engineering lead with four engineers, "
+                   "a reviewer and a critic")
     serve = sub.add_parser("serve", help="run the daemon")
     serve.add_argument("--port", type=int, default=api.DEFAULT_PORT)
     serve.add_argument("--parallel", type=int, default=4, help="runs at the same time, across all bots")

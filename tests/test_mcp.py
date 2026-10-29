@@ -25,7 +25,7 @@ def a_crew(tmp_path, servers=None, card_mcp="[blender, unity]", backend="claude"
     home = crew.init(tmp_path / "crew")
     (home / "mcp.json").write_text(json.dumps({"mcpServers": servers if servers is not None else
                                                 {"blender": BLENDER, "unity": UNITY}}))
-    card = home / "bots" / "engineer.md"
+    card = home / "bots" / "engineer-1.md"
     text = card.read_text().replace("---\n", f"---\nmcp: {card_mcp}\n", 1)
     card.write_text(text.replace("backend: codex", f"backend: {backend}").replace("backend: claude", f"backend: {backend}"))
     return home
@@ -34,7 +34,7 @@ def a_crew(tmp_path, servers=None, card_mcp="[blender, unity]", backend="claude"
 def test_a_role_card_names_the_crews_servers(tmp_path):
     loaded = crew.load(a_crew(tmp_path))
 
-    engineer = loaded.bots["engineer"]
+    engineer = loaded.bots["engineer-1"]
     assert engineer.mcp_names == ("blender", "unity")
     assert engineer.mcp["blender"] == McpServer(command="uv", args=["run", "blender-mcp"], env={"BLENDER_MCP_PORT": "9876"})
     assert engineer.mcp["unity"].transport == "http" and engineer.mcp["unity"].url == "http://127.0.0.1:8080/mcp"
@@ -66,9 +66,9 @@ def test_url_servers_reach_both_backends():
 def test_removing_a_server_takes_it_off_every_card(tmp_path):
     home = a_crew(tmp_path)
 
-    assert mcp_catalog.remove(home, "unity") == ["engineer"]
+    assert mcp_catalog.remove(home, "unity") == ["engineer-1"]
 
-    assert crew.load(home).bots["engineer"].mcp_names == ("blender",)
+    assert crew.load(home).bots["engineer-1"].mcp_names == ("blender",)
     assert set(mcp_catalog.servers(home)) == {"blender"} and oct((home / "mcp.json").stat().st_mode)[-3:] == "600"
 
 
@@ -148,7 +148,7 @@ def test_the_app_never_sees_a_servers_secrets(tmp_path):
         listed = client.get("/v1/mcp/servers", headers=auth).json()
         assert listed[1] == {"name": "unity", "transport": "http", "command": None, "args": [],
                              "url": "http://127.0.0.1:8080/mcp", "env_keys": [], "header_keys": ["Authorization"],
-                             "bots": ["engineer"]}
+                             "bots": ["engineer-1"]}
         assert "secret" not in json.dumps(listed)
 
         changed = client.put("/v1/mcp/servers/unity", headers=auth,
@@ -156,6 +156,6 @@ def test_the_app_never_sees_a_servers_secrets(tmp_path):
         assert changed["url"].endswith(":8090/mcp") and changed["header_keys"] == ["Authorization"]  # kept
         assert mcp_catalog.servers(home)["unity"]["headers"] == {"Authorization": "Bearer secret"}
 
-        assert client.delete("/v1/mcp/servers/blender", headers=auth).json() == {"removed": "blender", "bots": ["engineer"]}
-        assert runner.crew.bots["engineer"].mcp_names == ("unity",)
+        assert client.delete("/v1/mcp/servers/blender", headers=auth).json() == {"removed": "blender", "bots": ["engineer-1"]}
+        assert runner.crew.bots["engineer-1"].mcp_names == ("unity",)
     store.close()

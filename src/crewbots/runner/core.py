@@ -376,6 +376,7 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
         added = set(crew.bots) - set(self.crew.bots)
         self.crew = crew
         self._join_crew_room(added)
+        self.make_standing_rooms()
         self._wake_held()
         self.bus.publish({"type": "crew", "crew": self.state()})
         self.bus.publish({"type": "bots"})  # names and setups the app shows may have changed

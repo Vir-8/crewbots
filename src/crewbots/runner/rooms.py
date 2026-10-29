@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from crewbots import attachments as attachments_module
-from crewbots import prompts, timefmt, working_state
+from crewbots import prompts, room_files, timefmt, working_state
 from crewbots.crew import is_no_reply
 from crewbots.runner.common import NotAllowed, UnknownBot, _iso
 from crewbots.store import Status, Task
@@ -15,7 +15,7 @@ from crewbots.store import Status, Task
 CREW_ROOM = "Crew"  # the group chat every bot is in, made when the crew first needs one
 MENTION = re.compile(r"@([\w-]+)")
 EVERYONE = "everyone"  # @everyone wakes every bot in the room
-MAX_ROOM_BOTS = 6  # bots in one group chat: more and they talk past each other
+MAX_ROOM_BOTS = 8  # bots in one group chat: more and they talk past each other
 
 
 def _safe_error(error: str) -> str:
@@ -81,6 +81,35 @@ class Rooms:
             raise NotAllowed("the configured chief is missing; restore it or change the crew's chief setting")
         lead = chief.name
         return self.create_room(CREW_ROOM, [b.name for b in bots], lead, crew=True)
+
+    def make_standing_rooms(self) -> list[dict[str, Any]]:
+        """The group chats in the crew's `rooms/` folder that haven't been made yet, made. Each is made once: what the
+        user changes or deletes afterwards stays that way."""
+        files, errors = room_files.load(self.crew.home / "rooms", set(self.crew.bots))
+        for name, why in errors.items():
+            logging.getLogger(__name__).warning("couldn't make the group chat in rooms/%s: %s", name, why)
+        made, new = self.store.rooms_made(), []
+        for file in [f for f in files if f.name not in made]:
+            try:
+                room = self.create_room(file.title, file.members, file.lead)
+            except Exception:
+                logging.getLogger(__name__).exception("couldn't make the group chat in rooms/%s.md", file.name)
+                continue
+            made[file.name] = room["id"]
+            self.store.set_rooms_made(made)
+            new.append(room)
+        return new
+
+    def room_about(self, room_id: str) -> str:
+        """What a group chat made from the crew's files is for, as its file says now."""
+        name = next((n for n, made in self.store.rooms_made().items() if made == room_id), None)
+        if name is None:
+            return ""
+        try:
+            path = self.crew.home / "rooms" / f"{name}.md"
+            return room_files.parse(path.read_text(), name, set(self.crew.bots)).about
+        except (OSError, room_files.RoomFileError):
+            return ""
 
     def create_room(self, title: str, members: list[str], lead: str | None = None, crew: bool = False) -> dict[str, Any]:
         unknown = [m for m in members if m not in self.crew.bots]
