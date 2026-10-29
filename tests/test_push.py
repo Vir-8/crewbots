@@ -257,14 +257,34 @@ def test_pre_push_hook_never_runs(setup):
     assert not marker.exists()
 
 
-def test_missing_tracking_ref_is_not_created(setup):
+def test_missing_tracking_ref_is_not_made_by_crewbots(setup, monkeypatch):
     runner, client, repo, remote, _ = setup
     git(repo, "update-ref", "-d", "refs/remotes/origin/main")
+    ran = []
+    monkeypatch.setattr(push_module, "_git", lambda folder, *args, **kw: (ran.append(args), _git(folder, *args, **kw))[1])
     proposal = propose(runner, runner.chat("chief").id, "demo", "Ready")
     assert press(client, proposal)["pushed"]
-    assert git(remote, "rev-parse", "refs/heads/main") == git(repo, "rev-parse", "HEAD")
-    result = subprocess.run(["git", "-C", str(repo), "show-ref", "--verify", "--quiet", "refs/remotes/origin/main"])
-    assert result.returncode == 1
+    head = git(repo, "rev-parse", "HEAD")
+    assert git(remote, "rev-parse", "refs/heads/main") == head
+    assert not any("update-ref" in args for args in ran)
+    # A newer git (2.56) makes it in the push itself, at what was pushed; an older one leaves it missing.
+    made = subprocess.run(["git", "-C", str(repo), "show-ref", "--verify", "--quiet", "refs/remotes/origin/main"])
+    assert made.returncode == 1 or git(repo, "rev-parse", "refs/remotes/origin/main") == head
+
+
+def test_a_tracking_ref_the_push_moved_itself_is_no_warning(setup, monkeypatch):
+    runner, client, repo, remote, _ = setup
+
+    def newer_git(folder, *args, **kw):  # as git 2.56 does, the push moves the tracking ref too
+        out = _git(folder, *args, **kw)
+        if "push" in args:
+            _git(folder, "update-ref", "refs/remotes/origin/main", "HEAD")
+        return out
+
+    monkeypatch.setattr(push_module, "_git", newer_git)
+    pushed = press(client, propose(runner, runner.chat("chief").id, "demo", "Ready"))
+    assert pushed["pushed"] and pushed["reason"] == "Push completed."
+    assert git(repo, "rev-parse", "refs/remotes/origin/main") == git(repo, "rev-parse", "HEAD")
 
 
 def test_started_without_result_cannot_be_pressed_again(setup):

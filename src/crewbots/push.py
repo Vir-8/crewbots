@@ -93,6 +93,13 @@ def _display_url(url: str) -> str:
     return url.rsplit("@", 1)[-1].split("?", 1)[0].split("#", 1)[0]
 
 
+def _ref(folder: Path, ref: str) -> str | None:
+    try:
+        return _git(folder, "rev-parse", "--verify", "--quiet", ref)
+    except GitFailed:
+        return None
+
+
 def _remote_tip(folder: Path, url: str, destination: str) -> str | None:
     lines = _git(folder, "ls-remote", "--refs", "--", url, destination, timeout=REMOTE_TIMEOUT).splitlines()
     for line in lines:
@@ -242,10 +249,7 @@ def _attempt(runner: Any, proposal_id: int, data: dict[str, Any]) -> dict[str, A
         url = _git(project.folder, "remote", "get-url", "--push", "--all", data["remote"])
         if hashlib.sha256(url.encode()).hexdigest() != data["url_hash"]:
             raise NotAllowed("The upstream changed since this card was made. Propose a new push.")
-        try:
-            tracking_old = _git(project.folder, "rev-parse", "--verify", data["tracking"])
-        except GitFailed:
-            tracking_old = None
+        tracking_old = _ref(project.folder, data["tracking"])
         try:
             output = _git(project.folder, "-c", "core.hooksPath=/dev/null", "push", "--porcelain", "--no-verify",
                  f"--force-with-lease={data['destination']}:{data['tip']}",
@@ -258,7 +262,8 @@ def _attempt(runner: Any, proposal_id: int, data: dict[str, Any]) -> dict[str, A
                 raise NotAllowed("The remote changed; make a new proposal.") from None
             raise
         try:
-            if tracking_old is not None:
+            # Moved from what it was, never made; a newer git (2.56) moves it in the push itself, and makes it too.
+            if tracking_old is not None and _ref(project.folder, data["tracking"]) != data["head"]:
                 _git(project.folder, "-c", "core.hooksPath=/dev/null", "update-ref", data["tracking"],
                      data["head"], tracking_old)
             reason = "Push completed."
