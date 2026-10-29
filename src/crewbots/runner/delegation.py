@@ -18,7 +18,7 @@ from crewbots.events import Notice
 from crewbots.projects import Project
 from crewbots.runner.common import NotAllowed, UnknownBot, _clip
 from crewbots.runner.reviews import MAX_REVIEW_ROUNDS, _review_findings, _round_status
-from crewbots.store import Handoff, Review, Status, Task
+from crewbots.store import Handoff, Review, Status, Task, Verdict
 
 # A concurrency cap: finished threads don't consume resources, so no lifetime limit is needed.
 MAX_CHILDREN = 12  # unfinished children of one task
@@ -199,7 +199,29 @@ class Delegation:
                 "the best version and the open objections, instead of sending it back again (team/rules.md).")
         sender = self.store.get_task(parent_id).bot
         self.store.log_agent("message", sender, child.bot, task_id, text=text)
+        self._fix_round(child)
         return self.send(task_id, text, sender=sender)
+
+    def _fix_round(self, work: Task) -> None:
+        """Work sent back after a failed review goes on in a fresh session, from a brief of what was asked, what it
+        handed back and what review found, rather than resuming a conversation of earlier attempts: one that's resumed
+        round after round grows, and drops directives along the way. Its folder and branch stay as they are."""
+        if work.kind != "thread" or not work.branch or work.active or work.id in self._runs:
+            return
+        reviews = [r for r in self.store.reviewers_of(work.id) if r.review_version == work.turns]
+        verdicts = [(r, v) for r in reviews if (v := self.store.latest_review(r.id))]
+        if not any(v.verdict is Verdict.FAIL for _, v in verdicts):
+            return
+        first = next((e for e in self.store.events(work.id, limit=20) if e.kind == "message"), None)
+        handoff = self.store.latest_handoff(work.id)
+        brief = prompts.text(
+            "fix-round", self.crew.home, goal=first.data.get("text", work.title) if first else work.title,
+            handoff="\n".join(_report_section(work, handoff).splitlines()[2:]) if handoff else "(none recorded)",
+            findings="\n\n".join(_report_section(r, None, v) for r, v in verdicts))
+        self._let_go(work.id)
+        self.store.update_task(work.id, session_id=None, briefing=brief)
+        self.store.set_primed(work.id, {})
+        self._record(work.id, kind="fresh_session", data={"why": "fix round"})
 
     async def stop_work(self, task_id: str, *, by_task: str) -> Task:
         """The `stop_task` tool: a bot stops a thread of its own, or work it handed out (the chief, any), as the app's

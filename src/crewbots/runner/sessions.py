@@ -504,6 +504,17 @@ class Sessions:
             self.store.set_primed(task_id, {})
         return next((e for e in reversed(events) if isinstance(e, Done)), None), events
 
+    def _let_go(self, task_id: str) -> None:
+        """Closes a task's open session in the background, so its next turn opens a new one."""
+        opened = self._sessions.pop(task_id, None)
+        self._context_seen.pop(task_id, None)
+        if opened:
+            self._tokens.pop(opened.token, None)
+            closing = asyncio.get_running_loop().create_task(opened.session.close())
+            kept = self.__dict__.setdefault("_closing", set())
+            kept.add(closing)
+            closing.add_done_callback(kept.discard)
+
     async def _close_session(self, task_id: str) -> None:
         opened = self._sessions.pop(task_id, None)
         if opened:

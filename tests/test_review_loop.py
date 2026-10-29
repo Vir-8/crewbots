@@ -454,3 +454,33 @@ async def test_a_conflict_is_aborted_and_changes_nothing(store, tmp_path):
     assert git(repo, "status", "--porcelain") == ""
     assert (repo / "README.md").read_text() == "the user's version\n"
     assert store.get_task(work.id).worktree_path  # still there to fix and retry
+
+
+async def test_a_fix_round_starts_in_a_fresh_session_from_a_brief(store, tmp_path):
+    repo = git_repo(tmp_path / "repo")
+    crew = crew_for(store, tmp_path)
+    parent = store.create_task("chief", "lead", workspace=str(repo), status=Status.IDLE)
+    crew.script["engineer"] = lambda spec, me: (
+        crew.runner.handoff(me.id, "Added the export", [], "", "", ["pytest -q tests/test_export.py: 4 passed"]),
+        [Done(final_text="done")])[1]
+    work = crew.runner.delegate(parent.id, "engineer", "Add CSV export to the reports page")
+    await wait_until(crew.settled(work.id))
+    store.update_task(work.id, session_id="first-attempt")
+    review = crew.runner.delegate(parent.id, "reviewer", "review it", review_of=work.id)
+    await wait_until(crew.settled(review.id))
+    crew.runner.review(review.id, Verdict.FAIL, "Quotes break it.", [
+        {"location": "export.py:12", "problem": "commas unquoted", "proof": "export(['a,b']) gave 2 columns"}])
+
+    crew.runner.message_child(parent.id, work.id, "Quote fields that hold commas.")
+    await wait_until(crew.settled(work.id))
+    spec = crew.specs_for("engineer")[-1]
+    assert spec.resume_session_id is None  # not the conversation of the first attempt
+    for part in ("Add CSV export to the reports page", "Added the export", "4 passed", "commas unquoted",
+                 "export(['a,b']) gave 2 columns"):
+        assert part in spec.system_prompt
+    assert "Quote fields that hold commas." in spec.prompt
+    assert [e.data for e in store.events(work.id) if e.kind == "fresh_session"] == [{"why": "fix round"}]
+
+    crew.runner.message_child(parent.id, work.id, "One more thing: a header row.")  # no new failed review: carries on
+    await wait_until(crew.settled(work.id))
+    assert len([e for e in store.events(work.id) if e.kind == "fresh_session"]) == 1

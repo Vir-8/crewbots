@@ -309,7 +309,7 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
         break;
       case "fresh_session":
         flush();
-        out.push({ kind: "line", id: e.id, text: d.why === "idle" ? "Carried on in a fresh session from memory, since the conversation sat idle past its cache" : "Carried on in a fresh session from memory, since the conversation couldn't be compacted", gist: COMPACTED });
+        out.push({ kind: "line", id: e.id, text: d.why === "fix round" ? "Started this round in a fresh session, from a brief of the task, its handback and its review" : d.why === "idle" ? "Carried on in a fresh session from memory, since the conversation sat idle past its cache" : "Carried on in a fresh session from memory, since the conversation couldn't be compacted", gist: COMPACTED });
         break;
       case "merged":
         flush();
