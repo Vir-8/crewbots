@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef } from "react";
+import { Fragment, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { Crew } from "../state";
 import { doing, oneLine } from "../state";
 import type { Chat, Room, RoomMessage } from "../types";
@@ -193,11 +193,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
                         <Boundary key={m.id} where={`a group chat message (${m.id})`}>
                           <div className="room-message message-row" data-msg={m.id}>
                             <div className="message-body">
-                              {m.text && (
-                                <div className="room-bubble">
-                                  <Markdown text={m.text} onSelect={props.onOpen} everyone />
-                                </div>
-                              )}
+                              {m.text && <RoomBubble text={m.text} onOpen={props.onOpen} />}
                               <Files items={m.attachments ?? []} />
                             </div>
                             <MessageMeta at={m.at} text={m.text} />
@@ -248,6 +244,33 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
         <Composer key={chat.key} placeholder={`Message ${room.title}`} mentions={[...room.members, "everyone"]} onSend={(text, files) => crew.post(room.id, text, files)} draft={chat.key} autoFocus main actions={crewCommands(crew)} />
       </div>
     </>
+  );
+}
+
+const FOLD = 8; // lines of a long bot message a group chat shows, folding it only when that hides 3 more or over
+
+/** A bot's message in a group chat. A long one folds to its first lines, so the room reads at a glance, and opens
+ * with Show more, or by itself when what you're finding is in it. A direct chat shows everything. */
+export function RoomBubble({ text, onOpen }: { text: string; onOpen: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [long, setLong] = useState(false);
+  const body = useRef<HTMLDivElement>(null);
+  const finding = useContext(Finding);
+  useEffect(() => {
+    const node = body.current;
+    if (!node) return;
+    const measure = () => setLong(node.scrollHeight > parseFloat(getComputedStyle(node).lineHeight) * (FOLD + 3));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [text]);
+  const folded = long && !open && !(finding && count(shown(text), finding));
+  return (
+    <div className="room-bubble">
+      <div className={folded ? "room-folded" : undefined}><div ref={body}><Markdown text={text} onSelect={onOpen} everyone /></div></div>
+      {long && <button type="button" className="text-button room-fold" aria-expanded={!folded} onClick={() => setOpen(folded)}>{folded ? "Show more" : "Show less"}</button>}
+    </div>
   );
 }
 

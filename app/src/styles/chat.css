@@ -558,6 +558,18 @@ button.chat-head-who:hover {
   margin-bottom: 0;
 }
 
+/* A long bot message, folded to its first lines (ChatView FOLD) */
+.room-folded {
+  max-height: 8lh;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, black 70%, transparent);
+}
+
+.room-fold {
+  display: block;
+  margin-top: 4px;
+}
+
 .mention {
   color: var(--link);
   font-weight: 550;

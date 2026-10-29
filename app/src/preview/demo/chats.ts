@@ -6,6 +6,18 @@ import type { Attachment, Room } from "../../types";
 
 export const mutedBots = new Set(["reviewer"]);
 export const chatIds: Record<string, string> = {};
+// A handover as it's said in a group chat, long enough to fold there
+const handover = `@reviewer t_csvexp001: CSV export is in. The button on the Orders page exports what the table shows, with its filters and sort, as \`orders-<date>.csv\`.
+
+- \`api/export.py\`: a streaming endpoint, so 50,000 rows don't sit in memory
+- \`OrdersPage.tsx\`: the Export button, disabled while a page loads
+- Dates are ISO 8601 in UTC, and money keeps two decimals, whatever the locale
+- Columns follow the table's order, hidden ones left out
+
+Still open: the button's label. "Export CSV" for now, the critic would rather "Download CSV", and it's one string to change.
+
+Evidence: 48 tests pass, 6 of them new; exported 50,000 rows in 1.9 s at 38 MB peak; opened the file in Numbers and its filters matched the table's; an empty table exports just the header row; a filter with a comma in it stays one column.`;
+
 const overflowExample = "A long code line stays in its block:\n\n```text\n" + "export_column_name_".repeat(12) + "\n```\n\nThe URL https://example.com/" + "long-path-segment-".repeat(10) + " and inline code `" + "long_identifier_".repeat(12) + "` wrap inside this message. The paragraph remains visible.";
 for (const b of bots) {
   chatIds[b.name] = task(`t_chat_${b.name}`.slice(0, 12).padEnd(12, "0"), b.name, `Chat with ${b.name}`, { kind: "chat", workspace: null }).id;
@@ -163,6 +175,7 @@ export const roomMessages = new Map<string, { id: number; room_id: string; autho
     said("user", "Morning, everyone. @engineer how's CSV export going?"),
     said("engineer", "Endpoint's in and its tests pass. Wiring the button now. @reviewer it'll be yours in a few minutes.", 1),
     said("reviewer", "Ready when you are. I'll check the filters reach the export. @everyone can find me at vir@emberlane.games; `@engineer` is code.", 2),
+    said("engineer", handover, 1),
     said("chief", "Thanks both. I'll propose it for merging once both reviews pass.", 1),
     said("engineer", overflowExample, 1),
     { ...said("engineer", "The launch cut, for anyone who wants a look before Friday:", 1), attachments: [files.cut] },
