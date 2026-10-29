@@ -7,6 +7,7 @@ from crewbots import branch_mode, worktree
 from crewbots.backends import Access
 from crewbots.crew import Bot
 from crewbots.events import Notice
+from crewbots.projects import is_unity
 from crewbots.runner.common import NotAllowed
 from crewbots.store import Status, Task
 
@@ -15,8 +16,8 @@ class Branches:
     def _branch_project(self, bot: str, workspace: str | None, kind: str, review_of: str | None):
         target = Path(workspace).expanduser() if workspace else self.crew.folder_of(self.crew.bots[bot])
         project = next((p for p in self.crew.projects.values()
-                        if p.folder.resolve() == target.resolve() and p.isolation == "branch"
-                        and (p.folder / "ProjectSettings" / "ProjectVersion.txt").is_file()), None)
+                        if p.folder.resolve() == target.resolve() and p.isolation == "branch" and is_unity(p.folder)),
+                       None)
         if not (project and kind == "thread" and not review_of and self.crew.bots[bot].worktree
                 and self.crew.bots[bot].access is not Access.READ_ONLY):
             return None
@@ -56,7 +57,7 @@ class Branches:
         self._recover_starting()
         self._recover_merges()
         for project in self.crew.projects.values():
-            if project.isolation != "branch" or not (project.folder / "ProjectSettings" / "ProjectVersion.txt").is_file():
+            if project.isolation != "branch" or not is_unity(project.folder):
                 continue
             try:
                 branch = worktree._git(project.folder, "symbolic-ref", "--short", "HEAD")

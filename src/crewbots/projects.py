@@ -44,12 +44,16 @@ class Project:
     def isolation(self) -> Isolation:
         if self.isolation_setting:
             return self.isolation_setting
-        return "branch" if (self.folder / "ProjectSettings" / "ProjectVersion.txt").is_file() else "worktree"
+        return "branch" if is_unity(self.folder) else "worktree"
 
     @property
     def gist(self) -> str:
         first = next((line.strip() for line in self.about.splitlines() if line.strip()), "")
         return first if len(first) <= 200 else first[:199] + "…"
+
+
+def is_unity(folder: Path) -> bool:
+    return (folder / "ProjectSettings" / "ProjectVersion.txt").is_file()
 
 
 def load(home: Path) -> tuple[dict[str, Project], dict[str, str]]:

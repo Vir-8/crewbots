@@ -4,10 +4,12 @@ import type { ProjectOut } from "../api-types";
 import { labelOf } from "../components/Avatar";
 import { BringIn } from "../components/BringIn";
 import { Icon } from "../components/Icon";
-import { Field, Page, Sheet } from "../components/ui";
+import { Field, Page, Segmented, Sheet } from "../components/ui";
 import type { Crew } from "../state";
 
-type Draft = { name: string; folder: string; about: string; existing: boolean };
+type Draft = { name: string; folder: string; about: string; existing: boolean; isolation?: ProjectOut["isolation"] };
+
+const WHERE: Record<ProjectOut["isolation"], string> = { worktree: "A worktree each", branch: "One branch at a time" };
 
 /** Your projects: the folders the crew works in. A bot's chat isn't any one project's; work on a project runs in its
  * folder (in a worktree of its own when a bot writes in a git repository), and every bot sees the list, with what
@@ -38,7 +40,7 @@ export function Projects(props: { crew: Crew; onChat: (bot: string) => void }) {
   const save = async () => {
     if (!draft) return;
     try {
-      await api.saveProject(draft.name.trim(), draft.folder, draft.about);
+      await api.saveProject(draft.name.trim(), draft.folder, draft.about, draft.isolation);
       setDraft(null);
       setError(null);
       await load();
@@ -73,7 +75,8 @@ export function Projects(props: { crew: Crew; onChat: (bot: string) => void }) {
     >
       <p className="page-lede">
         The folders your crew works in. A bot starts or hands off work in a project and does it in its folder: in a worktree of its own when it
-        writes in a git repository. Every bot sees this list, with what each project is.
+        writes in a git repository, or, for a Unity project unless you change it, on a branch of the folder itself, one task at a time. Every bot
+        sees this list, with what each project is.
       </p>
       {error && <p className="bad small">{error}</p>}
       {Object.entries(errors).map(([file, why]) => (
@@ -87,14 +90,16 @@ export function Projects(props: { crew: Crew; onChat: (bot: string) => void }) {
       ))}
       <div className="list">
         {projects?.map((p) => (
-          <div key={p.name} className="list-row" role="button" tabIndex={0} onClick={() => setDraft({ name: p.name, folder: p.folder, about: p.about, existing: true })}>
+          <div key={p.name} className="list-row" role="button" tabIndex={0} onClick={() => setDraft({ name: p.name, folder: p.folder, about: p.about, existing: true, isolation: p.isolation })}>
             <Icon name="folder" size={18} />
             <span className="list-text">
               <span className="list-title">
                 {p.name}
                 {p.missing && <span className="pill bad">Folder missing</span>}
               </span>
-              <span className="faint">{tilde(p.folder)}</span>
+              <span className="faint">
+                {tilde(p.folder)} · {WHERE[p.isolation]}
+              </span>
               {p.about && <span className="project-about">{p.about.split("\n")[0]}</span>}
             </span>
           </div>
@@ -141,6 +146,18 @@ export function Projects(props: { crew: Crew; onChat: (bot: string) => void }) {
           <Field label="What it is" hint="A line or two, so the bots know which work belongs here. How to build and test it belongs in the project's own AGENTS.md or CLAUDE.md.">
             <textarea rows={4} value={draft.about} onChange={(e) => setDraft({ ...draft, about: e.target.value })} autoFocus={draft.existing} />
           </Field>
+          {draft.isolation && (
+            <Field
+              label="Where tasks work"
+              hint={
+                draft.isolation === "worktree"
+                  ? "Tasks run side by side, each in its own checkout of the project, which takes the disk space of its tracked files. In Unity, a worktree is verified in an Editor opened on it, not the one you have open."
+                  : "One task at a time, on its own branch in this folder, which needs no uncommitted changes when a task starts. The Unity Editor you have open on it sees the work, so bots can verify it there."
+              }
+            >
+              <Segmented value={draft.isolation} options={Object.entries(WHERE) as [ProjectOut["isolation"], string][]} onChange={(isolation) => setDraft({ ...draft, isolation })} />
+            </Field>
+          )}
         </Sheet>
       )}
 

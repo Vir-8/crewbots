@@ -340,6 +340,12 @@ Each step leaves the system working.
   (`told:<task>` in `reads`), not once its siblings finish, which is when the delegator hears. A woken seat is sent
   at most `CATCH_UP` (12,000) characters of what it missed, newest kept, so a long stretch of work doesn't swell the
   next turn of a bot that only follows along.
+- **Where work happens** (`projects.py` `isolation`, `runner/branches.py`). A writing bot's work in a git repository
+  runs in a worktree of its own, or, per project, on a branch of the project's own folder, one task at a time (branch
+  mode, which a project holds while a task has it). Unity projects (`is_unity`: `ProjectSettings/ProjectVersion.txt`)
+  default to branch mode, so the Editor the user has open sees the work; the Projects page sets either. A worktree
+  shares the repository's history but writes out every tracked file (Sky Islands: 3.4 GB of 24 GB, without its 7.6 GB
+  `Library/`). Unity work isn't copied for review, whichever way it runs: its checks run in an Editor, not a copy.
 - **Trusting a verdict, cheaply.** A review records its work's change (`worktree.change_id`: `git patch-id
   --stable` of the diff from where it meets its merge target, uncommitted and new files included, through a copy of the
   index), as a `review_change` event. A version reviewed in an earlier round counts as approved when its change is the

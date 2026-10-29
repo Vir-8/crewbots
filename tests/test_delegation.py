@@ -10,6 +10,7 @@ import pytest
 from fakes import FakeBackend, ScriptedCrew, bot, git_repo, make_crew, wait_until
 from fastapi.testclient import TestClient
 
+from crewbots import worktree
 from crewbots.api import create_app
 from crewbots.backends import Access
 from crewbots.crew_tools import CrewTools, ToolRefused
@@ -180,6 +181,27 @@ async def test_a_reviewer_runs_the_work_in_a_throwaway_copy_of_it(store, tmp_pat
     assert state["saw"] == ("changed, not committed", "new")  # the work as it stands, uncommitted changes and all
     assert (Path(work.worktree_path) / "new.txt").read_text() == "new"  # the reviewer's changes never reach the work
     await wait_until(lambda: not spec.cwd.exists())  # the copy goes once the review is done
+
+
+async def test_unity_work_in_a_worktree_is_reviewed_in_place_without_a_copy(store, tmp_path):
+    repo = git_repo(tmp_path / "repo")
+    (repo / "ProjectSettings").mkdir()
+    (repo / "ProjectSettings" / "ProjectVersion.txt").write_text("m_EditorVersion: 6000.3.12f1\n")
+    worktree._git(repo, "add", "-A")
+    worktree._git(repo, "commit", "-qm", "A Unity project")
+    crew = ScriptedCrew(store, tmp_path, chief(), bot("engineer", access=Access.WORKSPACE_WRITE), bot("reviewer"))
+    lead = store.create_task("chief", "lead", status=Status.IDLE)
+    work = store.create_task("engineer", "build", parent_id=lead.id, created_by="chief", status=Status.IDLE)
+    wt = worktree.create(repo, work.id, root=tmp_path / "wts")
+    store.update_task(work.id, repo=str(repo), worktree_path=str(wt.path), branch=wt.branch, base=wt.base, turns=1)
+
+    review = crew.runner.delegate(lead.id, "reviewer", "review it", review_of=work.id)
+    await wait_until(crew.settled(review.id))
+
+    [spec] = crew.specs_for("reviewer")
+    assert spec.cwd == wt.path and spec.access is Access.READ_ONLY  # checked in an Editor, not a copy of its files
+    assert not (tmp_path / "wts" / "checks").exists()
+    await crew.runner.shutdown()
 
 
 async def test_any_bot_delegates_but_not_to_itself_or_the_chief(store, tmp_path):

@@ -15,7 +15,7 @@ from crewbots import crew as crew_module
 from crewbots.backends import Access
 from crewbots.crew import Bot, CrewError
 from crewbots.events import Notice
-from crewbots.projects import Project
+from crewbots.projects import Project, is_unity
 from crewbots.runner.common import NotAllowed, UnknownBot, _clip
 from crewbots.runner.reviews import MAX_REVIEW_ROUNDS, _review_findings, _round_status
 from crewbots.runner.room_talk import RoomTalk
@@ -104,9 +104,10 @@ class Delegation(RoomTalk):
 
     def _review_copy(self, work: Task, at: Path | None = None) -> str | None:
         """A throwaway copy of `work` as it stands, for its reviewer to run the checks and the change itself in, with
-        write access (`_access`); none for work done in a project's own folder (branch mode), which is reviewed in
-        place, read-only. Removed when the review's turns are over (`_turns_over`), and made again if it runs again."""
-        if work.base_branch or not (work.repo and work.worktree_path and work.branch):
+        write access (`_access`); none for work done in a project's own folder (branch mode), or in a Unity project,
+        whose checks run in an Editor rather than a copy: those are reviewed in place, read-only. Removed when the
+        review's turns are over (`_turns_over`), and made again if it runs again."""
+        if work.base_branch or not (work.repo and work.worktree_path and work.branch) or is_unity(Path(work.worktree_path)):
             return None
         at = at or self._checks_root() / f"{work.id}-{secrets.token_hex(3)}"
         try:

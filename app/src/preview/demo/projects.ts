@@ -19,8 +19,9 @@ if (!started) {
   emit(chatIds.chief, "onboarding", { offer: "bring_in" });
 }
 const projects = [
-  { name: "acme-web", folder: "/Users/you/code/acme-web", about: "Acme's customer site: Next.js, deployed from main by you.", missing: false },
-  { name: "export-service", folder: "/Users/you/code/export-service", about: "The service behind report exports.", missing: false },
+  { name: "acme-web", folder: "/Users/you/code/acme-web", about: "Acme's customer site: Next.js, deployed from main by you.", isolation: "worktree", missing: false },
+  { name: "export-service", folder: "/Users/you/code/export-service", about: "The service behind report exports.", isolation: "worktree", missing: false },
+  { name: "glider", folder: "/Users/you/Games/Glider", about: "A Unity URP glider game.", isolation: "branch", missing: false },
 ];
 const found: FoundOut = {
   folders: [
@@ -64,7 +65,7 @@ export function projectRequest(method: string, pathname: string, parts: string[]
     return ok({ id: asked.permission, task_id: trailer.id, kind: asked.kind, folder: asked.folder, what: asked.what, why: asked.why, asked_at: "", allowed: body.allowed, answered_at: new Date().toISOString() });
   }
   if (pathname === "/projects/bring-in" && method === "POST") {
-    for (const p of body.projects) projects.push({ ...p, missing: false });
+    for (const p of body.projects) projects.push({ ...p, isolation: "worktree", missing: false });
     for (const f of found.folders) if (body.projects.some((p: { folder: string }) => p.folder === f.folder)) f.project = f.name;
     for (const m of [...found.memories, ...found.folders.flatMap((f) => f.memories)]) {
       if (body.memories.includes(m.path)) Object.assign(m, { brought_at: new Date().toISOString(), changed: false });
@@ -83,7 +84,7 @@ export function projectRequest(method: string, pathname: string, parts: string[]
       if (at >= 0) projects.splice(at, 1);
       return ok(null);
     }
-    const project = { name: parts[1], folder: body.folder, about: body.about, missing: false };
+    const project = { name: parts[1], folder: body.folder, about: body.about, isolation: body.isolation ?? projects[at]?.isolation ?? "worktree", missing: false };
     if (at >= 0) projects[at] = project;
     else projects.push(project);
     return ok(project);

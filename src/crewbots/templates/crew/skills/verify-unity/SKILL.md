@@ -12,20 +12,23 @@ details. "It compiles" alone isn't done.
 
 ## How Unity work runs here
 
-- A Unity project (it has `ProjectSettings/ProjectVersion.txt`) is worked on in **branch mode**: in the project's own
-  folder, on the task's branch, one task per project at a time. The Editor the user keeps open on that folder sees your
-  files, so what you drive through the MCP is your work.
-- There's no throwaway copy of the work, so crewbots doesn't rerun `checks` for it, and Unity in batch mode can't open
-  a project the Editor has open. Leave `checks` empty: the reviewer reruns your evidence through the MCP.
+- A Unity project (it has `ProjectSettings/ProjectVersion.txt`) is worked on one of two ways, which the user sets per
+  project. **One branch at a time**, the default: in the project's own folder, on the task's branch, one task per
+  project at a time. The Editor the user keeps open on that folder sees your files, so what you drive through the MCP
+  is your work. **A worktree each**: in a checkout of your own, beside other tasks. The user's Editor is on the
+  project's folder, not yours, so you verify in an Editor opened on your worktree, found by its `projectRoot`.
+- Either way there's no throwaway copy for the review, so crewbots doesn't rerun `checks`, and Unity in batch mode
+  can't open a project an Editor has open. Leave `checks` empty: the reviewer reruns your evidence through the MCP.
 - Never edit `Library/`, `Temp/`, `Logs/`, `obj/` or `UserSettings/`: Unity makes them.
 
 ## 1. Doctor, before anything else (read-only)
 
 1. Read `mcpforunity://instances` (listed by project name, as `Name@hash`), `set_active_instance` to yours when
    there's more than one, and check `mcpforunity://project/info`: its `projectRoot` must be your working directory.
-   None at all means the Editor isn't open on the project or isn't connected:
-   `escalate` that the user needs to open the project in Unity and start MCP for Unity's session (Window › MCP for
-   Unity), then end your turn. Don't start Unity yourself, and don't verify against another project's Editor.
+   None for your folder means no Editor is open on it, or it isn't connected: `escalate` that the user needs to open
+   your folder in Unity (for a worktree, Unity Hub › Add › Add project from disk; its first open imports everything,
+   which takes a while) and start MCP for Unity's session (Window › MCP for Unity), then end your turn. Don't start
+   Unity yourself, and don't verify against another folder's Editor: it isn't your work.
 2. Read `mcpforunity://editor/state`: wait while `compilation.is_compiling` or `is_domain_reload_pending` is true, and
    go on only once `advice.ready_for_tools` is. A branch switch makes Unity reimport, which can take minutes.
 3. `read_console(types=["error"])` and note what's already there (warnings from packages often show as errors), so you
