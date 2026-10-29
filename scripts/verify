@@ -1,0 +1,95 @@
+#!/bin/bash
+# Runs what a change has to be checked in, in the background, and stops it again: the app's screens in the design
+# preview, a scratch daemon, and a page in WebKit. The how-to is .claude/skills/verify-crewbots/SKILL.md.
+#
+#   scripts/verify doctor           what's missing for the others, and how to get it
+#   scripts/verify preview          the design preview (Vite, the demo crew) on a free port: prints url= pid= log=
+#   scripts/verify daemon           a scratch daemon on a free port, a crew of its own in a temp home: prints url= token=
+#                                   home= pid= log=. Its HOME is the temp one too, so it touches nothing of yours, and
+#                                   its bots can't reach a model (enough for routes, rooms, tasks and the store)
+#   scripts/verify stop PID [HOME]  stops what one of the above started, and removes a scratch daemon's temp home
+#   scripts/verify webkit URL ...   opens URL in WebKit, the engine the app runs in: see scripts/verify-webkit.swift
+set -euo pipefail
+cd "$(dirname "$0")/.."
+export PATH="/opt/homebrew/bin:/opt/homebrew/opt/node@22/bin:$HOME/.cargo/bin:$PATH"
+work="${TMPDIR:-/tmp}/crewbots-verify"
+mkdir -p "$work"
+
+free_port() { python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
+
+# Waits for a URL to answer 200, up to $2 seconds; on timeout says so with the end of the log $3.
+wait_for() {
+  for _ in $(seq 1 "$(($2 * 4))"); do
+    [[ "$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' "$1" 2>/dev/null)" == "200" ]] && return 0
+    sleep 0.25
+  done
+  echo "not ready after $2s: $1" >&2
+  tail -20 "$3" >&2
+  return 1
+}
+
+crewbots_cli() { if [[ -x .venv/bin/crewbots ]]; then .venv/bin/crewbots "$@"; else uv run --quiet crewbots "$@"; fi; }
+
+case "${1:-}" in
+  doctor)
+    ok=true
+    for tool in node npm uv python3 curl swiftc; do
+      command -v "$tool" >/dev/null || { echo "missing: $tool"; ok=false; }
+    done
+    [[ -d app/node_modules ]] || { echo "app/node_modules is missing: run (cd app && npm ci) once in this checkout"; ok=false; }
+    if ! python3 -c 'import socket; socket.socket().bind(("127.0.0.1", 0))' 2>/dev/null; then
+      echo "this shell can't listen on a local port (a sandbox?): preview and daemon can't run here; say so in your handoff"
+      ok=false
+    fi
+    $ok && echo "ok: preview, daemon and webkit can run here"
+    ;;
+  preview)
+    [[ -d app/node_modules ]] || { echo "app/node_modules is missing: run (cd app && npm ci) first" >&2; exit 1; }
+    port=$(free_port)
+    log="$work/preview-$port.log"
+    # As .claude/launch.json starts it, so it shares Vite's prepared dependencies rather than redoing them
+    nohup node app/node_modules/vite/bin/vite.js app --host 127.0.0.1 --port "$port" --strictPort </dev/null >"$log" 2>&1 &
+    echo $! >"$work/preview-$port.pid"
+    pid=$(cat "$work/preview-$port.pid")
+    wait_for "http://127.0.0.1:$port/" 40 "$log"
+    printf 'url=http://127.0.0.1:%s\npid=%s\nlog=%s\n' "$port" "$pid" "$log"
+    ;;
+  daemon)
+    port=$(free_port)
+    home=$(mktemp -d "$work/home.XXXXXX")
+    log="$work/daemon-$port.log"
+    HOME="$home" crewbots_cli --home "$home/.crewbots/crew" init >"$log" 2>&1
+    HOME="$home" nohup bash -c "$(declare -f crewbots_cli); crewbots_cli --home '$home/.crewbots/crew' serve --port $port" \
+      </dev/null >>"$log" 2>&1 &
+    echo $! >"$work/daemon-$port.pid"
+    pid=$(cat "$work/daemon-$port.pid")
+    for _ in $(seq 1 120); do [[ -f "$home/.crewbots/crew/daemon.json" ]] && break; sleep 0.25; done
+    token=$(python3 -c "import json, sys; print(json.load(open(sys.argv[1]))['token'])" "$home/.crewbots/crew/daemon.json")
+    for _ in $(seq 1 120); do
+      [[ "$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" "http://127.0.0.1:$port/v1/version")" == "200" ]] && break
+      sleep 0.25
+    done
+    printf 'url=http://127.0.0.1:%s/v1\ntoken=%s\nhome=%s\npid=%s\nlog=%s\n' "$port" "$token" "$home" "$pid" "$log"
+    ;;
+  stop)
+    pid=${2:?usage: scripts/verify stop PID [HOME]}
+    pkill -TERM -P "$pid" 2>/dev/null || true
+    kill -TERM "$pid" 2>/dev/null || true
+    for _ in $(seq 1 40); do kill -0 "$pid" 2>/dev/null || break; sleep 0.25; done
+    kill -KILL "$pid" 2>/dev/null || true
+    if [[ -n "${3:-}" && "$3" == "$work"/home.* ]]; then rm -rf "$3"; fi
+    echo "stopped $pid"
+    ;;
+  webkit)
+    shift
+    bin="$work/verify-webkit"
+    if [[ ! -x "$bin" || scripts/verify-webkit.swift -nt "$bin" ]]; then
+      swiftc -O scripts/verify-webkit.swift -o "$bin" -framework WebKit -framework AppKit
+    fi
+    exec "$bin" "$@"
+    ;;
+  *)
+    sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
+    exit 2
+    ;;
+esac
