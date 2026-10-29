@@ -96,6 +96,12 @@ class Happenings:
                                " order by id", (level,))
         return [dict(r) for r in rows]
 
+    def told_since(self, bot: str, since: str, limit: int) -> list[dict[str, Any]]:
+        """What `bot` told the user in its chat from elsewhere after `since`, the newest `limit` of it."""
+        rows = self.db.execute("select * from proactive where bot = ? and source like 'told from %' and at > ? "
+                               "order by id desc limit ?", (bot, since, limit)).fetchall()
+        return [dict(row) for row in reversed(rows)]
+
     def mark_delivered(self, item_id: int) -> None:
         self.db.execute("update proactive set delivered_at = ? where id = ?", (_now(), item_id))
 

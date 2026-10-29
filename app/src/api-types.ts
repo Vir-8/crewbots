@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "cd3a863129ac";
+export const API_SCHEMA = "33f8902d4ee2";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -1228,6 +1228,11 @@ export interface TaskStatus {
 
 export interface TaskStop {
   task_id: string;
+}
+
+export interface TellBody {
+  text: string;
+  needs_you?: boolean;
 }
 
 export interface ThreadBody {

@@ -33,6 +33,7 @@ from crewbots.api.schemas import (
     StateBody,
     TaskDrop,
     TaskStop,
+    TellBody,
     ThreadBody,
 )
 from crewbots.crew_tools import CrewTools, ToolRefused
@@ -210,6 +211,10 @@ def routes(c: Context) -> APIRouter:
     @v1.post("/bot/post", status_code=201)
     async def bot_post(request: Request, body: PostBody):
         return runner.post_from(request.state.task.id, body.text, body.room or None)
+
+    @v1.post("/bot/tell_user", status_code=201)
+    async def bot_tell_user(request: Request, body: TellBody):
+        return runner.tell_user(request.state.task.id, body.text, body.needs_you)
 
     @v1.post("/bot/share", status_code=201)
     async def bot_share(request: Request, body: ShareBody):

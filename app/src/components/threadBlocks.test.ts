@@ -14,6 +14,14 @@ it("shows files left uncommitted by a merge in the thread", () => {
   expect(build([event], [], new Map())[0]).toMatchObject({ text: "Merged as abcdef1 · Saved after the merge started, still uncommitted: Assets/Vir.png, new file" });
 });
 
+it("tags what the chief told the user from a group chat with where it came from", () => {
+  const told = (id: number, level: string): StoredEvent => ({ id, task_id: "chat", kind: "text", data: { text: "Turn on UnityMCP", level, from: "Engineering" }, at: "" });
+  expect(build([told(1, "question")], [], new Map())[0]).toMatchObject({ kind: "say", tag: "From Engineering" });
+  expect(build([told(2, "needs_you")], [], new Map())[0]).toMatchObject({ kind: "say", tag: "Needs you · From Engineering" });
+  const checkin: StoredEvent = { id: 3, task_id: "chat", kind: "text", data: { text: "CI is red", checkin: true, level: "question" }, at: "" };
+  expect(build([checkin], [], new Map())[0]).toMatchObject({ tag: "Checked in on its own" });
+});
+
 it("shows withdrawn proposals and searches the displayed folder", () => {
   const event: StoredEvent = { id: 1, task_id: "task", kind: "merge_withdrawn", data: { by: "user", reason: "Superseded" }, at: "" };
   expect(build([event], [], new Map())[0]).toMatchObject({ text: "You withdrew the merge proposal: Superseded" });

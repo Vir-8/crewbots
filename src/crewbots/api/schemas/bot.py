@@ -105,6 +105,11 @@ class PostBody(BaseModel):
     room: str | None = None
 
 
+class TellBody(BaseModel):
+    text: str
+    needs_you: bool = False
+
+
 class ShareBody(BaseModel):
     files: list[str]
     text: str = ""

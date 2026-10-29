@@ -16,7 +16,17 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ImageContent, TextContent
 
-from crewbots.crew_tools import SPECS, describe, dropped_text, merge_text, offered, recall_text, remembered_text, shared_text
+from crewbots.crew_tools import (
+    SPECS,
+    describe,
+    dropped_text,
+    merge_text,
+    offered,
+    recall_text,
+    remembered_text,
+    shared_text,
+    told_text,
+)
 
 INSTRUCTIONS = "Tools for working in a crewbots crew: hand work back, escalate decisions, and (for coordinators) delegate."
 
@@ -240,6 +250,10 @@ def _crew_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = F
                     "@mention it in a group chat to bring it in.")
 
     if is_chief:
+        @server.tool(description=describe("tell_user"))
+        def tell_user(text: str, needs_you: bool = False) -> str:
+            return told_text(call("POST", "/bot/tell_user", {"text": text, "needs_you": needs_you}))
+
         @server.tool(description=describe("propose_push"))
         def propose_push(project: str, summary: str) -> str:
             result = call("POST", "/bot/propose_push", {"project": project, "summary": summary})

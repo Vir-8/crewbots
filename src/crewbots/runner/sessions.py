@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from crewbots import prompts, timefmt, working_state
+from crewbots.attention import TOLD
 from crewbots.backends import Backend
 from crewbots.crew import NO_REPLY, Bot, is_no_reply
 from crewbots.events import Compacted, Done, Event, Usage
@@ -284,11 +285,12 @@ class Sessions:
         return prompts.text("crew-updates", self.crew.home, updates=updates.lstrip(), message=prompt), now
 
     def _said_elsewhere(self, task: Task, since: str | None) -> tuple[str, str | None]:
-        """For a chat or group chat: what its bot posted in its other group chats after `since`, from the last
-        SAID_HOURS, the newest SAID_ITEMS of them. With the notes and working state they share, it's what makes them one
-        bot. Its chat with the user is never quoted elsewhere: what's said there stays there, and its decisions travel
-        distilled, in the working state. Returns the section, and the time of the latest post in it to record as heard
-        (`since` again when there's nothing new)."""
+        """For a chat or group chat: what its bot posted in its other group chats after `since`, and for its chat, what
+        it told the user there from elsewhere (`tell_user`), from the last SAID_HOURS, the newest SAID_ITEMS of them.
+        With the notes and working state they share, it's what makes them one bot. Its chat with the user is never
+        quoted elsewhere: what's said there stays there, and its decisions travel distilled, in the working state.
+        Returns the section, and the time of the latest post in it to record as heard (`since` again when there's
+        nothing new)."""
         if task.kind not in ("chat", "seat"):
             return "", since
         floor = max(since or "", _iso(datetime.now(UTC) - timedelta(hours=SAID_HOURS)))
@@ -297,14 +299,17 @@ class Sessions:
             if seat.id == task.id or not seat.room_id:
                 continue
             title = " ".join(self.store.room(seat.room_id)["title"].split())
-            said += [(m["at"], f"{title!r} ({seat.room_id})", m["text"])
+            said += [(m["at"], f"in {title!r} ({seat.room_id})", m["text"])
                      for m in self.store.room_messages_by(seat.room_id, task.bot, floor, SAID_ITEMS)]
+        if task.kind == "chat":  # what it told the user here from elsewhere, which this conversation didn't see
+            said += [(i["at"], f"to the user in this chat, from {i['source'].removeprefix(TOLD)}", i["text"])
+                     for i in self.store.told_since(task.bot, floor, SAID_ITEMS)]
         if not said:
             return "", since
         said = sorted(said)[-SAID_ITEMS:]
-        lines = [f"- {timefmt.minute(at)} · in {where}: {_short(' '.join(text.split()), SAID_CHARS)}"
+        lines = [f"- {timefmt.minute(at)} · {where}: {_short(' '.join(text.split()), SAID_CHARS)}"
                  for at, where, text in said]
-        head = "\n\n## What you said in your group chats since this conversation last heard\n\n"
+        head = "\n\n## What you said elsewhere since this conversation last heard\n\n"
         return head + "\n".join(lines), said[-1][0]
 
     def _room_lately(self, task: Task, prompt: str) -> str:

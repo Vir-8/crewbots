@@ -25,6 +25,7 @@ QUIET_HOURS = (22, 8)  # no interruptions from 22:00 to 08:00
 DIGEST_HOUR = 8
 BREAK_S = 300.0  # the user wrote this recently: they're mid-conversation, and a question waits
 EXPIRES = timedelta(hours=24)  # an FYI older than this is left out of the digest
+TOLD = "told from "  # the source of what a bot told the user from elsewhere, before where it was
 
 
 class Attention:
@@ -46,6 +47,20 @@ class Attention:
             self._deliver(item)
         elif level == "question" and self.at_a_break(now):
             self._deliver(item)
+        return store.proactive_item(item["id"])
+
+    def tell(self, bot: str, text: str, needs_you: bool, where: str) -> dict[str, Any]:
+        """What a bot tells the user in its chat with them from somewhere else (a group chat, a thread), whenever it
+        has something for them: shown there at once, and with a notification when it needs them, outside quiet hours
+        and within the day's budget."""
+        store = self.runner.store
+        now = self.now()
+        urgent = needs_you and not self.quiet(now) and self.interruptions_today(now) < DAILY_INTERRUPTIONS
+        item = store.add_proactive(bot, "needs_you" if urgent else "question", text, f"{TOLD}{where}",
+                                   (now + EXPIRES).astimezone(UTC).isoformat())
+        self.runner._record(self.runner.chat(bot).id, kind="text", data={"text": text, "level": item["level"],
+                                                                         "from": where})
+        store.mark_delivered(item["id"])
         return store.proactive_item(item["id"])
 
     def tick(self, now: datetime) -> None:

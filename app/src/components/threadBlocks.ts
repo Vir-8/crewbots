@@ -196,7 +196,7 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
         break;
       case "text":
         flush();
-        out.push({ kind: "say", id: e.id, at: e.at, text: d.text, tag: d.digest ? "Morning digest" : d.level === "needs_you" ? "Needs you" : d.checkin ? "Checked in on its own" : undefined, raised: d.proactive_id, files: d.files });
+        out.push({ kind: "say", id: e.id, at: e.at, text: d.text, tag: d.digest ? "Morning digest" : sayTag(d), raised: d.proactive_id, files: d.files });
         break;
       case "shared":
         flush();
@@ -440,4 +440,10 @@ export function summary(items: Block[]): string {
 
 function count(n: number, thing: string): string {
   return `${n} ${thing}${n === 1 ? "" : "s"}`;
+}
+
+/** What a message a bot sent on its own says it is: needed now, told from a group chat or thread, or a check-in. */
+function sayTag(d: Record<string, any>): string | undefined {
+  const tag = [d.level === "needs_you" && "Needs you", d.from && `From ${d.from}`].filter(Boolean).join(" · ");
+  return tag || (d.checkin ? "Checked in on its own" : undefined);
 }

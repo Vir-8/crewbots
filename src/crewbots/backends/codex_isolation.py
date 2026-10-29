@@ -37,7 +37,7 @@ def isolation_overrides(command: Sequence[str] = ("codex",), keep: Iterable[str]
     servers, error = _listed_servers(command)
     keep = set(keep)
     args: list[str] = []
-    for name in sorted(set(servers) | set(config.get("mcp_servers", {})) - keep):
+    for name in sorted((set(servers) | set(config.get("mcp_servers", {}))) - keep):
         key = f"mcp_servers.{_key(name)}"
         if name in config.get("mcp_servers", {}):
             args += ["-c", f"{key}.enabled=false"]

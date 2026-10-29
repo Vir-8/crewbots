@@ -1232,6 +1232,18 @@ async def test_seat_escalation_appears_in_its_main_chat_and_answer_returns_to_se
     assert "## Open questions\n- " not in state.read_text()
 
 
+async def test_the_chief_answered_in_its_chat_is_told_to_reply_there(crew, store):
+    room = crew.runner.create_room("Engineering", ["chief", "engineer"], lead="engineer")
+    replies(crew, {})
+    seat = store.create_task("chief", "seat", kind="seat", room_id=room["id"], status=Status.IDLE)
+    crew.runner.escalate(seat.id, "Give the reviewer Unity MCP?", [{"label": "Yes"}, {"label": "No"}])
+    question = next(e for e in store.events(crew.runner.chat("chief").id) if e.kind == "seat_escalation")
+    crew.runner.send(seat.id, "Yes", sender="user", question_id=question.data["question_id"])
+    await wait_until(idle(crew))
+    [answered] = [spec.prompt for spec in crew.specs_for("chief") if "Yes" in spec.prompt]
+    assert "Anything back to them goes there, with tell_user." in answered
+
+
 async def test_old_seat_card_cannot_answer_new_question_and_cancel_closes_all_cards(crew, store):
     import httpx
 

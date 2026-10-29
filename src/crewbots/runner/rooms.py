@@ -359,6 +359,17 @@ class Rooms:
             self._clear_room_mentions(task.bot, room["id"], self._seat_turn_seen.get(task.id, 0))
         return self.post(room["id"], task.bot, text, depth=self._seat_depth.get(task_id, 0) + 1, attachments=attachments)
 
+    def tell_user(self, task_id: str, text: str, needs_you: bool = False) -> dict[str, Any]:
+        """The `tell_user` tool: the chief says something to the user in its chat with them from wherever it's working,
+        a group chat or a thread, without waiting to be asked. Its chat hears it next time it runs."""
+        task = self.store.get_task(task_id)
+        if not self.is_chief(task.bot):
+            raise NotAllowed("only the chief tells the user things directly: say it to whoever you work for")
+        if not text.strip():
+            raise NotAllowed("there's nothing to tell")
+        where = " ".join(self.store.room(task.room_id)["title"].split()) if task.room_id else f"thread {task.id}"
+        return self.attention.tell(task.bot, text.strip(), needs_you, where)
+
     def _room_to_post(self, task: Task, room_id: str | None) -> dict[str, Any]:
         """Where a bot's post goes: the room it names (by id, or by title among its own), else the one it's in, else
         the crew's; one it's a member of."""

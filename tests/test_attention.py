@@ -9,8 +9,8 @@ from fakes import FakeBackend, bot, make_crew, wait_until
 from fastapi.testclient import TestClient
 
 from crewbots.api import create_app
-from crewbots.runner import Runner
-from crewbots.store import Store
+from crewbots.runner import NotAllowed, Runner
+from crewbots.store import Status, Store
 
 
 @pytest.fixture
@@ -63,6 +63,27 @@ async def test_a_question_waits_while_the_user_is_mid_conversation(store, runner
     runner.attention.user_wrote = time.time() - 600  # ten minutes since
     runner.attention.tick(at(10))
     assert raised() == ["The docs build is slow; want me to look?"]
+
+
+async def test_the_chief_tells_the_user_in_its_chat_from_a_group_chat_without_waiting(store, runner):
+    room = runner.create_room("Engineering", ["chief", "engineer"], lead="chief")
+    seat = store.create_task("chief", "seat", kind="seat", room_id=room["id"], status=Status.IDLE)
+    runner.say("chief", "how's it going?")  # mid-conversation: what the chief tells them still shows at once
+    await wait_until(lambda: not runner.running())
+
+    runner.tell_user(seat.id, "Turn on UnityMCP for the reviewer", needs_you=True)
+    assert said(store, runner, "chief")[-1] == {"text": "Turn on UnityMCP for the reviewer", "level": "needs_you",
+                                                "from": "Engineering"}
+    assert not store.room_messages(room["id"])
+    runner.attention.now = lambda: at(23)
+    assert runner.tell_user(seat.id, "Sky Islands is merged.", needs_you=True)["level"] == "question"  # no notification
+    assert said(store, runner, "chief")[-1]["text"] == "Sky Islands is merged."
+
+    section, _ = runner._said_elsewhere(runner.chat("chief"), None)  # its chat hears it, next time it runs
+    assert "to the user in this chat, from Engineering: Turn on UnityMCP for the reviewer" in section
+    work = store.create_task("engineer", "build", status=Status.IDLE)
+    with pytest.raises(NotAllowed, match="only the chief"):
+        runner.tell_user(work.id, "hi")
 
 
 def test_the_morning_digest_has_the_last_days_fyis_in_the_chiefs_chat(store, runner):

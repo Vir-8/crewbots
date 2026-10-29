@@ -200,6 +200,17 @@ def test_the_users_servers_plugins_and_apps_are_switched_off(codex_home, monkeyp
     assert 'mcp_servers.crew.command="c"' in overrides
 
 
+def test_a_bots_own_server_stays_on_when_the_users_codex_has_one_of_the_same_name(codex_home, monkeypatch):
+    (codex_home / "config.toml").write_text('[mcp_servers.UnityMCP]\nurl = "http://127.0.0.1:8080/mcp"\n')
+    monkeypatch.setenv("FAKE_MCP_LIST", json.dumps([{"name": "UnityMCP"}]))  # Codex lists what its config defines
+    unity = McpServer(url="http://127.0.0.1:8765/v1/bot/mcp/UnityMCP", transport="http")
+
+    argv = CodexExec(command=fake_command("-")).argv(RunSpec(prompt="x", cwd=".", mcp_servers={"UnityMCP": unity}))
+
+    assert not any(a.startswith("mcp_servers.UnityMCP.enabled") for a in argv)
+    assert 'mcp_servers.UnityMCP.url="http://127.0.0.1:8765/v1/bot/mcp/UnityMCP"' in argv
+
+
 def test_a_bot_is_not_run_if_its_isolation_cannot_be_worked_out(monkeypatch):
     monkeypatch.setenv("FAKE_MCP_LIST", "not json")
 

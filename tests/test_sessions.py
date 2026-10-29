@@ -115,7 +115,7 @@ async def test_a_bots_conversations_hear_what_it_posted_in_its_group_chats(store
 
     for task in (chat, seat_two):  # the chat and the other group chat hear it, once
         prompt, primed = runner._with_updates(store.get_task(task.id), worker, "next")
-        assert "What you said in your group chats" in prompt and f"'One' ({one['id']}): I'll take the export" in prompt
+        assert "What you said elsewhere" in prompt and f"'One' ({one['id']}): I'll take the export" in prompt
         store.set_primed(task.id, primed)
         assert runner._with_updates(store.get_task(task.id), worker, "again") == ("again", None)
     assert "What you said" not in runner._with_updates(store.get_task(seat_one.id), worker, "next")[0]  # it was there

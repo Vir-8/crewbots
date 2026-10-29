@@ -28,6 +28,7 @@ from crewbots.api.schemas.bot import (
     StateBody,
     TaskDrop,
     TaskStop,
+    TellBody,
     ThreadBody,
     WithdrawalReason,
 )
@@ -284,6 +285,7 @@ __all__ = [
     "PlansOut",
     "Pins",
     "PostBody",
+    "TellBody",
     "ProfileOut",
     "PullFile",
     "PullOut",

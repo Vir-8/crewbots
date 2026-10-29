@@ -29,6 +29,11 @@ def merge_text(task_id: str, state: str | None, commit: str | None, details: dic
     return message
 
 
+def told_text(item: dict[str, Any]) -> str:
+    return ("Told the user in your chat with them" + (", with a notification." if item["level"] == "needs_you" else
+                                                       ". It's there for when they look; no notification now."))
+
+
 @dataclass(frozen=True)
 class ToolDef:
     name: str
@@ -88,6 +93,7 @@ SPECS: dict[str, Spec] = {
                                      "on": STRING, "repo": STRING}, ["name", "description", "goal"])),
     "start_thread": Spec(_object({"title": STRING, "goal": STRING, "project": STRING}, ["title", "goal"])),
     "post": Spec(_object({"text": STRING, "room": STRING}, ["text"])),
+    "tell_user": Spec(_object({"text": STRING, "needs_you": {"type": "boolean"}}, ["text"])),
     "share": Spec(_object({"files": STRINGS, "text": STRING, "room": STRING}, ["files"])),
     "ask": Spec(_object({"bot": STRING, "question": STRING}, ["bot", "question"])),
     "open_group": Spec(_object({"title": STRING, "members": STRINGS, "lead": STRING}, ["title", "members"])),
@@ -116,7 +122,7 @@ SPECS: dict[str, Spec] = {
 }
 
 
-CHIEF_ONLY = {"add_bot", "propose_push", "propose_replace_main"}
+CHIEF_ONLY = {"add_bot", "propose_push", "propose_replace_main", "tell_user"}
 # Tools only some tasks are offered, by what the task is: listed to every task, they'd cost each turn for nothing.
 # The daemon still refuses one used out of place, with why.
 WHERE_THE_USER_TALKS = {"propose_routine", "remind_on"}  # a chat or a group chat
@@ -135,6 +141,8 @@ def offered(name: str, kind: str | None, reviewing: bool) -> bool:
         return kind not in ("chat", "seat")  # nothing to hand back: a conversation goes on
     if name == "set_name":
         return kind == "chat"
+    if name == "tell_user":
+        return kind != "chat"  # in its chat with the user, what it says there already is
     if name == "open_unity_editor":
         return kind not in ("chat", "seat", "ask")  # work in a worktree of its own
     return name not in WHERE_THE_USER_TALKS or kind in ("chat", "seat")
@@ -334,6 +342,8 @@ class CrewTools:
                 case "post":
                     message = r.post_from(me, args["text"], args.get("room") or None)
                     return f"Posted in the group chat ({message['room_id']})."
+                case "tell_user":
+                    return told_text(r.tell_user(me, args["text"], bool(args.get("needs_you"))))
                 case "share":
                     files = [args["files"]] if isinstance(args["files"], str) else [str(f) for f in args["files"]]
                     return shared_text(await r.share(me, files, args.get("text") or "", args.get("room") or None))

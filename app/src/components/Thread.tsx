@@ -167,7 +167,7 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
           {props.afterBreak && <TimeBreak at={block.at} />}
           <div className="message-row">
             <div className="say">
-              {block.tag && <div className={`say-tag ${block.tag === "Needs you" ? "urgent" : ""}`}>{block.tag}</div>}
+              {block.tag && <div className={`say-tag ${block.tag.startsWith("Needs you") ? "urgent" : ""}`}>{block.tag}</div>}
               {block.text && <Markdown text={block.text} onSelect={props.onOpen} />}
               {block.files && <Files items={block.files} />}
               {block.raised && <Reactions crew={props.crew} id={block.raised} />}

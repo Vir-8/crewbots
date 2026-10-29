@@ -273,7 +273,7 @@ async def test_workers_delegate_but_only_coordinators_add_bots_and_propose_merge
                       "browser_type", "browser_evaluate", "browser_console", "open_unity_editor"}
     assert coordinator == worker | {"propose_merge", "withdraw_merge", "drop_task", "next_check", "room_status",
                                     "sweep_worktrees"}
-    assert chief == coordinator | {"add_bot", "propose_push", "propose_replace_main"}
+    assert chief == coordinator | {"add_bot", "propose_push", "propose_replace_main", "tell_user"}
 
 
 async def test_each_task_is_offered_the_tools_for_what_it_is(crew_app):

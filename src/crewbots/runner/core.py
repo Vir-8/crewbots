@@ -233,6 +233,9 @@ class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Revie
                     asked = self.store.last_event(task_id, ("escalation",))
                     self._record(self.chat(task.bot).id, kind="seat_escalation_answer", data={
                         "question_id": asked.id, "text": text})
+                    if self.is_chief(task.bot):  # what goes back to them goes where they answered, not to this room
+                        text += ("\n\n(The user answered in your chat with them. Anything back to them goes there, "
+                                 "with tell_user.)")
                 self._clear_room_need(task_id)
             self._refresh_working_state(task.bot)
             self.attention.user_wrote = time.time()  # mid-conversation: questions wait for a break
