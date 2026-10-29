@@ -1,6 +1,5 @@
 """Closing work without merging it: a merge proposal withdrawn, a task dropped on purpose, a task's folder removed."""
 
-from crewbots import branch_mode, worktree
 from crewbots.runner.common import NotAllowed
 from crewbots.store import Status, Task
 
@@ -27,25 +26,9 @@ class Closing:
             raise NotAllowed(f"no task {task_id}") from None
         if task.merge_state != "proposed":
             raise NotAllowed(f"{task_id} has no merge proposal to withdraw")
-        notice = None
-        if task.base_branch:
-            if task.active or task.id in self._runs or any(r.active or r.id in self._runs
-                                                           for r in self.store.reviewers_of(task.id)):
-                raise NotAllowed("task or reviewer is still active")
-            checkout = self._branch_checkout(task)
-            if branch_mode.on_branch(checkout):
-                try:
-                    branch_mode.drop(checkout, task.id)
-                except worktree.GitError as e:
-                    raise NotAllowed(str(e)) from None
-            else:
-                notice = "HEAD is not on the task branch; project released without switching or committing"
-                reason = reason.strip() + f" ({notice})"
-        task = self._set(task_id, merge_state=None, **({"worktree_path": None} if task.base_branch else {}))
-        self._record(task_id, kind="merge_withdrawn", data={"by": by, "reason": reason.strip(),
-                                                             **({"notice": notice} if notice else {})})
-        if not task.base_branch:
-            self._cleanup_after_action(task)
+        task = self._set(task_id, merge_state=None)
+        self._record(task_id, kind="merge_withdrawn", data={"by": by, "reason": reason.strip()})
+        self._cleanup_after_action(task)
         return task
 
     async def drop(self, task_id: str, reason: str, *, by_task: str) -> dict[str, str]:
@@ -96,28 +79,6 @@ class Closing:
     def drop_worktree(self, task_id: str) -> dict[str, str]:
         self._check_worktree_sweep(task_id)
         task = self.store.get_task(task_id)
-        if task.merge_state == "merging":
-            raise NotAllowed("a merge is being recovered; the checkout cannot be dropped")
         if task.merge_state == "proposed":
             raise NotAllowed("withdraw the open merge proposal first")
-        if task.base_branch:
-            if task.active or task.id in self._runs or any(r.active or r.id in self._runs
-                                                           for r in self.store.reviewers_of(task.id)):
-                raise NotAllowed("task or reviewer is still active")
-            checkout = self._branch_checkout(task)
-            on_branch = branch_mode.on_branch(checkout)
-            unchanged = not on_branch
-            if on_branch:
-                try:
-                    if task.merge_state == "merged":
-                        branch_mode.leave_merged_branch(checkout)
-                    else:
-                        branch_mode.drop(checkout, task.id)
-                except worktree.GitError as e:
-                    raise NotAllowed(str(e)) from None
-            self._set(task.id, worktree_path=None)
-            self._record(task.id, kind="worktree_dropped", data={"path": task.worktree_path})
-            return {"task_id": task.id, "path": task.worktree_path, "branch": task.branch, "status": "removed",
-                    "reason": "project released without switching or committing" if unchanged else (
-                        f"switched back to {task.base_branch}" if task.merge_state == "merged" else "branch saved")}
         return self._cleanup_worktree(task)

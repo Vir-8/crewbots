@@ -18,11 +18,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from crewbots import prompts, timefmt, working_state, worktree
+from crewbots import prompts, timefmt, working_state
 from crewbots.backends import Backend
 from crewbots.crew import NO_REPLY, Bot, is_no_reply
 from crewbots.events import Compacted, Done, Event, Usage
-from crewbots.runner.common import NotAllowed, OpenSession, _iso, _plan, _usage_data
+from crewbots.runner.common import OpenSession, _iso, _plan, _usage_data
 from crewbots.store import Status, Task
 
 MIN_KEPT = 500  # tokens: a compaction that leaves fewer kept nothing worth carrying on from
@@ -449,53 +449,13 @@ class Sessions:
     async def _hidden(self, task_id: str, stream: AsyncIterator[Event], bot: Bot) -> tuple[Done | None, list[Event]]:
         """A turn crewbots runs for itself (a flush, a compaction, a briefing): nothing of it reaches the thread, but
         what it costs counts like any turn's."""
-        from crewbots import branch_mode
-
         events: list[Event] = []
-        task = self.store.get_task(task_id)
-        work = self.store.get_task(task.review_of) if task.review_of else task
-        checkout = self._branch_checkout(work) if work.base_branch else None
-        try:
-            start = branch_mode.turn_head(checkout) if checkout else None
-        except worktree.GitError as e:
-            message = f"{work.repo}: {e}; the turn was stopped"
-            self._set(task_id, status=Status.FAILED, error=message)
-            self._branch_notice(task_id, message)
-            await self._close_session(task_id)
-            raise NotAllowed(message) from None
-        changed = False
-        current = asyncio.current_task()
-
-        async def watch() -> None:
-            nonlocal changed
-            while True:
-                await asyncio.sleep(2)
-                if not branch_mode.turn_safe(checkout, start):
-                    changed = True
-                    current.cancel()
-                    return
-
-        watcher = asyncio.create_task(watch()) if checkout else None
         try:
             async with aclosing(stream) as turn:
                 async for event in turn:
                     events.append(event)
-        except asyncio.CancelledError:
-            if not changed:
-                raise
         except Exception as e:
             events.append(Done(final_text="", is_error=True, error=str(e)))
-        finally:
-            if watcher:
-                watcher.cancel()
-                await asyncio.gather(watcher, return_exceptions=True)
-                changed = changed or not branch_mode.turn_safe(checkout, start)
-            if changed:
-                message = f"{work.repo}: HEAD left {work.branch} or its history was rewritten; the turn was stopped"
-                self._set(task_id, status=Status.FAILED, error=message)
-                self._branch_notice(task_id, message)
-                await self._close_session(task_id)
-                raise NotAllowed(message)
         for usage in (e for e in events if isinstance(e, Usage)):
             self.store.append_event(task_id, kind="usage", data=_usage_data(usage, bot))
             self.store.add_usage(task_id, usage.input_tokens, usage.output_tokens, usage.cost_usd)

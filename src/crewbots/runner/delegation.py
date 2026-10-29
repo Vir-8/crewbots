@@ -104,10 +104,10 @@ class Delegation(RoomTalk):
 
     def _review_copy(self, work: Task, at: Path | None = None) -> str | None:
         """A throwaway copy of `work` as it stands, for its reviewer to run the checks and the change itself in, with
-        write access (`_access`); none for work done in a project's own folder (branch mode), or in a Unity project,
-        whose checks run in an Editor rather than a copy: those are reviewed in place, read-only. Removed when the
+        write access (`_access`); none for work done in a project's folder itself, which has no worktree, or in a
+        Unity project, whose checks run in an Editor rather than a copy: those are reviewed in place, read-only. Removed when the
         review's turns are over (`_turns_over`), and made again if it runs again."""
-        if work.base_branch or not (work.repo and work.worktree_path and work.branch) or is_unity(Path(work.worktree_path)):
+        if not (work.repo and work.worktree_path and work.branch) or is_unity(Path(work.worktree_path)):
             return None
         at = at or self._checks_root() / f"{work.id}-{secrets.token_hex(3)}"
         try:
@@ -125,12 +125,12 @@ class Delegation(RoomTalk):
 
     def _access(self, task: Task, bot: Bot) -> Access:
         """What a task may do: its bot's access, except that a question is read-only, a review in its own copy may
-        write there (to run things), and a review of work in a project's own folder is read-only."""
+        write there (to run things), and a review anywhere else, in the work itself, is read-only."""
         if task.kind == "ask":
             return Access.READ_ONLY
         if self._in_review_copy(task):
             return Access.FULL if bot.access is Access.FULL else Access.WORKSPACE_WRITE
-        if task.review_of and self.store.get_task(task.review_of).base_branch:
+        if task.review_of:
             return Access.READ_ONLY
         return bot.access
 

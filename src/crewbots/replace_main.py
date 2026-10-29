@@ -26,15 +26,6 @@ IN_PROGRESS = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "SQUASH_MSG", "r
 KEYS = ("project", "folder", "target", "branch", "old", "new", "tree", "upstream", "remote_tip", "url_hash", "backup")
 
 
-def _holder(runner: Any, folder: Path) -> str | None:
-    """A task that holds the project folder in branch mode."""
-    row = runner.store.db.execute(
-        "select id from tasks where repo = ? and base_branch is not null and worktree_path is not null "
-        "and (merge_state is null or merge_state not in ('merged', 'proposed', 'merging')) order by id",
-        (str(folder),)).fetchone()
-    return f"{row['id']} holds the project folder" if row else None
-
-
 def _blocking(runner: Any, folder: Path) -> list[str]:
     """Tasks of the project whose merge is proposed or under way: their already-on checks would run against the
     rewritten branch."""
@@ -88,7 +79,7 @@ def _exists(folder: Path, ref: str) -> bool:
         return False
 
 
-def snapshot(folder: Path, branch: str, holder: str | None = None, blocking: list[str] | None = None) -> dict[str, Any]:
+def snapshot(folder: Path, branch: str, blocking: list[str] | None = None) -> dict[str, Any]:
     """What replacing the checked-out branch with `branch` would do, and whether each guard holds. `error` is the first
     guard that doesn't; the other fields are filled in as far as the guards allowed."""
     checks: list[dict[str, Any]] = []
@@ -145,7 +136,7 @@ def snapshot(folder: Path, branch: str, holder: str | None = None, blocking: lis
              "new_commits": int(_git(folder, "rev-list", "--count", f"{tip}..{new}"))}
 
     paths = [Path(p) for p in (_git(folder, "rev-parse", "--git-path", name) for name in IN_PROGRESS)]
-    underway = holder or next((p.name for p in paths if (p if p.is_absolute() else folder / p).exists()), "")
+    underway = next((p.name for p in paths if (p if p.is_absolute() else folder / p).exists()), "")
     check("No merge in progress", not underway, f"{underway} is in the way" if underway else "none")
     data["blocking"] = blocking or []
     check("No open merge proposals", not blocking, ", ".join(blocking) if blocking else "none")
@@ -165,7 +156,7 @@ async def propose(runner: Any, task_id: str, project: str, branch: str, summary:
     folder = runner.crew.project(project).folder.resolve()
     data: dict[str, Any] = {"project": project, "summary": summary.strip(), "folder": str(folder), "by": chief.name}
     try:
-        data.update(await asyncio.to_thread(snapshot, folder, branch, _holder(runner, folder), _blocking(runner, folder)))
+        data.update(await asyncio.to_thread(snapshot, folder, branch, _blocking(runner, folder)))
     except NotAllowed as e:
         data |= {"branch": branch, "error": str(e)}
     if "error" not in data:  # the card is only made for a commit CI passes on
@@ -223,7 +214,7 @@ def _attempt(runner: Any, data: dict[str, Any]) -> dict[str, Any]:
     if data.get("error"):
         raise NotAllowed(data["error"])
     folder = runner.crew.project(data["project"]).folder.resolve()
-    now = snapshot(folder, data["branch"], _holder(runner, folder), _blocking(runner, folder))
+    now = snapshot(folder, data["branch"], _blocking(runner, folder))
     if now.get("error"):
         raise NotAllowed(now["error"])
     if str(folder) != data["folder"] or any(now[k] != data[k] for k in KEYS if k not in ("project", "folder")):

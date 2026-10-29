@@ -4,17 +4,14 @@ import asyncio
 import logging
 import os
 import re
-import secrets
 import tempfile
-import time
 from datetime import datetime
 from html import escape
 from pathlib import Path
 from typing import Any
 
-from crewbots import branch_mode, cards, pages, prompts, timefmt, worktree
+from crewbots import cards, pages, prompts, timefmt, worktree
 from crewbots.crew import NO_REPLY
-from crewbots.events import Notice
 from crewbots.memory import CREW_SCOPE, MemoryError, Note
 from crewbots.pages import Page
 from crewbots.routines import RoutineError
@@ -49,24 +46,13 @@ class Work(Landed, Closing, MergeStatus, SharedApps):
         task = self.store.get_task(task_id)
         self._check_worktree_sweep()
         if not task.worktree_path:
-            if task.base_branch and task.branch and task.repo:
-                return worktree._git(Path(task.repo), "diff", task.base, task.branch, strip=False)
             return None
-        if task.base_branch and task.merge_state != "merged":
-            checkout = self._branch_checkout(task)
-            if not branch_mode.on_branch(checkout):
-                raise worktree.GitError("HEAD is not on the task branch")
-            with branch_mode.snapshot(checkout) as (git, _):
-                return git("diff", "--cached", task.base)
         wt = worktree.Worktree(repo=Path(task.repo), path=Path(task.worktree_path), branch=task.branch, base=task.base)
         if task.merge_state == "merged":
             return worktree._git(wt.repo, "diff", wt.base, self._merged_tip(task), strip=False)
         if not wt.path.exists():
             return worktree._git(wt.repo, "diff", wt.base, wt.branch, strip=False)
         return worktree.changes(wt)
-
-    def _branch_checkout(self, task: Task) -> branch_mode.BranchCheckout:
-        return branch_mode.BranchCheckout(Path(task.repo), task.branch, task.base_branch, task.base)
 
     def _merged_tip(self, task: Task) -> str:
         if task.merged_tip:
@@ -276,14 +262,9 @@ class Work(Landed, Closing, MergeStatus, SharedApps):
                 f"{task_id} is not approved: every review of its current version must pass first "
                 f"(round {state.round} of {MAX_REVIEW_ROUNDS}, version {state.version}, "
                 f"reviewed versions {state.rounds or 'none'})")
-        try:
-            files = branch_mode.changed_files(self._branch_checkout(work)) if work.base_branch else None
-        except worktree.GitError as e:
-            raise NotAllowed(str(e)) from None
         auto = self.store.auto_merge()  # the app asks the user to merge only when it isn't going to happen by itself
         task = self._set(task_id, merge_state="proposed")
-        self._record(task_id, kind="merge_proposed", data={"by": parent.bot, "summary": summary, "auto": auto,
-                                                          **({"files": files} if files is not None else {})})
+        self._record(task_id, kind="merge_proposed", data={"by": parent.bot, "summary": summary, "auto": auto})
         if auto:
             try:
                 return self.merge(task_id, automatic=True)
@@ -318,53 +299,11 @@ class Work(Landed, Closing, MergeStatus, SharedApps):
         last = proposals[0].data if proposals else {}
         message = merge_message(last.get("summary", ""), work.title, unreviewed=not state.approved)
         try:
-            if work.base_branch:
-                def mark_merging(commit: str, tip: str) -> str:
-                    self.ci_gate(work, work.base_branch, commit=commit)
-                    marker = f"{time.time_ns()}:{secrets.token_hex(16)}"
-                    self._set(task_id, merge_state="merging", merged_commit=commit, merged_tip=tip,
-                              merge_lock=None, merge_marker=marker)
-                    return marker
-
-                commit, tip = branch_mode.merge(self._branch_checkout(work), message, expected_files=last.get("files"),
-                                                before_lock=mark_merging)
-                try:
-                    leftovers, check_error = branch_mode.leftover_files(wt.repo), None
-                except (worktree.GitError, OSError) as e:
-                    leftovers, check_error = None, str(e)
-                    log.exception("Merged %s but could not check for later saves", task_id)
-                task = self._set(task_id, merge_state="merged", merged_commit=commit, merged_tip=tip,
-                                 merge_lock=None, merge_marker=self._marker_to_keep(task_id))
-                self._record(task_id, kind="merged", data={"commit": commit, "into": str(wt.repo),
-                                                           "forced": not state.approved, "automatic": automatic,
-                                                           "leftover_files": leftovers, "leftover_check_error": check_error})
-                return task
             if not wt.path.exists():
                 self._restore_worktree(work)
             worktree.commit(wt, f"{message.splitlines()[0]}\n\ncrewbots task {work.id}, by {work.bot}")
             tip, commit = self.merge_gated(work, wt, message)
         except worktree.GitError as e:
-            current = self.store.get_task(task_id)
-            if branch_mode.LOCK_LEFT in str(e) or branch_mode.LOCK_STUCK in str(e):
-                self._record(task_id, Notice(message=f"Merge failed: {e}"))
-            if current.merge_state == "merging":
-                try:
-                    base_tip = worktree._git(Path(current.repo), "rev-parse", f"refs/heads/{current.base_branch}")
-                    if branch_mode.is_ancestor(Path(current.repo), current.merged_commit, base_tip):
-                        # The ref transaction landed: refs and HEAD stay as found, as in startup recovery.
-                        self._set(task_id, merge_state="merged", merge_lock=None,
-                                  merge_marker=self._marker_to_keep(task_id))
-                        self._record(task_id, kind="merged", data={
-                            "commit": current.merged_commit, "into": current.repo, "forced": not state.approved,
-                            "automatic": automatic, "leftover_files": None,
-                            "leftover_check_error": f"Merge step failed after the base advanced: {e}; "
-                                                    "refs and checkout left as found"})
-                        raise MergeError(f"{e}; the merge already reached {current.base_branch}, "
-                                         "so the task is marked merged") from None
-                    self._set(task_id, merge_state="proposed", merged_commit=None, merged_tip=None,
-                              merge_lock=None, merge_marker=self._marker_to_keep(task_id))
-                except worktree.GitError:
-                    log.exception("Could not determine merge outcome for %s", task_id)
             raise MergeError(str(e)) from None
         task = self._set(task_id, merge_state="merged", merged_commit=commit, merged_tip=tip)
         self._record(task_id, kind="merged", data={"commit": commit, "into": str(wt.repo), "forced": not state.approved,
@@ -382,8 +321,6 @@ class Work(Landed, Closing, MergeStatus, SharedApps):
 
     def _cleanup_worktree(self, task: Task, *, sweep: bool = False, dry_run: bool = False) -> dict[str, str]:
         result = {"task_id": task.id, "path": task.worktree_path or "", "branch": task.branch or ""}
-        if task.base_branch:
-            return result | {"status": "kept", "reason": "branch-mode project checkout"}
         busy = {Status.QUEUED, Status.RUNNING, Status.NEEDS_INPUT, Status.HELD, Status.INTERRUPTED}
         if (task.status in busy or task.id in self._runs or task.merge_state == "proposed" or any(
                 r.status in busy or r.id in self._runs for r in self.store.reviewers_of(task.id))):

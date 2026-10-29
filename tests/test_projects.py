@@ -65,13 +65,14 @@ def test_project_isolation_defaults_and_explicit_settings(tmp_path):
     assert projects.save(home, "game", unity, "A game").isolation == "in_place"  # one Editor: the folder itself
     assert projects.save(home, "game", unity, "A game", isolation="worktree").isolation == "worktree"
     assert projects.save(home, "game", unity, "Updated").isolation == "worktree"
-    assert projects.save(home, "project", folder, "A project", isolation="branch").isolation == "branch"
-    assert projects.load(home)[0]["project"].isolation == "branch"
+    assert projects.save(home, "project", folder, "A project", isolation="in_place").isolation == "in_place"
+    assert projects.load(home)[0]["project"].isolation == "in_place"
+    assert projects.parse(f"---\nfolder: {folder}\nisolation: branch\n---\n", home / "old.md").isolation == "in_place"
     with pytest.raises(ProjectError, match="isolation must"):
         projects.parse(f"---\nfolder: {folder}\nisolation: invalid\n---\n", home / "bad.md")
     with pytest.raises(ProjectError, match="isolation must"):
-        projects.save(home, "project", folder, "A project", isolation="invalid")
-    assert projects.load(home)[0]["project"].isolation == "branch"
+        projects.save(home, "project", folder, "A project", isolation="branch")  # branch mode is gone
+    assert projects.load(home)[0]["project"].isolation == "in_place"
 
 
 @pytest.fixture

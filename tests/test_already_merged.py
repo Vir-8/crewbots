@@ -24,7 +24,7 @@ def commit(path, name, text="x"):
 
 @pytest.fixture
 def old_proposal(tmp_path):
-    """A worktree-mode proposal as made before branch mode: no base_branch, and its checkout already removed."""
+    """A worktree proposal whose checkout is already removed."""
     repo = git_repo(tmp_path / "repo")
     store = Store(tmp_path / "crew.db")
     crew = ScriptedCrew(store, tmp_path, bot("engineer"))

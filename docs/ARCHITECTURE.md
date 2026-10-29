@@ -340,10 +340,11 @@ Each step leaves the system working.
   (`told:<task>` in `reads`), not once its siblings finish, which is when the delegator hears. A woken seat is sent
   at most `CATCH_UP` (12,000) characters of what it missed, newest kept, so a long stretch of work doesn't swell the
   next turn of a bot that only follows along.
-- **Where work happens** (`projects.py` `isolation`, `runner/branches.py`). A writing bot's work in a git repository
-  runs, per project, in a worktree of its own (`worktree`, the default), in the project's folder itself on whatever
-  branch it's on, beside the user and other bots (`in_place`), or on a branch of the folder, one task at a time
-  (`branch`, which a project holds while a task has it). Unity projects (`is_unity`: `ProjectSettings/ProjectVersion.txt`)
+- **Where work happens** (`projects.py` `isolation`, `runner/checkouts.py`). A writing bot's work in a git
+  repository runs, per project, in a worktree of its own on its own branch (`worktree`, the default), or in the
+  project's folder itself on whatever branch it's on, beside the user and other bots (`in_place`). Branch mode, a task
+  branch checked out in the project's own folder one task at a time, was removed on 2026-10-29: `in_place` covers what
+  it was for, and a project file that still says `branch` is read as `in_place`. Unity projects (`is_unity`: `ProjectSettings/ProjectVersion.txt`)
   default to `in_place`: Unity opens a project in one Editor only (`Temp/UnityLockfile`), so that Editor sees every
   engineer's work, and the lead splits the work by files. The Projects page sets it. A worktree shares the
   repository's history but writes out every tracked file (Sky Islands: 3.4 GB of 24 GB, without its 7.6 GB `Library/`).

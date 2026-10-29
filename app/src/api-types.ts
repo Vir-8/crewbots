@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "134d8de61ef0";
+export const API_SCHEMA = "89934e547c59";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -822,14 +822,14 @@ export interface ProfileOut {
 export interface ProjectBody {
   folder: string;
   about?: string;
-  isolation?: "in_place" | "branch" | "worktree" | null;
+  isolation?: "in_place" | "worktree" | null;
 }
 
 export interface ProjectOut {
   name: string;
   folder: string;
   about: string;
-  isolation: "in_place" | "branch" | "worktree";
+  isolation: "in_place" | "worktree";
   missing: boolean;
 }
 

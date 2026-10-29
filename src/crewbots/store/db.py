@@ -28,7 +28,7 @@ create table if not exists tasks (
     worktree_path text,
     branch        text,
     base          text,
-    base_branch   text,                        -- branch-mode checkout's original branch
+    base_branch   text,                        -- branch-mode checkout's original branch (branch mode is gone)
     checkout_state text,                       -- starting until switch -c and linking finish
     session_id    text,
     session_backend text,                      -- the backend that made session_id: another backend can't resume it

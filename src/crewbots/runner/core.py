@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from crewbots import attachments as attachments_module
-from crewbots import branch_mode, prompts
+from crewbots import prompts
 from crewbots.attention import Attention
 from crewbots.backends import BACKENDS, Backend, McpServer, RunSpec
 from crewbots.browser import Browser
@@ -51,8 +51,8 @@ from crewbots.events import (
     Usage,
 )
 from crewbots.reviews import review_prompt, reviewer_bot
-from crewbots.runner.branches import Branches
 from crewbots.runner.checkins import Checkins
+from crewbots.runner.checkouts import Checkouts
 from crewbots.runner.chief_events import ChiefEvents
 from crewbots.runner.common import MCP_COMMAND, MCP_SERVER_NAME, Bus, NotAllowed, OpenSession, UnknownBot, _duration, _usage_data
 from crewbots.runner.delegation import MAX_CHILDREN, MAX_DEPTH, MAX_OUT, Delegation
@@ -81,7 +81,7 @@ RETRY_WAITS_S = (30.0, 120.0, 300.0)
 STALL_S = 1200.0  # no event at all from a turn for this long: it's stuck, so it's stopped and tried again
 
 
-class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams, Checkins, Wakes,
+class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams, Checkins, Wakes,
              Welcome, Permissions, Watchdog):
     """Runs the crew's tasks. Its parts are by area: sessions, rooms, delegation, reviews, work, files bots show the
     user, holds, dreams (memory consolidated overnight), check-ins, the chief's own looks around (wakes), starting a
@@ -184,17 +184,11 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
         long prompt of crewbots' own out of view."""
         if bot not in self.crew.bots:
             raise UnknownBot(f"no bot named {bot!r}; the crew is {sorted(self.crew.bots)}")
-        project = self._branch_project(bot, workspace, kind, review_of)
         task = self.store.create_task(bot, goal, created_by=created_by, parent_id=parent_id, workspace=workspace,
                                       review_of=review_of, review_version=review_version, routine=routine,
                                       budget=budget, title=title, pr=pr, kind=kind)
-        if project:
-            task = self._start_branch(task, project)
         self.bus.publish({"type": "task", "task": task.to_json()})
         self._message(task.id, said_by or created_by, goal)
-        if project:
-            self._message(task.id, "crewbots", f"Your {project.name} folder is on the crew's branch until this task "
-                          "merges; anything you save there becomes part of this task.")
         self._start(task.id, goal)
         return task
 
@@ -313,7 +307,6 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
         """On start: each turn the last stop cut off, or that was waiting its turn, carries on once. A bot that had
         the turn is told it was interrupted and to pick up where it left off; one that hadn't gets it as it was. A
         held one is held again until there's room. Returns the tasks carried on."""
-        self._recover_branch_projects()
         resumed = []
         for turn in self.store.interrupted_turns():
             task = self.store.get_task(turn["task_id"])
@@ -449,13 +442,9 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
                     await self._close_session(task_id)
                     self._removed_worktrees.discard(task_id)
                 cwd = self._cwd(task, bot)
-                branch_task = self.store.get_task(task.review_of) if task.review_of else task
-                branch_start = branch_mode.turn_head(self._branch_checkout(branch_task)) if branch_task.base_branch else None
             except Exception as e:  # a bot removed from the crew, a missing workspace, a git failure
                 self._record(task_id, Done(final_text="", is_error=True, error=f"crewbots: {e}"))
                 self._failed(task_id, str(e))
-                if (task.base_branch or task.review_of) and "HEAD is not on the task branch" in str(e):
-                    self._branch_notice(task_id, str(e))
                 return None
             backend = self.backends[bot.backend]
             if task.kind != "review":
@@ -471,20 +460,6 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
             looked_at: dict[str, str] = {}
             started = time.time()  # a text file a reply names counts as made by it if it changed since
             self._shared_now[task_id] = set()
-            branch_error: str | None = None
-
-            async def watch_branch() -> None:
-                nonlocal branch_error
-                checkout = self._branch_checkout(branch_task)
-                while True:
-                    await asyncio.sleep(2)
-                    if not branch_mode.turn_safe(checkout, branch_start):
-                        branch_error = f"{branch_task.repo}: HEAD left {branch_task.branch} or its history was rewritten; stopped"
-                        if run := self._runs.get(task_id):
-                            run.cancel()
-                        return
-
-            watcher = asyncio.create_task(watch_branch()) if branch_task.base_branch else None
             try:
                 if task.kind == "seat":
                     self._seat_dispatch[task_id] = self._seat_turn_seen.get(task_id, 0)
@@ -545,31 +520,17 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
                             case Done():
                                 done = event
             except asyncio.CancelledError:
-                if branch_error:
-                    self.store.clear_pending(task_id)
-                    self._set(task_id, status=Status.FAILED, error=branch_error)
-                    self._branch_notice(task_id, branch_error)
-                else:
-                    self._set(task_id, status=Status.CANCELLED)
+                self._set(task_id, status=Status.CANCELLED)
                 raise
             except Exception as e:  # the backend broke: its CLI wouldn't start, or its protocol did
                 done = Done(final_text="", is_error=True, error=f"crewbots: {e}", retry="transient")
                 self._record(task_id, done)
             finally:
-                if watcher:
-                    watcher.cancel()
-                    await asyncio.gather(watcher, return_exceptions=True)
-                    checkout = self._branch_checkout(branch_task)
-                    if not branch_error and not branch_mode.turn_safe(checkout, branch_start):
-                        branch_error = f"{branch_task.repo}: HEAD left {branch_task.branch} or its history was rewritten; stopped"
-                        self._branch_notice(task_id, branch_error)
-                        done = Done(final_text="", is_error=True, error=branch_error)
-                        self._record(task_id, done)
                 self._seat_dispatch.pop(task_id, None)
                 await self.browser.close_task(task_id)
                 if open_session is None:
                     self._tokens.pop(token, None)
-                elif (open_session.session.alive and not stalled and not branch_error
+                elif (open_session.session.alive and not stalled
                       and open_session.coordinator == self.is_coordinator(task.bot)
                       and open_session.chief == self.is_chief(task.bot)):
                     open_session.last_used = asyncio.get_running_loop().time()

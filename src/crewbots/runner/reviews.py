@@ -113,7 +113,7 @@ class Reviewing(Checks):
         if not (work.repo and work.worktree_path and Path(work.worktree_path).exists()):
             return ""
         try:
-            onto = work.base_branch or worktree.git_read(Path(work.repo), "rev-parse", "HEAD")
+            onto = worktree.git_read(Path(work.repo), "rev-parse", "HEAD")
             return worktree.change_id(Path(work.worktree_path), onto)
         except (worktree.GitError, OSError):
             return ""

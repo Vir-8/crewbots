@@ -6,7 +6,7 @@ import subprocess
 
 import pytest
 
-from crewbots import attribution, branch_mode, paths, worktree
+from crewbots import attribution, paths, worktree
 from crewbots.backends import Access, ClaudeAgent, ClaudeCLI, CodexExec, RunSpec
 from crewbots.backends.claude_cli import NO_ATTRIBUTION, settings
 from crewbots.backends.claude_sdk import ClaudeAgentSession
@@ -152,14 +152,6 @@ def test_a_squash_merge_carries_neither_the_summary_s_nor_the_branch_commits_tra
     commit = worktree.merge(wt, f"Add a\n\nWhy.\n\n{CLAUDE}\n{HUMAN}")
     assert body(repo, commit).strip() == f"Add a\n\nWhy.\n\n{HUMAN}"
     assert (repo / "a").read_text() == "a\n"
-
-
-def test_a_branch_mode_merge_strips_the_trailer(repo):
-    checkout = branch_mode.start(repo, "task-1")
-    (repo / "file").write_text("saved\n")
-    commit, tip = branch_mode.merge(checkout, f"Update game\n\n{CLAUDE}\n{HUMAN}")
-    assert body(repo, commit).strip() == f"Update game\n\n{HUMAN}"
-    assert body(repo, tip).strip() == f"Update game\n\n{HUMAN}"
 
 
 def test_a_real_squash_merge_with_untidy_whitespace_in_the_summary_merges_cleanly(repo, tmp_path):

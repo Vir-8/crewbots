@@ -146,13 +146,11 @@ def test_refuses_merge_in_progress(setup):
     refused(runner, client, repo, "No merge in progress")
 
 
-def test_refuses_while_a_task_is_merging_or_holds_the_folder(setup):
+def test_refuses_while_a_task_is_merging(setup):
     runner, client, repo = setup
     task = runner.store.create_task("engineer", "merge", status=Status.IDLE)
     runner.store.update_task(task.id, repo=str(repo.resolve()), merge_state="merging")
     refused(runner, client, repo, "No open merge proposals")
-    runner.store.update_task(task.id, merge_state=None, base_branch="main", worktree_path=str(repo))
-    refused(runner, client, repo, "No merge in progress")
 
 
 def test_refuses_when_the_target_is_not_checked_out(setup):

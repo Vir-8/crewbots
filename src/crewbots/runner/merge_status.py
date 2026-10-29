@@ -26,16 +26,10 @@ class MergeStatus:
         repo = Path(task.repo)
         try:
             tip = worktree.git_read(repo, "rev-parse", "--verify", f"refs/heads/{task.branch}")
-            if task.base_branch:
-                if worktree.git_read(repo, "symbolic-ref", "--short", "HEAD") == task.branch and worktree.git_read(
-                        repo, "status", "--porcelain"):
-                    return None  # the folder holds work the branch does not yet
-                into = task.base_branch
-            else:
-                if task.worktree_path and Path(task.worktree_path).is_dir() and worktree.git_read(
-                        Path(task.worktree_path), "status", "--porcelain"):
-                    return None  # uncommitted work the branch does not yet hold
-                into = worktree.git_read(repo, "symbolic-ref", "--short", "HEAD")
+            if task.worktree_path and Path(task.worktree_path).is_dir() and worktree.git_read(
+                    Path(task.worktree_path), "status", "--porcelain"):
+                return None  # uncommitted work the branch does not yet hold
+            into = worktree.git_read(repo, "symbolic-ref", "--short", "HEAD")
             return into if worktree.already_in(repo, f"refs/heads/{into}", tip, task.base) else None
         except worktree.GitError:
             return None
@@ -120,7 +114,7 @@ class MergeStatus:
 
     def wrong_branch(self, task: Task) -> str | None:
         """What to tell a worktree task whose HEAD is not on its own branch (another branch, or detached), or None."""
-        if task.base_branch or not (task.worktree_path and task.branch) or not Path(task.worktree_path).is_dir():
+        if not (task.worktree_path and task.branch) or not Path(task.worktree_path).is_dir():
             return None
         try:
             head = worktree.git_read(Path(task.worktree_path), "symbolic-ref", "--short", "HEAD")

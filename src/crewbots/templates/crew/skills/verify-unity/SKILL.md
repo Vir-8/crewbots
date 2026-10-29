@@ -14,9 +14,8 @@ details. "It compiles" alone isn't done.
 
 - A Unity project (it has `ProjectSettings/ProjectVersion.txt`) is worked on as the user sets per project. **The
   folder itself**, the default: on whatever branch it's on, beside the user and the other engineers, each on different
-  files. The Editor the user keeps open on it sees everyone's work, yours included. **One branch at a time**: the same
-  folder, on the task's own branch, one task at a time. **A worktree each**: a checkout of your own, so you verify in an
-  Editor opened on your worktree, found by its `projectRoot`, not the user's.
+  files. The Editor the user keeps open on it sees everyone's work, yours included. **A worktree each**: a checkout of
+  your own, so you verify in an Editor opened on your worktree, found by its `projectRoot`, not the user's.
 - The project's Editor is shared: crewbots lets one task at a time make Unity MCP tool calls, and answers others that
   it's busy, and with whom. Then do what doesn't need it, or end your turn: you're told when it's free. In a worktree of
   your own, the Editor opened on it is yours, and nobody waits. Keep each check short, so

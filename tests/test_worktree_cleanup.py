@@ -8,7 +8,7 @@ import httpx
 import pytest
 from fakes import ScriptedCrew, bot, git_repo, wait_until
 
-from crewbots import projects, worktree
+from crewbots import worktree
 from crewbots.api import create_app
 from crewbots.backends import Access
 from crewbots.crew_tools import CrewTools
@@ -249,24 +249,6 @@ def test_sweep_skips_unfinished_tasks(tmp_path, status):
     report = runner.sweep_worktrees()
     assert report["removed"] == [] and report["kept"][0]["task_id"] == task.id
     assert (wt.path / "new").read_text() == "still working"
-    store.close()
-
-
-async def test_branch_setting_is_read_but_task_still_uses_worktree(tmp_path, caplog):
-    import dataclasses
-    import logging
-
-    repo = git_repo(tmp_path / "repo")
-    store = Store(tmp_path / "crew.db")
-    crew = ScriptedCrew(store, tmp_path, bot("engineer", access=Access.WORKSPACE_WRITE))
-    project = projects.Project("game", repo, "Game", tmp_path / "game.md", isolation_setting="branch")
-    crew.runner.reload(dataclasses.replace(crew.runner.crew, projects={"game": project}))
-    with caplog.at_level(logging.INFO):
-        task = crew.runner.submit("engineer", "work", workspace=str(repo))
-        await wait_until(crew.settled(task.id))
-    task = store.get_task(task.id)
-    assert task.worktree_path and Path(task.worktree_path) != repo
-    assert "Project game uses branch isolation; using a worktree" in caplog.text
     store.close()
 
 

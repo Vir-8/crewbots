@@ -18,8 +18,8 @@ The "Your crew" menu at the bottom of the sidebar, or ⌘K. Landed has its own r
 
 ## Driving it with scripts/verify
 - Open the menu with `.side-row.crew-button`, then click the item by its text.
-- Projects: a row opens its sheet; "Where tasks work" is a `.segmented` of "The folder itself", "A worktree each" and
-  "One branch at a time", and the row's second line ends with the one in use. The demo's `glider` is a Unity project,
+- Projects: a row opens its sheet; "Where tasks work" is a `.segmented` of "The folder itself" and "A worktree each",
+  and the row's second line ends with the one in use. The demo's `glider` is a Unity project,
   worked in its folder itself.
 - The page is in `.main`; its title is the `h1`.
 - `?update` in the preview URL shows the update banner.
