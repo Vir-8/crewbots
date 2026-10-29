@@ -135,6 +135,8 @@ def delete(home: Path, name: str) -> None:
 
 
 def listing(projects: dict[str, Project]) -> str:
-    """The projects as bots see them: name, folder and what it is."""
-    return "\n".join(f"- {p.name} ({str(p.folder).replace(str(Path.home()), '~', 1)}){f': {p.gist}' if p.gist else ''}"
-                     for p in projects.values())
+    """The projects as bots see them: name, folder, how its work is done, and what it is."""
+    how = {"in_place": "worked in its folder itself, on its current branch: no worktrees or branches",
+           "worktree": "each task in a worktree of its own"}
+    return "\n".join(f"- {p.name} ({str(p.folder).replace(str(Path.home()), '~', 1)}; {how[p.isolation]})"
+                     + (f": {p.gist}" if p.gist else "") for p in projects.values())

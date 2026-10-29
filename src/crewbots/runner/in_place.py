@@ -1,15 +1,15 @@
 """Work done in a project's folder itself (projects.py `in_place`) is committed there once it's approved, where a
 worktree's work would be merged: the lead proposes it with `propose_merge` as usual, and crewbots commits just the files
 the work handed back as its output, with their Unity .meta files and those of new folders they're in, on whatever
-branch the folder is on. Other work in progress there, the user's or another engineer's, stays uncommitted. The commit
-shows on the Landed page as a merge does, and the chief proposes the push."""
+branch the folder is on, which must still be the one it was on when the work began. Other work in progress there, the
+user's or another engineer's, stays uncommitted. The commit shows on the Landed page as a merge does, and the chief
+proposes the push. It runs under the merge lock its caller holds (merge_status._off_loop), as a merge does."""
 
 from pathlib import Path
 
 from crewbots import worktree
 from crewbots.backends import Access
 from crewbots.runner.common import MergeError
-from crewbots.runner.merge_status import _MERGE_LOCK
 from crewbots.store import Task
 
 
@@ -59,14 +59,17 @@ class InPlace:
             raise MergeError(f"{work.id} handed back none of the files it changed as its output, so there's nothing of "
                              "its to commit: have it hand back again listing them")
         message = worktree.final_message(message)
-        with _MERGE_LOCK:
-            base = worktree._git(repo, "rev-parse", "HEAD")
-            into = worktree._git(repo, "symbolic-ref", "--short", "HEAD")
-            worktree._git(repo, "add", "--all", "--", *files)
-            worktree._git(repo, *worktree.NO_HOOKS, "commit", "-q", "--no-verify", "--cleanup=whitespace", "-m",
-                          message, "--", *files)  # just these, whatever else is staged
-            worktree.verify_message(repo, "HEAD", message)
-            commit = worktree._git(repo, "rev-parse", "HEAD")
+        base = worktree._git(repo, "rev-parse", "HEAD")
+        into = worktree._git(repo, "symbolic-ref", "--short", "HEAD")
+        began = self.store.last_event(work.id, ("in_place",))
+        if began and began.data.get("branch") != into:
+            raise MergeError(f"{repo} is on {into} now, not {began.data.get('branch')} as when {work.id} began, so nothing "
+                             "was committed: switch it back, then merge again")
+        worktree._git(repo, "add", "--all", "--", *files)
+        worktree._git(repo, *worktree.NO_HOOKS, "commit", "-q", "--no-verify", "--cleanup=whitespace", "-m", message,
+                      "--", *files)  # just these, whatever else is staged
+        worktree.verify_message(repo, "HEAD", message)
+        commit = worktree._git(repo, "rev-parse", "HEAD")
         task = self._set(work.id, merge_state="merged", repo=str(repo), base=base, merged_commit=commit,
                          merged_tip=commit)
         self._record(work.id, kind="merged", data={"commit": commit, "into": str(repo), "branch": into, "files": files,

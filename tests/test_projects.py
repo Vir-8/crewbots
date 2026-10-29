@@ -24,7 +24,8 @@ def test_a_project_is_a_folder_and_what_it_is(tmp_path):
     assert saved.folder == web and saved.gist == "The company website: Next.js, deployed from main."
     loaded, errors = projects.load(home)
     assert loaded == {"web": saved} and errors == {}
-    assert projects.listing(loaded) == f"- web ({web}): The company website: Next.js, deployed from main."
+    assert projects.listing(loaded) == (f"- web ({web}; each task in a worktree of its own): The company website: "
+                                        "Next.js, deployed from main.")
     projects.delete(home, "web")
     assert projects.load(home) == ({}, {})
 

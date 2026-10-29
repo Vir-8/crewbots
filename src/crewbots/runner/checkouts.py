@@ -33,6 +33,8 @@ class Checkouts:
             return self._in_place(workspace)
         matching = [p for p in self.crew.projects.values() if workspace.resolve() == p.folder.resolve()]
         if matching and matching[0].isolation == "in_place":  # beside the user and other bots, on its current branch
+            if not self.store.last_event(task.id, ("in_place",)):  # what its work is committed onto (runner/in_place.py)
+                self._record(task.id, kind="in_place", data={"branch": worktree._git(workspace, "branch", "--show-current")})
             return self._in_place(workspace)
         wt = worktree.create(workspace, task.id, root=self.worktree_root)
         self._set(task.id, repo=str(wt.repo), worktree_path=str(wt.path), branch=wt.branch, base=wt.base)
