@@ -173,8 +173,8 @@ async def test_open_work_follows_the_lifecycle_events(store, tmp_path):
     owed = lambda: [t.id for t in store.owed_by_delegator("eng-lead")]  # noqa: E731
     store.append_event(work.id, kind="handoff", data={})
     assert owed() == [work.id]
-    store.append_event(work.id, kind="review", data={"verdict": "fail"})  # back with the worker
-    assert owed() == []
+    store.append_event(work.id, kind="review", data={"verdict": "fail"})  # the delegator's to send back
+    assert owed() == [work.id]
     store.append_event(work.id, kind="handoff", data={})
     store.append_event(work.id, kind="review", data={"verdict": "pass"})
     assert owed() == [work.id]
@@ -304,4 +304,65 @@ async def test_waiting_on_the_user_is_the_status_or_a_pending_permission(store, 
     assert crew.runner.waiting_on_user(chat)
     store.append_event(chat.id, kind="questions_closed", data={})
     assert not crew.runner.waiting_on_user(chat)
+    await crew.runner.shutdown()
+
+
+def reviewed(store, crew, parent, work, verdict):
+    review = store.create_task("reviewer", "review", parent_id=parent.id, created_by="eng-lead", review_of=work.id,
+                               review_version=work.turns, status=Status.IDLE)
+    crew.runner.review(review.id, verdict, f"{verdict}", [])
+    return review
+
+
+async def test_each_reminder_names_the_next_step(store, tmp_path):
+    crew = ScriptedCrew(store, tmp_path, bot("eng-lead", can_delegate=True), bot("engineer"), bot("reviewer"))
+    step = lambda work: crew.runner._next_step(store.get_task(work.id))  # noqa: E731
+    parent, work = unmerged_work(store, crew)
+    assert step(work) == f"{work.id} (engineer) was handed back: have it reviewed (delegate with review_of), or drop it"
+    running = store.create_task("reviewer", "review", parent_id=parent.id, created_by="eng-lead", review_of=work.id,
+                                review_version=1, status=Status.RUNNING)
+    assert step(work) is None  # its reviewer is at it
+    store.update_task(running.id, status=Status.IDLE)
+    assert "has a review that ended without a verdict" in step(work)
+    crew.runner.review(running.id, Verdict.FAIL, "no", [])
+    assert step(work) == (f"{work.id} (engineer) failed review round 1 of {MAX_REVIEW_ROUNDS}: send back the findings "
+                          "you judge real with message, or drop it")
+    for version in (2, 3):
+        store.update_task(work.id, turns=version)
+        reviewed(store, crew, parent, store.get_task(work.id), Verdict.FAIL)
+    assert step(work) is None  # out of rounds: the chief hears of it, and it's the user's
+    _, approved = unmerged_work(store, crew)
+    reviewed(store, crew, parent, store.get_task(approved.id), Verdict.PASS)
+    assert step(approved) == f"{approved.id} (engineer) passed every review: propose it with propose_merge"
+    asking = store.create_task("engineer", "build", parent_id=parent.id, created_by="eng-lead", status=Status.NEEDS_INPUT)
+    assert [t.id for t in store.asking_delegator("eng-lead")] == [asking.id]
+    assert step(asking) == f"{asking.id} (engineer) asked you a question: answer it with message"
+    store.ask_permission(asking.id, "network", "", "get the web", "needed")
+    assert store.asking_delegator("eng-lead") == []  # that one waits on the user
+    await crew.runner.shutdown()
+
+
+async def test_work_handed_out_in_a_group_chat_is_chased_there(store, tmp_path):
+    crew = ScriptedCrew(store, tmp_path, bot("chief", can_delegate=True), bot("eng-lead", can_delegate=True),
+                        bot("engineer"))
+    store.set_stall_minutes(15)
+    room = crew.runner.create_room("Engineering", ["chief", "eng-lead", "engineer"], lead="eng-lead")
+    seat = store.create_task("eng-lead", "Engineering (eng-lead)", kind="seat", room_id=room["id"], status=Status.IDLE)
+    work = store.create_task("engineer", "build", parent_id=seat.id, created_by="eng-lead", status=Status.IDLE)
+    store.update_task(work.id, branch="crewbots/x", worktree_path="/nowhere", turns=1)
+    store.append_event(work.id, kind="handoff", data={})
+    said = lambda: [(m["author"], m["text"]) for m in store.room_messages(room["id"])]  # noqa: E731
+
+    assert crew.runner.stall_check(later(20)) == ["eng-lead"]
+    assert said()[-1] == ("crewbots", f"@eng-lead Still open for you, with nothing run for a while: {work.id} (engineer) "
+                                      "was handed back: have it reviewed (delegate with review_of), or drop it. Pick it "
+                                      "up, or say what is blocking it.")
+    await wait_until(lambda: any("Still open for you" in s.prompt for s in crew.specs_for("eng-lead")))
+    await wait_until(crew.settled(seat.id))
+    crew.runner.stall_check(later(40))
+    await wait_until(crew.settled(seat.id))
+    assert crew.runner.stall_check(later(60)) == ["eng-lead"]
+    assert said()[-1][0] == "crewbots" and said()[-1][1].startswith("@chief @eng-lead went quiet with open work")
+    await wait_until(lambda: any("went quiet" in s.prompt for s in crew.specs_for("chief")))
+    assert needs_me(crew, "chief") == [] and store.chief_events() == []  # raised where the work is, not twice
     await crew.runner.shutdown()

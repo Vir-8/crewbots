@@ -62,7 +62,9 @@ Hand back the real path and the state after it, not a summary:
   when the bug is WebKit's), is not a pass.
 
 Put it in the handoff's `evidence`. Whoever verifies your work reruns what matters, so make it rerunnable: the exact
-command, and the script's file if you wrote one.
+command, and the script's file if you wrote one. The commands that prove it and exit 0 when it works (a test file,
+`uv run ruff check src tests`, a `scripts/verify webkit … --js` check) go in `checks` as well: crewbots reruns them in
+a clean copy before any reviewer starts.
 
 ## Cleanup
 

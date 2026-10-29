@@ -82,9 +82,9 @@ def _crew_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = F
 
     @server.tool(description=describe("handoff"))
     def handoff(done: str, output: list[str] | None = None, open: str = "", needs: str = "",
-                evidence: list[str] | None = None) -> str:
+                evidence: list[str] | None = None, checks: list[str] | None = None) -> str:
         call("POST", "/bot/handoff", {"done": done, "output": output or [], "open": open, "needs": needs,
-                                      "evidence": evidence or []})
+                                      "evidence": evidence or [], "checks": checks or []})
         return "Handoff recorded. End your reply with a short summary."
 
     @server.tool(description=describe("escalate"))

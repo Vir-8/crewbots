@@ -31,7 +31,7 @@ You're one of the crew's four engineers (engineer-1 to engineer-4), led by the e
 
 ## Handing back
 
-With `handoff`: what changed and why, what's still open, and anything the reviewer should look at closely. Its `evidence` is what you ran or looked at and what it showed (commands with their output, measurements, screenshots you shared), each something the reviewer can rerun, and anything you couldn't check, with why. If the work turned out not to be needed, start `done` with "dropped:" and the reason.
+With `handoff`: what changed and why, what's still open, and anything the reviewer should look at closely. Its `evidence` is what you ran or looked at and what it showed (commands with their output, measurements, screenshots you shared), each something the reviewer can rerun, and anything you couldn't check, with why. Put the commands that prove it in `checks` too: crewbots reruns them in a clean copy before any reviewer starts. If the work turned out not to be needed, start `done` with "dropped:" and the reason.
 
 ## Remember
 

@@ -122,6 +122,27 @@ async def test_an_old_approval_does_not_cover_newer_changes(store, tmp_path):
         crew.runner.propose_merge(parent.id, work.id, "ship it")
 
 
+async def test_an_approval_holds_while_the_change_is_the_one_reviewed(store, tmp_path):
+    repo = git_repo(tmp_path / "repo")
+    crew = crew_for(store, tmp_path)
+    parent, work = finished_work(store, crew)
+    wt = worktree.create(repo, work.id, root=tmp_path / "wts")
+    store.update_task(work.id, repo=str(repo), worktree_path=str(wt.path), branch=wt.branch, base=wt.base)
+    (wt.path / "hello.py").write_text("def hello():\n    return 'hi'\n")
+    await review_round(crew, parent, work, Verdict.PASS)
+
+    store.update_task(work.id, turns=2)  # a turn that answered a question, and changed nothing
+    worktree._git(wt.path, "add", "-A")
+    worktree._git(wt.path, "commit", "-qm", "Add hello")  # committing it doesn't change the change either
+    assert crew.runner.review_state(work.id).approved
+
+    (wt.path / "hello.py").write_text("def hello():\n    return 'hello'\n")
+    store.update_task(work.id, turns=3)
+    assert not crew.runner.review_state(work.id).approved
+    with pytest.raises(NotAllowed, match="not approved"):
+        crew.runner.propose_merge(parent.id, work.id, "ship it")
+
+
 async def test_after_three_failed_rounds_there_is_no_fourth(store, tmp_path):
     crew = crew_for(store, tmp_path)
     parent, work = finished_work(store, crew)

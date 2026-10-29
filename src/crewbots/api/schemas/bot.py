@@ -40,6 +40,7 @@ class HandoffBody(BaseModel):
     open: str = ""
     needs: str = ""
     evidence: list[str] = []  # what was run or seen to prove it works, and what it showed
+    checks: list[str] = []  # commands that prove it, which crewbots reruns before a review
 
 class Choice(BaseModel):
     label: str

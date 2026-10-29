@@ -1,8 +1,11 @@
 """The review round: reviews of a piece of work counted in versions, and code review's lead and reviewers."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any
 
+from crewbots import worktree
+from crewbots.runner.checks import Checks
 from crewbots.runner.common import NotAllowed
 from crewbots.store import Review, Status, Task, Verdict
 
@@ -13,12 +16,14 @@ REVIEW_FINDINGS_CHARS = 20_000  # of each reviewer's findings, for the lead
 @dataclass(frozen=True)
 class ReviewState:
     """Where a piece of work stands in review. A round is one reviewed version of the work (its `turns` when the
-    reviews were asked for), so a review of an older version never approves newer changes."""
+    reviews were asked for), so a review of an older version never approves newer changes: unless the work's change is
+    still the one reviewed, after a turn that changed nothing or a clean rebase (`same_change`)."""
 
     work_id: str
     version: int  # the work as it is now
     rounds: list[int]  # the versions that were reviewed, in order
     latest: list[tuple[Task, Review | None]]  # the review tasks of the last round, with their verdicts
+    same_change: bool = False  # it's on a later version than the last round's, with the same change
 
     @property
     def round(self) -> int:
@@ -31,7 +36,7 @@ class ReviewState:
     @property
     def approved(self) -> bool:
         """Every review of the current version is in, and every one passed."""
-        return (self.settled and self.rounds[-1] == self.version
+        return (self.settled and (self.rounds[-1] == self.version or self.same_change)
                 and all(r.verdict is Verdict.PASS for _, r in self.latest))
 
     @property
@@ -50,7 +55,7 @@ class ReviewState:
                              "findings": r.findings if r else []} for t, r in self.latest]}
 
 
-class Reviewing:
+class Reviewing(Checks):
     """The part of Runner that counts review rounds, and runs code review's lead and reviewers."""
 
     def start_review(self, lead: str, *, title: str, pr: str, request: str) -> Task:
@@ -94,7 +99,24 @@ class Reviewing:
         reviews = self.store.reviewers_of(work_id)
         rounds = sorted({r.review_version for r in reviews if r.review_version is not None})
         latest = [(r, self.store.latest_review(r.id)) for r in reviews if rounds and r.review_version == rounds[-1]]
-        return ReviewState(work_id=work_id, version=work.turns, rounds=rounds, latest=latest)
+        state = ReviewState(work_id=work_id, version=work.turns, rounds=rounds, latest=latest)
+        if state.settled and rounds[-1] != work.turns and all(r.verdict is Verdict.PASS for _, r in latest):
+            reviewed = {e.data.get("change") if (e := self.store.last_event(t.id, ("review_change",))) else None
+                        for t, _ in latest}
+            if len(reviewed) == 1 and (change := reviewed.pop()) and change == self._change_of(work):
+                state = replace(state, same_change=True)
+        return state
+
+    def _change_of(self, work: Task) -> str:
+        """The id of what `work` changes now, against where it merges (worktree.change_id); "" when that can't be
+        told, so only the same version counts."""
+        if not (work.repo and work.worktree_path and Path(work.worktree_path).exists()):
+            return ""
+        try:
+            onto = work.base_branch or worktree.git_read(Path(work.repo), "rev-parse", "HEAD")
+            return worktree.change_id(Path(work.worktree_path), onto)
+        except (worktree.GitError, OSError):
+            return ""
 
     def _review_brief(self, task: Task) -> str | None:
         if not task.review_of:

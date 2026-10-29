@@ -12,6 +12,7 @@ How work moves between bots.
    Open:   anything unfinished or uncertain
    Needs:  what the next bot must do
    Evidence: what was run or seen to prove it works, and what it showed
+   Checks: the commands among them that crewbots reruns in a clean copy before review
    ```
 
    The next bot works from the handoff and the files it points to, nothing else.

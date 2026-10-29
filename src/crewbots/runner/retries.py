@@ -47,6 +47,8 @@ class Retries:
     async def _tries_inner(self, task_id: str, prompt: str, owed: bool = False, nudged: bool = False) -> None:
         """Runs a turn, and again when it failed for a passing reason: after a wait, or for a plan's limit, once the
         limit resets (the hold sees to that). A turn that had started a session picks up where it stopped."""
+        if (task := self.store.get_task(task_id)).review_of and (prompt := await self._checks_first(task, prompt)) is None:
+            return  # a check its work was handed back with failed: the round is settled without a reviewer's turn
         original, fresh, attempt = prompt, False, 0
         while attempt < len(self.retry_waits_s) + 1:
             self._attempts[task_id] = {"attempt": attempt + 1, "of": len(self.retry_waits_s) + 1,

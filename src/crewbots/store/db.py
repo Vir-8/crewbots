@@ -125,7 +125,8 @@ create table if not exists handoffs (
     open     text not null,
     needs    text not null,
     at       text not null,
-    evidence text not null default '[]'  -- JSON list: what was run or seen to prove it works, and what it showed
+    evidence text not null default '[]',  -- JSON list: what was run or seen to prove it works, and what it showed
+    checks   text not null default '[]'   -- JSON list: commands that prove it, which crewbots reruns before a review
 );
 create table if not exists review_drafts (  -- line comments for a pull request review, private until the user submits
     id          integer primary key autoincrement,
@@ -471,6 +472,7 @@ MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] =
     ("what an always-on bot had seen at its last look, by id", _add_columns("wakes", {
         "seen_event": "integer"})),
     ("the evidence a handoff carries", _add_columns("handoffs", {"evidence": "text not null default '[]'"})),
+    ("the checks a handoff carries", _add_columns("handoffs", {"checks": "text not null default '[]'"})),
 ]
 
 

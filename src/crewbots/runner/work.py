@@ -18,6 +18,7 @@ from crewbots.events import Notice
 from crewbots.memory import CREW_SCOPE, MemoryError, Note
 from crewbots.pages import Page
 from crewbots.routines import RoutineError
+from crewbots.runner.checks import MAX_CHECKS
 from crewbots.runner.closing import Closing
 from crewbots.runner.common import MergeError, NotAllowed
 from crewbots.runner.landed import Landed
@@ -517,7 +518,7 @@ class Work(Landed, Closing, MergeStatus):
                 log.exception("Could not remove the review copy %s", task.workspace)
 
     def handoff(self, task_id: str, done: str, output: list[str], open: str, needs: str,
-                evidence: list[str] | None = None) -> Handoff:
+                evidence: list[str] | None = None, checks: list[str] | None = None) -> Handoff:
         """Work handed back. Code work (a task with a branch) carries its evidence: what was run or seen to prove it
         works and what it showed, or what couldn't be checked and why. Whoever checks it next reruns what matters
         rather than taking the author's word, and "tests pass" alone isn't evidence of what the change does."""
@@ -527,7 +528,8 @@ class Work(Landed, Closing, MergeStatus):
             raise NotAllowed("hand back your evidence too: what you ran or looked at to prove it works and what it "
                              "showed (a command and its output, a measurement, a screenshot you shared), or what you "
                              "couldn't check and why. For crewbots, the verify-crewbots skill says how")
-        handoff = self.store.add_handoff(task_id, task.bot, done, output, open, needs, evidence)
+        checks = [line.strip() for line in checks or [] if line.strip()][:MAX_CHECKS]
+        handoff = self.store.add_handoff(task_id, task.bot, done, output, open, needs, evidence, checks)
         self._record(task_id, kind="handoff", data=handoff.to_json())
         if (dropped := DROPPED.match(done)) and task.kind == "thread" and task.merge_state in (None, "dropped"):
             reason = next((line for line in dropped[1].splitlines() if line.strip()), "dropped by its own bot")

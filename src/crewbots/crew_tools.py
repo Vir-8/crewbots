@@ -59,8 +59,8 @@ SPECS: dict[str, Spec] = {
     "browser_type": Spec(_object({"selector": STRING, "text": STRING, "key": STRING}, [])),
     "browser_evaluate": Spec(_object({"expression": STRING}, ["expression"])),
     "browser_console": Spec(_object({"clear": {"type": "boolean"}}, [])),
-    "handoff": Spec(_object({"done": STRING, "output": STRINGS, "open": STRING, "needs": STRING, "evidence": STRINGS},
-                            ["done"])),
+    "handoff": Spec(_object({"done": STRING, "output": STRINGS, "open": STRING, "needs": STRING, "evidence": STRINGS,
+                             "checks": STRINGS}, ["done"])),
     "escalate": Spec(_object({"question": STRING, "choices": CHOICES, "multiple": {"type": "boolean"}}, ["question"])),
     "ask_permission": Spec(_object({"what": STRING, "why": STRING, "kind": {"type": "string", "enum": [
         "action", "folder", "network"]}, "folder": STRING}, ["what"])),
@@ -200,7 +200,7 @@ class CrewTools:
             match name:
                 case "handoff":
                     r.handoff(me, args["done"], list(args.get("output") or []), args.get("open") or "",
-                              args.get("needs") or "", list(args.get("evidence") or []))
+                              args.get("needs") or "", list(args.get("evidence") or []), list(args.get("checks") or []))
                     wrong = r.wrong_branch(r.store.get_task(me))
                     return "Handoff recorded. End your reply with a short summary." + (f"\n\n{wrong}" if wrong else "")
                 case "escalate":

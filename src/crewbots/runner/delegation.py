@@ -95,6 +95,8 @@ class Delegation(RoomTalk):
             self._check_folder(parent, bot, workspace)
         task = self.submit(bot, goal, created_by=parent.bot, parent_id=parent_id,
                            workspace=workspace or parent.workspace, review_of=review_of, review_version=version)
+        if review_of and (change := self._change_of(work)):  # so a later version with the same change keeps the verdict
+            self._record(task.id, kind="review_change", data={"change": change})
         self.store.log_agent("review" if review_of else "delegate", parent.bot, bot, task.id, text=goal)
         self._say_in_room(parent, parent.bot, bot, f"{task.id}" + (f", a review of {review_of}" if review_of else "")
                           + f": {goal}")
@@ -367,6 +369,8 @@ def _report_section(task: Task, handoff: Handoff | None, review: Review | None =
         lines += ["HANDOFF", f"Done: {handoff.done}", f"Output: {', '.join(handoff.output) or '(none)'}",
                   f"Open: {handoff.open}", f"Needs: {handoff.needs}"]
         lines += ["Evidence:", *(f"- {e}" for e in handoff.evidence)] if handoff.evidence else ["Evidence: none given"]
+        if handoff.checks:
+            lines += ["Checks crewbots reruns before a review:", *(f"- `{c}`" for c in handoff.checks)]
     if task.result:
         lines += ["Final message:", _clip(task.result) or ""]
     return "\n".join(lines)

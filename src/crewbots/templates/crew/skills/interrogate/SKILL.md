@@ -17,7 +17,7 @@ Delegate the same review to every reviewing bot in the crew on a different backe
 
 - the intent paragraph
 - what to look at: each reviewer works in a throwaway copy of the work as it stands (the branch, with its uncommitted changes and new files), where it can run the checks and the change itself without touching the work
-- the owner's evidence, to rerun what matters rather than take its word
+- the owner's evidence, to rerun what matters rather than take its word. crewbots reruns the checks it was handed back with before the reviewers start, and tells them, so don't ask for those again
 - that it should report every problem it can prove, each with its location, a failure scenario and its proof (the command it ran and what it showed), and say plainly when it finds nothing
 
 If the crew has only one reviewing bot, run it once and say in your report that the review was single-model.

@@ -82,17 +82,24 @@ class Tasks:
 
     def owed_by_delegator(self, bot: str) -> list[Task]:
         """Code tasks other bots finished for `bot` that it still owes an action on: idle, and the latest of their handoff,
-        review verdict, merge, withdrawal and drop is a handoff or a passing review (a failing review hands the work back to
-        the worker, and the other three close it). One waiting on the user to merge it isn't owed, nor one dropped on
-        purpose."""
+        review verdict, merge, withdrawal and drop is a handoff or a verdict (one that failed is the delegator's to send
+        back; the other three close it). One waiting on the user to merge it isn't owed, nor one dropped on purpose."""
         rows = self.db.execute(
             "select t.* from tasks t join tasks p on p.id = t.parent_id where p.bot = ? and t.bot != p.bot "
             "and t.status = 'idle' and t.branch is not null and t.review_of is null "
             "and coalesce(t.merge_state, '') not in ('merged', 'merging', 'proposed', 'dropped') and (select e.kind || ':' || "
             "coalesce(json_extract(e.data, '$.verdict'), '') from events e where e.task_id = t.id and e.kind in "
             "('handoff', 'review', 'merged', 'merge_withdrawn', 'worktree_dropped') order by e.id desc limit 1) "
-            "in ('handoff:', 'review:pass') order by t.created_at, t.id", (bot,)).fetchall()
+            "in ('handoff:', 'review:pass', 'review:fail') order by t.created_at, t.id", (bot,)).fetchall()
         return [_task(r) for r in rows]
+
+    def asking_delegator(self, bot: str) -> list[Task]:
+        """Threads other bots are doing for `bot` that wait on its answer to a question they escalated, rather than on
+        the user's permission."""
+        rows = self.db.execute(
+            "select t.* from tasks t join tasks p on p.id = t.parent_id where p.bot = ? and t.bot != p.bot "
+            "and t.status = 'needs_input' and t.kind = 'thread' order by t.created_at, t.id", (bot,)).fetchall()
+        return [_task(r) for r in rows if not self.has_pending_permission(r["id"])]
 
     def stuck_tasks(self, bot: str) -> list[Task]:
         """Tasks of the bot's own that wait to run: held, queued, or interrupted by a daemon stop."""
@@ -107,21 +114,23 @@ class Tasks:
             (parent_id, Status.QUEUED, Status.RUNNING, Status.HELD, Status.NEEDS_INPUT)).fetchone()[0]
 
     def add_handoff(self, task_id: str, from_bot: str, done: str, output: list[str], open: str, needs: str,
-                    evidence: list[str] | None = None) -> Handoff:
+                    evidence: list[str] | None = None, checks: list[str] | None = None) -> Handoff:
         now = _now()
         cur = self.db.execute(
-            "insert into handoffs (task_id, from_bot, done, output, open, needs, at, evidence)"
-            " values (?, ?, ?, ?, ?, ?, ?, ?)",
-            (task_id, from_bot, done, json.dumps(output), open, needs, now, json.dumps(evidence or [])),
+            "insert into handoffs (task_id, from_bot, done, output, open, needs, at, evidence, checks)"
+            " values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (task_id, from_bot, done, json.dumps(output), open, needs, now, json.dumps(evidence or []),
+             json.dumps(checks or [])),
         )
         return Handoff(id=cur.lastrowid, task_id=task_id, from_bot=from_bot, done=done, output=output, open=open,
-                       needs=needs, at=now, evidence=list(evidence or []))
+                       needs=needs, at=now, evidence=list(evidence or []), checks=list(checks or []))
 
     def latest_handoff(self, task_id: str) -> Handoff | None:
         row = self.db.execute("select * from handoffs where task_id = ? order by id desc limit 1", (task_id,)).fetchone()
         if row is None:
             return None
-        return Handoff(**{**dict(row), "output": json.loads(row["output"]), "evidence": json.loads(row["evidence"])})
+        return Handoff(**{**dict(row), "output": json.loads(row["output"]), "evidence": json.loads(row["evidence"]),
+                          "checks": json.loads(row["checks"])})
 
     def merged_tasks(self, limit: int = 50) -> list[tuple[Task, str, dict[str, Any]]]:
         """Merged work, the latest merge first: each task, when it merged, and its `merged` event's data."""

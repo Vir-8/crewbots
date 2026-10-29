@@ -340,6 +340,18 @@ Each step leaves the system working.
   (`told:<task>` in `reads`), not once its siblings finish, which is when the delegator hears. A woken seat is sent
   at most `CATCH_UP` (12,000) characters of what it missed, newest kept, so a long stretch of work doesn't swell the
   next turn of a bot that only follows along.
+- **Trusting a verdict, cheaply.** A review records its work's change (`worktree.change_id`: `git patch-id
+  --stable` of the diff from where it meets its merge target, uncommitted and new files included, through a copy of the
+  index), as a `review_change` event. A version reviewed in an earlier round counts as approved when its change is the
+  same (`ReviewState.same_change`), so a turn that changed nothing, a commit or a clean rebase doesn't cost a round;
+  changed context lines do, which is the safe side. A handoff's `checks` are rerun before a review's first turn
+  (`runner/checks.py`, hooked in `_tries_inner`): `codex sandbox` with crewbots' own profile (`sandbox_overrides`), the
+  owner's network setting, no logins, in the review's copy, once per (work, version) and shared by the round's
+  reviewers. A failure settles each review with a FAIL verdict whose finding's proof is the output, without a turn.
+- **Chasing** (`runner/watchdog.py`): open work owed by its delegator (handed back, a verdict, or a question escalated
+  to it) gets two reminders and then goes to the chief, each line naming the next step (`_next_step`); work waiting on
+  its reviewers, or out of rounds (the chief hears `review limit`), isn't chased. A delegator's seat in a room is
+  reminded in the room, by `crewbots`, and the chief raised there too when it's a member.
 - **Routines:** a scheduled one is a message in its bot's chat, from the routine; a trigger opens a thread under the
   bot's chat, with its per-run budget, and the chat hears how it went.
 - **Unread** is kept in the daemon (`reads`), so the app and the menu bar agree.

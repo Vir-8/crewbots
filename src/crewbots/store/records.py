@@ -83,6 +83,7 @@ class Handoff:
     needs: str
     at: str
     evidence: list[str] = field(default_factory=list)  # what was run or seen to prove it works, and what it showed
+    checks: list[str] = field(default_factory=list)  # commands that prove it, which crewbots reruns before a review
 
     def to_json(self) -> dict[str, Any]:
         return asdict(self)

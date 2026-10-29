@@ -206,6 +206,26 @@ def remove_copy(repo: Path, path: Path) -> None:
     _git(repo, "worktree", "prune")
 
 
+def change_id(path: Path, onto: str) -> str:
+    """What the work in `path` changes, as one id: `git patch-id` of its diff, committed or not and with its new files,
+    from where it meets `onto`. A turn that changes nothing keeps it, and so does a rebase that leaves its hunks and
+    their context as they were. "" when it changes nothing. A copy of the index keeps git from hashing every file."""
+    with tempfile.TemporaryDirectory() as tmp:
+        index = Path(tmp) / "index"
+        real = Path(_git(path, "rev-parse", "--path-format=absolute", "--git-path", "index"))
+        if real.exists():
+            shutil.copyfile(real, index)
+        else:
+            _git(path, "read-tree", "HEAD", env={"GIT_INDEX_FILE": str(index)})
+        _git(path, "add", "-A", env={"GIT_INDEX_FILE": str(index)})
+        base = _git(path, "merge-base", "HEAD", onto)
+        diff = _git(path, "diff", "--cached", "--binary", base, strip=False, env={"GIT_INDEX_FILE": str(index)})
+    if not diff:
+        return ""
+    result = subprocess.run([paths.git(), "patch-id", "--stable"], input=diff, cwd=path, capture_output=True, text=True)
+    return result.stdout.split()[0] if result.returncode == 0 and result.stdout.strip() else ""
+
+
 def _git(cwd: Path, *args: str, strip: bool = True, env: dict[str, str] | None = None) -> str:
     result = subprocess.run([paths.git(), *args], cwd=cwd, capture_output=True, text=True,
                             env=None if env is None else {**os.environ, **env})
