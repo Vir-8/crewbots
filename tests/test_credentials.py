@@ -25,14 +25,16 @@ def test_git_and_gh_find_no_credentials_but_keep_your_name(tmp_path):
     assert env["GH_TOKEN"] == "" and env["GITHUB_TOKEN"] == ""
 
 
-def test_every_writing_bot_gets_it_and_read_only_ones_need_not(tmp_path):
+def test_every_bot_with_a_shell_gets_it(tmp_path):
     def claude_env(access):
         spec = RunSpec(prompt="", cwd=tmp_path, access=access)
         return ClaudeAgent().options(spec, ClaudeAgentSession(spec)).env
 
     assert claude_env(Access.WORKSPACE_WRITE)["GIT_CONFIG_VALUE_0"] == ""
     assert ClaudeCLI().env(RunSpec(prompt="", cwd=tmp_path, access=Access.WORKSPACE_WRITE))["GIT_CONFIG_VALUE_0"] == ""
-    assert "GH_CONFIG_DIR" not in claude_env(Access.READ_ONLY)  # no shell at all
+    assert claude_env(Access.READ_ONLY)["GIT_CONFIG_VALUE_0"] == ""  # its shell looks things up, with no logins
+    let_write = RunSpec(prompt="", cwd=tmp_path, access=Access.READ_ONLY, write_dirs=[tmp_path])
+    assert "GH_CONFIG_DIR" not in ClaudeAgent().options(let_write, ClaudeAgentSession(let_write)).env  # no shell
 
 
 def test_the_private_paths_are_the_keys_and_records_not_the_crews_own_files():

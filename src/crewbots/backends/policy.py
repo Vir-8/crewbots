@@ -1,7 +1,8 @@
 """crewbots' rules for what a bot may do, the same for every backend.
 
-- A **read-only** bot reads. On Claude it gets no shell at all, since Claude has no OS sandbox. On Codex, whose
-  read-only sandbox makes writes impossible, it may run commands, but not outward ones.
+- A **read-only** bot reads, and may run commands to look things up, but not outward ones: each CLI's sandbox lets
+  them write nothing but a temp folder. On Claude, one let write in a folder gets no shell, since its sandbox can't
+  keep commands out of the folder it works in without keeping them out of that one too.
 - A **writing** bot writes only inside its task's own folder (its worktree, when it has one).
 - **No bot** pushes, merges, publishes or rewrites history: that's the user's (team/rules.md).
 - A bot reaches only the MCP servers its role card grants, plus crewbots' own.
@@ -49,6 +50,7 @@ ASK = "ask the user with ask_permission"
 READ_ONLY = f"this bot is read-only (its role card says access: read_only); to write somewhere, {ASK}"
 USERS_TO_DO = "pushing, merging, publishing and rewriting history are the user's to do (team/rules.md)"
 NO_NETWORK = f"this bot has no network access; if this task needs it, {ASK}"
+OUTSIDE_SANDBOX = "commands run in the sandbox, with no way out of it: run it as it is"
 SEARCH_NEEDS_ANY_HOST = "a web search can lead anywhere, and this bot's network is limited to some hosts"
 PRIVATE = "that's private: the user's logins and keys, or crewbots' own; no bot reads it"
 STAY_IN_SANDBOX = f"commands run inside this bot's sandbox, which a bot can't widen itself; if this task needs more, {ASK}"
@@ -83,12 +85,15 @@ class Policy:
             return self.check_web(name, args)
         if name in EDIT_TOOLS:
             return self.check_write(args.get("file_path") or args.get("notebook_path") or "")
-        if self.access is Access.READ_ONLY:
-            return READ_ONLY
         if name == "Bash":
-            return self.check_command(str(args.get("command", "")), sandboxed=False)
+            if args.get("dangerouslyDisableSandbox"):
+                return OUTSIDE_SANDBOX
+            # Claude's sandbox lets a read-only bot's commands write nothing but its temp folder (claude_cli.shell)
+            return self.check_command(str(args.get("command", "")), sandboxed=not self.write_dirs)
         if name == "SandboxNetworkAccess":  # the sandbox asking for a host a command wants to reach
             return self.check_network(str(args.get("host", "")))
+        if self.access is Access.READ_ONLY:
+            return READ_ONLY
         return None
 
     # Codex, and the checks Claude's tool calls come down to.

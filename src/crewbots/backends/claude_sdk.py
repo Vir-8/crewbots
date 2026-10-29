@@ -42,12 +42,12 @@ from crewbots.backends.base import CLAUDE_BOT_ENV, Access, RunSpec, claude_retry
 from crewbots.backends.claude_cli import (
     EDIT_TOOLS,
     READ_ONLY_TOOLS,
-    SANDBOX,
     _images,
     _stringify,
     compacted,
     rate_limit,
     settings,
+    shell,
 )
 from crewbots.backends.credentials import without_credentials
 from crewbots.backends.policy import WEB_TOOLS, Policy
@@ -97,15 +97,13 @@ class ClaudeAgent:
         env = dict(CLAUDE_BOT_ENV)
         if not self.use_api_key and "ANTHROPIC_API_KEY" in os.environ:
             env["ANTHROPIC_API_KEY"] = ""
-        sandbox = None
-        if spec.access is Access.WORKSPACE_WRITE:
-            # Claude Code's OS sandbox for shell commands: writes confined to the working folder, and no opting out.
-            # Every command still goes through can_use_tool (the policy), since auto-allowing is off.
-            # The sandbox points TMPDIR at /tmp/claude, which it doesn't create; without it, tools needing a temp
-            # folder fail.
+        # Claude Code's OS sandbox for shell commands: writes confined to the working folder (a read-only bot's to its
+        # temp folder alone), and no opting out. Every command still goes through can_use_tool (the policy), since
+        # auto-allowing is off. The sandbox points TMPDIR at /tmp/claude, which it doesn't create; without it, tools
+        # needing a temp folder fail.
+        if sandbox := shell(spec.access, spec.write_dirs):
             Path("/tmp/claude").mkdir(exist_ok=True)
-            sandbox = SANDBOX
-            env |= without_credentials() | package_caches()
+            env |= without_credentials() | (package_caches() if spec.access is Access.WORKSPACE_WRITE else {})
         return ClaudeAgentOptions(
             cli_path=self.cli_path,
             cwd=str(spec.cwd),
@@ -120,12 +118,14 @@ class ClaudeAgent:
             add_dirs=[str(d) for d in [*spec.read_dirs, *spec.write_dirs]],
             # A read-only bot gets the web tools too when it has network (the policy checks each call's host), and
             # the file tools when the user let it write in a folder (the policy keeps them to it).
-            tools=[*READ_ONLY_TOOLS.split(","), *(EDIT_TOOLS.split(",") if spec.write_dirs else []),
-                   *(sorted(WEB_TOOLS) if spec.network else [])]
+            tools=[*READ_ONLY_TOOLS.split(","), *(["Bash"] if sandbox else []),
+                   *(EDIT_TOOLS.split(",") if spec.write_dirs else []), *(sorted(WEB_TOOLS) if spec.network else [])]
             if spec.access is Access.READ_ONLY else None,
             permission_mode="bypassPermissions" if full else "default",
             can_use_tool=None if full else session.policy,
-            settings=json.dumps(extra) if (extra := settings(spec.access, spec.write_dirs, spec.deny_read)) else None,
+            settings=json.dumps(extra) if (extra := settings(
+                spec.access, spec.write_dirs, spec.deny_read,
+                [Path(folder).resolve() for folder in (spec.cwd, *spec.read_dirs)])) else None,
             env=env,
             sandbox=sandbox,
             effort=spec.effort if spec.effort in CLAUDE_EFFORTS else None,

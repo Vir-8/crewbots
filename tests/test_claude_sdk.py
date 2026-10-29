@@ -45,14 +45,18 @@ def worktree(tmp_path):
     return path
 
 
-def test_read_only_bots_read_and_nothing_else(worktree):
+def test_read_only_bots_read_and_look_things_up_in_their_sandbox(worktree):
     policy = ClaudePolicy(Access.READ_ONLY, worktree, {"crewbots"})
 
     assert policy.check_tool("Read", {"file_path": "/etc/hosts"}) is None
     assert policy.check_tool("ToolSearch", {"query": "select:mcp__blender__get_scene"}) is None  # loads a definition
     assert policy.check_tool("Grep", {"pattern": "x"}) is None
     assert "read-only" in policy.check_tool("Edit", {"file_path": str(worktree / "a.py")})
-    assert "read-only" in policy.check_tool("Bash", {"command": "ls"})
+    assert policy.check_tool("Bash", {"command": "git diff"}) is None  # its sandbox lets it write nothing
+    assert "user's to do" in policy.check_tool("Bash", {"command": "git push"})
+    assert "no way out" in policy.check_tool("Bash", {"command": "git diff", "dangerouslyDisableSandbox": True})
+    let_write = ClaudePolicy(Access.READ_ONLY, worktree, set(), write_dirs=[worktree / "out"])
+    assert "read-only" in let_write.check_tool("Bash", {"command": "ls"})  # no shell then: see claude_cli.shell
 
 
 def test_writing_bots_write_only_inside_their_task_folder(worktree):
@@ -135,17 +139,17 @@ def test_a_read_only_bot_gets_the_web_tools_only_with_network(worktree):
         spec = RunSpec(prompt="x", cwd=worktree, access=Access.READ_ONLY, network=network)
         return ClaudeAgent(cli_path="claude").options(spec, ClaudeAgentSession(spec)).tools
 
-    assert tools(False) == ["Read", "Glob", "Grep", "ToolSearch"]
-    assert tools(True) == ["Read", "Glob", "Grep", "ToolSearch", "WebFetch", "WebSearch"]
+    assert tools(False) == ["Read", "Glob", "Grep", "ToolSearch", "Bash"]
+    assert tools(True) == ["Read", "Glob", "Grep", "ToolSearch", "Bash", "WebFetch", "WebSearch"]
 
 
 async def test_a_refusal_is_reported_and_tells_claude_why(worktree):
     policy = ClaudePolicy(Access.READ_ONLY, worktree, set())
 
-    decision = await policy("Bash", {"command": "rm -rf build"}, None)
+    decision = await policy("Write", {"file_path": str(worktree / "build.py")}, None)
 
     assert decision.behavior == "deny" and "read-only" in decision.message
-    assert policy.take_refusals() == [f"Refused Bash: {READ_ONLY}"]
+    assert policy.take_refusals() == [f"Refused Write: {READ_ONLY}"]
     assert policy.take_refusals() == []
 
 
@@ -217,10 +221,14 @@ def test_the_cli_gets_only_crewbots_tools_and_the_repos_settings(tmp_path, monke
 
     assert options.strict_mcp_config and options.setting_sources == ["project", "local"]
     assert options.system_prompt == {"type": "preset", "preset": "claude_code", "append": "You review."}
-    assert options.tools == ["Read", "Glob", "Grep", "ToolSearch"] and options.permission_mode == "default"
+    assert options.tools == ["Read", "Glob", "Grep", "ToolSearch", "Bash"] and options.permission_mode == "default"
+    assert options.sandbox["enabled"] and "network" not in options.sandbox  # a shell to look things up, no servers
+    deny = json.loads(options.settings)["permissions"]["deny"]
+    folders = (tmp_path.resolve(), (tmp_path / "skills").resolve())
+    assert {f"Edit(/{folder}/**)" for folder in folders} <= set(deny)  # its commands write in neither
     assert options.can_use_tool is session.policy
     assert set(options.mcp_servers) == {"resolve"}  # no crew tools without a CrewTools
-    assert options.env == {"ANTHROPIC_API_KEY": "", "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
+    assert options.env["ANTHROPIC_API_KEY"] == "" and options.env["GH_TOKEN"] == ""  # no logins in its shell
     assert options.add_dirs == [str(tmp_path / "skills")]
 
 
@@ -355,13 +363,13 @@ async def test_refusals_during_a_turn_become_notices(worktree):
 
     class Refusing(FakeClient):
         async def receive_messages(self):
-            await session.policy("Bash", {"command": "rm -rf ."}, None)
+            await session.policy("Write", {"file_path": str(worktree / "a.py")}, None)
             yield result("couldn't")
 
     session.client = Refusing([])
     events = await collect(session.turn("clean up"))
 
-    assert Notice(message=f"Refused Bash: {READ_ONLY}") in events
+    assert Notice(message=f"Refused Write: {READ_ONLY}") in events
 
 
 # The in-process crew tools

@@ -91,7 +91,7 @@ Worktrees keep bots from colliding, not from misbehaving. A bot reading a hostil
      every bot tool call crewbots refused, goes in `agent_log` (`GET /v1/agent-log`, `crewbots log`). It's kept
      when the group chat or task it was about is deleted.
 2. **One policy, enforced the same way on both backends** (`backends/policy.py`):
-   - Read-only bots read.
+   - Read-only bots read, and look things up in a shell that changes nothing.
    - Writing bots write only in their task's folder.
    - No bot pushes, merges, publishes or rewrites history.
    - Bots reach only the MCP servers their role card grants.
@@ -99,7 +99,7 @@ Worktrees keep bots from colliding, not from misbehaving. A bot reading a hostil
      (`network: true`), or a list of hosts.
 
    How each backend enforces it:
-   - **Claude:** every tool call goes through `can_use_tool`. Writing bots' shell commands run in Claude Code's OS sandbox, with no opting out, so they can't write outside the folder.
+   - **Claude:** every tool call goes through `can_use_tool`. Shell commands run in Claude Code's OS sandbox, with no opting out: a writing bot's can't write outside the folder, and a read-only bot's write nothing but the sandbox's temp folder (the folders it works in are denied to them with `Edit` rules), so it can look things up (`git diff`, a log) but change nothing. A read-only bot the user let write in a folder gets no shell, since denying its own folder would deny that one too.
    - **Codex:** the sandbox is the boundary: a permissions profile of crewbots' own (`default_permissions="crewbots"`, set with `-c`, which wins over a `sandbox_mode` in the user's config), extending Codex's `:workspace` or `:read-only`. `/tmp` and `$TMPDIR` are read-only in it, and each session gets its own temp folder. Codex asks only to *leave* the sandbox, since accepting an approval runs the command unsandboxed, so every such request is declined, with the policy's reason steered into the turn.
    - **Checked live on both:**
      - a shell write inside the folder works

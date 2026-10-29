@@ -23,6 +23,17 @@ EDIT_TOOLS = "Edit,Write,MultiEdit"  # for a read-only bot, only in the folders 
 # The hosts it may reach are unchanged.
 SANDBOX = {"enabled": True, "autoAllowBashIfSandboxed": False, "allowUnsandboxedCommands": False,
            "network": {"allowLocalBinding": True}}
+# A read-only bot's shell, so it can look things up itself (git diff, a log): the same sandbox, writing nowhere but its
+# temp folder (`settings` denies the folders it works in), and running no servers.
+READ_SANDBOX = {"enabled": True, "autoAllowBashIfSandboxed": False, "allowUnsandboxedCommands": False}
+
+
+def shell(access: Access, write_dirs: Sequence[Path] = ()) -> dict[str, Any] | None:
+    """The sandbox a bot's shell runs in, or None for no shell (a read-only bot let write in a folder, whose own
+    folder can't be denied to its commands without denying that folder too) or no sandbox (full access)."""
+    if access is Access.WORKSPACE_WRITE:
+        return SANDBOX
+    return READ_SANDBOX if access is Access.READ_ONLY and not write_dirs else None
 
 
 def private_rules(extra: Sequence[Path] = ()) -> list[str]:
@@ -37,13 +48,17 @@ def private_rules(extra: Sequence[Path] = ()) -> list[str]:
 NO_ATTRIBUTION: dict[str, Any] = {"includeCoAuthoredBy": False, "attribution": {"commit": "", "pr": ""}}
 
 
-def settings(access: Access, write_dirs: Sequence[Path] = (), deny_read: Sequence[Path] = ()) -> dict[str, Any] | None:
+def settings(access: Access, write_dirs: Sequence[Path] = (), deny_read: Sequence[Path] = (),
+             works_in: Sequence[Path] = ()) -> dict[str, Any] | None:
     """What a bot that isn't on full access gets on top of the repo's settings: the private paths denied, and the
     folders the user let it write in, for this task, allowed to its file tools (and so to its sandbox's commands), with
-    a writing bot's package caches."""
+    a writing bot's package caches. A read-only bot's shell is denied the folders it works in (`works_in`: its working
+    folder and those added), which the sandbox would otherwise let commands write in."""
     if access is Access.FULL:
         return NO_ATTRIBUTION
     permissions: dict[str, list[str]] = {"deny": private_rules(deny_read)}
+    if shell(access, write_dirs) is READ_SANDBOX:
+        permissions["deny"] += [rule for folder in works_in for rule in (f"Edit(/{folder})", f"Edit(/{folder}/**)")]
     caches = package_caches().values() if access is Access.WORKSPACE_WRITE else ()
     if folders := [*map(str, write_dirs), *caches]:
         permissions["allow"] = [rule for folder in folders for rule in (f"Edit(/{folder})", f"Edit(/{folder}/**)")]
@@ -76,6 +91,8 @@ class ClaudeCLI:
             env.pop("ANTHROPIC_API_KEY", None)
         if spec.access is Access.WORKSPACE_WRITE:
             env |= without_credentials() | package_caches()
+        elif shell(spec.access, spec.write_dirs):
+            env |= without_credentials()
         return env
 
     def argv(self, spec: RunSpec) -> list[str]:
@@ -95,8 +112,11 @@ class ClaudeCLI:
         match spec.access:
             case Access.READ_ONLY:
                 edits = [EDIT_TOOLS] if spec.write_dirs else []
-                args += ["--permission-mode", "dontAsk", "--tools", ",".join([READ_ONLY_TOOLS, *edits, *web])]
-                args += ["--allowedTools", ",".join([READ_ONLY_TOOLS, *web, *mcp_tools])]
+                bash = ["Bash"] if shell(spec.access, spec.write_dirs) else []
+                args += ["--permission-mode", "dontAsk", "--tools", ",".join([READ_ONLY_TOOLS, *bash, *edits, *web])]
+                args += ["--allowedTools", ",".join([READ_ONLY_TOOLS, *bash, *web, *mcp_tools])]
+                if bash:
+                    Path("/tmp/claude").mkdir(exist_ok=True)  # the sandbox's TMPDIR, which it doesn't create
             case Access.WORKSPACE_WRITE:
                 # acceptEdits allows edits inside the working directory; Bash has to be allowed by name, and runs in
                 # the sandbox. With --print there is nobody to ask, so anything else is denied.
@@ -104,8 +124,9 @@ class ClaudeCLI:
                 Path("/tmp/claude").mkdir(exist_ok=True)  # the sandbox's TMPDIR, which it doesn't create
             case Access.FULL:
                 args += ["--permission-mode", "bypassPermissions"]
-        if extra := settings(spec.access, spec.write_dirs, spec.deny_read):
-            args += ["--settings", json.dumps(extra | ({"sandbox": SANDBOX} if spec.access is Access.WORKSPACE_WRITE else {}))]
+        works_in = [Path(folder).resolve() for folder in (spec.cwd, *spec.read_dirs)]
+        if extra := settings(spec.access, spec.write_dirs, spec.deny_read, works_in):
+            args += ["--settings", json.dumps(extra | ({"sandbox": box} if (box := shell(spec.access, spec.write_dirs)) else {}))]
         for path in [*spec.read_dirs, *spec.write_dirs]:
             args += ["--add-dir", str(path)]
         if spec.model:

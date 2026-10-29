@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from helpers import collect, fake_command, kinds, lines, write_fixture
 
@@ -59,22 +60,23 @@ def test_read_only_allows_reading_tools_and_crewbots_mcp_only():
     argv = ClaudeCLI().argv(spec)
 
     assert argv[argv.index("--permission-mode") + 1] == "dontAsk"
-    assert argv[argv.index("--tools") + 1] == "Read,Glob,Grep,ToolSearch"  # MCP tools load when they're needed
-    assert argv[argv.index("--allowedTools") + 1] == "Read,Glob,Grep,ToolSearch,mcp__crew"
+    assert argv[argv.index("--tools") + 1] == "Read,Glob,Grep,ToolSearch,Bash"  # MCP tools load when they're needed
+    assert argv[argv.index("--allowedTools") + 1] == "Read,Glob,Grep,ToolSearch,Bash,mcp__crew"
     assert "--strict-mcp-config" in argv
     config = json.loads(argv[argv.index("--mcp-config") + 1])
     assert config == {"mcpServers": {"crew": {"type": "stdio", "command": "crewbots-mcp", "args": [], "env": {}}}}
 
 
-def test_a_writing_bot_runs_its_commands_in_the_sandbox_and_no_bot_reads_the_private_paths():
+def test_every_bots_commands_run_in_the_sandbox_and_no_bot_reads_the_private_paths():
     def settings(access):
         argv = ClaudeCLI().argv(RunSpec(prompt="x", cwd=".", access=access))
         return json.loads(argv[argv.index("--settings") + 1]) if "--settings" in argv else None
 
     written, read = settings(Access.WORKSPACE_WRITE), settings(Access.READ_ONLY)
-    assert written["sandbox"]["enabled"] and "sandbox" not in read
+    assert written["sandbox"]["enabled"] and read["sandbox"]["enabled"] and "network" not in read["sandbox"]
     assert f"Read(/{paths.crew() / 'daemon.json'})" in read["permissions"]["deny"]
-    assert written["permissions"]["deny"] == read["permissions"]["deny"]
+    here = Path(".").resolve()
+    assert read["permissions"]["deny"] == written["permissions"]["deny"] + [f"Edit(/{here})", f"Edit(/{here}/**)"]
     caches = [f"Edit(/{paths.caches() / 'uv'}/**)", f"Edit(/{paths.caches() / 'npm'}/**)"]
     assert set(caches) <= set(written["permissions"]["allow"]) and "allow" not in read["permissions"]
     env = ClaudeCLI().env(RunSpec(prompt="x", cwd=".", access=Access.WORKSPACE_WRITE))
