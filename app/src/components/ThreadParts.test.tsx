@@ -45,3 +45,20 @@ describe("images returned by tools", () => {
     expect(renderToStaticMarkup(draw())).not.toContain("<img");
   });
 });
+
+describe("what each step says it did", () => {
+  const event = (id: number, data: StoredEvent["data"]): StoredEvent => ({ id, kind: "tool_call", data, task_id: "t", at: "2026-10-30T07:00:00Z" });
+  const calls = [
+    { call: event(1, { id: "a", name: "Grep", input: { pattern: "(?i)play ?mode", path: "/Users/v/Game/Assets" } }) },
+    { call: event(2, { id: "b", name: "Glob", input: { pattern: "{.agents,.claude,.codex}/**/SKILL.md" } }) },
+    { call: event(3, { id: "c", name: "Read", input: { file_path: "/Users/v/Game/AGENTS.md" } }) },
+  ];
+
+  it("counts searches as searches and keeps a pattern as it was written", () => {
+    vi.mocked(useState).mockImplementationOnce(() => [true, vi.fn()]);  // the steps, open
+    const html = renderToStaticMarkup(<Steps calls={calls} />);
+    expect(html).toContain("Ran 2 searches, Read a file");
+    expect(html).toContain("Searching for play ?mode (any case) in Assets");
+    expect(html).toContain("Looking for {.agents,.claude,.codex}/**/SKILL.md");
+  });
+});

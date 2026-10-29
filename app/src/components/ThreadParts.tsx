@@ -62,7 +62,9 @@ export function VerdictBlock({ data }: { data: Record<string, any> }) {
 }
 
 const KIND: [RegExp, string, string][] = [
-  [/^(Read|Glob|Grep|LS)$/, "Read", "file"],
+  [/^Read$/, "Read", "file"],
+  [/^(Grep|Glob)$/, "Ran", "search"],
+  [/^LS$/, "Listed", "folder"],
   [/^(Edit|Write|MultiEdit|NotebookEdit|apply_patch)$/, "Edited", "file"],
   [/^(Bash|shell)$/, "Ran", "command"],
   [/^(WebSearch|WebFetch|web_search)$/, "Searched the web", ""],
@@ -87,7 +89,7 @@ function summary(calls: { call: StoredEvent }[]): string {
     const key = `${verb}|${noun}`;
     counts.set(key, [verb, noun, (counts.get(key)?.[2] ?? 0) + n]);
   }
-  return [...counts.values()].map(([verb, noun, n]) => (noun ? `${verb} ${n === 1 ? "a" : n} ${noun}${n > 1 ? "s" : ""}` : verb)).join(", ");
+  return [...counts.values()].map(([verb, noun, n]) => (noun ? `${verb} ${n === 1 ? "a" : n} ${noun}${n > 1 ? (noun.endsWith("ch") ? "es" : "s") : ""}` : verb)).join(", ");
 }
 
 export function Steps({ calls }: { calls: { call: StoredEvent; result?: StoredEvent }[] }) {

@@ -82,13 +82,13 @@ export function describeCall(name: string, input: Record<string, any>): string {
   switch (name.replace("mcp__crewbots__", "")) {
     case "Bash":
     case "shell":
-      return `Running ${oneLine(unwrapShell(String(input.command ?? "")), 90)}`;
+      return `Running ${plain(unwrapShell(String(input.command ?? "")), 90)}`;
     case "Read":
       return `Reading ${file(input.file_path)}`;
     case "Grep":
-      return `Searching for ${oneLine(String(input.pattern ?? ""), 60)}`;
+      return `Searching for ${pattern(input.pattern)}${input.path ? ` in ${file(input.path)}` : ""}`;
     case "Glob":
-      return `Looking for ${oneLine(String(input.pattern ?? ""), 60)}`;
+      return `Looking for ${plain(String(input.pattern ?? ""), 60)}${input.path ? ` in ${file(input.path)}` : ""}`;
     case "Edit":
     case "Write":
     case "MultiEdit":
@@ -99,7 +99,7 @@ export function describeCall(name: string, input: Record<string, any>): string {
     case "web_search":
       return `Searching the web for ${oneLine(String(input.query ?? ""), 60)}`;
     case "WebFetch":
-      return `Reading ${oneLine(String(input.url ?? ""), 60)}`;
+      return `Reading ${plain(String(input.url ?? ""), 60)}`;
     case "delegate":
       return `Handing work to ${input.bot}`;
     case "share":
@@ -113,6 +113,19 @@ export function describeCall(name: string, input: Record<string, any>): string {
     default:
       return name.replace(/^mcp__\w+?__/, "").replace(/_/g, " ");
   }
+}
+
+/** A search's pattern as written, but "(?i)", the regular-expression flag for ignoring case, said in words. */
+function pattern(text: unknown): string {
+  const written = String(text ?? "");
+  const anyCase = written.startsWith("(?i)");
+  return plain(anyCase ? written.slice(4) : written, 60) + (anyCase ? " (any case)" : "");
+}
+
+/** A command, pattern or address on one line, as it was written: unlike prose, its `**` and backticks are part of it. */
+function plain(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > max ? flat.slice(0, max - 1) + "…" : flat;
 }
 
 /** Codex wraps commands as /bin/zsh -lc '…'; show the command itself. */
