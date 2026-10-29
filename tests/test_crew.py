@@ -137,7 +137,7 @@ def test_every_bot_is_told_it_can_delegate_and_coordinators_what_else_they_do(tm
 
     assert "`delegate(bot, goal" in chief and "`delegate(bot, goal" in engineer
     assert "`add_bot(" in chief and "`add_bot(" not in engineer and "`propose_merge(" not in engineer
-    assert "`handoff(" in chief and "`handoff(" in engineer
+    assert "ends with one `handoff`" in chief and "ends with one `handoff`" in engineer
     assert "This task comes from the user" in chief
     assert "delegated to you by chief" in engineer
 
