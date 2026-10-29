@@ -6,6 +6,7 @@ daemon's /bot/ API, which decides what this task may do; this process only trans
 tools for adding bots and proposing merges (CREWBOTS_DELEGATE=1), which the daemon refuses anyone else regardless.
 """
 
+import contextlib
 import json
 import os
 from typing import Any
@@ -15,7 +16,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ImageContent, TextContent
 
-from crewbots.crew_tools import describe, dropped_text, merge_text, recall_text, remembered_text, shared_text
+from crewbots.crew_tools import SPECS, describe, dropped_text, merge_text, offered, recall_text, remembered_text, shared_text
 
 INSTRUCTIONS = "Tools for working in a crewbots crew: hand work back, escalate decisions, and (for coordinators) delegate."
 
@@ -25,7 +26,18 @@ class CrewError(ToolError):
     only as "Error executing tool"."""
 
 
-def build_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = False) -> MCPServer:
+def build_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = False, kind: str | None = None,
+                 reviewing: bool = False) -> MCPServer:
+    """The crew tools for one task, less those a task of its kind isn't offered (`crew_tools.offered`)."""
+    server = _crew_server(client, can_delegate, is_chief=is_chief)
+    for name in SPECS:
+        if not offered(name, kind, reviewing):
+            with contextlib.suppress(ToolError):  # one only coordinators have
+                server.remove_tool(name)
+    return server
+
+
+def _crew_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = False) -> MCPServer:
     server = MCPServer(name="crewbots", instructions=INSTRUCTIONS)
 
     def call(method: str, path: str, body: dict[str, Any] | None = None) -> Any:
@@ -299,7 +311,8 @@ def main() -> None:
         build_review_server(client, reads_github="github" in flags, drafting="drafts" in flags).run("stdio")
     else:
         build_server(client, can_delegate=os.environ.get("CREWBOTS_DELEGATE") == "1",
-                     is_chief=os.environ.get("CREWBOTS_CHIEF") == "1").run("stdio")
+                     is_chief=os.environ.get("CREWBOTS_CHIEF") == "1", kind=os.environ.get("CREWBOTS_KIND") or None,
+                     reviewing=os.environ.get("CREWBOTS_REVIEWING") == "1").run("stdio")
 
 
 if __name__ == "__main__":

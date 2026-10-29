@@ -394,11 +394,10 @@ async def test_workers_cant_reach_coordinator_tools(store, tmp_path):
     task = store.create_task("engineer", "x")
     tools = CrewTools(crew.runner, task.id, can_delegate=False)
 
-    assert {d.name for d in tools.definitions()} == {
-        "handoff", "escalate", "review", "remember", "forget", "recall", "start_thread", "post", "delegate", "tasks",
-        "message", "stop_task", "ask", "open_group", "add_to_group", "working_state", "update_state", "remind_on",
-        "propose_routine", "share",
-        "write_page", "edit_page", "set_name", "ask_permission", "browser_open", "browser_screenshot",
+    assert {d.name for d in tools.definitions()} == {  # a thread's: no verdicts, names or routines
+        "handoff", "escalate", "remember", "forget", "recall", "start_thread", "post", "delegate", "tasks",
+        "message", "stop_task", "ask", "open_group", "add_to_group", "working_state", "update_state", "share",
+        "write_page", "edit_page", "ask_permission", "browser_open", "browser_screenshot",
         "browser_click", "browser_type", "browser_evaluate", "browser_console"}
     with pytest.raises(ToolRefused, match="not one of this bot's crew tools"):
         await tools.call("propose_merge", {"task_id": "t_x", "summary": "x"})
@@ -410,7 +409,7 @@ async def test_workers_cant_reach_coordinator_tools(store, tmp_path):
 
 def test_the_crew_server_holds_exactly_the_bots_tools(store, tmp_path):
     crew = ScriptedCrew(store, tmp_path, bot("engineer"))
-    server = crew_server(CrewTools(crew.runner, "t_x", can_delegate=False))
+    server = crew_server(CrewTools(crew.runner, store.create_task("engineer", "x").id, can_delegate=False))
 
     assert server["type"] == "sdk" and server["name"] == "crewbots"
 

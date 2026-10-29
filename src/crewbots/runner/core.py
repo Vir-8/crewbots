@@ -635,7 +635,7 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
             # Work it started on its own reaches nothing outside crewbots, so it gets none of the bot's own MCP servers:
             # which of their tools only read can't be told from their names.
             mcp_servers={**({} if proactive else bot.mcp),
-                         **({} if in_process else self._crew_tools(token, bot))},
+                         **({} if in_process else self._crew_tools(token, bot, task=task))},
             proactive=proactive,
             crew=CrewTools(self, task.id, self.is_coordinator(bot.name), follows=token) if in_process else None,
             deny_read=self._state_denials(bot.name),
@@ -666,14 +666,16 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
             self._awake.terminate()
             self._awake = None
 
-    def _crew_tools(self, token: str, bot: Bot, tools: str = "crew", flags: str = "") -> dict[str, McpServer]:
+    def _crew_tools(self, token: str, bot: Bot, tools: str = "crew", flags: str = "",
+                    task: Task | None = None) -> dict[str, McpServer]:
         if not self.api_url:
             return {}
         command, *args = self.mcp_command
         env = {"CREWBOTS_URL": self.api_url, "CREWBOTS_TOKEN": token,
                "CREWBOTS_DELEGATE": "1" if self.is_coordinator(bot.name) else "0",
                "CREWBOTS_CHIEF": "1" if self.is_chief(bot.name) else "0",
-               "CREWBOTS_TOOLS": tools, "CREWBOTS_REVIEW": flags,
+               "CREWBOTS_TOOLS": tools, "CREWBOTS_REVIEW": flags, "CREWBOTS_KIND": task.kind if task else "",
+               "CREWBOTS_REVIEWING": "1" if task and task.review_of else "0",
                "CREWBOTS_HOME": str(self.crew.home)}  # for the crew's own tool descriptions (prompts/tools/)
         return {MCP_SERVER_NAME: McpServer(command=command, args=list(args), env=env)}
 

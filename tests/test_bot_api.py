@@ -9,6 +9,7 @@ from fakes import bot, make_crew
 from fastapi.testclient import TestClient
 
 from crewbots.api import create_app
+from crewbots.crew_tools import tools_for
 from crewbots.events import Done
 from crewbots.mcp_server import build_server
 from crewbots.runner import MCP_SERVER_NAME, Runner
@@ -273,6 +274,24 @@ async def test_workers_delegate_but_only_coordinators_add_bots_and_propose_merge
     assert coordinator == worker | {"propose_merge", "withdraw_merge", "drop_task", "next_check", "room_status",
                                     "sweep_worktrees"}
     assert chief == coordinator | {"add_bot", "propose_push", "propose_replace_main"}
+
+
+async def test_each_task_is_offered_the_tools_for_what_it_is(crew_app):
+    client, _, _ = crew_app
+
+    async def offered(**where):
+        listed = {t.name for t in await build_server(client, can_delegate=False, **where).list_tools()}
+        assert listed == {t.name for t in tools_for(False, **where)}  # the same on Codex as on Claude
+        return listed
+
+    chat, seat, thread = await offered(kind="chat"), await offered(kind="seat"), await offered(kind="thread")
+    review = await offered(kind="thread", reviewing=True)
+    assert "handoff" in thread and not {"handoff", "review"} & (chat | seat)
+    assert "set_name" in chat and "set_name" not in seat | thread
+    assert {"propose_routine", "remind_on"} <= chat & seat and not {"propose_routine", "remind_on"} & (thread | review)
+    assert "review" in review and "review" not in thread
+    assert not {"handoff", "delegate", "start_thread", "open_group", "write_page"} & review
+    assert {"recall", "remember", "escalate", "share", "browser_open"} <= chat & seat & thread & review
 
 
 def test_a_verdict_from_a_task_that_is_not_a_review_is_refused_with_a_reason(crew_app):

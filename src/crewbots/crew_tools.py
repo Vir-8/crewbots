@@ -113,6 +113,25 @@ SPECS: dict[str, Spec] = {
 
 
 CHIEF_ONLY = {"add_bot", "propose_push", "propose_replace_main"}
+# Tools only some tasks are offered, by what the task is: listed to every task, they'd cost each turn for nothing.
+# The daemon still refuses one used out of place, with why.
+WHERE_THE_USER_TALKS = {"propose_routine", "remind_on"}  # a chat or a group chat
+NOT_IN_REVIEWS = {"delegate", "start_thread", "open_group", "add_to_group", "write_page", "edit_page", "handoff"}
+
+
+def offered(name: str, kind: str | None, reviewing: bool) -> bool:
+    """Whether a task of this kind (None: any) is offered the tool `name`."""
+    if kind is None:
+        return True
+    if name == "review":
+        return reviewing
+    if reviewing and (name in NOT_IN_REVIEWS or name in WHERE_THE_USER_TALKS):
+        return False
+    if name == "handoff":
+        return kind not in ("chat", "seat")  # nothing to hand back: a conversation goes on
+    if name == "set_name":
+        return kind == "chat"
+    return name not in WHERE_THE_USER_TALKS or kind in ("chat", "seat")
 
 
 def describe(name: str, home: Path | None = None) -> str:
@@ -120,9 +139,11 @@ def describe(name: str, home: Path | None = None) -> str:
     return prompts.text(f"tools/{name}", home)
 
 
-def tools_for(can_delegate: bool, home: Path | None = None, *, is_chief: bool = False) -> list[ToolDef]:
+def tools_for(can_delegate: bool, home: Path | None = None, *, is_chief: bool = False, kind: str | None = None,
+              reviewing: bool = False) -> list[ToolDef]:
     return [ToolDef(name, describe(name, home), spec.schema, spec.coordinator_only) for name, spec in SPECS.items()
-            if (can_delegate or not spec.coordinator_only) and (name not in CHIEF_ONLY or is_chief)]
+            if (can_delegate or not spec.coordinator_only) and (name not in CHIEF_ONLY or is_chief)
+            and offered(name, kind, reviewing)]
 
 
 class ToolRefused(Exception):
@@ -143,11 +164,12 @@ class CrewTools:
         return self.runner._tokens.get(self.follows, self._task_id) if self.follows else self._task_id
 
     def definitions(self) -> list[ToolDef]:
+        task = self.runner.store.get_task(self.task_id)
+        where = {"kind": task.kind, "reviewing": bool(task.review_of)}
         if not self.can_delegate:
-            return tools_for(False, self.runner.crew.home)
-        bot = self.runner.store.get_task(self.task_id).bot
-        return tools_for(self.can_delegate and self.runner.is_coordinator(bot), self.runner.crew.home,
-                         is_chief=self.can_delegate and self.runner.is_chief(bot))
+            return tools_for(False, self.runner.crew.home, **where)
+        return tools_for(self.runner.is_coordinator(task.bot), self.runner.crew.home,
+                         is_chief=self.runner.is_chief(task.bot), **where)
 
     async def call(self, name: str, args: dict[str, Any]) -> str | list[dict[str, Any]]:
         """Runs one tool and returns its result for the bot; raises ToolRefused with the reason it can't."""
