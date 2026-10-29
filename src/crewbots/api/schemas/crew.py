@@ -111,6 +111,7 @@ class CrewState(BaseModel):
     sessions: int
     limits: list[PlanLimitOut]
     background: list[BackgroundOut] = []
+    landed: int = 0  # merges since the user last looked at what landed
 
 class AgentLogOut(BaseModel):
     """One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a

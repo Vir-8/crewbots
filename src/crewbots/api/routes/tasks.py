@@ -8,6 +8,7 @@ from crewbots.api.schemas import (
     ChangesOut,
     ChildOut,
     EventOut,
+    LandedOut,
     MergeRequest,
     MergeResultOut,
     MergeStatusOut,
@@ -36,6 +37,21 @@ def routes(c: Context) -> APIRouter:
     @v1.post("/tasks", status_code=201, response_model=TaskOut)
     async def new_task(body: NewTask):
         return runner.submit(body.bot, body.goal, workspace=body.workspace).to_json()
+
+    @v1.get("/landed", response_model=LandedOut)
+    async def landed():
+        """Work that merged, the latest first, with the evidence and verdicts it merged on."""
+        return runner.landed()
+
+    @v1.post("/landed/seen", status_code=204)
+    async def landed_seen():
+        runner.mark_landed_seen()
+
+    @v1.post("/tasks/{task_id}/revert", response_model=TaskOut)
+    async def revert(task_id: str):
+        """Reverts merged work, as a commit of its own in the folder it merged into."""
+        task_or_404(task_id)
+        return runner.revert(task_id).to_json()
 
     @v1.post("/worktrees/sweep")
     async def sweep_worktrees():

@@ -20,6 +20,7 @@ import { Settings } from "./pages/Settings";
 import { Activity } from "./pages/Activity";
 import { Analytics } from "./pages/Analytics";
 import { Tools } from "./pages/Tools";
+import { Landed } from "./pages/Landed";
 import { bridge } from "./api";
 import { chatToOpen, latestChat } from "./sidebar";
 import { profileVisible, toggleProfile } from "./panelState";
@@ -217,6 +218,8 @@ export function App() {
           <CrewBots crew={crew} onEdit={setEditing} onChat={(bot) => setCurrent(`bot:${bot}`)} />
         ) : current === "page:activity" ? (
           <Activity crew={crew} onOpen={openTask} />
+        ) : current === "page:landed" ? (
+          <Landed crew={crew} onOpen={openTask} />
         ) : current === "page:routines" ? (
           <Routines crew={crew} onOpen={openTask} />
         ) : current === "page:projects" ? (

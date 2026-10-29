@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "ded94e1cb037";
+export const API_SCHEMA = "6f9392526afb";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -241,6 +241,7 @@ export interface CrewState {
   sessions: number;
   limits: PlanLimitOut[];
   background?: BackgroundOut[];
+  landed?: number;
 }
 
 export interface CursorOut {
@@ -421,6 +422,29 @@ export interface IntentOut {
   fires: number;
   last_fired_at: string | null;
   cancelled: boolean;
+}
+
+/** Work that merged, with what it merged on: its handback's evidence and the verdicts of the version that merged. */
+export interface LandedItem {
+  task: TaskOut;
+  merged_at: string;
+  commit: string | null;
+  into: string | null;
+  automatic: boolean;
+  evidence: string[];
+  verdicts: LandedVerdict[];
+  reverted: Record<string, unknown> | null;
+}
+
+export interface LandedOut {
+  items: LandedItem[];
+  seen_at: string | null;
+}
+
+export interface LandedVerdict {
+  bot: string;
+  verdict: string;
+  summary: string;
 }
 
 export interface LastMessage {

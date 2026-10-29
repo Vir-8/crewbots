@@ -4,6 +4,7 @@
 import { API_SCHEMA, API_VERSION } from "../api-types";
 import type { ConnectionStatus, Live, StoredEvent, Task } from "../types";
 import * as demo from "./demo";
+import { landedRequest } from "./demo/landed";
 import { projectRequest } from "./demo/projects";
 import { chats, crewState, mcpServers, pins, plans, previewFiles, setPins, reviewDrafts, reviewInbox, routines, skills, status, usageSummary } from "./fixtures";
 
@@ -87,6 +88,8 @@ async function request(method: string, path: string, body?: any) {
   }
   const projectsAnswer = projectRequest(method, url.pathname, parts, body, { publish, say });
   if (projectsAnswer) return projectsAnswer;
+  const landedAnswer = landedRequest(method, url.pathname, parts, allEvents, { publish, say });
+  if (landedAnswer) return landedAnswer;
   if (method === "GET" && url.pathname === "/chats") return ok(chats());
   if (url.pathname === "/pins") {
     if (method === "PUT") {

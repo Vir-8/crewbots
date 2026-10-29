@@ -360,7 +360,7 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
         return {"paused": self.paused, "restarting": self.restarting, "running": len(self._runs) - len(self._held),
                 "turns_running": self.turns_running(), "held": len(self._held), "sessions": len(self._sessions),
                 "limits": [{k: v for k, v in x.items() if k != "kind"} for x in limits],
-                "background": self.capacity.summary()}
+                "background": self.capacity.summary(), "landed": self.landed_unseen()}
 
     def user_busy(self) -> bool:
         """Whether any of the user's own work is running: anything but the crew's background work."""

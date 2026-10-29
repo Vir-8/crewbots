@@ -59,6 +59,30 @@ class MergeStatusOut(BaseModel):
     already_on: str | None  # the branch a proposal's changes are already part of
 
 
+class LandedVerdict(BaseModel):
+    bot: str
+    verdict: str
+    summary: str
+
+
+class LandedItem(BaseModel):
+    """Work that merged, with what it merged on: its handback's evidence and the verdicts of the version that merged."""
+
+    task: TaskOut
+    merged_at: str
+    commit: str | None
+    into: str | None  # the folder it merged into
+    automatic: bool  # merged by crewbots once its reviews passed, rather than by the user
+    evidence: list[str]
+    verdicts: list[LandedVerdict]
+    reverted: dict[str, Any] | None  # its revert's commit, once the user reverted it
+
+
+class LandedOut(BaseModel):
+    items: list[LandedItem]
+    seen_at: str | None  # when the user last looked
+
+
 class WithdrawalResultOut(TaskOut):
     notice: str | None = None
 

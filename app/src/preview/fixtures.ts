@@ -119,7 +119,7 @@ export const skills = [
 ];
 
 export const crewState = {
-  paused: false, restarting: false, running: 1, turns_running: 1, held: 1, sessions: 2,
+  paused: false, restarting: false, running: 1, turns_running: 1, held: 1, sessions: 2, landed: 1,
   limits: [{ plan: "claude", window: "five_hour", status: "limited", used_percent: 100, resets_at: demo.resetsAt }],
 };
 

@@ -123,6 +123,14 @@ class Tasks:
             return None
         return Handoff(**{**dict(row), "output": json.loads(row["output"]), "evidence": json.loads(row["evidence"])})
 
+    def merged_tasks(self, limit: int = 50) -> list[tuple[Task, str, dict[str, Any]]]:
+        """Merged work, the latest merge first: each task, when it merged, and its `merged` event's data."""
+        rows = self.db.execute(
+            "select e.at as merged_at, e.data as merged, t.id from tasks t join events e on e.id = (select max(id) from "
+            "events where task_id = t.id and kind = 'merged') where t.merge_state = 'merged' order by e.id desc limit ?",
+            (limit,)).fetchall()
+        return [(self.get_task(r["id"]), r["merged_at"], json.loads(r["merged"])) for r in rows]
+
     def reviewers_of(self, work_id: str) -> list[Task]:
         """The review tasks of a piece of work, oldest first."""
         rows = self.db.execute("select * from tasks where review_of = ? order by created_at, id", (work_id,)).fetchall()

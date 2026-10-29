@@ -48,6 +48,15 @@ class Store(Tasks, Events, Rooms, Search, Drafts, Routines, Happenings, Permissi
         self.db.execute("insert into crew_settings (key, value) values ('auto_merge', ?) "
                         "on conflict(key) do update set value = excluded.value", (int(enabled),))
 
+    def landed_seen(self) -> int:
+        """When the user last looked at what landed, in milliseconds since the epoch; 0 if never."""
+        row = self.db.execute("select value from crew_settings where key = 'landed_seen'").fetchone()
+        return int(row[0]) if row else 0
+
+    def set_landed_seen(self, at_ms: int) -> None:
+        self.db.execute("insert into crew_settings (key, value) values ('landed_seen', ?) "
+                        "on conflict(key) do update set value = excluded.value", (at_ms,))
+
     def stall_minutes(self) -> int:
         """How long a bot with open work may sit idle before the daemon wakes it."""
         row = self.db.execute("select value from crew_settings where key = 'stall_minutes'").fetchone()

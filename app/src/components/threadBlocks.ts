@@ -315,6 +315,10 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
         flush();
         out.push({ kind: "line", id: e.id, text: `Merged${d.automatic ? " automatically" : ""} as ${String(d.commit).slice(0, 7)}${d.forced ? ", without approval" : ""}${d.leftover_files?.length ? ` · Saved after the merge started, still uncommitted: ${d.leftover_files.join(", ")}` : ""}${d.leftover_check_error ? ` · Could not check for later saves: ${d.leftover_check_error}` : ""}`, icon: "check", tone: "good" });
         break;
+      case "reverted":
+        flush();
+        out.push({ kind: "line", id: e.id, text: `${d.by === "user" ? "You" : d.by} reverted the merge, as ${String(d.revert_commit).slice(0, 7)}`, icon: "repeat" });
+        break;
       case "merge_cleanup_failed":
         flush();
         out.push({ kind: "line", id: e.id, text: `Merged, but couldn't remove the worktree: ${d.reason}`, icon: "alert", tone: "bad" });

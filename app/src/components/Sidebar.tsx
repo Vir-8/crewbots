@@ -120,6 +120,7 @@ export function Sidebar(props: {
   const rowClass = (chat: Chat) =>
     `${dragging === chat.key ? "dragging" : ""} ${drop?.key === chat.key && dragging !== chat.key ? (drop.after ? "drop-after" : "drop-before") : ""}`;
   const waiting = crew.reviewInbox?.assigned?.length ?? 0; // assigned to you; review requests are in the list itself
+  const landed = crew.crewState?.landed ?? 0; // merged since you last looked
   const selected = crew.chats.find((chat) => chat.key === menu?.key);
   const rowMenu = menu && selected && (
     <RowMenu at={menu} place={pins.includes(menu.key) ? pins.indexOf(menu.key) : null} last={pins.length - 1}
@@ -148,6 +149,10 @@ export function Sidebar(props: {
         <button className={`rail-button ${props.current === "review" ? "on" : ""}`} onClick={() => props.onChat("review")} title={waiting ? `Code review · ${waiting} assigned to you` : "Code review"}>
           <Icon name="branch" size={15} />
           {waiting > 0 && <span className="rail-count">{waiting}</span>}
+        </button>
+        <button className={`rail-button ${props.current === "page:landed" ? "on" : ""}`} onClick={() => props.onChat("page:landed")} title={landed ? `Landed · ${landed} new` : "Landed"}>
+          <Icon name="merge" size={15} />
+          {landed > 0 && <span className="rail-count">{landed}</span>}
         </button>
         {needs.map((item) => (
           <button key={item.task.id} className={`rail-button rail-need ${item.reason}`} onClick={() => props.onOpen(item.task.id)} title={`${oneLine(item.task.title, 60)} · ${item.task.bot} · ${NEED[item.reason]}`}>
@@ -189,6 +194,13 @@ export function Sidebar(props: {
           <Icon name="branch" size={15} />
           <span className="side-title">Code review</span>
           {waiting > 0 && <span className="count">{waiting}</span>}
+        </button>
+      )}
+      {!q && (
+        <button className={`side-row nav-row ${props.current === "page:landed" ? "on" : ""}`} onClick={() => props.onChat("page:landed")}>
+          <Icon name="merge" size={15} />
+          <span className="side-title">Landed</span>
+          {landed > 0 && <span className="count">{landed}</span>}
         </button>
       )}
 

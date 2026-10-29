@@ -30,7 +30,7 @@ import type {
   Submitted,
   Attachment,
 } from "./types";
-import type { BroughtIn, FoundOut, PageOut, PermissionOut, ProjectOut, ProjectsOut, TimezoneOut, UpdateOut, VersionOut } from "./api-types";
+import type { BroughtIn, FoundOut, LandedOut, PageOut, PermissionOut, ProjectOut, ProjectsOut, TimezoneOut, UpdateOut, VersionOut } from "./api-types";
 
 import { bridge } from "./bridge";
 
@@ -67,6 +67,9 @@ export const api = {
   mergeStatus: (taskId: string) => call<{ already_on: string | null }>("GET", `/tasks/${taskId}/merge-status`),
   withdrawMerge: (taskId: string, reason: string) => call<Task>("POST", `/tasks/${taskId}/withdraw-merge`, { reason }),
   release: (taskId: string) => call<Task>("POST", `/tasks/${taskId}/release`),
+  landed: () => call<LandedOut>("GET", "/landed"),
+  landedSeen: () => call<void>("POST", "/landed/seen"),
+  revert: (taskId: string) => call<Task>("POST", `/tasks/${taskId}/revert`),
   answerPermission: (id: number, allowed: boolean) => call<PermissionOut>("POST", `/permissions/${id}`, { allowed }),
   crew: () => call<CrewState>("GET", "/crew"),
   mergeSettings: () => call<{ auto_merge: boolean }>("GET", "/crew/merge-settings"),

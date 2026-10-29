@@ -161,6 +161,7 @@ def test_the_crew_can_be_paused_and_resumed_over_the_api(client):
     unknown = "running (its plan's limits aren't known yet)"
     assert client.get("/crew", headers=AUTH).json() == {
         "paused": False, "restarting": False, "running": 0, "turns_running": 0, "held": 0, "sessions": 0, "limits": [],
+        "landed": 0,
         "background": [{"plan": "claude", "go": True, "reason": unknown}, {"plan": "codex", "go": True, "reason": unknown}]}
 
     assert client.post("/crew/pause", headers=AUTH).json()["paused"] is True

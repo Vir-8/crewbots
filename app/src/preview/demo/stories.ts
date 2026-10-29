@@ -18,7 +18,7 @@ import { diffs, done, emit, message, reviews, say, task, tick, tool, usage, verd
   tool(e.id, "shell", { command: "sed -n '1,80p' text.py test_text.py" });
   tool(e.id, "apply_patch", { changes: [{ path: "text.py", kind: "update" }, { path: "test_text.py", kind: "update" }] }, "completed");
   tool(e.id, "shell", { command: "python -m pytest -q" }, "11 passed in 0.02s");
-  emit(e.id, "handoff", { done: "Added truncate(s, n) with 11 tests; all pass.", output: ["text.py", "test_text.py", "/Users/you/Documents/Crewbots/engineer/Projects/acme-web/truncate-notes.md"], open: "", needs: "Review" });
+  emit(e.id, "handoff", { done: "Added truncate(s, n) with 11 tests; all pass.", output: ["text.py", "test_text.py", "/Users/you/Documents/Crewbots/engineer/Projects/acme-web/truncate-notes.md"], open: "", needs: "Review", evidence: ["`python -m pytest -q` → 11 passed in 0.02s", "`truncate(\"héllo wörld\", 8)` → `\"héllo...\"`; `truncate(\"abc\", -1)` → `\"\"`", "couldn't check: grapheme clusters (counts code points)"] });
   say(e.id, e.result!);
   usage(e.id);
   done(e.id, e.result!);

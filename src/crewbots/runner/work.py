@@ -20,6 +20,7 @@ from crewbots.pages import Page
 from crewbots.routines import RoutineError
 from crewbots.runner.closing import Closing
 from crewbots.runner.common import MergeError, NotAllowed
+from crewbots.runner.landed import Landed
 from crewbots.runner.merge_message import merge_message
 from crewbots.runner.merge_status import MergeStatus
 from crewbots.runner.reviews import MAX_REVIEW_ROUNDS
@@ -33,7 +34,7 @@ DROPPED = re.compile(r"\s*dropped\s*:\s*(.*)", re.IGNORECASE | re.DOTALL)  # a h
 log = logging.getLogger(__name__)
 
 
-class Work(Closing, MergeStatus):
+class Work(Landed, Closing, MergeStatus):
     """The part of Runner that takes a bot's handoffs, questions, merge proposals and notes."""
 
     def _check_worktree_sweep(self, task_id: str | None = None) -> None:
