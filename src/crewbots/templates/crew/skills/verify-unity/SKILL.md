@@ -21,15 +21,17 @@ details. "It compiles" alone isn't done.
 
 ## 1. Doctor, before anything else (read-only)
 
-1. Read `mcpforunity://instances`. Find the instance whose project is your working directory, and `set_active_instance`
-   to it when there's more than one. None at all means the Editor isn't open on the project or isn't connected:
+1. Read `mcpforunity://instances` (listed by project name, as `Name@hash`), `set_active_instance` to yours when
+   there's more than one, and check `mcpforunity://project/info`: its `projectRoot` must be your working directory.
+   None at all means the Editor isn't open on the project or isn't connected:
    `escalate` that the user needs to open the project in Unity and start MCP for Unity's session (Window › MCP for
    Unity), then end your turn. Don't start Unity yourself, and don't verify against another project's Editor.
-2. Read `mcpforunity://editor/state`: wait while `is_compiling` or `is_domain_reload_pending`, and go on only once it's
-   `ready_for_tools`. A branch switch makes Unity reimport, which can take minutes.
-3. `read_console(types=["error"])` and note what's already there, so you don't chase errors that aren't yours.
-4. Read `mcpforunity://project/info` (render pipeline, Input System, UI packages), `mcpforunity://tests` (which test
-   assemblies exist), and the project's `VERIFY.md` (below).
+2. Read `mcpforunity://editor/state`: wait while `compilation.is_compiling` or `is_domain_reload_pending` is true, and
+   go on only once `advice.ready_for_tools` is. A branch switch makes Unity reimport, which can take minutes.
+3. `read_console(types=["error"])` and note what's already there (warnings from packages often show as errors), so you
+   don't chase errors that aren't yours.
+4. Read `mcpforunity://tests` (whether there are EditMode or PlayMode tests at all) and the project's `VERIFY.md`
+   (below).
 
 ## 2. After every change: a clean compile
 
@@ -39,9 +41,11 @@ a compile error anywhere, nothing else you check counts: fix it first.
 
 ## 3. Drive it
 
-- **Tests.** `run_tests(mode="EditMode")`, and `mode="PlayMode"` for runtime behaviour, then `get_test_job` until it's
-  done. A bug fix gets a test that fails before the fix (run it and keep that output) and passes after, when the
-  project has a test assembly to put it in. Logic you can pull out of a MonoBehaviour is worth an EditMode test.
+- **Tests.** `run_tests(mode="EditMode", include_failed_tests=true)`, and `mode="PlayMode"` for runtime behaviour: it
+  returns a `job_id`; call `get_test_job(job_id=...)` until its status isn't `running`, and read `result.summary`
+  (total, passed, failed). A run with `total: 0` ran nothing, which proves nothing: say the project has no tests for
+  it. A bug fix gets a test that fails before the fix (run it and keep that output) and passes after, when the project
+  has a test assembly to put it in. Logic you can pull out of a MonoBehaviour is worth an EditMode test.
 - **Play.** Note the open scene, open the one the change lives in (`manage_scene`), `manage_editor(action="play")`, let
   it run, and check what was asked: the objects and values involved (`find_gameobjects`, component properties), and
   `read_console` for exceptions. Then `manage_editor(action="stop")`, always, even after a failure: play mode keeps
@@ -49,9 +53,10 @@ a compile error anywhere, nothing else you check counts: fix it first.
 - **Measure, don't eyeball.** Positions, counts, timings and states from components (or `execute_code` reading them)
   beat a screenshot that looks right. The MCP can't press keys: reach input-driven behaviour through a test (the Input
   System's test fixture) or by calling what the input calls.
-- **See it.** For anything visible, a screenshot: a positioned one (`view_target`, `view_position`) saves no file;
-  others save into `Assets/Screenshots/`, so delete what yours wrote, with its `.meta`. Images the MCP returns show
-  under your steps in the app; `share` any file you keep.
+- **See it.** For anything visible, a screenshot: `manage_camera(action="screenshot", include_image=true,
+  output_folder="Temp/crewbots-screenshots")`, with `view_target` or `view_position` to frame it. Every screenshot
+  saves a file, by default into `Assets/Screenshots/` with `.meta` files that would be committed with the work; under
+  `Temp/` it's ignored by git and never imported. The image comes back to you and shows under your steps in the app.
 
 ## 4. Evidence
 
@@ -77,4 +82,4 @@ long they take, debug or cheat commands that set up a state, and gotchas. Start 
 project that has none, and correct what you find wrong in it, in the same change.
 
 When reviewing, do steps 1 to 3 yourself against the handback's evidence, read-only: tests, play, measurements and
-positioned screenshots change nothing. Report what you find rather than fixing it.
+screenshots into `Temp/` change nothing in the work. Report what you find rather than fixing it.
