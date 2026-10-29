@@ -25,7 +25,7 @@ export type Block =
   | { kind: "held"; id: number; taskId: string; reason: string }
   | { kind: "handoff"; id: number; data: Record<string, any> }
   | { kind: "verdict"; id: number; data: Record<string, any> }
-  | { kind: "push"; id: number; data: Record<string, any>; started?: boolean; result?: Record<string, any> }
+  | { kind: "push"; id: number; data: Record<string, any>; started?: boolean; result?: Record<string, any>; replaced?: boolean }
   | { kind: "replace"; id: number; data: Record<string, any>; started?: boolean; result?: Record<string, any> };
 
 // Crew tools that are shown as what they did (a card, a verdict, a question, a note kept, a page), not as steps.
@@ -116,6 +116,14 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
     }
   }
   const unanchored = delegated.filter((task) => !matched.has(task.id)).sort((a, b) => a.created_at.localeCompare(b.created_at));
+  // A try that failed for a passing reason, and a later try of the same turn got past: no longer an error to show.
+  const recovered = new Set<number>();
+  let failed: number[] = [];
+  for (const e of events) {
+    if (e.kind === "turn_start") failed = [];
+    else if (e.kind === "done" && e.data.is_error && e.data.retry) failed.push(e.id);
+    else if (e.kind === "done" && !e.data.is_error) failed.splice(0).forEach((id) => recovered.add(id));
+  }
   let steps: { call: StoredEvent; result?: StoredEvent }[] = [];
   const flush = () => {
     if (steps.length) out.push({ kind: "steps", id: steps[0].call.id, calls: steps });
@@ -234,7 +242,7 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
         break;
       case "push_proposed":
         flush();
-        out.push({ kind: "push", id: e.id, data: d, started: events.some((x) => x.kind === "push_started" && x.data.proposal === e.id), result: events.find((x) => x.kind === "push_result" && x.data.proposal === e.id)?.data });
+        out.push({ kind: "push", id: e.id, data: d, started: events.some((x) => x.kind === "push_started" && x.data.proposal === e.id), result: events.find((x) => x.kind === "push_result" && x.data.proposal === e.id)?.data, replaced: events.some((x) => x.kind === "push_replaced" && x.data.proposal === e.id) });
         break;
       case "replace_main_proposed":
         flush();
@@ -312,7 +320,10 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
         out.push({ kind: "line", id: e.id, text: `Merged, but couldn't remove the worktree: ${d.reason}`, icon: "alert", tone: "bad" });
         break;
       case "done":
-        if (d.is_error) {
+        if (d.is_error && recovered.has(e.id)) {
+          flush();
+          out.push({ kind: "line", id: e.id, text: `Tried again after: ${d.error}`, icon: "repeat" });
+        } else if (d.is_error) {
           flush();
           out.push({ kind: "line", id: e.id, text: `Stopped: ${d.error}`, icon: "alert", tone: "bad" });
         }

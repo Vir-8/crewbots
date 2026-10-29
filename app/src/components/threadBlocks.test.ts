@@ -229,3 +229,20 @@ it("closes the superseded and deleted-room cards without closing other questions
   asks = build(events, [], new Map()).filter((b) => b.kind === "ask");
   expect(asks[1]).toMatchObject({ closed: true, answer: undefined });
 });
+
+it("shows a failed try that a later try got past as a quiet line, and one that didn't as an error", () => {
+  const stalled = { is_error: true, error: "nothing came back from claude for 20 min", retry: "transient" };
+  const recovered = build([turn(0), ev(1, "done", stalled), ev(2, "notice", { message: "Trying again in 30s (try 2 of 4)." }),
+    ev(3, "text", { text: "Done." }), ev(4, "done", { final_text: "Done." })], [], new Map());
+  expect(recovered[0]).toMatchObject({ kind: "line", text: "Tried again after: nothing came back from claude for 20 min" });
+  expect(recovered[0]).not.toHaveProperty("tone");
+  const gaveUp = build([turn(0), ev(1, "done", stalled), ev(2, "done", { ...stalled, retry: null })], [], new Map());
+  expect(gaveUp.map((b) => b.kind === "line" && b.tone)).toEqual(["bad", "bad"]);
+});
+
+it("shows nothing for a silent system wake whose first try stalled", () => {
+  const events = [turn(0), notice(1), sys(2), call(3),
+    ev(4, "done", { is_error: true, error: "nothing came back from claude for 20 min", retry: "transient" }),
+    ev(5, "notice", { message: "Trying again in 30s (try 2 of 4)." }), call(6)];
+  expect(shownIn([...events, ev(7, "done", { final_text: "NO_REPLY" })])).toEqual([]);
+});
