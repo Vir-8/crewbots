@@ -558,4 +558,5 @@
 }
 .merged.dropped { color: var(--soft); }
 .push-commits, .push-error { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.push-card.replaced { opacity: 0.6; }
 .push-error { color: var(--red); }

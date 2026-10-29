@@ -150,3 +150,33 @@ def test_selected_chief_gets_push_prompt_and_tools_without_legacy_flag(tmp_path)
         assert (crew.prompts.text("chief-push", bots.home) in prompt) == selected
         assert crew.prompts.text("coordinating", bots.home) in prompt
     store.close()
+
+
+async def test_a_project_has_one_push_card_at_a_time(tmp_path, monkeypatch):
+    import asyncio
+
+    store = Store(tmp_path / "crew.db")
+    bots = make_crew(tmp_path, bot("chief", can_delegate=True))
+    bots.projects["demo"] = Project("demo", tmp_path, "", tmp_path / "demo.md")
+    runner = Runner(store, bots)
+    head = {"value": "a" * 40}
+    monkeypatch.setattr(push, "snapshot", lambda folder: {
+        "branch": "main", "destination": "refs/heads/main", "url_hash": "h", "tip": "0" * 40, "head": head["value"],
+        "commits": [f"{head['value'][:7]} Fix"]})
+    checks = []
+    monkeypatch.setattr(push.ci, "check", lambda *a: checks.append(a[1]) or {"status": "passed"})
+    chat = runner.chat("chief")
+
+    first, again = await asyncio.gather(push.propose(runner, chat.id, "demo", "Ready"),
+                                        push.propose(runner, chat.id, "demo", "Ready, again"))
+    assert first == again and len(checks) == 1  # two at once: one card, one CI run
+    assert len(store.last_events(chat.id, ("push_proposed",), 5)) == 1
+
+    head["value"] = "b" * 40  # more commits since: the newer card replaces the open one
+    newer = await push.propose(runner, chat.id, "demo", "Ready, with the fix")
+    assert newer != first and push.open_card(runner, chat.id, "demo")[0] == newer
+    [replaced] = store.last_events(chat.id, ("push_replaced",), 5)
+    assert replaced.data == {"proposal": first, "by": newer}
+    with pytest.raises(NotAllowed, match="newer Push card replaced"):
+        await push.perform(runner, first)
+    store.close()

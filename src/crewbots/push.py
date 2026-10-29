@@ -142,7 +142,12 @@ def _destination_snapshot(folder: Path, branch: str, upstream: str, tracking: st
             "head": head, "tip": tip, "commits": commits}
 
 
+SAME = ("branch", "destination", "url_hash", "head", "tip", "ci_commands")  # what makes two cards the same push
+
+
 async def propose(runner: Any, task_id: str, project: str, summary: str) -> int:
+    """A Push card for the user, one per project at a time: the same push again is the open card, and a different one
+    replaces it. Proposals for a project are made one after another, so two at once can't both make a card."""
     task = runner.store.get_task(task_id)
     chief = runner.coordinator()
     if chief is None or task.bot != chief.name:
@@ -150,20 +155,42 @@ async def propose(runner: Any, task_id: str, project: str, summary: str) -> int:
     if not summary.strip():
         raise NotAllowed("a push proposal needs a summary")
     folder = runner.crew.project(project).folder.resolve()
-    data: dict[str, Any] = {"project": project, "summary": summary.strip(), "folder": str(folder), "by": chief.name}
-    try:
-        data.update(await asyncio.to_thread(snapshot, folder))
-    except SnapshotError as e:
-        data.update({"branch": e.branch, "upstream": e.upstream, "push_url_display": e.push_url_display, "error": str(e)})
-    except NotAllowed as e:
-        data["error"] = str(e)
-    if "error" not in data:  # the card is only made for a commit CI passes on
-        data["ci"] = await asyncio.to_thread(ci.check, folder, data["head"], data["destination"].removeprefix("refs/heads/"),
-                                             runner.crew.project(project).ci)
+    data: dict[str, Any] = {"project": project, "summary": summary.strip(), "folder": str(folder), "by": chief.name,
+                            "ci_commands": list(runner.crew.project(project).ci)}  # a commit's own workflow goes with it
     chat = runner.chat(chief.name)
-    event = runner.store.append_event(chat.id, kind="push_proposed", data=data)
-    runner.bus.publish({"type": "event", "event": event.to_json()})
-    return event.id
+    async with runner.__dict__.setdefault("_push_locks", {}).setdefault(project, asyncio.Lock()):
+        try:
+            data.update(await asyncio.to_thread(snapshot, folder))
+        except SnapshotError as e:
+            data.update({"branch": e.branch, "upstream": e.upstream, "push_url_display": e.push_url_display,
+                         "error": str(e)})
+        except NotAllowed as e:
+            data["error"] = str(e)
+        waiting = open_card(runner, chat.id, project)
+        if waiting and "error" not in data and all(waiting[1].get(k) == data.get(k) for k in SAME):
+            return waiting[0]  # that push is on the user's screen already, its CI passed
+        if "error" not in data:  # the card is only made for a commit CI passes on
+            data["ci"] = await asyncio.to_thread(ci.check, folder, data["head"],
+                                                 data["destination"].removeprefix("refs/heads/"),
+                                                 runner.crew.project(project).ci)
+        event = runner.store.append_event(chat.id, kind="push_proposed", data=data)
+        runner.bus.publish({"type": "event", "event": event.to_json()})
+        if waiting and "error" not in data:  # the newer card is the one to push
+            replaced = runner.store.append_event(chat.id, kind="push_replaced",
+                                                 data={"proposal": waiting[0], "by": event.id})
+            runner.bus.publish({"type": "event", "event": replaced.to_json()})
+        return event.id
+
+
+def open_card(runner: Any, chat_id: str, project: str) -> tuple[int, dict[str, Any]] | None:
+    """The project's Push card still waiting for the user: made without an error, not pushed, not replaced."""
+    row = runner.store.db.execute(
+        "select p.id, p.data from events p where p.task_id = ? and p.kind = 'push_proposed' "
+        "and json_extract(p.data, '$.project') = ? and json_extract(p.data, '$.error') is null "
+        "and not exists (select 1 from events e where e.task_id = p.task_id and e.kind in "
+        "('push_started', 'push_result', 'push_replaced') and json_extract(e.data, '$.proposal') = p.id) "
+        "order by p.id desc limit 1", (chat_id, project)).fetchone()
+    return (row["id"], json.loads(row["data"])) if row else None
 
 
 def proposal_message(runner: Any, proposal_id: int) -> str:
@@ -172,7 +199,8 @@ def proposal_message(runner: Any, proposal_id: int) -> str:
     data = json.loads(row["data"])
     if data.get("error"):
         return f"Push proposal {proposal_id} could not be made: {data['error']}"
-    return f"Push proposal {proposal_id} is waiting for the user."
+    return (f"Push proposal {proposal_id} is waiting for the user. A project has one card at a time: proposing the "
+            "same push again changes nothing, and a different one replaces it.")
 
 
 async def perform(runner: Any, proposal_id: int) -> dict[str, Any]:
@@ -181,8 +209,11 @@ async def perform(runner: Any, proposal_id: int) -> dict[str, Any]:
     if row is None:
         raise NotAllowed("no such push proposal")
     task_id, data = row["task_id"], json.loads(row["data"])
-    previous = runner.store.db.execute("select 1 from events where kind in ('push_started', 'push_result') and "
-                                       "json_extract(data, '$.proposal') = ?", (proposal_id,)).fetchone()
+    previous = runner.store.db.execute("select kind from events where kind in ('push_started', 'push_result', "
+                                       "'push_replaced') and json_extract(data, '$.proposal') = ? order by id limit 1",
+                                       (proposal_id,)).fetchone()
+    if previous and previous["kind"] == "push_replaced":
+        raise NotAllowed("A newer Push card replaced this one; push from that.")
     if previous:
         raise NotAllowed("This push was already started; check the remote and make a new proposal.")
     runner._record(task_id, kind="push_started", data={"proposal": proposal_id})

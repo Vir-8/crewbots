@@ -236,6 +236,7 @@ def test_node_steps_run_under_that_node_and_a_missing_one_refuses(push_setup, mo
     monkeypatch.undo()
     monkeypatch.setattr(paths, "temp", lambda: tmp_path / "daemon-tmp")
     monkeypatch.setattr(ci, "_node_at", lambda d: "")
+    commit(repo, "More", **{"b.txt": "b"})  # a different push: the same one again would be the open card
     with pytest.raises(NotAllowed, match="Node 22 is required by CI but isn't installed"):
         asyncio.run(push_propose(runner, runner.chat("chief").id, "demo", "Ship it"))
 

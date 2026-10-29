@@ -17,6 +17,12 @@ export function PushCard({ block }: { block: Extract<Block, { kind: "push" }> })
       setBusy(false);
     }
   };
+  if (block.replaced && !result && !block.started) {
+    return <div className="ask push-card replaced">
+      <div className="ask-head">Push {data.project}</div>
+      <div className="small">Replaced by a newer card below.</div>
+    </div>;
+  }
   return <div className="ask push-card">
     <div className="ask-head">{result?.ok && result.pushed ? `Pushed ${data.project}` : `Push ${data.project}?`}</div>
     <div className="permission-what">{data.summary}</div>

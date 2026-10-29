@@ -23,6 +23,14 @@ describe("push proposals", () => {
     if (block.kind !== "push") throw new Error("missing push card");
     expect(renderToStaticMarkup(<PushCard block={block} />)).toContain("CI passed locally on abc123def456 (2 steps)");
   });
+  it("says a card a newer one replaced is replaced, with no button", () => {
+    const replaced: StoredEvent = { id: 3, task_id: "chat", kind: "push_replaced", at: "", data: { proposal: 1, by: 2 } };
+    const block = build([event, { ...event, id: 2 }, replaced], [], new Map())[0];
+    if (block.kind !== "push") throw new Error("missing push card");
+    const html = renderToStaticMarkup(<PushCard block={block} />);
+    expect(html).toContain("Replaced by a newer card");
+    expect(html).not.toContain(">Push</button>");
+  });
   it("shows the rejection on the card and removes the button", () => {
     const result: StoredEvent = { id: 2, task_id: "chat", kind: "push_result", at: "", data: { proposal: 1, ok: false, reason: "The remote changed; make a new proposal." } };
     const block = build([event, result], [], new Map())[0];
