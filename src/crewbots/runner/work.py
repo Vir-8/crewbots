@@ -534,8 +534,8 @@ class Work(Landed, Closing, MergeStatus):
             self._mark_dropped(task, task.bot, reason)  # its folder goes once the turn is over
         self._close_questions(task_id)
         self._refresh_working_state(task.bot)
-        self.crew.memory.log(task.bot, f"{task_id} {task.title}: {_short(done, 300)}"
-                             + (f" Open: {_short(open, 200)}" if open.strip() else ""))
+        self.crew.memory.log(task.bot, f"{task_id} {_short(task.title, 80)}: {_short(done, 200)}"
+                             + (f" Open: {_short(open, 120)}" if open.strip() else ""))
         self._report_late(task_id)
         return handoff
 

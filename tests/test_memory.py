@@ -13,7 +13,7 @@ from crewbots import prompts
 from crewbots.crew import Crew
 from crewbots.crew_tools import CrewTools, ToolRefused
 from crewbots.events import Done, Text, Usage
-from crewbots.memory import CORE_CHARS, INDEX_LIMIT, STATE_CHARS, Memory, MemoryError
+from crewbots.memory import CORE_CHARS, INDEX_LIMIT, RECENT_CHARS, STATE_CHARS, Memory, MemoryError
 from crewbots.runner import Runner
 from crewbots.store import Store
 
@@ -152,6 +152,22 @@ def test_the_daily_log_gets_a_line_at_a_time_and_a_session_sees_two_days(memory,
     assert log[0] == f"# {today.isoformat()}" and log[2].endswith("t_1 Add CSV export: done, with tests")
     recent = memory.recent("engineer")
     assert recent.index("Plan the export") < recent.index("Add CSV export") and "too old" not in recent
+
+
+def test_a_busy_day_starts_a_session_with_only_its_newest_lines(memory, tmp_path):
+    today = datetime.now().astimezone().date()
+    yesterday = (today - timedelta(days=1)).isoformat()
+    folder = tmp_path / "memory" / "engineer" / "daily"
+    folder.mkdir(parents=True)
+    (folder / f"{yesterday}.md").write_text(f"# {yesterday}\n\n- 17:00 t_0 Planned the export\n")
+    for n in range(200):
+        memory.log("engineer", f"t_{n} Task {n}: " + "done " * 20)
+
+    recent = memory.recent("engineer")
+
+    assert len(recent) <= RECENT_CHARS + 100 and recent.startswith("(Older lines are left out: `recall` finds them.)")
+    assert f"# {today.isoformat()}" in recent and "t_199 Task 199" in recent and "t_0 Task 0:" not in recent
+    assert "Planned the export" not in recent  # yesterday's are older still
 
 
 def test_a_tasks_state_is_written_whole_and_kept_short(memory):

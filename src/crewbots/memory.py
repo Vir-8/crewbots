@@ -31,6 +31,7 @@ SAFE_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)  # PyYAML's C one wh
 CORE_CHARS = 6000  # of each CORE.md, about 1.5K tokens: past that it's cut, since it's in every session
 STATE_CHARS = 8000  # of a task's state
 RECENT_DAYS = 2  # of daily logs a fresh session starts with: today's and yesterday's
+RECENT_CHARS = 6000  # of those, the newest lines: a busy bot logs a hundred tasks a day, and `recall` finds the rest
 NAME = re.compile(r"[^a-z0-9]+")
 
 
@@ -187,12 +188,29 @@ class Memory:
             f.write((f"# {now.date().isoformat()}\n\n" if new else "") + f"- {now:%H:%M} {' '.join(line.split())}\n")
 
     def recent(self, scope: str) -> str | None:
-        """The scope's logs for the last RECENT_DAYS days, oldest first."""
+        """The scope's logs for the last RECENT_DAYS days, oldest first, cut to their newest RECENT_CHARS."""
         folder = self._scope_dir(scope) / "daily"
         today = timefmt.now().date()
         days = [(today - timedelta(days=n)).isoformat() for n in range(RECENT_DAYS - 1, -1, -1)]
         logs = [(folder / f"{day}.md").read_text().strip() for day in days if (folder / f"{day}.md").is_file()]
-        return "\n\n".join(logs) or None
+        text = "\n\n".join(logs)
+        if len(text) <= RECENT_CHARS:
+            return text or None
+        kept, room = [], RECENT_CHARS
+        for log in reversed(logs):
+            head, *lines = log.splitlines()
+            lines = [line for line in lines if line.strip()]
+            day = []
+            for line in reversed(lines):
+                if len(line) + 1 > room:
+                    break
+                day.append(line)
+                room -= len(line) + 1
+            if day:
+                kept.append("\n".join([head, "", *reversed(day)]))
+            if len(day) < len(lines):
+                break
+        return "\n\n".join(["(Older lines are left out: `recall` finds them.)", *reversed(kept)])
 
     def state(self, scope: str, task_id: str) -> str | None:
         try:
