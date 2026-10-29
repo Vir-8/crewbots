@@ -121,9 +121,19 @@ if ! $daemon_only; then
   if pgrep -f "$APP/Contents/MacOS/crewbots" >/dev/null; then
     did "Left the app running: it didn't quit (a dialog open?), so relaunch it yourself"
   else
-    # In front only if it was: a release shouldn't take you away from what you're doing.
-    if [[ "$front" == "crewbots" ]]; then open -a "$APP"; else open -g -a "$APP"; fi
-    did "Relaunched the app$([[ "$front" == "crewbots" ]] || echo " in the background"); what you'd typed is kept"
+    # In front only if it was: a release shouldn't take you away from what you're doing. macOS can still be letting go
+    # of the app that just quit, and refuses to open it meanwhile (error -600), so it's tried for a few seconds.
+    opened=false
+    for _ in 1 2 3 4 5 6; do
+      if [[ "$front" == "crewbots" ]]; then flags=(-a); else flags=(-g -a); fi
+      if open "${flags[@]}" "$APP" 2>/dev/null; then opened=true; break; fi
+      sleep 1
+    done
+    if $opened; then
+      did "Relaunched the app$([[ "$front" == "crewbots" ]] || echo " in the background"); what you'd typed is kept"
+    else
+      did "Couldn't relaunch the app (macOS kept refusing): open crewbots yourself"
+    fi
   fi
 fi
 
