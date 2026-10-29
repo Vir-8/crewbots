@@ -228,7 +228,7 @@ def compact_limit(window: int) -> int:
 def sandbox_overrides(spec: RunSpec, temp: Path | None = None) -> list[str]:
     """Codex's sandbox for a bot that isn't on full access, as a permissions profile of crewbots' own: Codex's built-in
     one for the bot's access, with the private paths (backends/credentials.py) unreadable, and the network on only for
-    a writing bot whose role card turns it on. `temp`, a writing bot's own temp folder, takes the place of /tmp and
+    a writing bot whose role card turns it on. `temp`, the session's own temp folder, takes the place of /tmp and
     $TMPDIR, which commands could otherwise write to: a way out of the task's folder. The folders the user let it
     write in, for this task, are writable too, and a writing bot's package caches. (Codex's older sandbox settings can
     only limit writes, and a profile set here wins over them, even with `sandbox_mode` in the user's config.)"""

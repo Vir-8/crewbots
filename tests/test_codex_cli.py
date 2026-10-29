@@ -111,7 +111,7 @@ def test_full_access_bypasses_the_sandbox():
     assert not any(a.startswith(("default_permissions", "permissions.")) for a in argv)
 
 
-def test_no_codex_bot_reads_the_private_paths_and_a_writing_one_keeps_to_its_own_temp_folder(tmp_path):
+def test_no_codex_bot_reads_the_private_paths_and_each_keeps_to_its_own_temp_folder(tmp_path):
     def files(access, temp=None):
         args = sandbox_overrides(RunSpec(prompt="x", cwd=tmp_path, access=access), temp)
         table = next(a for a in args if a.startswith("permissions.crewbots.filesystem="))
@@ -120,8 +120,9 @@ def test_no_codex_bot_reads_the_private_paths_and_a_writing_one_keeps_to_its_own
     written = files(Access.WORKSPACE_WRITE, tmp_path / "temp")
     assert written[str(paths.crew() / "daemon.json")] == written[str(paths.home() / ".ssh")] == "deny"
     assert written[":slash_tmp"] == written[":tmpdir"] == "read" and written[str(tmp_path / "temp")] == "write"
-    read = files(Access.READ_ONLY)
-    assert read[str(paths.crew() / "mcp.json")] == "deny" and ":slash_tmp" not in read
+    read = files(Access.READ_ONLY, tmp_path / "temp")
+    assert read[str(paths.crew() / "mcp.json")] == "deny"
+    assert read[":slash_tmp"] == "read" and read[str(tmp_path / "temp")] == "write"  # scratch files, nothing of yours
 
 
 def test_mcp_servers_become_config_overrides():

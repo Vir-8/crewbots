@@ -84,12 +84,14 @@ class CodexSession:
         policy = "never" if spec.access is Access.FULL else "on-request"
         env = dict(os.environ)
         temp = None
-        if spec.access is Access.WORKSPACE_WRITE:
-            temp = session_temp_dir()  # in place of /tmp and $TMPDIR (sandbox_overrides)
-            env["TMPDIR"] = str(temp)
-            env |= without_credentials() | package_caches()
         if spec.access is not Access.FULL:
+            # In place of /tmp and $TMPDIR (sandbox_overrides): a reading bot needs somewhere to write scratch files
+            # too, such as a backup of saves before it plays a game, or a screenshot to share.
+            temp = session_temp_dir()
+            env["TMPDIR"] = str(temp)
             overrides += sandbox_overrides(spec, temp)
+        if spec.access is Access.WORKSPACE_WRITE:
+            env |= without_credentials() | package_caches()
         overrides += network_overrides(spec)
         argv = [*cli.command, "app-server", "-c", f'approval_policy="{policy}"', *overrides, *spec.extra_args]
         session = cls(await JsonlProcess.start(argv, cwd=spec.cwd, env=env), spec)

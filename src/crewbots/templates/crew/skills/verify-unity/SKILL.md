@@ -63,10 +63,15 @@ a compile error anywhere, nothing else you check counts: fix it first.
   it run, and check what was asked: the objects and values involved (`find_gameobjects`, component properties), and
   `read_console` for exceptions. Then `manage_editor(action="stop")`, always, even after a failure: play mode keeps
   nothing you change in it, and leaving it running blocks the user.
+- **Your files.** What you make to check with (a backup, a screenshot, a log) goes in your own temp folder,
+  `$TMPDIR` (`echo $TMPDIR` for its absolute path, which the Editor needs), never `/tmp`: `share` takes files from
+  there and from where you work, and nothing else. It's emptied when your session ends.
 - **Saves are real.** Play mode reads and writes the game's real saves and settings (`Application.persistentDataPath`,
   and PlayerPrefs in `~/Library/Preferences/unity.<company>.<product>.plist`). Before playing, copy them to a fresh
-  folder in system temp and check each copy; after, put back what changed and remove what the run created. A game
-  that syncs saves to a cloud (Steam Cloud) can upload them mid-run: if its client is running, stop and say so.
+  folder in `$TMPDIR` and check each copy; after, put back what changed and remove what the run created. A game that
+  syncs saves to a cloud (Steam Cloud) can upload them mid-run: if its client is running, stop and say so. Your
+  sandbox doesn't allow `ps` or `pgrep`: ask the Editor, which isn't sandboxed, through `execute_code`
+  (`System.Diagnostics.Process.GetProcessesByName(name).Length`).
 - **Code in play mode.** `execute_code` is CodeDom C# 6: no `$""`, `?.`, `out var` or local functions; write
   `UnityEngine.Object.FindFirstObjectByType<T>()`, never a bare `Object`, and read private members by reflection.
   Values kept between calls go in `System.AppDomain.CurrentDomain.SetData`/`GetData`.
@@ -99,6 +104,9 @@ In the handoff's `evidence`, each item something the reviewer can rerun through 
 - what you couldn't check, and why (no test assembly, needs a build or a device, needs a person playing).
 
 A check that was inconclusive, or ran in the wrong place (another project's Editor, a stale compile), is not a pass.
+
+A file's hash, to show it didn't change, goes in as its first 12 characters, before and after: the whole 64 make
+the evidence hard to read and prove no more.
 
 ## 5. Cleanup
 

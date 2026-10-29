@@ -5,6 +5,7 @@ says what moved before a release goes out. It needs Codex, so it runs on the Mac
 is skipped where Codex isn't installed, as in CI."""
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -106,6 +107,23 @@ def test_what_crewbots_reads_is_still_in_the_protocol(schema):
 def sandboxed() -> bool:
     """Whether these tests run in a sandbox already, a bot's: Codex's can't start inside it."""
     return subprocess.run(["sandbox-exec", "-p", "(version 1)(allow default)", "true"], capture_output=True).returncode != 0
+
+
+@pytest.mark.skipif(sys.platform != "darwin" or sandboxed(), reason="Codex's macOS sandbox, which can't start in one")
+def test_a_reading_bot_writes_in_its_own_temp_folder_and_nowhere_else(tmp_path, monkeypatch):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+    (tmp_path / "codex-home").mkdir()
+    work, temp = tmp_path / "work", tmp_path / "temp"
+    work.mkdir()
+    temp.mkdir()
+    overrides = sandbox_overrides(RunSpec(prompt="", cwd=work, access=Access.READ_ONLY), temp)
+
+    def run(*command: str | Path) -> subprocess.CompletedProcess:
+        return subprocess.run(["codex", "sandbox", *overrides, "--", *map(str, command)], cwd=work, capture_output=True,
+                              text=True, timeout=60, env={**os.environ, "TMPDIR": str(temp)})
+
+    assert run("sh", "-c", "mktemp -d").returncode == 0  # a backup of saves, or a screenshot to share, goes here
+    assert run("touch", work / "made").returncode != 0 and not (work / "made").exists()
 
 
 @pytest.mark.skipif(sys.platform != "darwin" or sandboxed(), reason="Codex's macOS sandbox, which can't start in one")
