@@ -135,8 +135,10 @@ def routes(c: Context) -> APIRouter:
 
     @v1.post("/bot/remember", status_code=201)
     async def bot_remember(request: Request, body: Remember):
-        note = runner.remember(request.state.task.id, body.title, body.body, shared=body.shared)
-        return {"title": note.title, "path": str(note.path)}
+        task = request.state.task
+        earlier = runner.corrections_of(task.bot) if body.mistake.strip() else None
+        note = runner.remember(task.id, body.title, body.body, shared=body.shared, mistake=body.mistake, check=body.check)
+        return {"title": note.title, "path": str(note.path), "earlier": earlier}
 
     @v1.post("/bot/next_check")
     async def bot_next_check(request: Request, body: NextCheck):

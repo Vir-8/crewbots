@@ -65,6 +65,8 @@ class Remember(BaseModel):
     title: str
     body: str
     shared: bool = False
+    mistake: str = ""  # when the user corrected you: what you got wrong, counted for the weekly retro
+    check: str = ""  # a test, lint rule or CI check that would have caught it
 
 class NextCheck(BaseModel):
     minutes: float

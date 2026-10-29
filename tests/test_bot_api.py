@@ -101,6 +101,21 @@ def test_handoffs_and_escalations_are_recorded_on_the_callers_task(crew_app):
         {"question": "Where?", "choices": [{"label": "Staging"}, {"label": "Prod", "description": "now"}], "multiple": False}]
 
 
+def test_a_correction_is_remembered_and_counted_on_the_callers_task(crew_app):
+    client, backend, store = crew_app
+    task_id, token = start(client, backend, "engineer")
+    lesson = {"title": "Run the WebKit check", "body": "Scroll bugs live there.", "mistake": "Checked Chromium only"}
+
+    first = client.post("/bot/remember", json=lesson, headers=as_bot(token)).json()
+    second = client.post("/bot/remember", json={**lesson, "title": "Again"}, headers=as_bot(token)).json()
+    plain = client.post("/bot/remember", json={"title": "Note", "body": "b"}, headers=as_bot(token)).json()
+
+    assert (first["earlier"], second["earlier"], plain["earlier"]) == ([], ["Run the WebKit check"], None)
+    [noted, _] = [e.data for e in store.events(task_id) if e.kind == "correction"]
+    assert noted == {"bot": "engineer", "title": "Run the WebKit check", "mistake": "Checked Chromium only",
+                     "lesson": "Scroll bugs live there.", "check": ""}
+
+
 def test_run_tokens_and_the_users_token_open_different_doors(crew_app):
     client, backend, _ = crew_app
     _, token = start(client, backend, "chief")

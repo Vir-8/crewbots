@@ -136,13 +136,24 @@ class Work(Landed, Closing, MergeStatus):
             self._cancelling.discard(task_id)
             raise
 
-    def remember(self, task_id: str, title: str, body: str, shared: bool = False) -> Note:
+    def remember(self, task_id: str, title: str, body: str, shared: bool = False, mistake: str = "",
+                 check: str = "") -> Note:
+        """A note for next time. With `mistake`, it's the lesson of a correction, which is counted too: the weekly
+        retro looks for mistakes that came back and turns them into checks (`check`: one that would have caught it)."""
         task = self.store.get_task(task_id)
         scope = CREW_SCOPE if shared else task.bot
         note = self.crew.memory.remember(scope, title, body, source=f"{task.id} ({task.bot})")
         self._record(task_id, kind="memory", data={"action": "remember", "scope": scope, "title": note.title,
                                                    "body": note.body, "path": str(note.path)})
+        if mistake.strip():
+            self._record(task_id, kind="correction", data={"bot": task.bot, "title": note.title, "mistake": mistake.strip(),
+                                                           "lesson": note.body, "check": check.strip()})
         return note
+
+    def corrections_of(self, bot: str, limit: int = 5) -> list[str]:
+        """The titles of a bot's latest corrections, the latest first."""
+        noted = self.store.recent_events(limit=200, kinds=("correction",))
+        return [e.data["title"] for e in reversed(noted) if e.data.get("bot") == bot][:limit]
 
     def write_page(self, task_id: str, name: str, text: str, find: str | None = None) -> Page:
         """One of the bot's pages, written whole, or with `find` replaced by `text`."""

@@ -265,6 +265,10 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
           icon: "check",
         });
         break;
+      case "correction":
+        flush();
+        out.push({ kind: "line", id: e.id, text: `Counted as a correction: ${d.mistake}`, icon: "repeat" });
+        break;
       case "held":
         flush();
         out.push({ kind: "held", id: e.id, taskId: e.task_id, reason: d.reason });

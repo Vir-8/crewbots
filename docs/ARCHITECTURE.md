@@ -171,7 +171,7 @@ Nothing is hidden: every layer is a file or a SQLite row you can open, edit or d
    - `scripts/recall_eval.py` measures it: 40 queries of every kind (words, paraphrases, exact and partial ids, paths, error text, decisions that changed) over 20 distinctive tasks among 300 noisy ones. Before: hit@1 0.875, MRR 0.90. After: hit@1 0.975, MRR 0.975; the one miss is ambiguous by design. A test keeps it at 0.95 or more. Trigram search costs 2.7ms over 247,000 events (`scripts/perf.py`).
    - Embeddings, through sqlite-vec in the same file, are added only if keyword search proves too weak: on this evaluation it isn't, so there are none, and no new dependency. The recall log is where real misses will show.
 
-**Learning from the record.** A weekly retro routine (decision 7) reads the week's reviews and corrections and proposes edits to `team/standards.md` and role cards. You approve them, so lessons become structure rather than more memory. This is pstack's `reflect` and `correct` idea.
+**Learning from the record.** When you correct a bot, it remembers the lesson with the mistake (and a check that would have caught it), and the correction is counted. A weekly retro routine (decision 7) reads the week's corrections and review findings, by the bot whose work it was, and proposes checks first (a test, lint rule or CI step that fails on the mistake), then rules in `team/standards.md`, then role card, skill and routine edits. You approve them, and an approved check is delegated, proven to fail on the old mistake, and reviewed like any work. So lessons become structure rather than more memory. This is pstack's `reflect` and `correct` idea.
 
 ### 7. Always-on, within one Mac
 

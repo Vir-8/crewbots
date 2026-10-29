@@ -15,7 +15,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ImageContent, TextContent
 
-from crewbots.crew_tools import describe, dropped_text, merge_text, recall_text, shared_text
+from crewbots.crew_tools import describe, dropped_text, merge_text, recall_text, remembered_text, shared_text
 
 INSTRUCTIONS = "Tools for working in a crewbots crew: hand work back, escalate decisions, and (for coordinators) delegate."
 
@@ -113,9 +113,9 @@ def build_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = F
         return f"Changed {written['page']}."
 
     @server.tool(description=describe("remember"))
-    def remember(title: str, body: str, shared: bool = False) -> str:
-        note = call("POST", "/bot/remember", {"title": title, "body": body, "shared": shared})
-        return f"Remembered: {note['title']} ({note['path']})."
+    def remember(title: str, body: str, shared: bool = False, mistake: str = "", check: str = "") -> str:
+        return remembered_text(call("POST", "/bot/remember", {"title": title, "body": body, "shared": shared,
+                                                               "mistake": mistake, "check": check}))
 
     @server.tool(description=describe("forget"))
     def forget(name: str, shared: bool = False) -> str:

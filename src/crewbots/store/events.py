@@ -121,12 +121,14 @@ class Events:
             f"select count(*) from events where task_id = ? and id > ? and kind in ({','.join('?' * len(kinds))})",
             (task_id, after, *kinds)).fetchone()[0]
 
-    def events_since(self, since: str, kinds: tuple[str, ...], task_ids: list[str]) -> list[StoredEvent]:
-        if not task_ids:
+    def events_since(self, since: str, kinds: tuple[str, ...], task_ids: list[str] | None) -> list[StoredEvent]:
+        """Events of these kinds since `since`, in these tasks, or in every task when `task_ids` is None."""
+        if task_ids is not None and not task_ids:
             return []
+        within = f" and task_id in ({','.join('?' * len(task_ids))})" if task_ids is not None else ""
         rows = self.db.execute(
-            f"select * from events where at >= ? and kind in ({','.join('?' * len(kinds))})"
-            f" and task_id in ({','.join('?' * len(task_ids))}) order by id", (since, *kinds, *task_ids)).fetchall()
+            f"select * from events where at >= ? and kind in ({','.join('?' * len(kinds))}){within} order by id",
+            (since, *kinds, *(task_ids or ()))).fetchall()
         return [StoredEvent(id=r["id"], task_id=r["task_id"], kind=r["kind"], data=json.loads(r["data"]), at=r["at"])
                 for r in rows]
 

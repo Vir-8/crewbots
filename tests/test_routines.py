@@ -14,7 +14,7 @@ from crewbots.events import Done
 from crewbots.github import PullRequest, Snapshot, _prs
 from crewbots.routines import Cron, RoutineError
 from crewbots.runner import Runner
-from crewbots.scheduler import MAX_STARTS_PER_POLL, Scheduler, activity
+from crewbots.scheduler import MAX_STARTS_PER_POLL, Scheduler, activity, corrections
 from crewbots.store import Store, Verdict
 
 TZ = datetime.now().astimezone().tzinfo
@@ -248,6 +248,36 @@ async def test_the_activity_a_routine_reads(crew, store, tmp_path):
     assert "reviewed version 1: FAIL, Quotes aren't escaped Findings: export.py:12" in text
     assert "Standup" not in text and earlier_standup.id not in text
     assert activity(store, datetime.now().astimezone() + timedelta(minutes=1)) == "Nothing happened in the crew in that time."
+
+
+async def test_the_retro_reads_what_went_wrong_counting_each_finding_once(crew, store, tmp_path):
+    from crewbots.crew_tools import CrewTools
+
+    since = datetime.now().astimezone() - timedelta(minutes=1)
+    assert corrections(store, since).startswith("No bot noted a correction")
+    goal = store.create_task("chief", "Add CSV export")
+    tools = CrewTools(crew.runner, goal.id, can_delegate=True)
+    first = await tools.call("remember", {"title": "Exports use semicolons", "body": "The user's sheets are German.",
+                                          "mistake": "Used commas in the CSV export", "check": "a test reading the header"})
+    assert "Counted as a correction" in first and "earlier" not in first
+    again = await tools.call("remember", {"title": "Quote names", "body": "Names have commas.", "mistake": "Unquoted"})
+    assert "Your earlier ones, the latest first: Exports use semicolons." in again
+    plain = await tools.call("remember", {"title": "Lunch is at one", "body": "The user eats at one."})
+    assert "correction" not in plain
+    work = store.create_task("reviewer", "Build the export", parent_id=goal.id, created_by="chief")
+    review = store.create_task("reviewer", "Review the export", parent_id=goal.id, created_by="chief")
+    verdict = {"work_id": work.id, "reviewer": "reviewer", "version": 2, "verdict": "fail", "summary": "Quotes",
+               "findings": [{"location": "export.py:12", "problem": "a comma in a name splits the row"}]}
+    store.append_event(review.id, kind="review", data=verdict)  # recorded on the review and on the work
+    store.append_event(work.id, kind="review", data=verdict)
+
+    text = corrections(store, since)
+
+    assert "## Corrections the user made (2)" in text
+    assert (f"in {goal.id}: Used commas in the CSV export Lesson: The user's sheets are German. "
+            "A check that would catch it: a test reading the header") in text
+    assert "Lunch" not in text
+    assert f"## Review findings (1)\nIn reviewer's work:\n- {work.id} version 2, by reviewer: export.py:12" in text
 
 
 # GitHub triggers.

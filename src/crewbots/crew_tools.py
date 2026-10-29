@@ -70,7 +70,8 @@ SPECS: dict[str, Spec] = {
         "findings": {"type": "array", "items": _object(
             {"location": STRING, "problem": STRING, "scenario": STRING, "proof": STRING}, ["location", "problem"])},
     }, ["verdict", "summary"])),
-    "remember": Spec(_object({"title": STRING, "body": STRING, "shared": {"type": "boolean"}}, ["title", "body"])),
+    "remember": Spec(_object({"title": STRING, "body": STRING, "shared": {"type": "boolean"}, "mistake": STRING,
+                              "check": STRING}, ["title", "body"])),
     "write_page": Spec(_object({"page": STRING, "text": STRING}, ["page", "text"])),
     "edit_page": Spec(_object({"page": STRING, "find": STRING, "replace": STRING}, ["page", "find", "replace"])),
     "forget": Spec(_object({"name": STRING, "shared": {"type": "boolean"}}, ["name"])),
@@ -251,8 +252,11 @@ class CrewTools:
                     return (f"Working state entry {entry_id} updated."
                             + (" State entries were trimmed; tidy up your state." if pruned else ""))
                 case "remember":
-                    note = r.remember(me, args["title"], args["body"], shared=bool(args.get("shared")))
-                    return f"Remembered: {note.title} ({note.path})."
+                    mistake = str(args.get("mistake") or "")
+                    earlier = r.corrections_of(r.store.get_task(me).bot) if mistake.strip() else None
+                    note = r.remember(me, args["title"], args["body"], shared=bool(args.get("shared")),
+                                      mistake=mistake, check=str(args.get("check") or ""))
+                    return remembered_text({"title": note.title, "path": str(note.path), "earlier": earlier})
                 case "next_check":
                     at = r.next_check(me, args["minutes"], args["why"])
                     return f"You'll look around again at {at:%H:%M} ({at:%a %d %b}), unless something comes up first."
@@ -310,6 +314,16 @@ class CrewTools:
         except (UnknownBot, MemoryError, CrewError, AttachmentError, PageError, BrowserError, MergeError) as e:
             raise ToolRefused(str(e.args[0] if e.args else e)) from None
         raise ToolRefused(f"{name} is not implemented")
+
+
+def remembered_text(note: dict[str, Any]) -> str:
+    text = f"Remembered: {note['title']} ({note['path']})."
+    if note.get("earlier") is None:
+        return text
+    text += " Counted as a correction: the weekly retro turns mistakes that come back into checks."
+    if note["earlier"]:
+        text += " Your earlier ones, the latest first: " + "; ".join(note["earlier"]) + "."
+    return text
 
 
 def dropped_text(result: dict[str, str]) -> str:

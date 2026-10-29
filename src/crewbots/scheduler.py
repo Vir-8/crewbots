@@ -30,6 +30,7 @@ GITHUB_EVERY_S = 300.0
 MAX_STARTS_PER_POLL = 3  # per trigger; the rest wait for the next poll
 FIRST_SINCE = timedelta(days=1)  # what a routine's first run looks back over
 ACTIVITY_CHARS = 30_000
+CORRECTION_CHARS = 12_000
 CHECKIN_CHARS = 4_000  # of what changed, for a check-in: its context stays small
 WAKE_CHARS = 6_000  # of what the crew did, for the chief's look around
 SOURCES_EVERY_S = 60.0  # how often the user's workspaces and watched folders are looked at for events
@@ -283,6 +284,8 @@ class Scheduler:
             values = {"since": _human(since), "now": _human(now)}
             if routine.wants("activity"):
                 values["activity"] = activity(self.store, since, exclude_routine=routine.name)
+            if routine.wants("corrections"):
+                values["corrections"] = corrections(self.store, since)
         # What a pull request's author wrote reaches the bot as data from outside, never as instructions.
         goal = routine.render({k: prompts.untrusted(UNTRUSTED[k], str(v)) if k in UNTRUSTED else v for k, v in values.items()})
         if routine.schedule:  # a scheduled routine is a message in its bot's chat, from the routine
@@ -366,6 +369,44 @@ def activity(store: Store, since: datetime, exclude_routine: str | None = None, 
                 lines.append(line)
         if goal.result:
             lines.append(f"Latest reply: {_clip(goal.result, EVENT_CHARS * 2)}")
+        sections.append("\n".join(lines))
+    text = "\n\n".join(sections)
+    if len(text) > chars:
+        text = text[:chars] + "\n… (more; use recall or the task ids to look closer)"
+    return text
+
+
+def corrections(store: Store, since: datetime, chars: int = CORRECTION_CHARS) -> str:
+    """What the crew got wrong since `since`, for the retro: each correction a bot noted when the user corrected it,
+    then each review finding, under the bot whose work it was, so a mistake that came back shows as one."""
+    events = store.events_since(_utc(since), ("correction", "review"), None)
+    noted = [e for e in events if e.kind == "correction"]
+    # A verdict is recorded on the review and on the work: the work's copy is the one counted.
+    found = [e for e in events if e.kind == "review" and e.task_id == e.data.get("work_id") and e.data.get("findings")]
+    if not noted and not found:
+        return "No bot noted a correction, and no review found anything, in that time."
+    sections = []
+    if noted:
+        lines = [f"## Corrections the user made ({len(noted)})"]
+        for e in noted:
+            d = e.data
+            line = f"- {d.get('bot', '?')}, {_human(datetime.fromisoformat(e.at))}, in {e.task_id}: {_clip(d.get('mistake', ''))}"
+            line += f" Lesson: {_clip(d.get('lesson', ''))}"
+            if d.get("check"):
+                line += f" A check that would catch it: {_clip(d['check'])}"
+            lines.append(line)
+        sections.append("\n".join(lines))
+    if found:
+        by_bot: dict[str, list[str]] = {}
+        for e in found:
+            work = store.get_task(e.task_id)
+            for f in e.data["findings"]:
+                by_bot.setdefault(work.bot, []).append(
+                    f"- {e.task_id} version {e.data.get('version')}, by {e.data.get('reviewer')}: "
+                    f"{f.get('location', '?')}: {_clip(f.get('problem', ''))}")
+        lines = [f"## Review findings ({sum(len(v) for v in by_bot.values())})"]
+        for bot, items in by_bot.items():
+            lines += [f"In {bot}'s work:", *items]
         sections.append("\n".join(lines))
     text = "\n\n".join(sections)
     if len(text) > chars:

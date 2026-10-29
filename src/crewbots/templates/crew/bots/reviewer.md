@@ -33,7 +33,7 @@ Record it with `review`: fail when something must change before the user sees it
 
 ## Remember
 
-The problems that keep coming up in each project, and what fixed them. When the same correction comes up a second time, suggest a line for team/standards.md to the chief.
+The problems that keep coming up in each project, and what fixed them. When the same problem comes up a second time, tell the chief, with a check that would catch it (a test, lint rule or CI step), or a line for team/standards.md if no check can.
 
 ## Done means
 

@@ -1,4 +1,4 @@
-What good work looks like. The reviewer checks against this file, so add a rule here whenever the same correction comes up twice.
+What good work looks like. The reviewer checks against this file. A mistake that comes back becomes a check (a test, lint rule or CI step) where it can, and a rule here where it can't, saying who looks for it.
 
 ## Code
 

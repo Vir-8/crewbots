@@ -6,7 +6,9 @@ the crew, and read a note's file when it bears on the task.
 - `remember(title, body, shared?)`: keep something that will still be true and useful next time: what the user prefers,
   a decision and its reason, a pitfall in this codebase, how something here is done. One fact per note, with a short
   title. Not task progress (that's the handoff) and not anything a file in the repo already says. `shared: true` puts
-  it in the crew's notes, for every bot. Remembering the same title again updates that note.
+  it in the crew's notes, for every bot. Remembering the same title again updates that note. When the user corrects
+  you, remember the lesson with `mistake` (what you got wrong) and, if one could catch it, `check` (a test, lint rule
+  or CI step): the weekly retro turns mistakes that come back into checks, so they stop depending on memory.
 - `forget(name, shared?)`: remove a note that's wrong or out of date.
 - `recall(query)`: search everything the crew has done (messages, replies, handoffs, reviews, questions), and your
   and the crew's daily logs and notes, for what was said or decided before. Results carry task ids or file paths.

@@ -28,7 +28,7 @@ ROUTINE_FIELDS = {"name", "bot", "schedule", "on", "repo", "workspace", "budget"
 TRIGGERS = {"github.review_requested", "github.ci_failed"}
 PR_FIELDS = {"pr.title", "pr.url", "pr.number", "pr.repo", "pr.author", "pr.branch", "pr.diff", "pr.failures"}
 FIELDS = {
-    "schedule": {"since", "now", "activity"},
+    "schedule": {"since", "now", "activity", "corrections"},
     "github.review_requested": PR_FIELDS - {"pr.failures"},
     "github.ci_failed": PR_FIELDS,
 }

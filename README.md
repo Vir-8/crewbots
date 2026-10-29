@@ -70,9 +70,11 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
   - `on: github.review_requested` or `on: github.ci_failed` starts it when a pull request in its `repo` asks you for a
     review, or one of yours fails its checks. The daemon asks GitHub every five minutes with your `gh` login, so
     nothing listens on the internet. A trigger only starts on what's new after it's added, and once per pushed version.
-  - The goal can use what the run is about: `{{activity}}` (what the crew did since the last run), `{{pr.diff}}`,
+  - The goal can use what the run is about: `{{activity}}` (what the crew did since the last run), `{{corrections}}`
+    (corrections bots noted and review findings since then), `{{pr.diff}}`,
     `{{pr.failures}}` (failed checks with the end of their logs), and more (`src/crewbots/routines.py`).
-  - A new crew comes with a weekday standup and a Friday retro, which proposes edits to the crew's own files, plus two
+  - A new crew comes with a weekday standup and a Friday retro, which turns mistakes that came back into checks and
+    proposes edits to the crew's own files, plus two
     GitHub triggers that start switched off.
 - **Budgets.** A role card can set `budget: {tokens: 2000000, per: week}`, and a routine a token budget for one run,
   counting everything it delegates. Tokens are the fresh ones: input the model hadn't cached, plus output.
