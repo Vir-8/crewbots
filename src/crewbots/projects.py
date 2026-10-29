@@ -10,9 +10,11 @@ of work belongs to; how to build and test it is the project's own business (its 
 which the CLIs read when they work there.
 
 A bot's chat isn't any one project's: it runs in the bot's own folder. Work on a project opens a thread or is
-delegated in that project, and runs in its folder: in a worktree of its own when the bot writes and the folder is a
-git repository, or in place otherwise, since the user gave the crew that folder by adding it. Only the user adds,
-changes or removes a project.
+delegated in that project, and runs in its folder, as the project's `isolation` says: `worktree`, a worktree of its own
+when the bot writes and the folder is a git repository (the default); `in_place`, the folder itself, on whatever branch
+it's on, beside the user and the other bots (a Unity project's default: one Editor can have it open, and engineers
+split the work by files); or `branch`, a branch of the folder itself, one task at a time. A folder that isn't a git
+repository is worked in place. Only the user adds, changes or removes a project.
 """
 
 import re
@@ -24,7 +26,8 @@ import yaml
 
 FOLDER = "projects"
 NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
-Isolation = Literal["branch", "worktree"]
+Isolation = Literal["in_place", "branch", "worktree"]
+ISOLATIONS = ("in_place", "branch", "worktree")
 
 
 class ProjectError(ValueError):
@@ -44,7 +47,7 @@ class Project:
     def isolation(self) -> Isolation:
         if self.isolation_setting:
             return self.isolation_setting
-        return "branch" if is_unity(self.folder) else "worktree"
+        return "in_place" if is_unity(self.folder) else "worktree"
 
     @property
     def gist(self) -> str:
@@ -86,8 +89,8 @@ def parse(text: str, path: Path) -> Project:
     if not NAME.fullmatch(name):
         raise ProjectError(f"{name!r} isn't a project name: lowercase letters, digits and dashes")
     isolation = meta.get("isolation")
-    if "isolation" in meta and isolation not in ("branch", "worktree"):
-        raise ProjectError("isolation must be `branch` or `worktree`")
+    if "isolation" in meta and isolation not in ISOLATIONS:
+        raise ProjectError("isolation must be `in_place`, `branch` or `worktree`")
     ci = meta.get("ci", [])
     if not isinstance(ci, list) or not all(isinstance(c, str) and c.strip() for c in ci):
         raise ProjectError("ci must be a list of commands")
@@ -102,8 +105,8 @@ def name_for(folder: Path) -> str:
 
 
 def save(home: Path, name: str, folder: Path, about: str, isolation: Isolation | None = None) -> Project:
-    if isolation is not None and isolation not in ("branch", "worktree"):
-        raise ProjectError("isolation must be `branch` or `worktree`")
+    if isolation is not None and isolation not in ISOLATIONS:
+        raise ProjectError("isolation must be `in_place`, `branch` or `worktree`")
     if not NAME.fullmatch(name):
         raise ProjectError(f"{name!r} isn't a project name: lowercase letters, digits and dashes, at most 40")
     folder = folder.expanduser()

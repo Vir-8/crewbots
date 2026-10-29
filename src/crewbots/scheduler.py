@@ -125,6 +125,7 @@ class Scheduler:
             self._stall_checked = loop.time()
             self.runner.stall_check(now)
         self.runner.flush_chief_events(now)
+        self.runner.free_apps()
         if not away:
             self._check_in_due(now)
             self._wake_due(now)

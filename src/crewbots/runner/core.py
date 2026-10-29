@@ -634,7 +634,7 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
             resume_session_id=task.session_id,
             # Work it started on its own reaches nothing outside crewbots, so it gets none of the bot's own MCP servers:
             # which of their tools only read can't be told from their names.
-            mcp_servers={**({} if proactive else bot.mcp),
+            mcp_servers={**({} if proactive else self._mcp_of(bot, token)),
                          **({} if in_process else self._crew_tools(token, bot, task=task))},
             proactive=proactive,
             crew=CrewTools(self, task.id, self.is_coordinator(bot.name), follows=token) if in_process else None,

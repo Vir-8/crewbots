@@ -25,6 +25,7 @@ from crewbots.runner.landed import Landed
 from crewbots.runner.merge_message import merge_message
 from crewbots.runner.merge_status import MergeStatus
 from crewbots.runner.reviews import MAX_REVIEW_ROUNDS
+from crewbots.runner.shared_apps import SharedApps
 from crewbots.sources import KINDS
 from crewbots.store import Handoff, Status, Task
 
@@ -35,7 +36,7 @@ DROPPED = re.compile(r"\s*dropped\s*:\s*(.*)", re.IGNORECASE | re.DOTALL)  # a h
 log = logging.getLogger(__name__)
 
 
-class Work(Landed, Closing, MergeStatus):
+class Work(Landed, Closing, MergeStatus, SharedApps):
     """The part of Runner that takes a bot's handoffs, questions, merge proposals and notes."""
 
     def _check_worktree_sweep(self, task_id: str | None = None) -> None:
@@ -261,7 +262,8 @@ class Work(Landed, Closing, MergeStatus):
             raise NotAllowed("only a coordinator can propose a merge")
         work = self._own_child(parent_id, task_id)
         if not work.worktree_path:
-            raise NotAllowed(f"{task_id} has no worktree, so there is nothing to merge")
+            raise NotAllowed(f"{task_id} has no worktree or branch: it worked in its folder itself, so its changes are "
+                             "there already and there's nothing to merge. Once its review passes, report what it changed")
         if work.merge_state == "merged":
             raise NotAllowed(f"{task_id} is already merged")
         if work.merge_state == "merging":
@@ -507,6 +509,7 @@ class Work(Landed, Closing, MergeStatus):
     def _turns_over(self, task: Task) -> None:
         """A task's turns are over for now: a thread's end is news for the crew, and a folder its own handoff dropped
         can go."""
+        self.free_apps(task.id)
         if task.kind == "thread" and not task.active and not self._background(task.id):
             self.happened("thread_done", task.id, f"{task.bot}'s thread {task.title!r} is {task.status.value}")
         if task.merge_state == "dropped" and task.worktree_path:

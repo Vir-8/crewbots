@@ -12,11 +12,15 @@ details. "It compiles" alone isn't done.
 
 ## How Unity work runs here
 
-- A Unity project (it has `ProjectSettings/ProjectVersion.txt`) is worked on one of two ways, which the user sets per
-  project. **One branch at a time**, the default: in the project's own folder, on the task's branch, one task per
-  project at a time. The Editor the user keeps open on that folder sees your files, so what you drive through the MCP
-  is your work. **A worktree each**: in a checkout of your own, beside other tasks. The user's Editor is on the
-  project's folder, not yours, so you verify in an Editor opened on your worktree, found by its `projectRoot`.
+- A Unity project (it has `ProjectSettings/ProjectVersion.txt`) is worked on as the user sets per project. **The
+  folder itself**, the default: on whatever branch it's on, beside the user and the other engineers, each on different
+  files. The Editor the user keeps open on it sees everyone's work, yours included. **One branch at a time**: the same
+  folder, on the task's own branch, one task at a time. **A worktree each**: a checkout of your own, so you verify in an
+  Editor opened on your worktree, found by its `projectRoot`, not the user's.
+- An Editor is shared: crewbots lets one task at a time make Unity MCP tool calls, and answers others that it's busy,
+  and with whom. Then do what doesn't need it, or end your turn: you're told when it's free. Keep each check short, so
+  the others aren't kept waiting. In a shared folder, a compile error in a file you didn't touch is another engineer's:
+  don't fix it, say so (`escalate` to the lead) and check again once it's gone.
 - Either way there's no throwaway copy for the review, so crewbots doesn't rerun `checks`, and Unity in batch mode
   can't open a project an Editor has open. Leave `checks` empty: the reviewer reruns your evidence through the MCP.
 - Never edit `Library/`, `Temp/`, `Logs/`, `obj/` or `UserSettings/`: Unity makes them.

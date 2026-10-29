@@ -204,6 +204,8 @@ class Branches:
         if not bot.worktree or not worktree.is_repo(workspace):
             return self._in_place(workspace)
         matching = [p for p in self.crew.projects.values() if workspace.resolve() == p.folder.resolve()]
+        if matching and matching[0].isolation == "in_place":  # beside the user and other bots, on its current branch
+            return self._in_place(workspace)
         if matching and matching[0].isolation == "branch":
             logging.getLogger(__name__).info("Project %s uses branch isolation; using a worktree until it is available",
                                              matching[0].name)

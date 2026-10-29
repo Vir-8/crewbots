@@ -204,6 +204,26 @@ async def test_unity_work_in_a_worktree_is_reviewed_in_place_without_a_copy(stor
     await crew.runner.shutdown()
 
 
+async def test_work_in_a_project_worked_in_place_shares_its_folder(store, tmp_path):
+    repo = git_repo(tmp_path / "game")
+    (repo / "ProjectSettings").mkdir()
+    (repo / "ProjectSettings" / "ProjectVersion.txt").write_text("m_EditorVersion: 6000.3.12f1\n")
+    crew = ScriptedCrew(store, tmp_path / "crew", chief(), bot("engineer", access=Access.WORKSPACE_WRITE))
+    game = Project("game", repo, "A game", tmp_path / "g.md")
+    crew.runner.reload(dataclasses.replace(crew.runner.crew, projects={"game": game}))
+    crew.script["engineer"] = lambda spec, me: ((spec.cwd / f"{me.id}.cs").write_text("// mine"), [Done(final_text="ok")])[1]
+    lead = store.create_task("chief", "lead", status=Status.IDLE)
+
+    work = [crew.runner.delegate(lead.id, "engineer", f"part {n}", project="game") for n in (1, 2)]
+    for w in work:
+        await wait_until(crew.settled(w.id))
+
+    assert {s.cwd for s in crew.specs_for("engineer")} == {repo}  # both at once, in the folder itself
+    assert all(store.get_task(w.id).worktree_path is None and store.get_task(w.id).branch is None for w in work)
+    assert worktree._git(repo, "branch", "--show-current") == "main" and (repo / f"{work[0].id}.cs").exists()
+    await crew.runner.shutdown()
+
+
 async def test_any_bot_delegates_but_not_to_itself_or_the_chief(store, tmp_path):
     crew = ScriptedCrew(store, tmp_path, chief(), bot("deputy", can_delegate=True), bot("engineer"), bot("writer"),
                         gate=asyncio.Event())

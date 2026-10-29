@@ -341,11 +341,21 @@ Each step leaves the system working.
   at most `CATCH_UP` (12,000) characters of what it missed, newest kept, so a long stretch of work doesn't swell the
   next turn of a bot that only follows along.
 - **Where work happens** (`projects.py` `isolation`, `runner/branches.py`). A writing bot's work in a git repository
-  runs in a worktree of its own, or, per project, on a branch of the project's own folder, one task at a time (branch
-  mode, which a project holds while a task has it). Unity projects (`is_unity`: `ProjectSettings/ProjectVersion.txt`)
-  default to branch mode, so the Editor the user has open sees the work; the Projects page sets either. A worktree
-  shares the repository's history but writes out every tracked file (Sky Islands: 3.4 GB of 24 GB, without its 7.6 GB
-  `Library/`). Unity work isn't copied for review, whichever way it runs: its checks run in an Editor, not a copy.
+  runs, per project, in a worktree of its own (`worktree`, the default), in the project's folder itself on whatever
+  branch it's on, beside the user and other bots (`in_place`), or on a branch of the folder, one task at a time
+  (`branch`, which a project holds while a task has it). Unity projects (`is_unity`: `ProjectSettings/ProjectVersion.txt`)
+  default to `in_place`: Unity opens a project in one Editor only (`Temp/UnityLockfile`), so that Editor sees every
+  engineer's work, and the lead splits the work by files. The Projects page sets it. A worktree shares the
+  repository's history but writes out every tracked file (Sky Islands: 3.4 GB of 24 GB, without its 7.6 GB `Library/`).
+  Unity work isn't copied for review, whichever way it runs: its checks run in an Editor, not a copy. In-place work
+  has nothing to merge.
+- **Shared apps** (`runner/shared_apps.py`, `api/routes/shared_apps.py`). An http MCP server marked `one_at_a_time`
+  in mcp.json reaches a bot at `/v1/bot/mcp/<server>`, with its run token, and the daemon passes everything on except a
+  `tools/call` while another task holds the app: that's answered with a tool error naming the holder, and the task
+  queued. A task holds it from its first tool call while its turn runs, until APP_IDLE_S (5 min) after its last call;
+  `free_apps` (as turns end, and on the scheduler's tick) lets go and tells the next task in line, one at a time,
+  WAKE_AGAIN_S apart. Checked against MCP for Unity 3.4.8 (event-stream replies): two tasks' sessions, one call
+  through, the other answered busy.
 - **Trusting a verdict, cheaply.** A review records its work's change (`worktree.change_id`: `git patch-id
   --stable` of the diff from where it meets its merge target, uncommitted and new files included, through a copy of the
   index), as a `review_change` event. A version reviewed in an earlier round counts as approved when its change is the

@@ -44,6 +44,7 @@ def routes(c: Context) -> APIRouter:
         else:
             spec = {"type": body.transport, "url": body.url or "",
                     "headers": body.headers if body.headers is not None else old.get("headers") or {}}
+        spec |= {"one_at_a_time": True} if old.get("one_at_a_time") and body.transport == "http" else {}
         mcp_catalog.save(runner.crew.home, name, {k: v for k, v in spec.items() if v not in ({}, [])})
         reload_crew()
         return mcp_out(name, mcp_catalog.servers(runner.crew.home)[name])

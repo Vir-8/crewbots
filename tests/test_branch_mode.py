@@ -390,7 +390,7 @@ def game(repo, tmp_path):
     gate = asyncio.Event()
     crew = ScriptedCrew(store, tmp_path, bot("chief", can_delegate=True),
                         bot("engineer", access=Access.WORKSPACE_WRITE), gate=gate)
-    project = projects.Project("game", path, "game", tmp_path / "game.md")
+    project = projects.Project("game", path, "game", tmp_path / "game.md", isolation_setting="branch")
     crew.runner.reload(dataclasses.replace(crew.runner.crew, projects={"game": project}))
     yield crew, store, path, git, gate
     store.close()

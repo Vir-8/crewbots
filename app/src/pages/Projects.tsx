@@ -9,7 +9,15 @@ import type { Crew } from "../state";
 
 type Draft = { name: string; folder: string; about: string; existing: boolean; isolation?: ProjectOut["isolation"] };
 
-const WHERE: Record<ProjectOut["isolation"], string> = { worktree: "A worktree each", branch: "One branch at a time" };
+const WHERE: Record<ProjectOut["isolation"], string> = { in_place: "The folder itself", worktree: "A worktree each", branch: "One branch at a time" };
+const HOW: Record<ProjectOut["isolation"], string> = {
+  in_place:
+    "Tasks work side by side in this folder, on the branch it's on, as you do: the lead gives each engineer different files. A Unity project's one Editor sees all of it, and one task drives it at a time.",
+  worktree:
+    "Tasks run side by side, each in its own checkout of the project, which takes the disk space of its tracked files. In Unity, a worktree is verified in an Editor opened on it, not the one you have open.",
+  branch:
+    "One task at a time, on its own branch in this folder, which needs no uncommitted changes when a task starts. The Unity Editor you have open on it sees the work, so bots can verify it there.",
+};
 
 /** Your projects: the folders the crew works in. A bot's chat isn't any one project's; work on a project runs in its
  * folder (in a worktree of its own when a bot writes in a git repository), and every bot sees the list, with what
@@ -75,8 +83,8 @@ export function Projects(props: { crew: Crew; onChat: (bot: string) => void }) {
     >
       <p className="page-lede">
         The folders your crew works in. A bot starts or hands off work in a project and does it in its folder: in a worktree of its own when it
-        writes in a git repository, or, for a Unity project unless you change it, on a branch of the folder itself, one task at a time. Every bot
-        sees this list, with what each project is.
+        writes in a git repository, or, for a Unity project unless you change it, in the folder itself, beside you. Every bot sees this list, with
+        what each project is.
       </p>
       {error && <p className="bad small">{error}</p>}
       {Object.entries(errors).map(([file, why]) => (
@@ -147,14 +155,7 @@ export function Projects(props: { crew: Crew; onChat: (bot: string) => void }) {
             <textarea rows={4} value={draft.about} onChange={(e) => setDraft({ ...draft, about: e.target.value })} autoFocus={draft.existing} />
           </Field>
           {draft.isolation && (
-            <Field
-              label="Where tasks work"
-              hint={
-                draft.isolation === "worktree"
-                  ? "Tasks run side by side, each in its own checkout of the project, which takes the disk space of its tracked files. In Unity, a worktree is verified in an Editor opened on it, not the one you have open."
-                  : "One task at a time, on its own branch in this folder, which needs no uncommitted changes when a task starts. The Unity Editor you have open on it sees the work, so bots can verify it there."
-              }
-            >
+            <Field label="Where tasks work" hint={HOW[draft.isolation]}>
               <Segmented value={draft.isolation} options={Object.entries(WHERE) as [ProjectOut["isolation"], string][]} onChange={(isolation) => setDraft({ ...draft, isolation })} />
             </Field>
           )}

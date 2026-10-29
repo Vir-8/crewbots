@@ -111,6 +111,10 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
     list in `mcp.json`, never your personal ones. On Claude that's `--strict-mcp-config`. On Codex, which has no such
     switch, every server, plugin and app from your config is turned off by name. A server is a program the CLI
     starts, or a URL (streamable HTTP, or SSE on Claude).
+  - A server that drives one running app, such as a Unity Editor's, can be marked `"one_at_a_time": true` in
+    `mcp.json` (http servers only). Bots then reach it through the daemon, which lets one task's tool calls through
+    at a time: another's are answered that it's busy, and by whom, and the first one turned away is told when
+    it's free. A task keeps it while its turn runs, until five minutes after its last call.
   - **Skills:** every bot sees the crew's skills and your global ones (`~/.claude/skills`, `~/.agents/skills` and
     `~/.codex/skills`), by name and description, and reads a skill's `SKILL.md` when a task matches it, the way Claude
     Code does. Those synced from claude.ai (documents, slides, your morning brief) reach only a bot whose card names

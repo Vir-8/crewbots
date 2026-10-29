@@ -62,7 +62,7 @@ def test_project_isolation_defaults_and_explicit_settings(tmp_path):
     (unity / "ProjectSettings" / "ProjectVersion.txt").write_text("m_EditorVersion: 6000.3.12f1\n")
     old = projects.parse(f"---\nfolder: {folder}\n---\nOld project", home / "old.md")
     assert old.isolation == "worktree"
-    assert projects.save(home, "game", unity, "A game").isolation == "branch"
+    assert projects.save(home, "game", unity, "A game").isolation == "in_place"  # one Editor: the folder itself
     assert projects.save(home, "game", unity, "A game", isolation="worktree").isolation == "worktree"
     assert projects.save(home, "game", unity, "Updated").isolation == "worktree"
     assert projects.save(home, "project", folder, "A project", isolation="branch").isolation == "branch"
@@ -104,7 +104,7 @@ def test_project_isolation_api_validates_and_preserves_setting(client, tmp_path)
     (folder / "ProjectSettings" / "ProjectVersion.txt").write_text("Unity")
     url = "/projects/game"
     created = client.put(url, json={"folder": str(folder)}, headers=AUTH)
-    assert created.json()["isolation"] == "branch"
+    assert created.json()["isolation"] == "in_place"
     changed = client.put(url, json={"folder": str(folder), "isolation": "worktree"}, headers=AUTH)
     assert changed.json()["isolation"] == "worktree"
     assert client.put(url, json={"folder": str(folder), "about": "edited"}, headers=AUTH).json()["isolation"] == "worktree"

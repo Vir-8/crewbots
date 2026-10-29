@@ -21,7 +21,7 @@ if (!started) {
 const projects = [
   { name: "acme-web", folder: "/Users/you/code/acme-web", about: "Acme's customer site: Next.js, deployed from main by you.", isolation: "worktree", missing: false },
   { name: "export-service", folder: "/Users/you/code/export-service", about: "The service behind report exports.", isolation: "worktree", missing: false },
-  { name: "glider", folder: "/Users/you/Games/Glider", about: "A Unity URP glider game.", isolation: "branch", missing: false },
+  { name: "glider", folder: "/Users/you/Games/Glider", about: "A Unity URP glider game.", isolation: "in_place", missing: false },
 ];
 const found: FoundOut = {
   folders: [
