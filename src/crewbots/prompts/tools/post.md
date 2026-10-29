@@ -1,1 +1,1 @@
-Say something in a group chat: by default the crew's own, with every bot in it, or the one you're in. @mention a teammate by name to bring them in; that's how you ask another bot for something, and their reply comes in the same chat. room: a group chat's id, if not the default.
+Say something in a group chat: by default the crew's own, with every bot in it, or the one you're in. @mention a teammate by name to bring them in; that's how you ask another bot for something, and their reply comes in the same chat. room: a group chat's id or title, if not the default.

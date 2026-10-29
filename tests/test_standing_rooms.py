@@ -29,7 +29,7 @@ async def test_a_new_crew_has_its_engineering_group_chat_made_once(home):
     [room] = runner.make_standing_rooms()
 
     assert (room["title"], room["lead"], room["members"]) == (
-        "Engineering", "eng-lead", ["eng-lead", *ENGINEERS, "reviewer", "critic"])
+        "Engineering", "eng-lead", ["chief", "eng-lead", *ENGINEERS, "reviewer", "critic"])
     assert runner.make_standing_rooms() == []
     await runner.delete_room(room["id"])
     assert runner.make_standing_rooms() == [] and runner.store.rooms() == []  # deleted stays deleted

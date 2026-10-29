@@ -359,13 +359,19 @@ class Rooms:
         return self.post(room["id"], task.bot, text, depth=self._seat_depth.get(task_id, 0) + 1, attachments=attachments)
 
     def _room_to_post(self, task: Task, room_id: str | None) -> dict[str, Any]:
-        """Where a bot's post goes: the room it names, else the one it's in, else the crew's; one it's a member of."""
+        """Where a bot's post goes: the room it names (by id, or by title among its own), else the one it's in, else
+        the crew's; one it's a member of."""
         if room_id is None:
             room_id = task.room_id if task.kind == "seat" else self.crew_room()["id"]
         try:
             room = self.store.room(room_id)
         except KeyError:
-            raise NotAllowed(f"no group chat {room_id}") from None
+            named = [r for r in self.store.rooms() if task.bot in r["members"]
+                     and " ".join(r["title"].split()).lower() == " ".join(room_id.split()).lower()]
+            if len(named) != 1:
+                raise NotAllowed(f"no group chat {room_id}" if not named else
+                                 f"you're in {len(named)} group chats called {room_id!r}: name one by its id") from None
+            room = named[0]
         if task.bot not in room["members"]:
             raise NotAllowed(f"{task.bot} isn't in the group chat {room['title']!r}")
         if room["archived_at"]:

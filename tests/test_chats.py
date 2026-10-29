@@ -493,6 +493,22 @@ async def test_a_bot_posts_to_the_crews_room_from_its_own_chat(crew, store):
         crew.runner.post_from(chat.id, "hi", other["id"])
 
 
+async def test_a_bot_posts_to_a_group_chat_by_its_title_from_its_own_chat(crew, store):
+    replies(crew, {"engineer": "On it."})
+    room = crew.runner.create_room("Engineering", ["engineer", "chief"], lead="engineer")
+    tools = CrewTools(crew.runner, crew.runner.chat("chief").id, can_delegate=True)
+
+    assert room["id"] in await tools.call("post", {"text": "@engineer build the export", "room": " engineering "})
+    await wait_until(idle(crew))
+
+    assert [m["author"] for m in store.room_messages(room["id"])] == ["chief", "engineer"]
+    crew.runner.create_room("Engineering", ["chief"])
+    with pytest.raises(NotAllowed, match="2 group chats called 'Engineering'"):
+        crew.runner.post_from(crew.runner.chat("chief").id, "hi", "Engineering")
+    with pytest.raises(NotAllowed, match="no group chat Design"):
+        crew.runner.post_from(crew.runner.chat("chief").id, "hi", "Design")
+
+
 async def test_a_bot_opens_a_group_chat_and_brings_a_teammate_in(crew, store):
     chat = crew.runner.chat("engineer")
     tools = CrewTools(crew.runner, chat.id, can_delegate=False)
