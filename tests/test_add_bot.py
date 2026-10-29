@@ -84,7 +84,7 @@ async def test_a_taken_name_is_refused_and_no_tool_removes_or_changes_a_bot(crew
 
     with pytest.raises(ToolRefused, match="already a bot called engineer-1"):
         await chief.call("add_bot", {**MARKETING, "name": "engineer-1"})
-    assert runner.crew.bots["engineer-1"].title == "Engineer"
+    assert runner.crew.bots["engineer-1"].title == "Engineer 1"
     changing = [name for name in SPECS if any(w in name for w in ("remove", "delete", "edit", "update", "change"))]
     assert changing == ["edit_page", "update_state"]  # its own pages, and its task's state: neither touches a bot
 

@@ -1,5 +1,5 @@
 ---
-title: Engineer
+title: Engineer 4
 description: One of the crew's four engineers. Writes and changes code in a project, with tests, on its own branch, and hands back work that's ready for review.
 backend: codex
 access: workspace_write
