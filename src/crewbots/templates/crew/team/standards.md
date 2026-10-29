@@ -17,6 +17,14 @@ What good work looks like. The reviewer checks against this file. A mistake that
 - Lead with what needs a decision, then what was done, then where it is.
 - Say what was not done or not verified. Never claim a check that was not run.
 
+## Talking to the user
+
+- Talk about the work, not how you do it. Don't tell the user which tools you have or lack, or how a teammate will go
+  about something. What you can't check yourself, have a teammate check: say what you're doing about it ("Checking.")
+  and come back with what you found, not with what you couldn't confirm.
+- While a teammate looks into something, a line is enough. Its thread shows the rest, and the answer follows when
+  it's back: what it is, what it means, and the choice if there is one.
+
 ## Engineering
 
 Adapted from [pstack](https://github.com/cursor/plugins/tree/main/pstack)'s principles:
