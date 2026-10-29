@@ -29,6 +29,23 @@ class InPlace:
     def _in_place_files(self, task: Task, repo: Path, output: list[str] | None = None) -> list[str]:
         """The changed files among those the task handed back as its output (paths in the repository, or files and
         folders in it), with their .meta files and those of the folders they're in."""
+        return sorted({path for state, path in self._output_status(task, repo, output) if state != "!!"})
+
+    def _ignored_output(self, task: Task, repo: Path) -> list[str]:
+        """What the task handed back as its output that git ignores in this project, so that no commit of its holds
+        it: whether to track it is the user's call."""
+        return sorted({path for state, path in self._output_status(task, repo) if state == "!!"})
+
+    def _nothing_to_commit(self, task: Task, repo: Path) -> str:
+        if ignored := self._ignored_output(task, repo):
+            return (f"git ignores what {task.id} handed back as its output in this project ({', '.join(ignored)}), so "
+                    "there's nothing of its to commit. Whether to track it is the user's call: say so in your report, "
+                    "and close the task with drop_task, which leaves its files as they are")
+        return (f"{task.id} worked in its project's folder itself, and handed back none of the files it changed as its "
+                "output, so there's nothing of its to commit: have it hand back again listing them")
+
+    def _output_status(self, task: Task, repo: Path, output: list[str] | None = None) -> list[tuple[str, str]]:
+        """`git status` of what the task handed back as its output, ignored files included (as `!!`)."""
         if output is None:
             handoff = self.store.latest_handoff(task.id)
             output = handoff.output if handoff else []
@@ -43,15 +60,15 @@ class InPlace:
                 specs += [str(rel), f"{rel}.meta", *(f"{p}.meta" for p in rel.parents if p.parts)]
         if not specs:
             return []
-        listed = worktree._git(repo, "status", "--porcelain=v1", "-z", "-uall", "--", *specs, strip=False)
-        entries, changed = listed.split("\0"), set()
+        listed = worktree._git(repo, "status", "--porcelain=v1", "-z", "-uall", "--ignored", "--", *specs, strip=False)
+        entries, found = listed.split("\0"), []
         while entries:
             entry = entries.pop(0)
             if len(entry) > 3:
-                changed.add(entry[3:])
+                found.append((entry[:2], entry[3:]))
                 if entry[0] in "RC" and entries:  # a rename or copy names where it came from next
-                    changed.add(entries.pop(0))
-        return sorted(changed)
+                    found.append((entry[:2], entries.pop(0)))
+        return found
 
     def _work_diff(self, task: Task, in_place: Path | None, files: list[str]) -> str:
         """What a piece of code work changes: its worktree's whole diff, or in place, its own files'."""
@@ -72,8 +89,7 @@ class InPlace:
     def _commit_in_place(self, work: Task, repo: Path, message: str, *, forced: bool, automatic: bool) -> Task:
         files = self._in_place_files(work, repo)
         if not files:
-            raise MergeError(f"{work.id} handed back none of the files it changed as its output, so there's nothing of "
-                             "its to commit: have it hand back again listing them")
+            raise MergeError(self._nothing_to_commit(work, repo))
         message = worktree.final_message(message)
         base = worktree._git(repo, "rev-parse", "HEAD")
         into = worktree._git(repo, "symbolic-ref", "--short", "HEAD")
@@ -89,5 +105,6 @@ class InPlace:
         task = self._set(work.id, merge_state="merged", repo=str(repo), base=base, merged_commit=commit,
                          merged_tip=commit)
         self._record(work.id, kind="merged", data={"commit": commit, "into": str(repo), "branch": into, "files": files,
-                                                   "forced": forced, "automatic": automatic})
+                                                   "ignored": self._ignored_output(work, repo), "forced": forced,
+                                                   "automatic": automatic})
         return task

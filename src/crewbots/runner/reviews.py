@@ -9,7 +9,8 @@ from crewbots.runner.checks import Checks
 from crewbots.runner.common import NotAllowed
 from crewbots.store import Review, Status, Task, Verdict
 
-MAX_REVIEW_ROUNDS = 3  # a stop condition: after this many reviewed versions, the user decides
+MAX_REVIEW_ROUNDS = 5  # a stop condition: after this many reviewed versions, the user decides
+NARROWING = 3  # from this round on, work goes back only while its findings narrow to a small, clear fix
 REVIEW_FINDINGS_CHARS = 20_000  # of each reviewer's findings, for the lead
 
 
@@ -152,7 +153,9 @@ def _round_status(state: ReviewState, work: Task) -> str:
     if state.failed:
         return (f"{head}: changes requested. Send the findings you judge real to the owner with message(task_id="
                 f"{work.id!r}, ...); its next version needs a new review round ({state.round + 1} of "
-                f"{MAX_REVIEW_ROUNDS}).")
+                f"{MAX_REVIEW_ROUNDS})." + (" Send it back only if the findings are narrowing to a small, clear fix; if "
+                "they aren't, rethink the approach or drop it, or report to the user with the best version and the open "
+                "objections." if state.round >= NARROWING else ""))
     return f"{head}: reviewed an older version ({state.rounds[-1]}); the work has changed since, so review it again."
 
 

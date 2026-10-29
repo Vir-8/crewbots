@@ -59,10 +59,17 @@ def _said(task: Task, handoff: Handoff | None, review: Review | None) -> str:
     if task.kind == "ask":
         return task.result if task.status is Status.IDLE and task.result else f"(no answer: {task.status})"
     if task.review_of and review:
-        return f"Review of {task.review_of}: {review.verdict.upper()}. {review.summary}"
+        found = "".join(_finding(f) for f in review.findings)
+        return (f"{task.id}, a review of {task.review_of}: {review.verdict.upper()}. {review.summary}"
+                + (f"\n\nFindings:{found}" if found else ""))
     if task.status is Status.FAILED:
         return f"{task.id} failed: {task.error or 'no reason given'}"
     if handoff:
         return (f"{task.id}: {handoff.done}" + (f"\n\nStill open: {handoff.open}" if handoff.open.strip() else "")
                 + ("\n\nEvidence: " + "; ".join(handoff.evidence) if handoff.evidence else ""))
     return f"{task.id}: {task.result or task.status.value}"
+
+
+def _finding(finding: dict[str, str]) -> str:
+    where = f"`{finding['location']}`: " if finding.get("location") else ""
+    return f"\n- {where}{finding.get('problem', '')}" + (f" {finding['scenario']}" if finding.get("scenario") else "")

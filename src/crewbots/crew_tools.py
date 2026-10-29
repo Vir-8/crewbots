@@ -23,6 +23,9 @@ def merge_text(task_id: str, state: str | None, commit: str | None, details: dic
         message += " Saved after the merge started, still uncommitted: " + ", ".join(files)
     if error := details.get("leftover_check_error"):
         message += f" Could not check for later saves: {error}"
+    if ignored := details.get("ignored"):
+        message += (" Left out, as git ignores them in this project: " + ", ".join(ignored)
+                    + ". Whether to track them is the user's call: say so in your report.")
     return message
 
 

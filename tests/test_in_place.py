@@ -8,6 +8,7 @@ from fakes import ScriptedCrew, bot, git_repo, wait_until
 
 from crewbots import worktree
 from crewbots.backends import Access
+from crewbots.crew_tools import merge_text
 from crewbots.projects import Project
 from crewbots.runner import MergeError, NotAllowed
 from crewbots.store import Status, Store, Verdict
@@ -80,6 +81,37 @@ async def test_work_that_names_none_of_its_files_isnt_committed(game):
     with pytest.raises(NotAllowed, match="handed back none of the files it changed"):
         crew.runner.propose_merge(lead.id, work.id, "Add the player")
     assert worktree._git(repo, "rev-list", "--count", "HEAD") == "2"  # nothing committed
+    await crew.runner.shutdown()
+
+
+async def test_output_git_ignores_is_named_rather_than_left_out_quietly(game):
+    crew, store, repo, lead, work = game
+    (repo / ".gitignore").write_text("*.md\n**/.*/\n")
+    worktree._git(repo, "add", ".gitignore")
+    worktree._git(repo, "commit", "-qm", "Ignore notes")
+    (repo / ".agents" / "skills" / "verify").mkdir(parents=True)
+    (repo / ".agents" / "skills" / "verify" / "SKILL.md").write_text("# Verify\n")
+    skill = ".agents/skills/verify/SKILL.md"
+    crew.runner.handoff(work.id, "Wrote the verify skill", [skill], "", "", ["followed it once"])
+    review = crew.runner.delegate(lead.id, "reviewer", "review it", review_of=work.id)
+    await wait_until(crew.settled(review.id))
+    crew.runner.review(review.id, Verdict.PASS, "fine", [])
+    with pytest.raises(NotAllowed, match=f"git ignores what {work.id} handed back .*\\({skill}\\).*drop_task"):
+        crew.runner.propose_merge(lead.id, work.id, "Add a verify skill")
+
+    store.update_task(work.id, turns=2)
+    crew.runner.handoff(work.id, "Wrote the verify skill and the player", [skill, "Assets/Player.cs"], "", "", ["ran it"])
+    review = crew.runner.delegate(lead.id, "reviewer", "review it again", review_of=work.id)
+    await wait_until(crew.settled(review.id))
+    crew.runner.review(review.id, Verdict.PASS, "fine", [])
+    store.set_auto_merge(True)
+    merged = await crew.runner.propose_merge_off_loop(lead.id, work.id, "Add the player")
+    committed = worktree._git(repo, "show", "--name-only", "--format=", "HEAD").split()
+    assert committed == ["Assets/Player.cs", "Assets/Player.cs.meta"]
+    event = store.last_event(work.id, ("merged",))
+    assert event.data["ignored"] == [skill]
+    assert f"Left out, as git ignores them in this project: {skill}." in merge_text(
+        work.id, merged.merge_state, merged.merged_commit, event.data)
     await crew.runner.shutdown()
 
 

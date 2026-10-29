@@ -24,7 +24,7 @@ From [a guide to running a Grok Bot team](https://x.com/eng_khairallah1/status/2
 - **Exactly one owner per task.** Only the coordinator assigns or reassigns. The store enforces this, not the prompt.
 - **One handoff format.** `HANDOFF: task / from → to / done / output (paths) / open / needs`. The next bot works from the handoff and the files it points to, nothing else. That keeps context clean and every step auditable. In crewbots a handoff is a structured tool call (`handoff(...)`), not free text.
 - **Escalation ladder.** The owner tries up to twice, then asks the bot that owns the problem, then the coordinator decides, and only then does it come to you. Anything external or irreversible comes straight to you.
-- **Hard stop conditions,** enforced in code: at most 3 review rounds (then you get the best version plus the open objections), at most 2 attempts before escalating, and a usage budget per bot and per task.
+- **Hard stop conditions,** enforced in code: at most 5 review rounds, from the third only while the findings narrow (then you get the best version plus the open objections), at most 2 attempts before escalating, and a usage budget per bot and per task.
 - **Rhythm.** Routines such as a daily standup summary, weekly planning that you approve, and a Friday retro that names the one role card or standard to fix.
 - **Measure each bot:** approval rate, revision rounds, escalation accuracy, missed handoffs, and usage share. These all come from the store, since every task, handoff and review is recorded there.
 

@@ -116,7 +116,8 @@ def routes(c: Context) -> APIRouter:
         event = runner.store.last_event(task.id, ("merged",)) if task.merge_state == "merged" else None
         data = event.data if event and event.data.get("commit") == task.merged_commit else {}
         return {"id": task.id, "merge_state": task.merge_state, "merged_commit": task.merged_commit,
-                "leftover_files": data.get("leftover_files"), "leftover_check_error": data.get("leftover_check_error")}
+                "leftover_files": data.get("leftover_files"), "leftover_check_error": data.get("leftover_check_error"),
+                "ignored": data.get("ignored")}
 
     @v1.post("/bot/withdraw_merge")
     async def bot_withdraw_merge(request: Request, body: MergeWithdrawal):

@@ -49,16 +49,19 @@ async def test_finished_work_is_said_in_the_room_by_its_bot_without_waking_anyon
     await crew.runner.shutdown()
 
 
-async def test_a_review_verdict_is_said_in_the_room_by_the_reviewer(store, tmp_path):
+async def test_a_review_verdict_and_its_findings_are_said_in_the_room_by_the_reviewer(store, tmp_path):
     crew, room, seat = crew_in_a_room(store, tmp_path)
     work = store.create_task("engineer", "build", parent_id=seat.id, created_by="lead", status=Status.IDLE)
     store.update_task(work.id, turns=1, reported=True)
+    found = [{"location": "export.py:12", "problem": "Quotes are dropped.", "scenario": "A name with a comma splits."},
+             {"location": "", "problem": "No test covers quoting.", "scenario": "", "proof": ""}]
     crew.script["reviewer"] = lambda spec, me: (
-        crew.runner.review(me.id, Verdict.FAIL, "The CSV export drops quotes.", []), [Done(final_text="fail")])[1]
-    crew.runner.delegate(seat.id, "reviewer", "review it", review_of=work.id)
+        crew.runner.review(me.id, Verdict.FAIL, "The CSV export drops quotes.", found), [Done(final_text="fail")])[1]
+    review = crew.runner.delegate(seat.id, "reviewer", "review it", review_of=work.id)
     await wait_until(lambda: said_by(store, room, "reviewer"))
     [post] = said_by(store, room, "reviewer")
-    assert post["text"] == f"@lead Review of {work.id}: FAIL. The CSV export drops quotes."
+    assert post["text"] == (f"@lead {review.id}, a review of {work.id}: FAIL. The CSV export drops quotes.\n\nFindings:"
+                            "\n- `export.py:12`: Quotes are dropped. A name with a comma splits.\n- No test covers quoting.")
     await crew.runner.shutdown()
 
 

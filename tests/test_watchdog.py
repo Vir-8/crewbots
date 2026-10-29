@@ -327,7 +327,7 @@ async def test_each_reminder_names_the_next_step(store, tmp_path):
     crew.runner.review(running.id, Verdict.FAIL, "no", [])
     assert step(work) == (f"{work.id} (engineer) failed review round 1 of {MAX_REVIEW_ROUNDS}: send back the findings "
                           "you judge real with message, or drop it")
-    for version in (2, 3):
+    for version in range(2, MAX_REVIEW_ROUNDS + 1):
         store.update_task(work.id, turns=version)
         reviewed(store, crew, parent, store.get_task(work.id), Verdict.FAIL)
     assert step(work) is None  # out of rounds: the chief hears of it, and it's the user's

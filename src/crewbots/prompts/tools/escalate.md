@@ -1,3 +1,3 @@
 Ask a question and wait for the answer: when a decision is not yours to make (team/rules.md), or you're unsure what's wanted and a wrong guess would cost real work. Ask one clear question. When a few answers cover it, give them as `choices`, best first: two to five, each a short `label`, with a `description` where it helps. The answer can always be in their own words, so don't add an "other" choice. `multiple: true` lets them pick several. Then end your turn: the answer arrives as your next message.
 
-In a group chat, the question goes to the chief in that room if the chief is a member, otherwise to the room lead. If you are that recipient, it goes to the user as a question card.
+In a group chat, the question goes to the chief in that room if the chief is a member, otherwise to the room lead. If you are that recipient, it goes to the user as a question card in your chat with them.

@@ -12,6 +12,7 @@ from crewbots.api import create_app
 from crewbots.backends import Access
 from crewbots.events import Done
 from crewbots.runner import MAX_REVIEW_ROUNDS, MergeError, NotAllowed
+from crewbots.runner.reviews import NARROWING, _round_status
 from crewbots.store import Status, Store, Verdict
 
 
@@ -143,7 +144,7 @@ async def test_an_approval_holds_while_the_change_is_the_one_reviewed(store, tmp
         crew.runner.propose_merge(parent.id, work.id, "ship it")
 
 
-async def test_after_three_failed_rounds_there_is_no_fourth(store, tmp_path):
+async def test_after_the_last_failed_round_there_is_no_other(store, tmp_path):
     crew = crew_for(store, tmp_path)
     parent, work = finished_work(store, crew)
     for n in range(1, MAX_REVIEW_ROUNDS + 1):
@@ -156,7 +157,7 @@ async def test_after_three_failed_rounds_there_is_no_fourth(store, tmp_path):
         crew.runner.message_child(parent.id, work.id, "try once more")
     store.update_task(work.id, turns=MAX_REVIEW_ROUNDS + 1)
     with pytest.raises(NotAllowed, match="stop condition"):
-        crew.runner.delegate(parent.id, "reviewer", "round four", review_of=work.id)
+        crew.runner.delegate(parent.id, "reviewer", "one more round", review_of=work.id)
 
 
 async def test_an_escalation_can_still_be_answered_after_the_last_round(store, tmp_path):
@@ -168,6 +169,18 @@ async def test_an_escalation_can_still_be_answered_after_the_last_round(store, t
     store.update_task(work.id, status=Status.NEEDS_INPUT)
 
     crew.runner.message_child(parent.id, work.id, "here is the decision")  # not refused
+
+
+async def test_from_the_third_failed_round_work_goes_back_only_while_its_findings_narrow(store, tmp_path):
+    crew = crew_for(store, tmp_path)
+    parent, work = finished_work(store, crew)
+    for n in range(1, NARROWING + 1):
+        store.update_task(work.id, turns=n)
+        await review_round(crew, parent, work, Verdict.FAIL)
+
+    state = crew.runner.review_state(work.id)
+    assert not state.out_of_rounds and "only if the findings are narrowing" in _round_status(state, work)
+    crew.runner.message_child(parent.id, work.id, "one small fix left")  # not refused: the lead decides, not the user
 
 
 async def test_the_chief_hears_each_verdict_and_what_to_do_next(store, tmp_path):
@@ -195,7 +208,7 @@ async def test_the_chief_hears_each_verdict_and_what_to_do_next(store, tmp_path)
     assert "Review of t_" in report and "FAIL" in report
     assert "calc.py:3: returns a - b + 1 Scenario: f(2, 1) gives 2" in report
     assert f"round 1 of {MAX_REVIEW_ROUNDS}: changes requested" in report
-    assert "This task is review round 1 of 3" in crew.specs_for("reviewer")[0].system_prompt
+    assert f"This task is review round 1 of {MAX_REVIEW_ROUNDS}" in crew.specs_for("reviewer")[0].system_prompt
 
 
 async def test_approved_work_is_proposed_and_the_user_merges_it(store, tmp_path):

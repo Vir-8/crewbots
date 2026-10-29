@@ -13,8 +13,9 @@ which reads it cold, mid-task.
 ## Where it lives
 
 `verify/` at the project's root (outside `Assets/`, so Unity leaves it alone): `verify/README.md`, and one file per
-feature. A project that already keeps a verify skill of its own in the repo (`.claude/skills/verify-*/` with a
-`features/` folder, as crewbots does) keeps its map there instead.
+feature. A project that already keeps a verify skill of its own (`.agents/skills/verify*/SKILL.md` or
+`.claude/skills/verify*/`, as crewbots does) keeps its map there instead: add to that skill rather than starting a
+`verify/` beside it, and give it a "Last walked" line.
 
 ## 1. Read the project, not the user
 

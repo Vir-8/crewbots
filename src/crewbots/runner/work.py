@@ -254,8 +254,7 @@ class Work(Landed, Closing, MergeStatus, SharedApps, Editors, InPlace):
         if not work.worktree_path and repo is None:
             raise NotAllowed(f"{task_id} has no worktree, and changed no git folder in place, so there's nothing to merge")
         if repo and not self._in_place_files(work, repo):
-            raise NotAllowed(f"{task_id} worked in its project's folder itself, and handed back none of the files it changed "
-                             "as its output, so there's nothing of its to commit: have it hand back again listing them")
+            raise NotAllowed(self._nothing_to_commit(work, repo))
         if work.merge_state == "merged":
             raise NotAllowed(f"{task_id} is already merged")
         if work.merge_state == "merging":
