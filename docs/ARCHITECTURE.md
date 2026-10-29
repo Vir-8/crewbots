@@ -354,7 +354,8 @@ Each step leaves the system working.
   `tools/call` while another task holds the app: that's answered with a tool error naming the holder, and the task
   queued. A task holds it from its first tool call while its turn runs, until APP_IDLE_S (5 min) after its last call;
   `free_apps` (as turns end, and on the scheduler's tick) lets go and tells the next task in line, one at a time,
-  WAKE_AGAIN_S apart. Checked against MCP for Unity 3.4.8 (event-stream replies): two tasks' sessions, one call
+  WAKE_AGAIN_S apart. A task working in a worktree under the worktree root (or reviewing one) never waits
+  (`_own_checkout`): its app is the one opened on its own folder. Checked against MCP for Unity 3.4.8 (event-stream replies): two tasks' sessions, one call
   through, the other answered busy.
 - **Trusting a verdict, cheaply.** A review records its work's change (`worktree.change_id`: `git patch-id
   --stable` of the diff from where it meets its merge target, uncommitted and new files included, through a copy of the

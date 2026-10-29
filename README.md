@@ -114,7 +114,8 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
   - A server that drives one running app, such as a Unity Editor's, can be marked `"one_at_a_time": true` in
     `mcp.json` (http servers only). Bots then reach it through the daemon, which lets one task's tool calls through
     at a time: another's are answered that it's busy, and by whom, and the first one turned away is told when
-    it's free. A task keeps it while its turn runs, until five minutes after its last call.
+    it's free. A task keeps it while its turn runs, until five minutes after its last call. A task in a worktree of
+    its own doesn't wait: Unity opens a folder in one Editor only, so the Editor opened on its worktree is its own.
   - **Skills:** every bot sees the crew's skills and your global ones (`~/.claude/skills`, `~/.agents/skills` and
     `~/.codex/skills`), by name and description, and reads a skill's `SKILL.md` when a task matches it, the way Claude
     Code does. Those synced from claude.ai (documents, slides, your morning brief) reach only a bot whose card names

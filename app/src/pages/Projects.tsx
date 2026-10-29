@@ -14,7 +14,7 @@ const HOW: Record<ProjectOut["isolation"], string> = {
   in_place:
     "Tasks work side by side in this folder, on the branch it's on, as you do: the lead gives each engineer different files. A Unity project's one Editor sees all of it, and one task drives it at a time.",
   worktree:
-    "Tasks run side by side, each in its own checkout of the project, which takes the disk space of its tracked files. In Unity, a worktree is verified in an Editor opened on it, not the one you have open.",
+    "Tasks run side by side, each in its own checkout of the project, which takes the disk space of its tracked files. In Unity, each worktree needs an Editor opened on it (its first open imports everything), and then engineers check their work at the same time.",
   branch:
     "One task at a time, on its own branch in this folder, which needs no uncommitted changes when a task starts. The Unity Editor you have open on it sees the work, so bots can verify it there.",
 };

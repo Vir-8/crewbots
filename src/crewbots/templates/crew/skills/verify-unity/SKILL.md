@@ -17,8 +17,9 @@ details. "It compiles" alone isn't done.
   files. The Editor the user keeps open on it sees everyone's work, yours included. **One branch at a time**: the same
   folder, on the task's own branch, one task at a time. **A worktree each**: a checkout of your own, so you verify in an
   Editor opened on your worktree, found by its `projectRoot`, not the user's.
-- An Editor is shared: crewbots lets one task at a time make Unity MCP tool calls, and answers others that it's busy,
-  and with whom. Then do what doesn't need it, or end your turn: you're told when it's free. Keep each check short, so
+- The project's Editor is shared: crewbots lets one task at a time make Unity MCP tool calls, and answers others that
+  it's busy, and with whom. Then do what doesn't need it, or end your turn: you're told when it's free. In a worktree of
+  your own, the Editor opened on it is yours, and nobody waits. Keep each check short, so
   the others aren't kept waiting. In a shared folder, a compile error in a file you didn't touch is another engineer's:
   don't fix it, say so (`escalate` to the lead) and check again once it's gone.
 - Either way there's no throwaway copy for the review, so crewbots doesn't rerun `checks`, and Unity in batch mode

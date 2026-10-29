@@ -83,6 +83,18 @@ def test_one_task_at_a_time_drives_a_shared_app(app):
     assert "is in use by engineer-2" in call(client, through_first, "tools/call").json()["result"]["content"][0]["text"]
 
 
+def test_a_task_in_a_worktree_of_its_own_drives_its_own_editor_without_waiting(app, tmp_path):
+    client, runner, store, backend, reached = app
+    first, through_first = running(client, backend, "engineer-1")
+    second, through_second = running(client, backend, "engineer-2")
+    store.update_task(second, worktree_path=str(tmp_path / "wts" / "game" / second), branch=f"crewbots/{second}")
+    runner.worktree_root = tmp_path / "wts"
+
+    assert call(client, through_first, "tools/call").json()["result"] == {"ok": True}
+    assert call(client, through_second, "tools/call").json()["result"] == {"ok": True}  # its own Editor, not the first's
+    assert reached == ["tools/call", "tools/call"] and runner._apps["UnityMCP"]["task"] == first
+
+
 def test_only_a_shared_app_of_the_bots_own_is_reached_this_way(app):
     client, runner, store, backend, reached = app
     _, through = running(client, backend, "engineer-1")

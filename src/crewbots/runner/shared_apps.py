@@ -3,12 +3,15 @@ one play mode, one test run and one open scene, so two tasks at once would undo 
 `one_at_a_time` in mcp.json reaches bots through the daemon (`/v1/bot/mcp/<server>`), which lets one task's calls
 through at a time. A task holds the app from its first tool call while its turn runs, until it has made no call for
 APP_IDLE_S; another's calls meanwhile are answered that it's busy, and by whom, and the first one turned away is told
-when it's free. Listing tools and reading resources never wait."""
+when it's free. Listing tools and reading resources never wait, and nor does a task in a worktree of its own, whose
+app is its own: an Editor opened on that worktree, as Unity opens a folder in one Editor only."""
 
 import json
 import time
+from pathlib import Path
 from typing import Any
 
+from crewbots import paths
 from crewbots.backends import McpServer
 from crewbots.crew import Bot
 from crewbots.runner.common import NotAllowed
@@ -53,7 +56,7 @@ class SharedApps:
             return None
         calls = [m for m in (sent if isinstance(sent, list) else [sent])
                  if isinstance(m, dict) and m.get("method") == "tools/call"]
-        if not calls:
+        if not calls or self._own_checkout(task_id):
             return None
         now = time.monotonic()
         holder = self._apps.get(name)
@@ -72,6 +75,13 @@ class SharedApps:
                 "turn: crewbots tells you when it's free.")
         return {"jsonrpc": "2.0", "id": calls[0].get("id"),
                 "result": {"content": [{"type": "text", "text": busy}], "isError": True}}
+
+    def _own_checkout(self, task_id: str) -> bool:
+        """Whether the task works in a worktree of its own, or reviews one in place."""
+        task = self.store.get_task(task_id)
+        folder = task.worktree_path if task.worktree_path and not task.base_branch else task.workspace
+        root = (self.worktree_root or paths.worktrees()).resolve()
+        return bool(folder) and Path(folder).resolve().is_relative_to(root)
 
     def _holding(self, holder: dict[str, Any], now: float) -> bool:
         return holder["task"] in self._runs and now - holder["last"] < APP_IDLE_S
