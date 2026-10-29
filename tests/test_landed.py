@@ -57,10 +57,12 @@ async def test_reverting_landed_work_is_a_commit_of_its_own(store, tmp_path):
                         bot("engineer", access=Access.WORKSPACE_WRITE), bot("reviewer"))
     repo, work = await merged_work(store, tmp_path, crew)
     assert (repo / "hello.txt").exists()
-    (repo / "README.md").write_text("an edit of the user's")
-    with pytest.raises(NotAllowed, match="uncommitted changes"):
+    (repo / "hello.txt").write_text("an edit to what the revert takes out")
+    with pytest.raises(NotAllowed, match="would touch files with uncommitted changes"):
         crew.runner.revert(work.id)
-    worktree._git(repo, "checkout", "README.md")
+    worktree._git(repo, "checkout", "hello.txt")
+    (repo / "README.md").write_text("an edit of the user's, elsewhere")  # stays as it is
+    (repo / "notes.txt").write_text("not committed")
 
     app = create_app(crew.runner, token="admin")
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8765/v1") as client:
@@ -71,6 +73,8 @@ async def test_reverting_landed_work_is_a_commit_of_its_own(store, tmp_path):
         landed = (await client.get("/landed", headers={"Authorization": "Bearer admin"})).json()
     assert not (repo / "hello.txt").exists()
     assert worktree._git(repo, "log", "-1", "--format=%s").startswith("Revert ")
+    assert worktree._git(repo, "show", "--name-only", "--format=", "HEAD") == "hello.txt"
+    assert (repo / "README.md").read_text() == "an edit of the user's, elsewhere" and (repo / "notes.txt").exists()
     [item] = landed["items"]
     assert item["reverted"]["commit"] == work.merged_commit and item["reverted"]["by"] == "user"
     await crew.runner.shutdown()

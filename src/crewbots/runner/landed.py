@@ -47,8 +47,9 @@ class Landed:
 
     def revert(self, task_id: str) -> Task:
         """The user's revert of merged work: `git revert` of its merge commit in the folder it went into, as a commit of
-        its own. Refused while the folder has uncommitted changes to tracked files, or a merge is running; on a conflict
-        the revert is abandoned and nothing changes."""
+        its own. Other uncommitted work in the folder, the user's or the crew's, is left as it is: git refuses, changing
+        nothing, only when a file the revert touches has uncommitted changes or something is staged. Refused too while
+        a merge is running; on a conflict the revert is abandoned and nothing changes."""
         task = self.store.get_task(task_id)
         merged = self.store.last_event(task_id, ("merged",))
         if task.merge_state != "merged" or not merged or not merged.data.get("commit"):
@@ -59,8 +60,6 @@ class Landed:
         if not _MERGE_LOCK.acquire(blocking=False):
             raise NotAllowed("a merge is running: try again in a moment")
         try:
-            if worktree._git(repo, "status", "--porcelain", "--untracked-files=no"):
-                raise NotAllowed(f"{repo} has uncommitted changes: commit or set them aside, then revert")
             try:
                 worktree._git(repo, "merge-base", "--is-ancestor", commit, "HEAD")
             except worktree.GitError:
@@ -68,6 +67,9 @@ class Landed:
             try:
                 worktree._git(repo, "revert", "--no-edit", commit)
             except worktree.GitError as e:
+                if "would be overwritten" in str(e):  # refused before it began: nothing to abandon
+                    raise NotAllowed(f"reverting {commit[:7]} would touch files with uncommitted changes, or something is "
+                                     f"staged in {repo}: commit or set those aside, then revert") from None
                 try:
                     worktree._git(repo, "revert", "--abort")
                 except worktree.GitError:
