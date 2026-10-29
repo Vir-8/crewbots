@@ -18,6 +18,7 @@ cd "$(dirname "$0")/.."
 export PATH="/opt/homebrew/bin:$HOME/.cargo/bin:$PATH" # an Apple silicon node and cargo before any Intel ones
 
 APP=/Applications/crewbots.app
+SIGNING="crewbots local signing" # the certificate builds are signed with, when it's in your keychain (below)
 BUILT=${CARGO_TARGET_DIR:-app/src-tauri/target}/release/bundle/macos/crewbots.app
 daemon_only=false
 [[ "${1:-}" == "--daemon" ]] && daemon_only=true
@@ -79,7 +80,17 @@ if $build_app; then
     icons=(--config "{\"bundle\": {\"icon\": [\"$own/32x32.png\", \"$own/128x128.png\", \"$own/128x128@2x.png\", \"$own/icon.icns\", \"$own/icon.ico\"]}}")
   fi
   (cd app && npx tauri build --bundles app ${icons[@]+"${icons[@]}"})
-  did "Built the app at $commit"
+  # macOS keeps what you allowed an app (the microphone, speech recognition, Documents) for the identity it's signed
+  # with. A build signed only ad hoc is a new app to it every time, so it asks again after each update. With the
+  # certificate below in your keychain, every build is signed by it and keeps them. To make it, once: Keychain Access,
+  # Certificate Assistant > Create a Certificate, name it exactly this, Identity Type "Self Signed Root",
+  # Certificate Type "Code Signing". The first build signed with it asks to use the key: Always Allow.
+  if security find-certificate -c "$SIGNING" >/dev/null 2>&1; then
+    codesign --force --deep --sign "$SIGNING" "$BUILT"
+    did "Built the app at $commit, signed by $SIGNING"
+  else
+    did "Built the app at $commit (signed ad hoc: macOS will ask for its permissions again; see SIGNING in scripts/release)"
+  fi
 fi
 
 if $from_app; then

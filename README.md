@@ -214,6 +214,12 @@ don't touch it.
 scripts/release
 ```
 
+macOS keeps what you allow the app (the microphone, speech recognition, Documents) for the identity it's signed with,
+and a build signed only ad hoc is a new app to it each time. So that it asks once rather than after every update, make
+a signing certificate once: in Keychain Access, Certificate Assistant > Create a Certificate, named
+`crewbots local signing`, Identity Type "Self Signed Root", Certificate Type "Code Signing". Every release then signs
+the app with it (the first asks to use the key: Always Allow), and you allow the permissions one last time.
+
 The installed app runs the daemon from this checkout, the path it was built in, so keep the checkout where it is (or
 set `CREWBOTS_PROJECT`). To work on the UI in a plain browser, run `npm run vite` and open http://localhost:5173.
 Outside Tauri, the UI runs on a built-in demo crew (`src/preview/`).
