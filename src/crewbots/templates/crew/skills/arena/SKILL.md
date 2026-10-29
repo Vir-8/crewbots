@@ -22,14 +22,14 @@ If a candidate fails, continue with the rest and say so.
 
 ## 3. Judge and pick a base
 
-Delegate one review per candidate to a reviewing bot, with `review_of` set, scoring it against your criteria. Read every candidate's handoff and the reviews. Pick the base by the criteria, one at a time, not by overall feel. When two are close, prefer the smaller change or the cleaner boundary.
+Delegate one review per candidate to a reviewing bot, with `review_of` set, scoring it against your criteria. Each review runs in a throwaway copy of its candidate, so the reviewer can run it and back each finding with proof. Read every candidate's handoff and the reviews. Pick the base by the criteria, one at a time, not by overall feel. When two are close, prefer the smaller change or the cleaner boundary.
 
 If the candidates converged on one shape, that is strong agreement: say so and keep it. If they diverged wildly, the frame was too vague, so rewrite it and run again. Don't average the differences.
 
 ## 4. Graft and verify
 
-Send the base's owner, by `message`, the one or two things worth porting from each losing candidate, with their worktree paths. Then have the result reviewed like any other work.
+Send the base's owner, by `message`, the one or two things worth porting from each losing candidate, with their worktree paths. Then have the result reviewed like any other work (the interrogate skill), and drop each losing candidate with `drop_task`, saying why: its folder goes and its branch stays.
 
 ## Report
 
-The base and why, each graft and where it came from, what was rejected, and the verification result. The user decides what to merge.
+The base and why, each graft and where it came from, what was rejected, and the verification result. Once every review of the result passes, propose it with `propose_merge`: the user merges it, or, with auto-merge on, it lands locally and shows on the Landed page.
