@@ -53,7 +53,7 @@ class MergeStatus:
             raise MergeError(f"could not build the merged result to run CI on, so nothing was merged: {e}") from None
         project = next((p for p in self.crew.projects.values() if p.folder.resolve() == repo.resolve()), None)
         try:
-            ci.check(repo, commit, into, project.ci if project else (), optional=True)
+            ci.check(repo, commit, into, project.ci if project else ())
         except ci.CIFailed as e:
             raise MergeError(f"CI did not pass on the merged result, so nothing was merged: {e}") from None
         return into, tested

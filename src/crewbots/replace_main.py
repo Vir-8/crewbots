@@ -159,7 +159,7 @@ async def propose(runner: Any, task_id: str, project: str, branch: str, summary:
         data.update(await asyncio.to_thread(snapshot, folder, branch, _blocking(runner, folder)))
     except NotAllowed as e:
         data |= {"branch": branch, "error": str(e)}
-    if "error" not in data:  # the card is only made for a commit CI passes on
+    if "error" not in data:  # the card is only made for a commit CI passes on, or has none to run
         data["ci"] = await asyncio.to_thread(ci.check, folder, data["new"], data["target"], runner.crew.project(project).ci)
     event = runner.store.append_event(runner.chat(chief.name).id, kind="replace_main_proposed", data=data)
     runner.bus.publish({"type": "event", "event": event.to_json()})

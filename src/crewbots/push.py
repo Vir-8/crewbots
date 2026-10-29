@@ -169,7 +169,7 @@ async def propose(runner: Any, task_id: str, project: str, summary: str) -> int:
         waiting = open_card(runner, chat.id, project)
         if waiting and "error" not in data and all(waiting[1].get(k) == data.get(k) for k in SAME):
             return waiting[0]  # that push is on the user's screen already, its CI passed
-        if "error" not in data:  # the card is only made for a commit CI passes on
+        if "error" not in data:  # the card is only made for a commit CI passes on, or has none to run
             data["ci"] = await asyncio.to_thread(ci.check, folder, data["head"],
                                                  data["destination"].removeprefix("refs/heads/"),
                                                  runner.crew.project(project).ci)

@@ -13,8 +13,8 @@ Commands come from `.github/workflows/*.yml`. Supported, and nothing else:
   astral-sh/setup-uv, actions/cache, actions/upload-artifact. Any other `uses:` step, and any step or job with an
   `if:` other than `always()` or `success()`, makes the check fail ("can't reproduce CI step"): a run never passes
   having skipped a real check. A matrix, `${{ }}` expressions or a `shell` other than bash fail it too.
-With no workflow job for the branch, a project's own `ci:` list of commands is run. With neither, the check fails:
-a push needs CI to have run.
+With no workflow job for the branch, a project's own `ci:` list of commands is run. With neither there's nothing to
+run, and the card says so: a project needn't have CI (a Unity game's tests need its open Editor).
 
 The commit is checked out into a shared clone under the daemon's temp folder, so the user's folder is never touched.
 """
@@ -222,14 +222,14 @@ def _run_step(step: Step, checkout: Path, timeout: int, base_env: dict[str, str]
 
 
 def check(folder: Path, sha: str, branch: str, project_commands: tuple[str, ...] = (),
-          timeout: int = STEP_TIMEOUT, optional: bool = False) -> dict[str, Any]:
+          timeout: int = STEP_TIMEOUT) -> dict[str, Any]:
     """Run the CI steps on `sha` in a clean checkout. Returns what to record on the card, or raises CIFailed with the
-    failing step and the end of its output. With `optional`, a repo that has no CI steps for the branch passes with
-    status "none" instead of failing (merges; a push still needs CI). Blocking: call it off the event loop."""
+    failing step and the end of its output. A repo with no CI steps for the branch passes with status "none": there was
+    nothing to run. Blocking: call it off the event loop."""
     paths.temp().mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="ci-", dir=paths.temp()))
     try:
-        result = _run(folder, sha, branch, project_commands, timeout, work, optional)
+        result = _run(folder, sha, branch, project_commands, timeout, work)
     except CIFailed as e:
         leftover = _remove(work)
         raise CIFailed(f"{e}\n{leftover}" if leftover else str(e)) from None
@@ -252,7 +252,7 @@ def _remove(work: Path) -> str:
 
 
 def _run(folder: Path, sha: str, branch: str, project_commands: tuple[str, ...], timeout: int,
-         work: Path, optional: bool = False) -> dict[str, Any]:
+         work: Path) -> dict[str, Any]:
     checkout = work / "checkout"
     try:
         for args in (["clone", "-q", "--shared", "--no-checkout", str(folder), str(checkout)],
@@ -261,10 +261,9 @@ def _run(folder: Path, sha: str, branch: str, project_commands: tuple[str, ...],
     except (subprocess.SubprocessError, OSError) as e:
         raise CIFailed(f"CI could not check out {sha[:12]}: {getattr(e, 'stderr', None) or e}") from None
     plan = plan_for(checkout, branch, project_commands)
-    if not plan.steps and optional:
-        return {"status": "none", "sha": sha, "steps": [], "skipped": [], "node": [], "note": "no CI configured"}
     if not plan.steps:
-        raise CIFailed(f"no CI configured for {branch}; add a ci: list to the project")
+        return {"status": "none", "sha": sha, "steps": [], "skipped": [], "node": [],
+                "note": "No CI configured, so nothing was run"}
     nodes = {major: find_node(major) for major in dict.fromkeys(s.node for s in plan.steps if s.node)}
     home = work / "home"
     home.mkdir()

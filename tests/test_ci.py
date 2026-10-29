@@ -118,18 +118,15 @@ def test_the_failure_shows_only_the_last_40_lines(push_setup):
     assert "\n100" in text and "\n61" in text and "\n60\n" not in text
 
 
-def test_no_runnable_checks_refuses_the_card(push_setup):
+def test_a_project_with_no_checks_gets_a_card_saying_nothing_was_run(push_setup):
     runner, repo = push_setup
     commit(repo, "Work", **{"a.txt": "a"})
     runner.crew.projects["demo"] = Project("demo", repo, "", Path("x.md"))
-    chat = runner.chat("chief")
-    with pytest.raises(NotAllowed, match="no CI configured for main; add a ci: list to the project"):
-        asyncio.run(push_propose(runner, chat.id, "demo", "Ship it"))
-    assert runner.store.last_event(chat.id, ("push_proposed",)) is None
+    card = push(runner).data
+    assert "error" not in card and card["ci"]["status"] == "none" and card["ci"]["note"] == "No CI configured, so nothing was run"
     # a workflow that doesn't run on this branch counts as none
     commit(repo, "Other", **{".github__workflows__x.yml": "on: pull_request\njobs:\n  j:\n    steps:\n      - run: 'true'\n"})
-    with pytest.raises(NotAllowed, match="no CI configured"):
-        asyncio.run(push_propose(runner, chat.id, "demo", "Ship it"))
+    assert push(runner).data["ci"]["status"] == "none"
 
 
 def test_a_project_can_list_the_commands_when_there_is_no_workflow(push_setup, tmp_path):
