@@ -130,5 +130,5 @@ async def test_a_held_task_stays_held_after_a_restart(store, tmp_path):
 
     second.release(task.id)
     await wait_until(settled(store, second, task.id))
-    assert backend.specs[0].prompt == "two"
-    await second.shutdown()
+    assert backend.specs[0].prompt.split("</crew-updates>")[-1].strip() == "two"  # as it was held (its working state's
+    await second.shutdown()                                                            # times may have moved on)
