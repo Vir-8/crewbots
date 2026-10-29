@@ -101,6 +101,11 @@ class Tasks:
             "and t.status = 'needs_input' and t.kind = 'thread' order by t.created_at, t.id", (bot,)).fetchall()
         return [_task(r) for r in rows if not self.has_pending_permission(r["id"])]
 
+    def tasks_in(self, folder: str) -> list[Task]:
+        """The tasks working in `folder`: the work whose worktree it is, and reviews of it there."""
+        rows = self.db.execute("select * from tasks where worktree_path = ? or workspace = ?", (folder, folder)).fetchall()
+        return [_task(r) for r in rows]
+
     def stuck_tasks(self, bot: str) -> list[Task]:
         """Tasks of the bot's own that wait to run: held, queued, or interrupted by a daemon stop."""
         rows = self.db.execute("select * from tasks where bot = ? and status in ('held', 'queued', 'interrupted') "

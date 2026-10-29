@@ -170,6 +170,10 @@ def _crew_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = F
         message = call("POST", "/bot/post", {"text": text, "room": room})
         return f"Posted in the group chat ({message['room_id']})."
 
+    @server.tool(description=describe("open_unity_editor"))
+    def open_unity_editor() -> str:
+        return call("POST", "/bot/open_unity_editor", {})["result"]
+
     @server.tool(description=describe("share"))
     def share(files: list[str], text: str = "", room: str | None = None) -> str:
         return shared_text(call("POST", "/bot/share", {"files": files, "text": text, "room": room}))

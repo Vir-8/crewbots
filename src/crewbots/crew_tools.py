@@ -109,6 +109,7 @@ SPECS: dict[str, Spec] = {
     "sweep_worktrees": Spec(_object({"dry_run": {"type": "boolean"}}, []), coordinator_only=True),
     "drop_task": Spec(_object({"task_id": STRING, "reason": STRING}, ["task_id", "reason"]), coordinator_only=True),
     "next_check": Spec(_object({"minutes": {"type": "number"}, "why": STRING}, ["minutes", "why"]), coordinator_only=True),
+    "open_unity_editor": Spec(_object({}, [])),
 }
 
 
@@ -131,6 +132,8 @@ def offered(name: str, kind: str | None, reviewing: bool) -> bool:
         return kind not in ("chat", "seat")  # nothing to hand back: a conversation goes on
     if name == "set_name":
         return kind == "chat"
+    if name == "open_unity_editor":
+        return kind not in ("chat", "seat", "ask")  # work in a worktree of its own
     return name not in WHERE_THE_USER_TALKS or kind in ("chat", "seat")
 
 
@@ -279,6 +282,8 @@ class CrewTools:
                     note = r.remember(me, args["title"], args["body"], shared=bool(args.get("shared")),
                                       mistake=mistake, check=str(args.get("check") or ""))
                     return remembered_text({"title": note.title, "path": str(note.path), "earlier": earlier})
+                case "open_unity_editor":
+                    return r.open_unity_editor(me)
                 case "next_check":
                     at = r.next_check(me, args["minutes"], args["why"])
                     return f"You'll look around again at {at:%H:%M} ({at:%a %d %b}), unless something comes up first."

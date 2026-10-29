@@ -116,6 +116,10 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
     at a time: another's are answered that it's busy, and by whom, and the first one turned away is told when
     it's free. A task keeps it while its turn runs, until five minutes after its last call. A task in a worktree of
     its own doesn't wait: Unity opens a folder in one Editor only, so the Editor opened on its worktree is its own.
+  - A task in a worktree of a Unity project gets its Editor with `open_unity_editor`: crewbots starts the version the
+    project names (no Unity Hub, no screen control), turns on MCP for Unity's "Auto-Start on Editor Load" so it
+    connects by itself, tells the task once it has, and closes it before the worktree goes or after 30 idle minutes.
+    At most two are open at once. A fresh worktree of a small project opened and connected in 68 seconds, again in 10.
   - **Skills:** every bot sees the crew's skills and your global ones (`~/.claude/skills`, `~/.agents/skills` and
     `~/.codex/skills`), by name and description, and reads a skill's `SKILL.md` when a task matches it, the way Claude
     Code does. Those synced from claude.ai (documents, slides, your morning brief) reach only a bot whose card names

@@ -126,6 +126,7 @@ class Scheduler:
             self.runner.stall_check(now)
         self.runner.flush_chief_events(now)
         self.runner.free_apps()
+        self.runner.close_idle_editors()
         if not away:
             self._check_in_due(now)
             self._wake_due(now)

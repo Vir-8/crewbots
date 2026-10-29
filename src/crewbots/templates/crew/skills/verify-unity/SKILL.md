@@ -15,7 +15,8 @@ details. "It compiles" alone isn't done.
 - A Unity project (it has `ProjectSettings/ProjectVersion.txt`) is worked on as the user sets per project. **The
   folder itself**, the default: on whatever branch it's on, beside the user and the other engineers, each on different
   files. The Editor the user keeps open on it sees everyone's work, yours included. **A worktree each**: a checkout of
-  your own, so you verify in an Editor opened on your worktree, found by its `projectRoot`, not the user's.
+  your own, so you verify in an Editor of its own: ask for it with `open_unity_editor`. crewbots opens it, tells you
+  once it's connected, and closes it when your work is done with.
 - The project's Editor is shared: crewbots lets one task at a time make Unity MCP tool calls, and answers others that
   it's busy, and with whom. Then do what doesn't need it, or end your turn: you're told when it's free. In a worktree of
   your own, the Editor opened on it is yours, and nobody waits. Keep each check short, so
@@ -29,10 +30,10 @@ details. "It compiles" alone isn't done.
 
 1. Read `mcpforunity://instances` (listed by project name, as `Name@hash`), `set_active_instance` to yours when
    there's more than one, and check `mcpforunity://project/info`: its `projectRoot` must be your working directory.
-   None for your folder means no Editor is open on it, or it isn't connected: `escalate` that the user needs to open
-   your folder in Unity (for a worktree, Unity Hub › Add › Add project from disk; its first open imports everything,
-   which takes a while) and start MCP for Unity's session (Window › MCP for Unity), then end your turn. Don't start
-   Unity yourself, and don't verify against another folder's Editor: it isn't your work.
+   None for your folder: in a worktree, call `open_unity_editor` and end your turn (its first open imports the whole
+   project). In the project's folder itself, `escalate` that the user needs to open it in Unity and start MCP for
+   Unity's session (Window › MCP for Unity), then end your turn. Don't start Unity any other way, and don't verify
+   against another folder's Editor: it isn't your work.
 2. Read `mcpforunity://editor/state`: wait while `compilation.is_compiling` or `is_domain_reload_pending` is true, and
    go on only once `advice.ready_for_tools` is. A branch switch makes Unity reimport, which can take minutes.
 3. `read_console(types=["error"])` and note what's already there (warnings from packages often show as errors), so you

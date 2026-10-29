@@ -285,7 +285,7 @@ class Delegation(RoomTalk):
         by `now` or a failure (a late handoff, which can't wait), nor by siblings of another kind: reviews of one work
         report together, and the rest report apart from them."""
         task = self.store.get_task(task_id)
-        if not task.parent_id or task.active or task_id in self._runs:
+        if not task.parent_id or task.active or task_id in self._runs or self._waiting_for_editor(task_id):
             return
         self._tell_room(task)
         parent = self.store.get_task(task.parent_id)

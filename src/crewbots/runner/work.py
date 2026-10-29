@@ -18,6 +18,7 @@ from crewbots.routines import RoutineError
 from crewbots.runner.checks import MAX_CHECKS
 from crewbots.runner.closing import Closing
 from crewbots.runner.common import MergeError, NotAllowed
+from crewbots.runner.editors import Editors
 from crewbots.runner.landed import Landed
 from crewbots.runner.merge_message import merge_message
 from crewbots.runner.merge_status import MergeStatus
@@ -33,7 +34,7 @@ DROPPED = re.compile(r"\s*dropped\s*:\s*(.*)", re.IGNORECASE | re.DOTALL)  # a h
 log = logging.getLogger(__name__)
 
 
-class Work(Landed, Closing, MergeStatus, SharedApps):
+class Work(Landed, Closing, MergeStatus, SharedApps, Editors):
     """The part of Runner that takes a bot's handoffs, questions, merge proposals and notes."""
 
     def _check_worktree_sweep(self, task_id: str | None = None) -> None:
@@ -338,6 +339,8 @@ class Work(Landed, Closing, MergeStatus, SharedApps):
                 return result | {"status": "kept", "reason": "worktree path is missing"}
             if wt.repo.resolve() == wt.path.resolve():
                 return result | {"status": "kept", "reason": "path is the main checkout"}
+            if not dry_run:
+                self.close_editor(wt.path)  # a Unity Editor on it would write there as it goes
             try:
                 head = worktree._git(wt.path, "symbolic-ref", "--short", "HEAD")
             except worktree.GitError:

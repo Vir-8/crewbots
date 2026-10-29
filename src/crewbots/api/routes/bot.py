@@ -140,6 +140,10 @@ def routes(c: Context) -> APIRouter:
         note = runner.remember(task.id, body.title, body.body, shared=body.shared, mistake=body.mistake, check=body.check)
         return {"title": note.title, "path": str(note.path), "earlier": earlier}
 
+    @v1.post("/bot/open_unity_editor")
+    async def bot_open_unity_editor(request: Request):
+        return {"result": runner.open_unity_editor(request.state.task.id)}
+
     @v1.post("/bot/next_check")
     async def bot_next_check(request: Request, body: NextCheck):
         return {"at": runner.next_check(request.state.task.id, body.minutes, body.why).isoformat()}

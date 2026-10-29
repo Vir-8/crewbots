@@ -307,6 +307,7 @@ class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Revie
         """On start: each turn the last stop cut off, or that was waiting its turn, carries on once. A bot that had
         the turn is told it was interrupted and to pick up where it left off; one that hadn't gets it as it was. A
         held one is held again until there's room. Returns the tasks carried on."""
+        self.resume_editor_watches()
         resumed = []
         for turn in self.store.interrupted_turns():
             task = self.store.get_task(turn["task_id"])

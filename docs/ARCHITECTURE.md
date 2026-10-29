@@ -350,6 +350,13 @@ Each step leaves the system working.
   repository's history but writes out every tracked file (Sky Islands: 3.4 GB of 24 GB, without its 7.6 GB `Library/`).
   Unity work isn't copied for review, whichever way it runs: its checks run in an Editor, not a copy. In-place work
   has nothing to merge.
+- **Unity Editors for worktrees** (`unity.py`, `runner/editors.py`). `open_unity_editor` starts
+  `<Hub>/Editor/<m_EditorVersion>/Unity.app` with `open -n -g … --args -projectPath <worktree>` after `defaults write
+  com.unity3d.UnityEditor5.x MCPForUnity.AutoStartOnLoad -int 1`, the package's own auto-start (HttpAutoStartHandler),
+  so no computer use. A watcher reads `mcpforunity://instances` until the worktree's folder name shows, then tells the
+  task. Editors are found from `ps` by `-projectPath` (import workers run with `-batchMode` and are skipped), closed
+  with SIGTERM (1 s), before `_cleanup_worktree` touches the folder and on the tick once no task in the folder has run
+  for EDITOR_IDLE_S. MAX_EDITORS (2) at once: an idle one makes room, or the task is told when there is some.
 - **Shared apps** (`runner/shared_apps.py`, `api/routes/shared_apps.py`). An http MCP server marked `one_at_a_time`
   in mcp.json reaches a bot at `/v1/bot/mcp/<server>`, with its run token, and the daemon passes everything on except a
   `tools/call` while another task holds the app: that's answered with a tool error naming the holder, and the task
