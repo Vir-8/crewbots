@@ -13,7 +13,7 @@ import { FindBar, Finding, count, shown, useCurrentHit, useFind } from "./Find";
 import { Icon } from "./Icon";
 import { Welcoming } from "./Offer";
 import { Thread } from "./Thread";
-import { settle } from "./ui";
+import { settle, useBottomAnchor } from "./ui";
 import "../styles/chat.css";
 
 /** Your ongoing chat with one bot. Work it takes on shows as thread cards, which open beside the chat. */
@@ -46,7 +46,8 @@ export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string)
         </button>
         <span className="grow" />
         <button
-          className={`icon-button ${props.profileOpen ? "on" : ""}`}
+          className="icon-button"
+          aria-pressed={props.profileOpen}
           onClick={(e) => {
             settle(e);
             props.onProfile();
@@ -104,6 +105,7 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
   useEffect(() => {
     if (box.current) box.current.scrollTop = box.current.scrollHeight;
   }, [messages?.length, Boolean(room.stopped)]);
+  useBottomAnchor(box, Boolean(messages?.length));
 
   const seats = room.members.map((m) => [...crew.tasks.values()].find((t) => t.kind === "seat" && t.room_id === room.id && t.bot === m));
   // Working is a turn that is running; a seat waiting between tries is not, and says so.
@@ -140,7 +142,8 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
         </button>
         <span className="grow" />
         <button
-          className={`icon-button ${props.panelOpen ? "on" : ""}`}
+          className="icon-button"
+          aria-pressed={props.panelOpen}
           onClick={(e) => {
             settle(e);
             props.onPanel();

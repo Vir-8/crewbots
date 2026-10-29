@@ -1,6 +1,6 @@
 // Small pieces the pages share: a page frame, a side sheet for editing, a switch, and a labelled field.
 
-import type { ReactNode } from "react";
+import { type ReactNode, type RefObject, useEffect } from "react";
 import { Icon } from "./Icon";
 import "../styles/dialogs.css";
 import "../styles/pages.css";
@@ -79,10 +79,42 @@ export function Segmented<T extends string>(props: { value: T; options: [T, stri
 }
 
 /** For a toggle's onClick: drops its hover highlight until the pointer leaves, so it doesn't look still pressed once
- * what it toggles has moved (the system only rechecks hover when the pointer moves). */
+ * what it toggles has moved (the system only rechecks hover when the pointer moves). The class is added by hand, so a
+ * toggle whose className React changes on the same click would lose it: show its state another way (aria-pressed). */
 export function settle(e: React.MouseEvent<HTMLElement>) {
   const button = e.currentTarget;
   button.classList.add("settled");
   button.blur();
   button.addEventListener("pointerleave", () => button.classList.remove("settled"), { once: true });
+}
+
+/** A conversation keeps its bottom where it is as its box changes height, as when the message box grows with what
+ * you type: what you were reading stays in view rather than sliding under the message box. It keeps the distance from
+ * the bottom, not the change in height, since the browser has already pulled a box that grew back from past the end.
+ * `ready`: the box is drawn. */
+export function useBottomAnchor(box: RefObject<HTMLElement | null>, ready = true) {
+  useEffect(() => {
+    const el = box.current;
+    if (!el || !ready) return;
+    let height = el.clientHeight;
+    let fromBottom = 0;
+    const keep = () => {
+      fromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    };
+    const observer = new ResizeObserver(() => {
+      if (el.clientHeight !== height) { // the box changed, not what's in it
+        height = el.clientHeight;
+        el.scrollTop = el.scrollHeight - el.clientHeight - fromBottom;
+      }
+      keep();
+    });
+    keep();
+    observer.observe(el);
+    if (el.firstElementChild) observer.observe(el.firstElementChild); // more in it: further from the bottom, unscrolled
+    el.addEventListener("scroll", keep, { passive: true });
+    return () => {
+      observer.disconnect();
+      el.removeEventListener("scroll", keep);
+    };
+  }, [box, ready]);
 }

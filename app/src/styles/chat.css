@@ -376,7 +376,9 @@ button.chat-head-who:hover {
   text-overflow: ellipsis;
 }
 
-.icon-button.on {
+/* A panel toggle shows it's on with aria-pressed, not a class: React rewrites the class when the class changes, which
+ * would drop `settled` (ui.tsx) in the same click, and WebKit keeps the moved button :hover until the pointer moves. */
+.icon-button[aria-pressed="true"] {
   background: var(--raised);
   color: var(--text);
 }
@@ -386,7 +388,7 @@ button.chat-head-who:hover {
   color: var(--faint);
 }
 
-.icon-button.on.settled:hover {
+.icon-button[aria-pressed="true"].settled:hover {
   background: var(--raised);
   color: var(--text);
 }

@@ -16,6 +16,7 @@ import { ReplaceMainCard } from "./ReplaceMainCard";
 import { Question } from "./Question";
 import { AskCard, Brief, Reactions, Steps, VerdictBlock } from "./ThreadParts";
 import { type Block, build, fold, said, settleWakes, summary } from "./threadBlocks";
+import { useBottomAnchor } from "./ui";
 import { WorkCard } from "./WorkCard";
 import "../styles/chat.css";
 import "../styles/cards.css";
@@ -90,6 +91,7 @@ export function Thread(props: {
   useEffect(() => {
     if (stuck.current && box.current) box.current.scrollTop = box.current.scrollHeight;
   }, [blocks.length, active]);
+  useBottomAnchor(box);
 
   return (
     <div
