@@ -7,6 +7,7 @@ import hashlib
 import logging
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -176,6 +177,33 @@ def remove(wt: Worktree, delete_branch: bool = False, *, branch_tip: str | None 
     except (GitError, OSError):
         logging.getLogger(__name__).exception("Could not prune worktrees after removing %s", wt.path)
     return branch_deleted
+
+
+def copy_for_review(wt: Worktree, dest: Path) -> Path:
+    """A throwaway checkout of the work as it stands, for a reviewer to run things in without touching it: detached at
+    the task branch's tip, with the work's uncommitted changes and new files over it (ignored ones, such as
+    dependencies, aren't copied). What the reviewer changes there never reaches the work."""
+    tip = _git(wt.repo, "rev-parse", f"refs/heads/{wt.branch}")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    _git(wt.repo, "worktree", "add", "--detach", str(dest), tip)
+    changed = _git(wt.path, "diff", "--name-only", "-z", "--no-renames", "HEAD", strip=False).split("\0")
+    new = _git(wt.path, "ls-files", "-z", "--others", "--exclude-standard", strip=False).split("\0")
+    for name in filter(None, [*changed, *new]):
+        source, target = wt.path / name, dest / name
+        if source.is_symlink() or source.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.unlink(missing_ok=True)
+            shutil.copy2(source, target, follow_symlinks=False)
+        else:  # deleted in the work
+            target.unlink(missing_ok=True)
+    return dest
+
+
+def remove_copy(repo: Path, path: Path) -> None:
+    """Remove a review's throwaway checkout, whatever the reviewer left in it."""
+    if path.exists():
+        _git(repo, "worktree", "remove", "--force", str(path))
+    _git(repo, "worktree", "prune")
 
 
 def _git(cwd: Path, *args: str, strip: bool = True, env: dict[str, str] | None = None) -> str:

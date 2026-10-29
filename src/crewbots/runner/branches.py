@@ -181,6 +181,10 @@ class Branches:
                 return Path(reviewed.worktree_path)
             if reviewed.worktree_path and task.workspace == reviewed.worktree_path:
                 self._restore_worktree(reviewed)
+            if self._in_review_copy(task) and not Path(task.workspace).exists():  # removed after an earlier turn
+                if reviewed.worktree_path and not Path(reviewed.worktree_path).exists():
+                    self._restore_worktree(reviewed)
+                self._review_copy(reviewed, Path(task.workspace))
         if task.worktree_path:
             if task.base_branch:
                 checkout = branch_mode.BranchCheckout(Path(task.repo), task.branch, task.base_branch, task.base)

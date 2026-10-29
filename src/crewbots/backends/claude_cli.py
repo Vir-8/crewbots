@@ -18,7 +18,11 @@ READ_ONLY_TOOLS = "Read,Glob,Grep,ToolSearch"
 WEB_TOOLS = "WebFetch,WebSearch"  # with network on; this backend can't check a fetch's host, so a host list is off
 EDIT_TOOLS = "Edit,Write,MultiEdit"  # for a read-only bot, only in the folders the user let it write in
 # Claude Code's OS sandbox for a writing bot's shell commands: writes kept to the working folder, no opting out.
-SANDBOX = {"enabled": True, "autoAllowBashIfSandboxed": False, "allowUnsandboxedCommands": False}
+# Commands may listen on local ports (the user allowed it on 2026-10-29), so a writing bot can run what it's checking,
+# such as a dev server or a scratch daemon, and look at it. Without it a bind fails with "Operation not permitted".
+# The hosts it may reach are unchanged.
+SANDBOX = {"enabled": True, "autoAllowBashIfSandboxed": False, "allowUnsandboxedCommands": False,
+           "network": {"allowLocalBinding": True}}
 
 
 def private_rules(extra: Sequence[Path] = ()) -> list[str]:

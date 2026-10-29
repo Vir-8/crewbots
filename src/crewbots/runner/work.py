@@ -496,6 +496,11 @@ class Work(Closing, MergeStatus):
             self.happened("thread_done", task.id, f"{task.bot}'s thread {task.title!r} is {task.status.value}")
         if task.merge_state == "dropped" and task.worktree_path:
             self._drop_checkout(task)
+        if self._in_review_copy(task) and not task.active:  # the review's throwaway copy: made again if it runs again
+            try:
+                worktree.remove_copy(Path(self.store.get_task(task.review_of).repo), Path(task.workspace))
+            except (worktree.GitError, OSError):
+                log.exception("Could not remove the review copy %s", task.workspace)
 
     def handoff(self, task_id: str, done: str, output: list[str], open: str, needs: str,
                 evidence: list[str] | None = None) -> Handoff:

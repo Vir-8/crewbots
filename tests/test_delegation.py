@@ -4,6 +4,7 @@ crewbots MCP tools reach through the daemon, as the task its run token belongs t
 import asyncio
 import dataclasses
 import json
+from pathlib import Path
 
 import pytest
 from fakes import FakeBackend, ScriptedCrew, bot, git_repo, make_crew, wait_until
@@ -146,7 +147,7 @@ async def test_work_on_a_project_runs_in_its_folder_which_the_user_gave_by_addin
     assert "- film (" in crew.specs_for("editor")[0].system_prompt  # every bot sees the projects
 
 
-async def test_a_reviewer_reads_the_worktree_of_the_work_it_reviews(store, tmp_path):
+async def test_a_reviewer_runs_the_work_in_a_throwaway_copy_of_it(store, tmp_path):
     repo = git_repo(tmp_path / "repo")
     crew = ScriptedCrew(store, tmp_path, chief(), bot("engineer", access=Access.WORKSPACE_WRITE), bot("reviewer"))
     state = {}
@@ -158,12 +159,27 @@ async def test_a_reviewer_reads_the_worktree_of_the_work_it_reviews(store, tmp_p
             state["review"] = crew.runner.delegate(me.id, "reviewer", "review it", review_of=state["work"].id)
         return [Done(final_text="ok")]
 
-    crew.script["chief"] = plan
+    def engineer(spec, me):
+        (spec.cwd / "README.md").write_text("changed, not committed")
+        (spec.cwd / "new.txt").write_text("new")
+        return [Done(final_text="done")]
+
+    def reviewer(spec, me):
+        state["saw"] = ((spec.cwd / "README.md").read_text(), (spec.cwd / "new.txt").read_text())
+        (spec.cwd / "new.txt").write_text("the reviewer's own run")  # a scratch change of its own
+        return [Done(final_text="ok")]
+
+    crew.script |= {"chief": plan, "engineer": engineer, "reviewer": reviewer}
     top = crew.runner.submit("chief", "go", workspace=str(repo))
     await wait_until(lambda: "review" in state and crew.settled(state["review"].id)() and crew.settled(top.id)())
 
     work = store.get_task(state["work"].id)
-    assert crew.specs_for("reviewer")[0].cwd == tmp_path / "wts" / work.worktree_path.split("/wts/")[1]
+    [spec] = crew.specs_for("reviewer")
+    assert spec.cwd != Path(work.worktree_path) and spec.cwd.parent == tmp_path / "wts" / "checks"
+    assert spec.access is Access.WORKSPACE_WRITE  # a read-only reviewer may run things in its copy
+    assert state["saw"] == ("changed, not committed", "new")  # the work as it stands, uncommitted changes and all
+    assert (Path(work.worktree_path) / "new.txt").read_text() == "new"  # the reviewer's changes never reach the work
+    await wait_until(lambda: not spec.cwd.exists())  # the copy goes once the review is done
 
 
 async def test_any_bot_delegates_but_not_to_itself_or_the_chief(store, tmp_path):

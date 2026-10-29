@@ -102,11 +102,16 @@ class Reviewing:
         work = self.store.get_task(task.review_of)
         rounds = self.review_state(work.id).rounds
         n = rounds.index(task.review_version) + 1 if task.review_version in rounds else len(rounds)
+        where = ("A throwaway copy of its work is your working directory, and you may write there: run the checks "
+                 "and the change itself (the project's verify skill, if it has one, says how). Nothing you change "
+                 "there reaches the work, so report what you find rather than fixing it." if self._in_review_copy(task)
+                 else "Its work is in your working directory.")
         return (f"This task is review round {n} of {MAX_REVIEW_ROUNDS} of task {work.id} ({work.bot}: {work.title}). "
-                "Its work is in your working directory: the uncommitted changes (`git diff`, and new files) are what "
-                "you review. Finish by calling `review(verdict, summary, findings)`: verdict `pass` or `fail`, one "
-                "finding per problem, each with its location, the problem, and a failure scenario. A pass with "
-                "remaining risks is still a pass; list them as findings.")
+                f"{where} The uncommitted changes (`git diff`, and new files) are what you review, against the "
+                "handback's evidence. Finish by calling `review(verdict, summary, findings)`: verdict `pass` or "
+                "`fail`, one finding per problem, each with its location, the problem, a failure scenario, and proof "
+                "(the command you ran and what it showed). A pass with remaining risks is still a pass; list them as "
+                "findings.")
 
 
 def _round_status(state: ReviewState, work: Task) -> str:

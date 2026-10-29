@@ -5,10 +5,12 @@ Any bot can delegate; only coordinators add bots and propose work for merging. W
 away is checked here, in code: no delegating to yourself, nor back to a bot already in the chain (a circle), a chain at
 most a few delegations deep, a cap on how many tasks one bot has out at once, and the budgets."""
 
+import logging
+import secrets
 from pathlib import Path
 from typing import Any
 
-from crewbots import cards, prompts, timefmt, worktree
+from crewbots import cards, paths, prompts, timefmt, worktree
 from crewbots import crew as crew_module
 from crewbots.backends import Access
 from crewbots.crew import Bot, CrewError
@@ -88,13 +90,44 @@ class Delegation:
                     "best version and the open objections, instead of another round (team/rules.md).")
             if work.worktree_path and not Path(work.worktree_path).exists():
                 self._restore_worktree(work)
-            workspace = work.worktree_path or work.workspace
+            workspace = self._review_copy(work) or work.worktree_path or work.workspace
         elif workspace and not project:
             self._check_folder(parent, bot, workspace)
         task = self.submit(bot, goal, created_by=parent.bot, parent_id=parent_id,
                            workspace=workspace or parent.workspace, review_of=review_of, review_version=version)
         self.store.log_agent("review" if review_of else "delegate", parent.bot, bot, task.id, text=goal)
         return task
+
+    def _review_copy(self, work: Task, at: Path | None = None) -> str | None:
+        """A throwaway copy of `work` as it stands, for its reviewer to run the checks and the change itself in, with
+        write access (`_access`); none for work done in a project's own folder (branch mode), which is reviewed in
+        place, read-only. Removed when the review's turns are over (`_turns_over`), and made again if it runs again."""
+        if work.base_branch or not (work.repo and work.worktree_path and work.branch):
+            return None
+        at = at or self._checks_root() / f"{work.id}-{secrets.token_hex(3)}"
+        try:
+            wt = worktree.Worktree(Path(work.repo), Path(work.worktree_path), work.branch, work.base or "")
+            return str(worktree.copy_for_review(wt, at))
+        except (worktree.GitError, OSError):
+            logging.getLogger(__name__).exception("Could not copy %s for its review; it's reviewed in place", work.id)
+            return None
+
+    def _checks_root(self) -> Path:
+        return (self.worktree_root or paths.worktrees()) / "checks"
+
+    def _in_review_copy(self, task: Task) -> bool:
+        return bool(task.review_of and task.workspace and Path(task.workspace).is_relative_to(self._checks_root()))
+
+    def _access(self, task: Task, bot: Bot) -> Access:
+        """What a task may do: its bot's access, except that a question is read-only, a review in its own copy may
+        write there (to run things), and a review of work in a project's own folder is read-only."""
+        if task.kind == "ask":
+            return Access.READ_ONLY
+        if self._in_review_copy(task):
+            return Access.FULL if bot.access is Access.FULL else Access.WORKSPACE_WRITE
+        if task.review_of and self.store.get_task(task.review_of).base_branch:
+            return Access.READ_ONLY
+        return bot.access
 
     def _project(self, name: str) -> Project:
         try:

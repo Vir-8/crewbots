@@ -33,7 +33,7 @@ from typing import Any
 from crewbots import attachments as attachments_module
 from crewbots import branch_mode, prompts
 from crewbots.attention import Attention
-from crewbots.backends import BACKENDS, Access, Backend, McpServer, RunSpec
+from crewbots.backends import BACKENDS, Backend, McpServer, RunSpec
 from crewbots.browser import Browser
 from crewbots.capacity import Capacity
 from crewbots.crew import Bot, Crew, is_no_reply
@@ -623,8 +623,7 @@ class Runner(ChiefEvents, Branches, Retries, Sessions, Rooms, Delegation, Review
             prompt=prompt, cwd=cwd, model=bot.model,
             on_prompt_sent=((lambda: self._room_prompt_sent(self._tokens.get(token, task.id)))  # whichever seat it's for
                             if task.kind in ("chat", "seat") else None),
-            access=Access.READ_ONLY if task.kind == "ask" or (task.review_of and
-                self.store.get_task(task.review_of).base_branch) else bot.access,
+            access=self._access(task, bot),
             system_prompt=self.crew.system_prompt(bot, delegated_by=task.created_by if task.parent_id else None,
                                                   coordinator=self.is_coordinator(bot.name), chief=self.is_chief(bot.name),
                                                   reviewing=self._review_brief(task), briefing=task.briefing,

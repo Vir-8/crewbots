@@ -248,6 +248,7 @@ def test_claude_keeps_its_file_tools_and_its_shell_out_of_the_private_paths(tmp_
     deny = json.loads(options.settings)["permissions"]["deny"]
     assert f"Read(/{paths.crew() / 'daemon.json'})" in deny and f"Read(/{paths.home() / '.ssh'}/**)" in deny
     assert options.sandbox["enabled"] and not options.sandbox["allowUnsandboxedCommands"]
+    assert options.sandbox["network"] == {"allowLocalBinding": True}  # to run what it checks: a dev server, a daemon
 
 
 # A session, with a fake SDK client
