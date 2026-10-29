@@ -332,6 +332,14 @@ Each step leaves the system working.
   replied, and it stopped. The user makes a room in the app; a bot makes one with `open_group`, holding at most
   `MAX_ROOM_BOTS` (8) bots, and any member can bring in another with `add_to_group`. Either way the app hears a
   `room` message and shows it at once.
+- **Work handed out in a room is talked about there** (`runner/room_talk.py`). A thread or question under a seat
+  (at any depth) belongs to that seat's room: its handover (`delegate`, `ask`), the `message`s sent to it, its
+  escalations, and each finished turn's handback, verdict or answer are posted by whoever said them, @mentioning
+  whoever they're for. These posts wake no one, since each still reaches its bot directly; the bot they're for has
+  them marked seen in its seat if it was caught up, so it isn't told twice. A handback is posted as its turn ends
+  (`told:<task>` in `reads`), not once its siblings finish, which is when the delegator hears. A woken seat is sent
+  at most `CATCH_UP` (12,000) characters of what it missed, newest kept, so a long stretch of work doesn't swell the
+  next turn of a bot that only follows along.
 - **Routines:** a scheduled one is a message in its bot's chat, from the routine; a trigger opens a thread under the
   bot's chat, with its per-run budget, and the chat hears how it went.
 - **Unread** is kept in the daemon (`reads`), so the app and the menu bar agree.

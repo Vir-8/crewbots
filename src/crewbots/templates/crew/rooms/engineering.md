@@ -5,5 +5,6 @@ members: [chief, eng-lead, engineer-1, engineer-2, engineer-3, engineer-4, revie
 ---
 Where engineering goals are planned, built, reviewed and merged. The chief or the user hands a goal to @eng-lead here.
 eng-lead splits it into pieces and hands each to one engineer, so up to four are built at once, each on its own
-branch. Finished work and review verdicts are reported here, so everyone sees where things stand. Engineers who need a
-decision ask the lead here, not the user.
+branch. Handovers, questions, fix requests, finished work and review verdicts are all posted here, so everyone sees
+where things stand. Engineers who need a decision ask the lead here, not the user. To weigh in on a piece in progress,
+@mention eng-lead, who owns the plan.

@@ -641,6 +641,9 @@ class Work(Landed, Closing, MergeStatus):
             if task.kind != "seat" and parent.kind == "seat" and parent.room_id and chief and parent.bot == chief.name:
                 self._chief_room_item(self.store.room(parent.room_id), task.bot, "escalated", f"task {task.id}")
             listed = "".join(f"\n- {c['label']}" + (f": {c['description']}" if "description" in c else "") for c in offered)
+            if task.kind != "seat":
+                self._say_in_room(task, task.bot, parent.bot, f"{task_id} needs an answer: {question}"
+                                  + (f"\n\nChoices{' (any of them)' if multiple else ''}:{listed}" if offered else ""))
             self.store.update_task(task_id, reported=True)
             self.send(task.parent_id, sender="crewbots", text=(
                 f"{task.bot} escalated on task {task_id} ({task.title}):\n\n{question}\n\n"

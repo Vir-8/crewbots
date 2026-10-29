@@ -16,6 +16,7 @@ CREW_ROOM = "Crew"  # the group chat every bot is in, made when the crew first n
 MENTION = re.compile(r"@([\w-]+)")
 EVERYONE = "everyone"  # @everyone wakes every bot in the room
 MAX_ROOM_BOTS = 8  # bots in one group chat: more and they talk past each other
+CATCH_UP = 12000  # characters of what a woken bot missed in a group chat: the newest, with older messages left out
 
 
 def _safe_error(error: str) -> str:
@@ -397,8 +398,8 @@ class Rooms:
         if owes_reply:
             self._owed.add(seat.id)
         try:
-            self.send(seat.id, "\n\n".join(f"[{m['author']}]: {m['text']}{attachments_module.listing(m['attachments'])}"
-                                           for m in unseen), sender="room")
+            self.send(seat.id, _catch_up([f"[{m['author']}]: {m['text']}{attachments_module.listing(m['attachments'])}"
+                                          for m in unseen]), sender="room")
             if running:
                 self._seat_queue_floor.setdefault(seat.id, previous)
         except NotAllowed:
@@ -455,6 +456,20 @@ class Rooms:
                           depth=self._seat_depth.get(seat.id, 0) + 1)
             return
         self.post(seat.room_id, seat.bot, text, depth=self._seat_depth.get(seat.id, 0) + 1, attachments=files or None)
+
+
+def _catch_up(said: list[str]) -> str:
+    """What a bot missed in a group chat, newest last, within CATCH_UP: always the newest message, which woke it."""
+    kept, size = [], 0
+    for line in reversed(said):
+        size += len(line) + 2
+        if kept and size > CATCH_UP:
+            break
+        kept.append(line)
+    left = len(said) - len(kept)
+    return "\n\n".join(([f"({left} earlier messages you haven't seen are left out.)"] if left else [])
+                       + kept[::-1])
+
 
 def _mentionable(text: str) -> str:
     lines, kept, i = text.splitlines(), [], 0
