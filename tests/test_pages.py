@@ -55,7 +55,7 @@ async def test_a_bot_keeps_its_scratchpad_and_has_it_in_view_in_its_next_session
     chat = crew.runner.chat("chief")
     tools = CrewTools(crew.runner, chat.id, can_delegate=False)
 
-    said = await tools.call("write_page", {"page": "Scratchpad", "text": "## Waiting on you\n\n- The capsule art"})
+    said = await tools.call("write_page", {"page": "Scratchpad", "content": "## Waiting on you\n\n- The capsule art"})
     await tools.call("edit_page", {"page": "Scratchpad", "find": "capsule art", "replace": "store capsule art"})
     with pytest.raises(ToolRefused, match="not found"):
         await tools.call("edit_page", {"page": "Scratchpad", "find": "nothing like it", "replace": "x"})

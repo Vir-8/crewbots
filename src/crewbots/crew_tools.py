@@ -15,6 +15,13 @@ if TYPE_CHECKING:
     from crewbots.runner import Runner
 
 
+def lines(given: Any) -> list[str]:
+    """A list a bot gave, or the string it gave in its place, as items: one per line, without a leading "- "."""
+    if isinstance(given, str):
+        return [line.strip().removeprefix("- ").strip() for line in given.splitlines() if line.strip()]
+    return [str(item) for item in given or [] if str(item).strip()]
+
+
 def merge_text(task_id: str, state: str | None, commit: str | None, details: dict[str, Any]) -> str:
     if state != "merged":
         return f"Proposed {task_id} to the user for merging."
@@ -54,6 +61,7 @@ def _object(properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
 
 STRING = {"type": "string"}
 STRINGS = {"type": "array", "items": {"type": "string"}}
+LINES = {"anyOf": [STRINGS, STRING]}  # a list, or a string of a line each: with one item, a bot often sends it bare
 CHOICES = {"type": "array", "items": {"type": "object", "properties": {"label": STRING, "description": STRING},
                                       "required": ["label"]}}
 
@@ -67,7 +75,7 @@ SPECS: dict[str, Spec] = {
     "browser_type": Spec(_object({"selector": STRING, "text": STRING, "key": STRING}, [])),
     "browser_evaluate": Spec(_object({"expression": STRING}, ["expression"])),
     "browser_console": Spec(_object({"clear": {"type": "boolean"}}, [])),
-    "handoff": Spec(_object({"done": STRING, "output": STRINGS, "open": STRING, "needs": STRING, "evidence": STRINGS,
+    "handoff": Spec(_object({"done": STRING, "output": LINES, "open": STRING, "needs": STRING, "evidence": LINES,
                              "checks": STRINGS}, ["done"])),
     "escalate": Spec(_object({"question": STRING, "choices": CHOICES, "multiple": {"type": "boolean"}}, ["question"])),
     "ask_permission": Spec(_object({"what": STRING, "why": STRING, "kind": {"type": "string", "enum": [
@@ -80,7 +88,7 @@ SPECS: dict[str, Spec] = {
     }, ["verdict", "summary"])),
     "remember": Spec(_object({"title": STRING, "body": STRING, "shared": {"type": "boolean"}, "mistake": STRING,
                               "check": STRING}, ["title", "body"])),
-    "write_page": Spec(_object({"page": STRING, "text": STRING}, ["page", "text"])),
+    "write_page": Spec(_object({"page": STRING, "content": STRING}, ["page", "content"])),
     "edit_page": Spec(_object({"page": STRING, "find": STRING, "replace": STRING}, ["page", "find", "replace"])),
     "forget": Spec(_object({"name": STRING, "shared": {"type": "boolean"}}, ["name"])),
     "recall": Spec(_object({"query": STRING}, ["query"])),
@@ -213,8 +221,8 @@ class CrewTools:
                 return await browser_call(r, me, name, args)
             match name:
                 case "handoff":
-                    r.handoff(me, args["done"], list(args.get("output") or []), args.get("open") or "",
-                              args.get("needs") or "", list(args.get("evidence") or []), list(args.get("checks") or []))
+                    r.handoff(me, args["done"], lines(args.get("output")), args.get("open") or "",
+                              args.get("needs") or "", lines(args.get("evidence")), lines(args.get("checks")))
                     wrong = r.wrong_branch(r.store.get_task(me))
                     return "Handoff recorded. End your reply with a short summary." + (f"\n\n{wrong}" if wrong else "")
                 case "escalate":
@@ -299,7 +307,7 @@ class CrewTools:
                     at = r.next_check(me, args["minutes"], args["why"])
                     return f"You'll look around again at {at:%H:%M} ({at:%a %d %b}), unless something comes up first."
                 case "write_page":
-                    page = r.write_page(me, args["page"], args["text"])
+                    page = r.write_page(me, args["page"], args["content"])
                     return f"Wrote {page.name} ({page.path})."
                 case "edit_page":
                     page = r.write_page(me, args["page"], args["replace"], find=args["find"])

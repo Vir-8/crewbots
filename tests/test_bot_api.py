@@ -247,6 +247,11 @@ async def test_the_mcp_tools_call_the_daemon_as_the_task(crew_app):
     assert store.events(chief_id)[-1].data == {"question": "Which?", "choices": [{"label": "A", "description": "the first"}],
                                                "multiple": False}
 
+    await server.call_tool("handoff", {"done": "Planned it", "output": "plan.md", "evidence": "read the brief\nchecked it"})
+    handed = store.latest_handoff(chief_id)  # one item sent bare, or a line each, is still a list
+    assert handed.output == ["plan.md"] and handed.evidence == ["read the brief", "checked it"]
+    await server.call_tool("write_page", {"page": "Scratchpad", "content": "- The plan"})
+
 
 async def test_a_refusal_reaches_the_bot_as_a_tool_error_it_can_read(crew_app):
     client, backend, _ = crew_app

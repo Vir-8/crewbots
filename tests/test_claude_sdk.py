@@ -412,6 +412,9 @@ async def test_workers_cant_reach_coordinator_tools(store, tmp_path):
     reply = await tools.call("handoff", {"done": "built", "output": ["a.py"]})
     assert reply == "Handoff recorded. End your reply with a short summary."
     assert store.latest_handoff(task.id).output == ["a.py"]
+    await tools.call("handoff", {"done": "built", "output": "a.py", "evidence": "- pytest: 3 passed\n- opened the page"})
+    handed = store.latest_handoff(task.id)  # one item sent bare, or a line each, is still a list
+    assert handed.output == ["a.py"] and handed.evidence == ["pytest: 3 passed", "opened the page"]
     assert (await tools.call("escalate", {"question": "Which?"})).endswith("the answer arrives as your next message.")
 
 

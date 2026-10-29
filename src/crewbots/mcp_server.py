@@ -20,6 +20,7 @@ from crewbots.crew_tools import (
     SPECS,
     describe,
     dropped_text,
+    lines,
     merge_text,
     offered,
     recall_text,
@@ -91,10 +92,10 @@ def _crew_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = F
         return browser("console", {"clear": clear})
 
     @server.tool(description=describe("handoff"))
-    def handoff(done: str, output: list[str] | None = None, open: str = "", needs: str = "",
-                evidence: list[str] | None = None, checks: list[str] | None = None) -> str:
-        call("POST", "/bot/handoff", {"done": done, "output": output or [], "open": open, "needs": needs,
-                                      "evidence": evidence or [], "checks": checks or []})
+    def handoff(done: str, output: list[str] | str | None = None, open: str = "", needs: str = "",
+                evidence: list[str] | str | None = None, checks: list[str] | str | None = None) -> str:
+        call("POST", "/bot/handoff", {"done": done, "output": lines(output), "open": open, "needs": needs,
+                                      "evidence": lines(evidence), "checks": lines(checks)})
         return "Handoff recorded. End your reply with a short summary."
 
     @server.tool(description=describe("escalate"))
@@ -125,8 +126,8 @@ def _crew_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = F
         return f"You go by {bot['display_name']} now: the app shows it for you. Your handle, @{bot['name']}, stays."
 
     @server.tool(description=describe("write_page"))
-    def write_page(page: str, text: str) -> str:
-        written = call("POST", "/bot/write_page", {"page": page, "text": text})
+    def write_page(page: str, content: str) -> str:
+        written = call("POST", "/bot/write_page", {"page": page, "text": content})
         return f"Wrote {written['page']} ({written['path']})."
 
     @server.tool(description=describe("edit_page"))
