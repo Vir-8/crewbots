@@ -40,7 +40,7 @@ class Welcome:
     async def _refresh_authority_sessions(self) -> None:
         for task_id, opened in list(self._sessions.items()):
             task = self.store.get_task(task_id)
-            if not self._session_busy(task_id) and (opened.coordinator != self.is_coordinator(task.bot)
+            if task_id not in self._runs and (opened.coordinator != self.is_coordinator(task.bot)
                                                or opened.chief != self.is_chief(task.bot)):
                 await self._close_session(task_id)
 

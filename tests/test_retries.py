@@ -336,8 +336,7 @@ async def test_a_seat_with_a_dead_session_drops_it_for_good(store, tmp_path, err
     runner.post(room["id"], "user", "@worker first")
     seat = lambda: store.seat_of(room["id"], "worker")  # noqa: E731
     await wait_until(lambda: seat() and settled(store, seat().id)())
-    chat = runner.chat("worker")  # the seat's session is its bot's chat's
-    store.update_task(chat.id, session_id="dead-id", session_backend="fake")
+    store.update_task(seat().id, session_id="dead-id", session_backend="fake")
     backend.specs.clear()
 
     runner.post(room["id"], "user", "@worker second")  # one failed resume, then a fresh session at once
@@ -345,8 +344,7 @@ async def test_a_seat_with_a_dead_session_drops_it_for_good(store, tmp_path, err
     assert [s.resume_session_id for s in backend.specs] == ["dead-id", None]
     after = seat()
     assert after.status is Status.IDLE and after.error is None
-    chat = store.get_task(chat.id)
-    assert (chat.session_id, chat.session_backend) == ("s-new", "fake")
+    assert (after.session_id, after.session_backend) == ("s-new", "fake")
 
     backend.specs.clear()
     runner.post(room["id"], "user", "@worker third")  # the next wake never tries the dead id

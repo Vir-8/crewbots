@@ -302,6 +302,11 @@ Each step leaves the system working.
 - **A thread** is work, opened with `start_thread` by any bot (or `delegate`, for a teammate) under the chat, seat
   or thread it's in. Results come back up as before. Budgets and "Go ahead anyway" apply per thread, the outermost
   thread above a task, never to a whole chat.
+- **One bot, a conversation per chat.** A bot's chat and each of its seats is a session of its own (as Grok Bot keeps a
+  transcript per chat), with one memory: notes, working state, daily log and the list of its own threads are shared,
+  and each conversation's next turn starts with what the bot posted in its group chats since that one last heard
+  (`_said_elsewhere`, from `heard-elsewhere` in its primed record). Nothing said in its chat with the user is quoted
+  elsewhere; decisions travel distilled, in the working state.
 - **A room** is a group chat with a lead. Each bot in it has a **seat**, its own session for that room, fed the
   messages it hasn't seen as `[name]: text`; its final message is posted back as its reply, or nothing if it answers
   `NO_REPLY`. The user's message wakes whoever it mentions (`@everyone` is every member), or the lead, who triages:

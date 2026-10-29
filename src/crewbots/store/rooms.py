@@ -68,6 +68,12 @@ class Rooms:
                                (room_id, through, limit)).fetchall()
         return [_room_message(r) for r in reversed(rows)]
 
+    def room_messages_by(self, room_id: str, author: str, after: str, limit: int) -> list[dict[str, Any]]:
+        """`author`'s latest `limit` messages in the room after time `after`, oldest first."""
+        rows = self.db.execute("select * from room_messages where room_id = ? and author = ? and at > ? "
+                               "order by id desc limit ?", (room_id, author, after, limit)).fetchall()
+        return [_room_message(r) for r in reversed(rows)]
+
     def last_room_message(self, room_id: str) -> dict[str, Any] | None:
         row = self.db.execute("select * from room_messages where room_id = ? order by id desc limit 1",
                               (room_id,)).fetchone()

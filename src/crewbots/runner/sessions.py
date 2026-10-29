@@ -2,8 +2,9 @@
 changed in their instructions; and, as a conversation grows long, flushed to memory and compacted in place (or, when
 it sat idle past its cache, carried on in a fresh session from memory).
 
-A bot's chat and its seats in group chats share one session, its chat's: it's one bot wherever it talks, with one
-memory of the day, not a stranger in each room. Each turn says where it is, and its reply goes back there."""
+A bot's chat and each of its seats in group chats is a conversation of its own, with one memory: its notes, working
+state and log are shared, and each conversation is told what the bot posted in its group chats since it last heard
+(`_said_elsewhere`), so it's one bot wherever it talks, and a busy group chat doesn't fill its chat with the user."""
 
 import asyncio
 import contextlib
@@ -13,6 +14,7 @@ import secrets
 import time
 from collections.abc import AsyncIterator
 from contextlib import aclosing
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +22,7 @@ from crewbots import prompts, timefmt, working_state, worktree
 from crewbots.backends import Backend
 from crewbots.crew import NO_REPLY, Bot, is_no_reply
 from crewbots.events import Compacted, Done, Event, Usage
-from crewbots.runner.common import NotAllowed, OpenSession, _plan, _usage_data
+from crewbots.runner.common import NotAllowed, OpenSession, _iso, _plan, _usage_data
 from crewbots.store import Status, Task
 
 MIN_KEPT = 500  # tokens: a compaction that leaves fewer kept nothing worth carrying on from
@@ -30,6 +32,10 @@ FRESH_MESSAGES = 8  # of the conversation a fresh session starts with
 MESSAGE_CHARS = 1500  # of each
 ROOM_LATELY = 8  # messages of a group chat a session is shown when it first talks there
 ROOM_CHARS = 600  # of each
+# What a chat or group chat hears of its bot's posts in its other group chats (`_said_elsewhere`): at most this many,
+# from the last this many hours, each cut to this length; and the primed key that keeps how far it has heard.
+SAID_ITEMS, SAID_HOURS, SAID_CHARS = 8, 48, 280
+HEARD = "heard-elsewhere"
 # A bot's chat and group chats are woken often, and each turn reads the whole conversation back, so they hold no more
 # than this, compacted at the runner's rollover_percent of it (about 120K); what's folded away stays findable with
 # `recall`.
@@ -47,19 +53,18 @@ class Sessions:
         session's context is: measured now if the session is open and idle, else as last measured."""
         task = self.store.get_task(task_id)
         bot = self.bot_for(task.bot)
-        mind = self._mind(task)
-        opened = self._sessions.get(mind.id)
-        percent = self._context_seen.get(mind.id)
+        opened = self._sessions.get(task_id)
+        percent = self._context_seen.get(task_id)
         measure = getattr(opened.session, "context_percent", None) if opened and opened.session.alive else None
-        if measure and not self._session_busy(mind.id):
+        if measure and task_id not in self._runs:
             with contextlib.suppress(Exception):
                 percent = await asyncio.wait_for(measure(), 10) or percent
                 if percent is not None:
-                    self._context_seen[mind.id] = percent
+                    self._context_seen[task_id] = percent
         return {
             "task_id": task.id, "bot": task.bot, "backend": bot.backend if bot else None,
             "plan": _plan(bot.backend) if bot else None, "model": bot.model if bot else None,
-            "effort": bot.effort if bot else None, "session_id": mind.session_id, "open": opened is not None,
+            "effort": bot.effort if bot else None, "session_id": task.session_id, "open": opened is not None,
             "context_percent": round(percent, 1) if percent is not None else None,
             "context_window": self._window(task, bot) if bot and task.kind != "review" else None,
             "rollover_percent": self.rollover_percent, "turns": task.turns,
@@ -73,45 +78,18 @@ class Sessions:
             return min(bot.context_window or CONVERSATION_WINDOW, CONVERSATION_WINDOW)
         return bot.context_window
 
-    def _mind(self, task: Task) -> Task:
-        """The task whose session a turn runs in: a seat's is its bot's chat; any other task's is its own."""
-        return self.chat(task.bot) if task.kind == "seat" else task
-
-    def _mind_lock(self, task: Task) -> contextlib.AbstractAsyncContextManager[Any]:
-        """One turn at a time in a shared session: a seat's turn waits for its chat's, and the other way round."""
-        if task.kind not in ("chat", "seat"):
-            return contextlib.nullcontext()
-        return self.__dict__.setdefault("_mind_locks", {}).setdefault(self._mind(task).id, asyncio.Lock())
-
-    def _session_busy(self, key: str) -> bool:
-        """Whether the session kept under `key` is taking a turn, its own or a seat's."""
-        lock = self.__dict__.get("_mind_locks", {}).get(key)
-        return key in self._runs or bool(lock and lock.locked())
-
     def _grants(self, task: Task) -> list[dict[str, Any]]:
-        """What the user allowed the task beyond its bot's role card; for a shared session, what they allowed in any of
-        its conversations."""
+        """What the user allowed the task beyond its bot's role card; for a chat or group chat, what they allowed in
+        any of the bot's conversations, since it's one bot."""
         if task.kind not in ("chat", "seat"):
             return self.store.grants(task.id)
-        return [g for t in (self._mind(task), *self.store.seats_of(task.bot)) for g in self.store.grants(t.id)]
-
-    def _channel(self, task: Task) -> str:
-        """Where a turn in a shared session is, and where its reply goes, as the line its message starts with."""
-        if task.kind == "seat" and task.room_id:
-            title = " ".join(self.store.room(task.room_id)["title"].split())
-            return f"[In the group chat {title!r} ({task.room_id}); your reply is posted there]\n"
-        if task.kind == "chat" and self.store.seats_of(task.bot):  # a bot in no group chat has nothing to tell apart
-            return "[In your chat with the user; your reply goes to them]\n"
-        return ""
+        return [g for t in (self.chat(task.bot), *self.store.seats_of(task.bot)) for g in self.store.grants(t.id)]
 
     async def _stop_session(self, task_id: str) -> None:
-        """After a task's turn was stopped: its session goes, unless it stopped the turn and stays warm, or another
-        conversation sharing it has a turn under way."""
-        key = self._mind(self.store.get_task(task_id)).id
-        opened = self._sessions.get(key)
-        warm = opened and opened.session.alive and getattr(opened.session, "interruptible", False)
-        if not warm and not self._session_busy(key):
-            await self._close_session(key)
+        """After a task's turn was stopped: its session goes, unless it stopped the turn and stays warm."""
+        opened = self._sessions.get(task_id)
+        if not (opened and opened.session.alive and getattr(opened.session, "interruptible", False)):
+            await self._close_session(task_id)
 
     @property
     def _steering(self) -> dict[str, OpenSession]:
@@ -163,9 +141,8 @@ class Sessions:
                 self._requeue(task_id, text)
 
     async def _session_for(self, task: Task, bot: Bot, cwd: Path, backend: Backend) -> OpenSession | None:
-        """The task's open session (for a seat, its chat's), or a new one; None to run this turn as its own process."""
-        mind = self._mind(task)
-        current = self._sessions.get(mind.id)
+        """The task's open session, or a new one; None to run this turn as its own process."""
+        current = self._sessions.get(task.id)
         grants = tuple(g["id"] for g in self._grants(task))
         deny_read = tuple(self._state_denials(bot.name))
         coordinator = self.is_coordinator(bot.name)
@@ -174,14 +151,14 @@ class Sessions:
                 and current.deny_read == deny_read and current.coordinator == coordinator and current.chief == chief):
             return current  # one that opened before the user allowed something opens again, with it
         if current:
-            await self._close_session(mind.id)
+            await self._close_session(task.id)
         if not self.use_sessions or not hasattr(backend, "open"):
             return None
         await self._make_room()
         token = secrets.token_urlsafe(32)
         self._tokens[token] = task.id  # its MCP server may call in while the session starts
         try:
-            session = await backend.open(self._spec(mind, bot, cwd, token, "", backend))
+            session = await backend.open(self._spec(task, bot, cwd, token, "", backend))
         except Exception as e:
             self._tokens.pop(token, None)
             self._record(task.id, kind="notice", data={"message": f"couldn't keep a session open ({e}); "
@@ -189,7 +166,7 @@ class Sessions:
             return None
         opened = OpenSession(session=session, token=token, cwd=cwd, last_used=asyncio.get_running_loop().time(),
                              grants=grants, deny_read=deny_read, coordinator=coordinator, chief=chief)
-        self._sessions[mind.id] = opened
+        self._sessions[task.id] = opened
         return opened
 
     def _refresh_working_state(self, bot: str) -> None:
@@ -255,10 +232,10 @@ class Sessions:
         """The turn's message, with what changed in the bot's instructions since its session began put in front of it,
         and what to record as seen once the turn has gone through. A session keeps the instructions it started with
         (both CLIs do), so a changed note, team file or role card reaches it here, in the turn, and the cached start
-        of the conversation stays as it was. A chat's or seat's message starts with where it is."""
+        of the conversation stays as it was. A chat or group chat also hears what its bot said in its others since this
+        one last heard (`_said_elsewhere`)."""
         if task.kind == "review":  # its own instructions, none of the crew's
             return prompt, None
-        prompt = self._channel(task) + prompt
         try:
             synced = self._sync_working_state(bot.name)
         except Exception:
@@ -274,35 +251,61 @@ class Sessions:
         authority += "\n\n" + (prompts.text("chief-push", self.crew.home) if self.is_chief(bot.name) else
                                   "You are not the configured chief. Chief-only tools belong to the configured chief.")
         living["chief-role"] = ("Coordinator and chief permissions", authority)
-        room = f"room-setting:{task.room_id}"  # a shared session is told each of its group chats' settings
         if task.kind == "seat" and (setting := self._setting(task)):
-            living[room] = (f"Group chat setting: {task.room_id}", setting)
-        mind = self._mind(task)
-        seen = self.store.primed(mind.id) if mind.session_id else None
+            living["room-setting"] = ("Group chat setting", setting)
+        seen = self.store.primed(task.id) if task.session_id else None
         if not synced:
             living.pop("working-state", None)
         now = {key: hashlib.sha256(text.encode()).hexdigest()[:16] for key, (_, text) in living.items()}
         if seen and "working-state" not in living and "working-state" in seen:
             now["working-state"] = seen["working-state"]
-        now |= {key: value for key, value in (seen or {}).items() if key.startswith("room-setting:") and key not in now}
-        lately = self._room_lately(task, prompt) if room in living and room not in (seen or {}) else ""
+        lately = self._room_lately(task, prompt) if "room-setting" in living and "room-setting" not in (seen or {}) else ""
+        said, heard = self._said_elsewhere(task, (seen or {}).get(HEARD))
+        if heard:
+            now[HEARD] = heard
+        extra = lately + said
         if seen is None:
-            if mind.session_id:
-                keys = [key for key in ("lately", "working-state", room, "chief-role") if key in living]
-                updates = "\n\n".join(f"## {living[key][0]}\n\n{living[key][1]}" for key in keys) + lately
+            if task.session_id:
+                keys = [key for key in ("lately", "working-state", "room-setting", "chief-role") if key in living]
+                updates = "\n\n".join(f"## {living[key][0]}\n\n{living[key][1]}" for key in keys) + extra
                 return prompts.text("crew-updates", self.crew.home, updates=updates, message=prompt), now
-            if room in living:  # a new session's instructions are its chat's: a group chat's setting comes in the turn
-                updates = f"## {living[room][0]}\n\n{living[room][1]}{lately}"
-                return prompts.text("crew-updates", self.crew.home, updates=updates, message=prompt), now
+            if said:  # a new session starts from these, and from what its bot said elsewhere lately
+                return prompts.text("crew-updates", self.crew.home, updates=said.lstrip(), message=prompt), now
             return prompt, now  # a new session starts from these (or one from before they were kept: from now on)
-        changed = [key for key in now if seen.get(key) != now[key]] + [key for key in seen if key not in now]
-        if not changed:
+        # Keys a shared session once kept per group chat (0d1a6ec) aren't removed instructions.
+        changed = ([key for key in now if key != HEARD and seen.get(key) != now[key]]
+                   + [key for key in seen if key not in now and key != HEARD and not key.startswith("room-setting:")])
+        if not changed and not extra:
             return prompt, None
         updates = "\n\n".join(f"## {living[key][0]}\n\n{living[key][1]}" if key in living else f"## {key}\n\n(removed)"
-                                for key in changed) + lately
-        if not seen and (state := self.crew.memory.state(bot.name, mind.id)):  # just compacted: all of it, again
+                                for key in changed) + extra
+        if not seen and (state := self.crew.memory.state(bot.name, task.id)):  # just compacted: all of it, again
             updates += f"\n\n## Where this task stands\n\n{state}"
-        return prompts.text("crew-updates", self.crew.home, updates=updates, message=prompt), now
+        return prompts.text("crew-updates", self.crew.home, updates=updates.lstrip(), message=prompt), now
+
+    def _said_elsewhere(self, task: Task, since: str | None) -> tuple[str, str | None]:
+        """For a chat or group chat: what its bot posted in its other group chats after `since`, from the last
+        SAID_HOURS, the newest SAID_ITEMS of them. With the notes and working state they share, it's what makes them one
+        bot. Its chat with the user is never quoted elsewhere: what's said there stays there, and its decisions travel
+        distilled, in the working state. Returns the section, and the time of the latest post in it to record as heard
+        (`since` again when there's nothing new)."""
+        if task.kind not in ("chat", "seat"):
+            return "", since
+        floor = max(since or "", _iso(datetime.now(UTC) - timedelta(hours=SAID_HOURS)))
+        said: list[tuple[str, str, str]] = []  # when, where, what
+        for seat in self.store.seats_of(task.bot):
+            if seat.id == task.id or not seat.room_id:
+                continue
+            title = " ".join(self.store.room(seat.room_id)["title"].split())
+            said += [(m["at"], f"{title!r} ({seat.room_id})", m["text"])
+                     for m in self.store.room_messages_by(seat.room_id, task.bot, floor, SAID_ITEMS)]
+        if not said:
+            return "", since
+        said = sorted(said)[-SAID_ITEMS:]
+        lines = [f"- {timefmt.minute(at)} · in {where}: {_short(' '.join(text.split()), SAID_CHARS)}"
+                 for at, where, text in said]
+        head = "\n\n## What you said in your group chats since this conversation last heard\n\n"
+        return head + "\n".join(lines), said[-1][0]
 
     def _room_lately(self, task: Task, prompt: str) -> str:
         """What was said in a seat's group chat before this turn's messages, for a session that hasn't talked there yet
@@ -376,13 +379,12 @@ class Sessions:
     async def _without_stale_session(self, task: Task, bot: Bot) -> Task:
         """A session gone cold (`_gone_cold`), or made by another backend (the bot's was changed) can't be resumed
         sensibly: the task starts afresh."""
-        mind = self._mind(task)
-        if self._gone_cold(mind):
-            await self._fresh_start(mind.id, "idle")
+        if self._gone_cold(task):
+            await self._fresh_start(task.id, "idle")
             return self.store.get_task(task.id)
-        if not mind.session_id or mind.session_backend in (None, bot.backend):
+        if not task.session_id or task.session_backend in (None, bot.backend):
             return task
-        await self._forget_session(mind.id, f"its session was made by {mind.session_backend}, and "
+        await self._forget_session(task.id, f"its session was made by {task.session_backend}, and "
                                             f"{bot.name} now runs on {bot.backend}")
         return self.store.get_task(task.id)
 
@@ -419,7 +421,7 @@ class Sessions:
         things stand, so a fresh session after the cache has gone (`_gone_cold`) loses nothing."""
         now = time.time()
         for task_id, ended in list(self._turn_ended.items()):
-            if (task_id in self._flushed or self._session_busy(task_id) or task_id in self._cancelling
+            if (task_id in self._flushed or task_id in self._runs or task_id in self._cancelling
                     or not self.flush_idle_s <= now - ended < self.cold_s
                     or (self._context_seen.get(task_id) or 0) < COLD_PERCENT):
                 continue
@@ -428,7 +430,7 @@ class Sessions:
 
     async def _idle_flush(self, task_id: str) -> None:
         try:
-            async with self._mind_lock(self.store.get_task(task_id)), self._turn_slot(task_id):
+            async with self._turn_slot(task_id):
                 task = self.store.get_task(task_id)
                 bot = self.bot_for(task.bot)
                 if bot and task.status is Status.IDLE and task.session_id:
@@ -510,7 +512,7 @@ class Sessions:
                 await opened.session.close()
 
     async def _make_room(self) -> None:
-        idle = sorted((s.last_used, t) for t, s in self._sessions.items() if not self._session_busy(t))
+        idle = sorted((s.last_used, t) for t, s in self._sessions.items() if t not in self._runs)
         while len(self._sessions) >= self.max_sessions and idle:
             await self._close_session(idle.pop(0)[1])
 
@@ -520,7 +522,7 @@ class Sessions:
             await asyncio.sleep(max(0.05, min(60.0, self.idle_timeout_s / 4)))
             now = loop.time()
             for task_id, opened in list(self._sessions.items()):
-                if not self._session_busy(task_id) and now - opened.last_used >= self.idle_timeout_s:
+                if task_id not in self._runs and now - opened.last_used >= self.idle_timeout_s:
                     await self._close_session(task_id)
             await self._flush_idle()
 
