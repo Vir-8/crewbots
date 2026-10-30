@@ -5,6 +5,7 @@ branch the folder is on, which must still be the one it was on when the work beg
 user's or another engineer's, stays uncommitted. The commit shows on the Landed page as a merge does, and the chief
 proposes the push. It runs under the merge lock its caller holds (merge_status._off_loop), as a merge does."""
 
+import shlex
 from pathlib import Path
 
 from crewbots import comments, worktree
@@ -114,15 +115,35 @@ class InPlace:
             raise MergeError(f"{repo} is on {into} now, not {began.data.get('branch')} as when {work.id} began, so nothing "
                              "was committed: switch it back, then merge again")
         staged = set(worktree._git(repo, "ls-files", "-z", "--", *files, strip=False).split("\0"))
-        if present := [f for f in files if f in staged or (repo / f).exists()]:
-            worktree._git(repo, "add", "--all", "--", *present)
-        worktree._git(repo, *worktree.NO_HOOKS, "commit", "-q", "--no-verify", "--cleanup=whitespace", "-m", message,
-                      "--", *files)  # just these, whatever else is staged
+        ignored = set(worktree._git(repo, "ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--",
+                                    *files, strip=False).split("\0"))
+        present = [f for f in files if f in staged or ((repo / f).exists() and f not in ignored)]
+        git_dir = Path(worktree._git(repo, "rev-parse", "--absolute-git-dir"))
+        if (git_dir / "index.lock").exists():
+            raise MergeError(f"{git_dir / 'index.lock'} is held by another git process, so nothing was committed: "
+                             "wait for it to finish, then merge again")
+        index = git_dir / f"crewbots-index-{work.id}"
+        env = {"GIT_INDEX_FILE": str(index)}
+        try:
+            worktree._git(repo, "read-tree", "HEAD", env=env)
+            if present:
+                worktree._git(repo, "add", "--all", "--force", "--", *present, env=env)
+            if gone := [f for f in files if f not in present]:
+                worktree._git(repo, "update-index", "--force-remove", "--", *gone, env=env)
+            worktree._git(repo, *worktree.NO_HOOKS, "commit", "-q", "--no-verify", "--cleanup=whitespace", "-m", message,
+                          env=env)
+        finally:
+            index.unlink(missing_ok=True)
         worktree.verify_message(repo, "HEAD", message)
         commit = worktree._git(repo, "rev-parse", "HEAD")
         task = self._set(work.id, merge_state="merged", repo=str(repo), base=base, merged_commit=commit,
                          merged_tip=commit)
-        self._record(work.id, kind="merged", data={"commit": commit, "into": str(repo), "branch": into, "files": files,
-                                                   "ignored": self._ignored_output(work, repo), "forced": forced,
-                                                   "automatic": automatic})
+        data = {"commit": commit, "into": str(repo), "branch": into, "files": files,
+                "ignored": self._ignored_output(work, repo), "forced": forced, "automatic": automatic}
+        try:
+            worktree._git(repo, "reset", "-q", "--", *files)
+        except worktree.GitError as error:
+            data["index"] = (f"commit {commit} landed, but the index for these files wasn't synced ({error}): "
+                             f"run {shlex.join(['git', 'reset', '-q', '--', *files])} once the lock clears")
+        self._record(work.id, kind="merged", data=data)
         return task

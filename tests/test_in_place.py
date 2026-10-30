@@ -2,6 +2,7 @@
 Unity .meta files, on the folder's branch, leaving the rest of what's in progress there uncommitted."""
 
 import dataclasses
+import subprocess
 
 import pytest
 from fakes import ScriptedCrew, bot, git_repo, wait_until
@@ -203,4 +204,105 @@ async def test_someone_elses_staged_deletion_isnt_committed_with_an_identical_ne
 
     assert worktree._git(repo, "rev-parse", "HEAD") == head
     assert "R  Assets/Old.cs -> Assets/Moved.cs" in _left(repo)
+    await crew.runner.shutdown()
+
+
+async def _handed_back(game, output):
+    crew, store, repo, lead, work = game
+    crew.runner.handoff(work.id, "Ignored Notes", output, "", "", ["ran it"])
+    review = crew.runner.delegate(lead.id, "reviewer", "review it", review_of=work.id)
+    await wait_until(crew.settled(review.id))
+    crew.runner.review(review.id, Verdict.PASS, "fine", [])
+    store.set_auto_merge(True)
+    return crew, repo, lead, work
+
+
+async def test_a_staged_deletion_of_a_file_the_change_now_ignores_is_committed_and_the_file_stays(game):
+    crew, store, repo, lead, work = game
+    (repo / "Notes.txt").write_text("notes\n")
+    worktree._git(repo, "add", "Notes.txt")
+    worktree._git(repo, "commit", "-qm", "Add Notes")
+    worktree._git(repo, "rm", "-q", "--cached", "Notes.txt")
+    (repo / ".gitignore").write_text("Notes.txt\n")
+    crew, repo, lead, work = await _handed_back(game, [".gitignore", "Notes.txt"])
+
+    await crew.runner.propose_merge_off_loop(lead.id, work.id, "Ignore Notes")
+
+    assert worktree._git(repo, "show", "--name-status", "--format=", "HEAD").split() == ["A", ".gitignore", "D", "Notes.txt"]
+    assert (repo / "Notes.txt").read_text() == "notes\n"
+    assert not [line for line in _left(repo) if "Notes.txt" in line or ".gitignore" in line]
+    await crew.runner.shutdown()
+
+
+async def test_an_ignored_file_that_isnt_a_staged_deletion_is_still_left_out(game):
+    crew, store, repo, lead, work = game
+    (repo / ".gitignore").write_text("Notes.txt\n")
+    (repo / "Notes.txt").write_text("notes\n")
+    crew, repo, lead, work = await _handed_back(game, [".gitignore", "Notes.txt"])
+
+    await crew.runner.propose_merge_off_loop(lead.id, work.id, "Ignore Notes")
+
+    assert "Notes.txt" not in worktree._git(repo, "show", "--name-only", "--format=", "HEAD").split()
+    await crew.runner.shutdown()
+
+
+async def test_ignoring_two_staged_deletions_keeps_both_files_and_any_file_beside_them(game):
+    crew, store, repo, lead, work = game
+    for name in ("A.txt", "B.txt"):
+        (repo / name).write_text(f"{name}\n")
+    worktree._git(repo, "add", "A.txt", "B.txt")
+    worktree._git(repo, "commit", "-qm", "Add notes")
+    worktree._git(repo, "rm", "-q", "--cached", "A.txt", "B.txt")
+    (repo / ".gitignore").write_text("A.txt\nB.txt\n")
+    (repo / "A.txt.crewbots-aside").write_text("other data\n")
+    (repo / "B.txt.crewbots-aside").mkdir()
+    (repo / "B.txt.crewbots-aside" / "keep").write_text("other data\n")
+    crew, repo, lead, work = await _handed_back(game, [".gitignore", "A.txt", "B.txt"])
+
+    await crew.runner.propose_merge_off_loop(lead.id, work.id, "Ignore notes")
+
+    assert worktree._git(repo, "show", "--no-renames", "--name-status", "--format=", "HEAD").split() == [
+        "A", ".gitignore", "D", "A.txt", "D", "B.txt"]
+    assert [(repo / n).read_text() for n in ("A.txt", "B.txt")] == ["A.txt\n", "B.txt\n"]
+    assert (repo / "A.txt.crewbots-aside").read_text() == "other data\n"
+    assert (repo / "B.txt.crewbots-aside" / "keep").read_text() == "other data\n"
+    assert not list((repo / ".git").glob("crewbots-index-*"))
+    await crew.runner.shutdown()
+
+
+async def test_a_held_index_lock_refuses_the_merge_before_anything_is_committed(game):
+    crew, store, repo, lead, work = game
+    crew, repo, lead, work = await _handed_back(game, ["Assets/Player.cs", "Assets/Player.cs.meta"])
+    head = worktree._git(repo, "rev-parse", "HEAD")
+    (repo / ".git" / "index.lock").write_text("")
+
+    with pytest.raises(MergeError, match="index.lock"):
+        await crew.runner.propose_merge_off_loop(lead.id, work.id, "Add the player")
+
+    assert worktree._git(repo, "rev-parse", "HEAD") == head
+    await crew.runner.shutdown()
+
+
+async def test_a_lock_taken_after_the_commit_still_records_the_merge_and_says_how_to_sync(game, monkeypatch):
+    crew, store, repo, lead, work = game
+    (game[2] / "Assets/space name.cs").write_text("x")
+    crew, repo, lead, work = await _handed_back(game, ["Assets/Player.cs", "Assets/space name.cs"])
+    real = worktree._git
+
+    def locking(cwd, *args, **kwargs):
+        if args[:1] == ("reset",):
+            (repo / ".git" / "index.lock").write_text("")
+        return real(cwd, *args, **kwargs)
+
+    monkeypatch.setattr(worktree, "_git", locking)
+    await crew.runner.propose_merge_off_loop(lead.id, work.id, "Add the player")
+    monkeypatch.setattr(worktree, "_git", real)
+
+    merged = store.last_event(work.id, ("merged",))
+    assert store.get_task(work.id).merged_commit == real(repo, "rev-parse", "HEAD")
+    command = merged.data["index"].split("run ")[1].removesuffix(" once the lock clears")
+    assert "'Assets/space name.cs'" in command
+    (repo / ".git" / "index.lock").unlink()
+    subprocess.run(command, shell=True, cwd=repo, check=True)
+    assert "space name" not in real(repo, "status", "--porcelain", "Assets/Player.cs", "Assets/space name.cs")
     await crew.runner.shutdown()
