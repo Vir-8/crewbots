@@ -38,7 +38,10 @@ class WebKit:
 
     def helper(self) -> Path:
         """Where the helper built from the current source is, or goes."""
-        return self.root / f"verify-webkit-{hashlib.sha256(SOURCE.read_bytes()).hexdigest()[:16]}"
+        return self._helper_for(SOURCE.read_bytes())
+
+    def _helper_for(self, source: bytes) -> Path:
+        return self.root / f"verify-webkit-{hashlib.sha256(source).hexdigest()[:16]}"
 
     async def check(self, url: str, *, click: str | None = None, setup: str | None = None, js: str | None = None,
                     wait: float = 2, width: int = 1400, height: int = 860) -> str:
@@ -79,7 +82,7 @@ class WebKit:
     async def _build(self) -> Path:
         """The helper for the current source, compiled the first time it's asked for."""
         source = SOURCE.read_bytes()
-        helper = self.helper()
+        helper = self._helper_for(source)
         if helper.is_file():
             return helper
         self.root.mkdir(parents=True, exist_ok=True)

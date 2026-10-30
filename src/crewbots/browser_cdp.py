@@ -130,7 +130,7 @@ class CDP:
         for number, command in list(self.commands.items()):
             future = self.pending.get(number)
             if command["session"] == session and future and not future.done():
-                future.set_exception(BrowserError(f"Chrome event handler failed: {error}"))
+                future.set_exception(BrowserError(error))
 
     def waiting(self) -> str:
         requests = [f"{request}: {url} (session {session})" for (session, request), url in self.paused.items()]

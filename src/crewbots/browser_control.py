@@ -7,7 +7,6 @@ from uuid import uuid4
 from crewbots.browser_cdp import BrowserError
 from crewbots.browser_input import input_event
 
-CONTEXT_GRACE_S = 5
 LEASE_S = 15
 CONTROL_NOTICE = "The user controlled the page; it may have changed. Inspect it again."
 

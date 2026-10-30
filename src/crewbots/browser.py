@@ -20,11 +20,13 @@ from uuid import uuid4
 
 from crewbots import paths
 from crewbots.browser_cdp import CDP, BrowserError
-from crewbots.browser_control import CONTEXT_GRACE_S, CONTROL_NOTICE, BrowserControl, ControlLease
+from crewbots.browser_control import CONTROL_NOTICE, BrowserControl, ControlLease
 from crewbots.browser_process import CHROME, LaunchStillRunning, Profiles, launch
 from crewbots.browser_proxy import BrowserProxy, Network, allowed
 
 log = logging.getLogger(__name__)
+
+CONTEXT_GRACE_S = 5
 
 
 @dataclass
@@ -122,11 +124,7 @@ class Browser(BrowserControl):
 
     async def _session(self, task_id, network):
         await self._start()
-        tab = self.sessions.get(task_id)
-        if tab and tab.network != network:
-            await self._close_task(task_id)
-            tab = None
-        if tab:
+        if tab := self.sessions.get(task_id):
             return tab
         proxy = BrowserProxy(network)
         address = await proxy.start()
@@ -297,7 +295,7 @@ class Browser(BrowserControl):
             # Stop network traffic and release a pending navigation before waiting for the action lock.
             tab.failure = f"Chrome event handler failed: {error}"
             tab.loaded.set()
-            self.cdp.fail_session(tab.session, str(error))
+            self.cdp.fail_session(tab.session, tab.failure)
             await tab.proxy.close()
         async with self._lock:
             if unsafe_startup:
