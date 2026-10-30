@@ -112,11 +112,15 @@ class Rooms:
         except (OSError, room_files.RoomFileError):
             return ""
 
+    def _members(self, members: list[str]) -> list[str]:
+        """A group chat's bots, each once."""
+        if unknown := [m for m in members if m not in self.crew.bots]:
+            raise UnknownBot(f"no bots named {unknown}; the crew is {sorted(self.crew.bots)}")
+        return list(dict.fromkeys(members))
+
     def create_room(self, title: str, members: list[str], lead: str | None = None, crew: bool = False) -> dict[str, Any]:
-        unknown = [m for m in members if m not in self.crew.bots]
-        if unknown or not members:
-            raise UnknownBot(f"no bots named {unknown}; the crew is {sorted(self.crew.bots)}" if unknown
-                             else "a group chat needs at least one bot")
+        if not (members := self._members(members)):
+            raise UnknownBot("a group chat needs at least one bot")
         lead = lead or members[0]
         if lead not in members:
             raise UnknownBot(f"the lead, {lead}, isn't in the group chat")
@@ -137,11 +141,9 @@ class Rooms:
                 raise NotAllowed("a group chat needs a name")
             changes["title"] = title.strip()
         if members is not None:
-            if unknown := [m for m in members if m not in self.crew.bots]:
-                raise UnknownBot(f"no bots named {unknown}; the crew is {sorted(self.crew.bots)}")
-            if not members:
+            changes["members"] = self._members(members)
+            if not changes["members"]:
                 raise NotAllowed("a group chat needs at least one bot")
-            changes["members"] = list(dict.fromkeys(members))
         if lead is not None or room["lead"] not in changes.get("members", room["members"]):
             if (lead or room["lead"]) not in changes.get("members", room["members"]):
                 raise NotAllowed(f"{lead or room['lead']} isn't in the group chat: its lead is one of its bots")
@@ -427,8 +429,8 @@ class Rooms:
 
     def _queue_during_run(self, task: Task, text: str) -> Task:
         self._waiting.setdefault(task.id, []).append(text)
-        # During seat maintenance the completed turn has no pending row. Its first new wake starts one.
-        if task.kind == "seat" and task.status == Status.IDLE:
+        # During an idle flush or seat maintenance the last turn has no pending row. The first new message starts one.
+        if task.status == Status.IDLE:
             with self.store.db.transaction():
                 self.store.set_pending(task.id, text)
                 self.store.update_task(task.id, status=Status.QUEUED)
@@ -449,8 +451,7 @@ class Rooms:
         self._set(seat.id, status=status, result=result, turns=seat.turns + 1)
 
     def _interrupt_after_shutdown(self, task_id: str) -> None:
-        task = self.store.get_task(task_id)
-        if task.kind != "seat" or task.status != Status.IDLE:
+        if self.store.get_task(task_id).status != Status.IDLE:  # an idle flush or seat maintenance had no turn to cut off
             self._set(task_id, status=Status.INTERRUPTED, error="the daemon stopped during this task")
 
     def _seat_replied(self, seat: Task, text: str, files: list[dict[str, Any]] | None = None,

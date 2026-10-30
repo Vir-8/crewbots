@@ -132,3 +132,68 @@ async def test_a_held_task_stays_held_after_a_restart(store, tmp_path):
     await wait_until(settled(store, second, task.id))
     assert backend.specs[0].prompt.split("</crew-updates>")[-1].strip() == "two"  # as it was held (its working state's
     await second.shutdown()                                                            # times may have moved on)
+
+
+def flushing(runner, task_id):
+    """Starts an idle flush of the task that doesn't end by itself, as `_flush_idle` would. Returns once it's under way."""
+    started = asyncio.Event()
+
+    async def session(*args):
+        return object()
+
+    async def flush(*args):
+        started.set()
+        await asyncio.Event().wait()
+
+    runner._session_for, runner._flush = session, flush
+    runner._runs[task_id] = asyncio.create_task(runner._idle_flush(task_id))
+    return asyncio.wait_for(started.wait(), 2)
+
+
+async def test_a_stop_during_an_idle_flush_leaves_the_thread_idle(store, tmp_path):
+    first, _ = daemon(store, tmp_path)
+    task = first.submit("worker", "write the report")
+    await wait_until(settled(store, first, task.id))
+    store.update_task(task.id, session_id="s1")
+    await flushing(first, task.id)
+    await first.shutdown()
+    assert store.get_task(task.id).status == Status.IDLE  # no turn was cut off, so there's nothing to carry on
+
+    second, _ = daemon(store, tmp_path)
+    assert store.mark_interrupted() == [] and second.resume_interrupted() == []
+
+
+async def test_a_message_sent_during_an_idle_flush_survives_a_restart(store, tmp_path):
+    first, _ = daemon(store, tmp_path)
+    task = first.submit("worker", "write the report")
+    await wait_until(settled(store, first, task.id))
+    store.update_task(task.id, session_id="s1")
+    await flushing(first, task.id)
+    first.send(task.id, "and add a chart")
+    assert store.get_task(task.id).status == Status.QUEUED
+    await first.shutdown()
+
+    second, backend = daemon(store, tmp_path)
+    store.mark_interrupted()
+    assert second.resume_interrupted() == [task.id]
+    await wait_until(settled(store, second, task.id))
+    assert backend.specs[0].prompt.endswith("and add a chart")
+
+
+async def test_an_idle_flush_skips_a_bot_past_its_budget(store, tmp_path):
+    over = bot(budget=Budget(tokens=10, per="day"))
+    runner, _ = daemon(store, tmp_path, over)
+    task = runner.submit("worker", "one")
+    await wait_until(settled(store, runner, task.id))
+    store.update_task(task.id, session_id="s1")
+    flushed = []
+
+    async def session(*args):
+        return object()
+
+    async def flush(*args):
+        flushed.append(args)
+
+    runner._session_for, runner._flush = session, flush
+    await asyncio.wait_for(runner._idle_flush(task.id), 2)
+    assert not flushed and store.get_task(task.id).status == Status.IDLE  # not held: no turn of its own waits

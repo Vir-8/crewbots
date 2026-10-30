@@ -195,6 +195,7 @@ async def test_a_big_conversation_is_flushed_ahead_of_time_while_its_cache_is_wa
     runner._turn_ended[task.id] = time.time() - 3100  # 51 minutes on
 
     await runner._flush_idle()
+    await wait_until(lambda: "<flush>" in backend.opened[0].turns)  # one sent before it began would skip it
     runner.send(task.id, "meanwhile")  # waits for the flush, then runs
     await wait_until(lambda: len(backend.opened[0].turns) == 3 and idle(store, runner, task.id)())
     await runner._flush_idle()  # once per idle spell: nothing more until its next turn

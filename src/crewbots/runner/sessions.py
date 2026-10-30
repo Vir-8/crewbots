@@ -444,10 +444,10 @@ class Sessions:
 
     async def _idle_flush(self, task_id: str) -> None:
         try:
-            async with self._turn_slot(task_id):
+            async with self._turn_slot(task_id, hold=False):  # holding it would leave an idle task HELD for good
                 task = self.store.get_task(task_id)
                 bot = self.bot_for(task.bot)
-                if bot and task.status is Status.IDLE and task.session_id:
+                if bot and task.status is Status.IDLE and task.session_id and not self.hold_reason(task):
                     backend = self.backends[bot.backend]
                     opened = await self._session_for(task, bot, self._cwd(task, bot), backend)
                     if opened:
@@ -457,6 +457,7 @@ class Sessions:
         finally:
             self._runs.pop(task_id, None)
             if waiting := self._waiting.pop(task_id, None):  # messages that came in meanwhile
+                self._set(task_id, status=Status.QUEUED, error=None)
                 self._start(task_id, "\n\n".join(waiting))
             self._stay_awake()
 

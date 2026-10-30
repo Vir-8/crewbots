@@ -151,12 +151,13 @@ class Holds:
         self._recheck = asyncio.Event()
 
     @contextlib.asynccontextmanager
-    async def _turn_slot(self, task_id: str) -> AsyncIterator[None]:
-        """A run slot, once the crew isn't paused and the task is within its budgets. A pause (or a restart) that came
-        while it waited for the slot sends it back to wait, so no turn starts after one."""
+    async def _turn_slot(self, task_id: str, hold: bool = True) -> AsyncIterator[None]:
+        """A run slot, once the crew isn't paused and (unless `hold` is off) the task is within its budgets. A pause (or
+        a restart) that came while it waited for the slot sends it back to wait, so no turn starts after one."""
         while True:
             await self._resumed.wait()
-            await self._within_budget(task_id)
+            if hold:
+                await self._within_budget(task_id)
             await self._slots.acquire()
             if self._resumed.is_set():
                 break
