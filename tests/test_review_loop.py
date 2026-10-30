@@ -398,37 +398,23 @@ async def test_merged_work_reopens_for_followup_review_and_changes_api(store, tm
     assert store.get_task(review.id).result == "task work"
 
 
-def test_merge_subject_uses_first_paragraph_and_a_complete_sentence():
-    from crewbots.runner.merge_message import _merge_subject
-
-    assert _merge_subject("A useful subject\n\nDetails", "title") == "A useful subject"
-    assert _merge_subject("", "Fallback title") == "Fallback title"
-    assert _merge_subject("e.g.", "Fallback title") == "Fallback title"
-    assert _merge_subject("Fix the update dialog change list so it no longer cuts\noff mid-sentence", "title") == (
-        "Fix the update dialog change list so it no longer cuts off mid-sentence")
-    assert _merge_subject("Fix the update dialog change list so it no longer cuts\n"
-                          "off mid-sentence when the subject exceeds the limit", "Fix the update dialog") == (
-        "Fix the update dialog")
-    assert _merge_subject("Fix the update dialog. " + "More detail " * 8, "title") == "Fix the update dialog."
-    assert _merge_subject("e.g. " + "Details without a complete sentence " * 3, "title") == "title"
-    assert _merge_subject("Fix examples such as e.g. the update dialog. " + "Details " * 8, "title") == (
-        "Fix examples such as e.g. the update dialog.")
-    assert _merge_subject("Fix the list, i.e. the update dialog. " + "Details " * 8, "title") == (
-        "Fix the list, i.e. the update dialog.")
-    assert _merge_subject("Fix updates, etc. " + "Details without a sentence " * 3, "title") == "title"
-
-
-def test_merge_subject_fallback_is_nonempty_and_bounded():
-    from crewbots.runner.merge_message import _merge_subject
-
-    long_summary = "A sentence that is much too long to fit into the permitted subject line " * 2
-    assert _merge_subject(long_summary, "") == "Merge work"
-    title = "A long task title with enough words that it cannot possibly fit in a single merge subject line"
-    result = _merge_subject(long_summary, title)
-    assert result == "A long task title with enough words that it cannot possibly fit in a…"
-    assert len(result) <= 72
-    assert _merge_subject(long_summary, "x" * 100) == "x" * 71 + "…"
-    assert _merge_subject(long_summary, "x" * 70 + " next") == "x" * 70 + "…"
+async def test_a_summary_whose_first_line_is_too_long_is_refused_and_nothing_is_proposed(store, tmp_path):
+    crew = ScriptedCrew(store, tmp_path, bot("chief", can_delegate=True), bot("engineer"), bot("reviewer"))
+    parent = store.create_task("chief", "lead", status=Status.IDLE)
+    work = store.create_task("engineer", "build", parent_id=parent.id, created_by="chief")
+    (tmp_path / "wt").mkdir()
+    store.update_task(work.id, status=Status.IDLE, turns=1, worktree_path=str(tmp_path / "wt"))
+    await review_round(crew, parent, work, Verdict.PASS)
+    long_line = "x" * 73
+    with pytest.raises(NotAllowed, match="it is 73 characters, over the limit of 72"):
+        crew.runner.propose_merge(parent.id, work.id, f"{long_line}\n\nDetails")
+    with pytest.raises(NotAllowed, match="is empty"):
+        crew.runner.propose_merge(parent.id, work.id, "  ")
+    for blank_first_line in ("\nFix the player", "  \nFix the player"):
+        with pytest.raises(NotAllowed, match="is empty"):
+            crew.runner.propose_merge(parent.id, work.id, blank_first_line)
+    assert store.get_task(work.id).merge_state is None
+    assert crew.runner.propose_merge(parent.id, work.id, "x" * 72).merge_state == "proposed"
 
 
 def engineer_wrote(crew, store, tmp_path, repo, content="new\n"):

@@ -1,40 +1,36 @@
 """The commit message of a merge: the proposal's summary, as a subject line and a body."""
 
-import re
+SUBJECT_LIMIT = 72
 
 
-def _merge_subject(summary: str, title: str, limit: int = 72) -> str:
-    return _subject(summary, title, limit)[0]
-
-
-def _subject(summary: str, title: str, limit: int) -> tuple[str, bool]:
-    """The subject, and whether it was taken from the summary (not made from the title)."""
-    paragraph = " ".join(re.split(r"\n\s*\n", summary.strip(), maxsplit=1)[0].split())
-    abbreviation = r"\b(?:e\.g|i\.e|etc|mr|mrs|ms|dr|vs|inc)\.$"
-    if paragraph and len(paragraph) <= limit and not re.fullmatch(abbreviation, paragraph, re.I):
-        return paragraph, True
-    for end in re.finditer(r"[.!?](?=\s|$)", paragraph):
-        sentence = paragraph[:end.end()]
-        if len(sentence) > limit:
-            break
-        if len(sentence) >= 20 and not re.search(abbreviation, sentence, re.I):
-            return sentence, True
-    fallback = " ".join(title.split()) or "Merge work"
-    if len(fallback) <= limit:
-        return fallback, False
-    prefix = fallback[:limit - 1]
-    if not prefix[-1].isspace() and not fallback[limit - 1].isspace() and " " in prefix:
-        prefix = prefix.rsplit(" ", 1)[0]
-    return prefix.rstrip() + "…", False
+def check_summary(summary: str) -> None:
+    """Refuses a summary whose first line, the commit's subject, is empty or too long to be one."""
+    subject = summary.split("\n", 1)[0].strip()
+    if not subject:
+        raise ValueError("The summary's first line is the commit's subject, and it is empty: start the summary with "
+                         f"one line of at most {SUBJECT_LIMIT} characters that says what the change does")
+    if len(subject) > SUBJECT_LIMIT:
+        raise ValueError(f"The summary's first line is the commit's subject, and it is {len(subject)} characters, "
+                         f"over the limit of {SUBJECT_LIMIT}: rewrite it as a shorter line, and put the detail after "
+                         "a blank line")
 
 
 def merge_message(summary: str, title: str, *, unreviewed: bool = False) -> str:
-    """The subject, a blank line, then the rest of the summary (all of it if the subject came from the title). Work
-    merged without approval ends with a `Merged-without-review: yes` trailer."""
-    subject, from_summary = _subject(summary, title, 72)
-    text = summary.strip()
-    opening = from_summary and re.match(r"\s*".join(map(re.escape, subject.split())), text)
-    body = (text[opening.end():] if opening else text).strip()
+    """The summary's first line as the subject, a blank line, then the rest of the summary. Work merged with no
+    usable summary (the user merged it without a proposal) gets its title as the subject when that fits, else
+    "Merge work" with the title in the body, and any summary it has in the body.
+    Work merged without approval ends with a `Merged-without-review: yes` trailer."""
+    try:
+        check_summary(summary)
+        subject, _, body = summary.partition("\n")
+        subject = subject.strip()
+    except ValueError:
+        title = " ".join(title.split())
+        if title and len(title) <= SUBJECT_LIMIT:
+            subject, body = title, summary.strip()
+        else:
+            subject, body = "Merge work", "\n\n".join(part for part in (summary.strip(), title) if part)
+    body = body.strip()
     if unreviewed:
         body = f"{body}\n\nMerged-without-review: yes" if body else "Merged-without-review: yes"
     return f"{subject}\n\n{body}" if body else subject

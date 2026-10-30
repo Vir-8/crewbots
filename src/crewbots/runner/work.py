@@ -21,7 +21,7 @@ from crewbots.runner.common import MergeError, NotAllowed
 from crewbots.runner.editors import Editors
 from crewbots.runner.in_place import InPlace
 from crewbots.runner.landed import Landed
-from crewbots.runner.merge_message import merge_message
+from crewbots.runner.merge_message import check_summary, merge_message
 from crewbots.runner.merge_status import MergeStatus
 from crewbots.runner.reviews import MAX_REVIEW_ROUNDS
 from crewbots.runner.shared_apps import SharedApps
@@ -249,6 +249,10 @@ class Work(Landed, Closing, MergeStatus, SharedApps, Editors, InPlace):
         parent = self.store.get_task(parent_id)
         if not self.is_coordinator(parent.bot):
             raise NotAllowed("only a coordinator can propose a merge")
+        try:
+            check_summary(summary)
+        except ValueError as e:
+            raise NotAllowed(str(e)) from None
         work = self._own_child(parent_id, task_id)
         repo = None if work.worktree_path else self._in_place_repo(work)
         if not work.worktree_path and repo is None:

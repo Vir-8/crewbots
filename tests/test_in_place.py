@@ -72,6 +72,22 @@ async def test_approved_work_is_committed_with_just_its_files(game):
     await crew.runner.shutdown()
 
 
+async def test_a_summary_whose_first_line_is_too_long_is_refused_before_anything_is_committed(game):
+    crew, store, repo, lead, work = game
+    crew.runner.handoff(work.id, "Added the player", ["Assets/Player.cs"], "", "", ["Played it"])
+    review = crew.runner.delegate(lead.id, "reviewer", "review it", review_of=work.id)
+    await wait_until(crew.settled(review.id))
+    crew.runner.review(review.id, Verdict.PASS, "fine", [])
+    with pytest.raises(NotAllowed, match="it is 73 characters, over the limit of 72"):
+        crew.runner.propose_merge(lead.id, work.id, "x" * 73 + "\n\nDetails")
+    for blank_first_line in ("\nFix the player", "  \nFix the player"):
+        with pytest.raises(NotAllowed, match="is empty"):
+            crew.runner.propose_merge(lead.id, work.id, blank_first_line)
+    assert store.get_task(work.id).merge_state is None
+    assert worktree._git(repo, "rev-list", "--count", "HEAD") == "2"
+    await crew.runner.shutdown()
+
+
 async def test_work_that_names_none_of_its_files_isnt_committed(game):
     crew, store, repo, lead, work = game
     crew.runner.handoff(work.id, "Added the player", ["the player script"], "", "")

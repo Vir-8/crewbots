@@ -116,14 +116,21 @@ def test_already_on_reports_a_squash_merge(work):
 def test_message_is_subject_blank_line_body():
     assert merge_message(SUMMARY, "t") == SUMMARY
     assert merge_message(SUMMARY, "t", unreviewed=True) == SUMMARY + "\n\nMerged-without-review: yes"
-    assert merge_message("", "Title", unreviewed=True) == "Title\n\nMerged-without-review: yes"
-    # A subject made from the title is never stripped from the summary.
-    fixation = ("Fixation of the rounding " + "detail " * 12).strip()
-    assert merge_message(fixation, "Fix") == f"Fix\n\n{fixation}"
     assert merge_message("Just a subject", "t") == "Just a subject"
-    sentence = "Fix the update dialog. " + "More detail " * 8
-    assert merge_message(sentence, "t").splitlines()[0] == "Fix the update dialog."
-    assert merge_message(sentence, "t").split("\n\n", 1)[1] == sentence.split(". ", 1)[1].strip()
+
+
+def test_message_without_a_usable_summary_uses_a_title_that_fits_else_a_short_subject_and_never_cuts_anything():
+    assert merge_message("", "Fix  the player", unreviewed=True) == "Fix the player\n\nMerged-without-review: yes"
+    assert merge_message("y" * 73 + "\n\nDetails", "Fix the player") == "Fix the player\n\n" + "y" * 73 + "\n\nDetails"
+    assert merge_message("\nFix the player", "Title") == "Title\n\nFix the player"
+    title = "A long task title with enough words that it cannot possibly fit in a single merge subject line"
+    for summary in ("", "y" * 100 + "\n\nDetails"):
+        message = merge_message(summary, title, unreviewed=True)
+        assert message.splitlines()[0] == "Merge work"
+        assert title in message
+        assert "…" not in message
+    assert merge_message("", title) == f"Merge work\n\n{title}"
+    assert merge_message("x" * 72, "t") == "x" * 72
 
 
 def test_push_card_lists_exactly_what_would_be_sent(push_setup):  # noqa: F811
