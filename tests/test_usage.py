@@ -1,6 +1,9 @@
 """The usage page's numbers: the crew's own use, and where the plans' limits stand."""
 
 import asyncio
+import json
+import os
+import sys
 import time
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -8,7 +11,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from fakes import bot
 
-from crewbots import plans
+from crewbots import models, plans
 from crewbots.plans import parse_claude_usage, parse_codex_limits
 from crewbots.store import Store
 from crewbots.usage import _streaks, summary
@@ -55,6 +58,54 @@ def test_codex_limits_come_from_every_bucket_with_credits_and_resets_as_notes():
     assert parse_codex_limits({"rateLimits": {"primary": {"usedPercent": 3, "windowDurationMins": 1440},
                                               "credits": {"hasCredits": False, "unlimited": True}}}) == {
         "windows": [{"name": "Day", "used_percent": 3.0, "resets_at": None}], "notes": ["Unlimited credits"]}
+
+
+# An app-server that answers `initialize`, then asks something of its own under the same id as crewbots' next
+# request, then gives that request the reply in $REPLY.
+APP_SERVER = """import json, os, sys
+for line in sys.stdin:
+    message = json.loads(line)
+    if message.get("method") == "initialize":
+        print(json.dumps({"id": message["id"], "result": {}}), flush=True)
+    elif "id" in message:
+        print(json.dumps({"id": message["id"], "method": "item/tool/requestUserInput", "params": {}}), flush=True)
+        print(json.dumps({"id": message["id"], **json.loads(os.environ["REPLY"])}), flush=True)
+"""
+
+
+@pytest.fixture
+def codex(tmp_path, monkeypatch):
+    """A fake `codex` on PATH; set its reply with the returned function."""
+    script = tmp_path / "codex"
+    script.write_text(f"#!{sys.executable}\nimport sys\nsys.argv[1:] == ['app-server'] or sys.exit(2)\n{APP_SERVER}")
+    script.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    return lambda reply: monkeypatch.setenv("REPLY", json.dumps(reply))
+
+
+async def test_codexs_limits_are_read_from_its_app_server(codex):
+    codex({"result": {"rateLimits": {"primary": {"usedPercent": 40, "windowDurationMins": 300}}}})
+
+    found = await plans._codex()
+
+    assert found["windows"] == [{"name": "5 hours", "used_percent": 40.0, "resets_at": None}]
+
+
+async def test_an_error_from_codexs_app_server_is_the_plans_error(codex, monkeypatch):
+    monkeypatch.setattr(plans, "_cache", {})
+    monkeypatch.setattr(plans, "_asking", {})
+    codex({"error": {"code": -32600, "message": "not signed in"}})
+
+    found = (await plans.plans(fresh=True))["codex"]
+
+    assert not found["available"] and "not signed in" in found["error"]
+
+
+async def test_codexs_models_are_read_from_its_app_server(codex):
+    codex({"result": {"data": [{"id": "gpt-6", "displayName": "GPT-6", "supportedReasoningEfforts": ["low"]},
+                               {"id": "old", "hidden": True}]}})
+
+    assert [m["id"] for m in await models._codex()] == ["gpt-6"]
 
 
 @pytest.fixture

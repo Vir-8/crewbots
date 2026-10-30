@@ -6,12 +6,9 @@ kept for a while.
 """
 
 import asyncio
-import contextlib
-import json
 import os
 import re
 import shutil
-import signal
 import time
 from typing import Any
 
@@ -40,30 +37,9 @@ async def models(fresh: bool = False) -> dict[str, list[dict[str, Any]]]:
 
 
 async def _codex() -> list[dict[str, Any]]:
-    process = await asyncio.create_subprocess_exec(
-        "codex", "app-server", stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL, limit=16 * 1024 * 1024,  # the model list is one long line
-        start_new_session=True)  # its own process group: the helpers it starts hold its pipes open
-    assert process.stdin and process.stdout
+    from crewbots.backends.codex_app_server import ask_once
 
-    async def ask(request_id: int, method: str, params: Any) -> dict[str, Any]:
-        process.stdin.write((json.dumps({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params})
-                             + "\n").encode())
-        await process.stdin.drain()
-        while line := await process.stdout.readline():
-            message = json.loads(line)
-            if message.get("id") == request_id:
-                return message.get("result") or {}
-        return {}
-
-    try:
-        await ask(1, "initialize", {"clientInfo": {"name": "crewbots", "version": "0"}, "capabilities": None})
-        process.stdin.write(b'{"jsonrpc": "2.0", "method": "initialized"}\n')
-        listed = await ask(2, "model/list", {})
-    finally:
-        with contextlib.suppress(ProcessLookupError):
-            os.killpg(process.pid, signal.SIGKILL)
-        await process.wait()
+    listed = await ask_once("model/list", {})
     return [{
         "id": m["id"], "label": m.get("displayName") or m["id"], "description": m.get("description") or "",
         "efforts": [e.get("reasoningEffort", e) if isinstance(e, dict) else e for e in m.get("supportedReasoningEfforts") or []],

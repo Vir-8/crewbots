@@ -8,11 +8,9 @@ is still served while a fresh one is asked for behind it, and only one ask per C
 
 import asyncio
 import contextlib
-import json
 import os
 import re
 import shutil
-import signal
 import tempfile
 import time
 from datetime import datetime, timedelta
@@ -20,6 +18,7 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from crewbots.backends.base import CLAUDE_BOT_ENV
+from crewbots.backends.codex_app_server import ask_once
 
 TTL_S = 120.0
 # A limit line of Claude Code's /usage: "Current session: 5% used · resets 5:40pm (Asia/Calcutta)".
@@ -144,35 +143,7 @@ def _claude_reset(text: str, zone: str | None, now: datetime | None) -> int | No
 
 
 async def _codex() -> dict[str, Any]:
-    cli = shutil.which("codex")
-    if not cli:
-        raise RuntimeError("Codex isn't installed")
-    process = await asyncio.create_subprocess_exec(
-        cli, "app-server", stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL, limit=16 * 1024 * 1024, start_new_session=True)
-    assert process.stdin and process.stdout
-
-    async def ask(request_id: int, method: str, params: Any) -> dict[str, Any]:
-        process.stdin.write((json.dumps({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params})
-                             + "\n").encode())
-        await process.stdin.drain()
-        while line := await process.stdout.readline():
-            message = json.loads(line)
-            if message.get("id") == request_id:
-                if "error" in message:
-                    raise RuntimeError(message["error"].get("message", "error"))
-                return message.get("result") or {}
-        return {}
-
-    try:
-        await ask(1, "initialize", {"clientInfo": {"name": "crewbots", "version": "0"},
-                                    "capabilities": {"experimentalApi": True, "requestAttestation": False}})
-        process.stdin.write(b'{"jsonrpc": "2.0", "method": "initialized"}\n')
-        limits = await ask(2, "account/rateLimits/read", None)
-    finally:
-        with contextlib.suppress(ProcessLookupError):
-            os.killpg(process.pid, signal.SIGKILL)
-        await process.wait()
+    limits = await ask_once("account/rateLimits/read", None, {"experimentalApi": True, "requestAttestation": False})
     return {"available": True, "error": None, **parse_codex_limits(limits)}
 
 
