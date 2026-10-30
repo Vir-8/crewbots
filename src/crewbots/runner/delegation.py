@@ -1,9 +1,9 @@
 """Threads and delegation: a bot opening a thread, handing a piece of work to a teammate, and results going back up
 when the work is done.
 
-Any bot can delegate; only coordinators add bots and propose work for merging. What keeps delegation from running
-away is checked here, in code: no delegating to yourself, nor back to a bot already in the chain (a circle), a chain at
-most a few delegations deep, a cap on how many tasks one bot has out at once, and the budgets."""
+Any bot can delegate; only the chief adds bots, and only coordinators propose work for merging. What keeps delegation
+from running away is checked here, in code: no delegating to yourself, nor back to a bot already in the chain (a
+circle), a chain at most a few delegations deep, a cap on how many tasks one bot has out at once, and the budgets."""
 
 import logging
 import secrets

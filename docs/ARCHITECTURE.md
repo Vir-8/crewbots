@@ -68,7 +68,7 @@ The prototype starts a CLI process, and its MCP server, for every turn. That cos
 
 Worktrees keep bots from colliding, not from misbehaving. A bot reading a hostile repo could be prompt-injected. The defense is that no single layer has to hold:
 
-1. **Capability-scoped crew tools.** A run's token acts only as its own task. Any bot delegates, within the guards the runner enforces, only coordinators add bots, and there is no tool that merges, pushes or spends.
+1. **Capability-scoped crew tools.** A run's token acts only as its own task. Any bot delegates, within the guards the runner enforces, only the chief adds bots, and there is no tool that merges, pushes or spends.
    - **Outside text is data.** What crewbots passes on from outside comes in `<untrusted source="…">` blocks
      (`prompts.untrusted`): a trigger's pull request title, branch, diff and failed checks, the events a check-in
      reads, and the event a standing intent fires on; every bot is told (crew-tools.md) to read those, and pages it
@@ -110,9 +110,9 @@ Worktrees keep bots from colliding, not from misbehaving. A bot reading a hostil
      the whole run (`permissions.crewbots.network.enabled`), so a Codex card with a list is refused when the crew
      loads, rather than quietly given every host. Checked live on both: off, on, and Claude keeping to a list.
    - **No logins in the shell:** a writing bot's commands run as the user, so with the network on they could sign in
-     as the user: on Codex, `gh api user` answered `Vir-8` and `git ls-remote` over SSH reached a private repo. Every
-     writing bot now gets an environment without them (`backends/credentials.py`): an empty `GH_CONFIG_DIR`, a git
-     config with only the user's name and email, the credential helper list cleared (Apple's git has its own
+     as the user: on Codex, `gh api user` answered with the user's login and `git ls-remote` over SSH reached a
+     private repo. Every writing bot now gets an environment without them (`backends/credentials.py`): an empty
+     `GH_CONFIG_DIR`, a git config with only the user's name and email, the credential helper list cleared (Apple's git has its own
      `osxkeychain` default), an SSH command that offers no key, and no agent. Checked live: `gh` isn't logged in,
      SSH and HTTPS git are refused, and `pip install` still works.
    - **Nothing private is read:** a bot's commands and file tools can read the rest of the disk, but not the paths in
@@ -139,12 +139,12 @@ Nothing is hidden: every layer is a file or a SQLite row you can open, edit or d
 
 1. **Working context (one task).**
    - The CLI session, which manages and compacts its own context window.
-   - crewbots keeps long-lived conversations, such as a standing chat with the chief, in shape (`runner/sessions.py`). Once a turn ends with the conversation past 65% of its context window (from each backend's own count), while the cache is warm:
+   - crewbots keeps long-lived conversations, such as a standing chat with the chief, in shape (`runner/sessions.py`). Once a turn ends with the conversation past 70% of its context window (from each backend's own count), while the cache is warm:
      1. a hidden **flush** turn: the bot keeps the task's state (`update_state`) and writes a few lines for today's log (`flush.md`);
      2. the CLI **compacts** the conversation in place: Claude with `/compact` and the crew's instructions (`compact.md`: ids exact, the user's decisions first, the latest turns word for word), Codex with `thread/compact/start`. If the CLI already compacted as the flush began, it isn't done twice;
      3. the next turn is told its instructions and the task's state again (a `<crew-updates>` block), since a compaction may have summarised them away. A compaction the CLI does on its own, mid-turn, is followed the same way.
 
-     A compaction that fails twice, or keeps almost nothing, carries on in a fresh session that starts from the bot's core memory, notes, last two days of logs, the task's state and the conversation's last eight messages; so does a conversation over 30% full that sat idle more than an hour, once the prompt cache has dropped it, since reading it all back in costs far more. About 50 minutes into such idleness, while the cache is still warm, the bot is flushed ahead of time, so the fresh session loses nothing. Each flush, compaction and fresh start is a quiet line in the thread. A backend that can't compact on request rolls over instead: the bot writes itself a briefing and the next message starts a fresh session from it. Checked live on both CLIs: a conversation grown turn by turn past 65% was flushed and compacted, and kept its codename and pull request. Claude Code's own compaction keeps about 30K tokens in reserve (it compacted at about 70K of a 100K window, about 85% of the default 200K), so 65% leaves it room at the default window. The window is explicit, per bot (`context_window`, 200K by default): Claude Code takes it as `--autocompact`, which also makes `/context` count against it, and Codex compacts at 85% of it (`model_auto_compact_token_limit`) while crewbots measures its usage against the smaller of it and the model's window. Measured against a model's whole window, a 1M-token model rolled over only at about 700K.
+     A compaction that fails twice, or keeps almost nothing, carries on in a fresh session that starts from the bot's core memory, notes, last two days of logs, the task's state and the conversation's last eight messages; so does a conversation over 30% full that sat idle more than an hour, once the prompt cache has dropped it, since reading it all back in costs far more. About 50 minutes into such idleness, while the cache is still warm, the bot is flushed ahead of time, so the fresh session loses nothing. Each flush, compaction and fresh start is a quiet line in the thread. A backend that can't compact on request rolls over instead: the bot writes itself a briefing and the next message starts a fresh session from it. Checked live on both CLIs: a conversation grown turn by turn past the threshold was flushed and compacted, and kept its codename and pull request. Claude Code's own compaction keeps about 30K tokens in reserve (it compacted at about 70K of a 100K window). The window is per bot (`context_window`): `auto`, the default, is the model's whole window, and a number of tokens from 100K to 1M sets it. A chat or group chat holds at most 170K whatever the card says, since it's woken often and each turn reads it all back; other tasks get the bot's window. Claude Code takes an explicit window as `--autocompact`, which also makes `/context` count against it, and Codex compacts at 85% of it (`model_auto_compact_token_limit`) while crewbots measures its usage against the smaller of it and the model's window. Measured against a model's whole window, a 1M-token model rolled over only at about 700K.
 2. **Bot memory (one bot, across tasks).**
    - `crew/memory/<bot>/`: a short `MEMORY.md` index plus one note per fact (who you are, preferences, decisions, pitfalls), each with a date and its source task.
    - A `remember(title, body, shared?)` tool writes notes (`shared` puts them in `crew/memory/crew/`, for every bot); a `forget` tool and you can remove them.
@@ -263,7 +263,7 @@ Each step leaves the system working.
 6. **Memory** (done).
    - **Notes:** `remember`, `forget` and `recall` are crew tools on both backends. Notes are Markdown files with frontmatter (title, dates, source task), `MEMORY.md` is regenerated from them, and a note edited by hand is what the bot sees next run.
    - **Recall:** an FTS5 table (bm25, porter stemming) over messages, replies, handoffs, reviews, questions and task titles, filled as events arrive and backfilled the first time an older crew opens. It matches all words first, then any, and leaves out the asking task.
-   - **Rollover:** as in decision 6, at 70%. The briefing turn is hidden from the task's result, and is skipped when the bot writes nothing.
+   - **Compaction:** as in decision 6, at 70%: the conversation is flushed and compacted, and only a backend that can't compact rolls over with a briefing. The briefing turn is hidden from the task's result, and is skipped when the bot writes nothing.
    - **Checked live:**
      - a Claude reviewer remembered a crew note
      - a Codex critic in a new task answered from that note, with no tool call
@@ -298,7 +298,7 @@ Each step leaves the system working.
 ## Chats, threads and group chats
 
 - **A chat** is a bot's one ongoing conversation with the user: a task of kind `chat`, made the first time it's
-  needed, that never ends. Its length is handled by the memory work: notes, and a rollover briefing at 70%.
+  needed, that never ends. Its length is handled by the memory work: notes, and a flush and compaction at 70%.
 - **A thread** is work, opened with `start_thread` by any bot (or `delegate`, for a teammate) under the chat, seat
   or thread it's in. Results come back up as before. Budgets and "Go ahead anyway" apply per thread, the outermost
   thread above a task, never to a whole chat.
@@ -347,7 +347,7 @@ Each step leaves the system working.
   it was for, and a project file that still says `branch` is read as `in_place`. Unity projects (`is_unity`: `ProjectSettings/ProjectVersion.txt`)
   default to `in_place`: Unity opens a project in one Editor only (`Temp/UnityLockfile`), so that Editor sees every
   engineer's work, and the lead splits the work by files. The Projects page sets it. A worktree shares the
-  repository's history but writes out every tracked file (Sky Islands: 3.4 GB of 24 GB, without its 7.6 GB `Library/`).
+  repository's history but writes out every tracked file (a 24 GB Unity project: 3.4 GB, without its 7.6 GB `Library/`).
   Unity work isn't copied for review, whichever way it runs: its checks run in an Editor, not a copy. In-place work
   is committed rather than merged (`runner/in_place.py`): `propose_merge` and the merge commit only the files its
   handoff lists as output, with their .meta files and new folders' (`git status -uall -- <specs>`, then `git commit
@@ -456,10 +456,10 @@ Each step leaves the system working.
   which env and header names a server has, never their values.
 - **Skills** come from the crew's `skills/` and the user's global folders; a global one that can't be read, or one a
   CLI keeps for itself (Codex's `.system`), is left out, and the crew's own win a clash of names.
-- **Delegation** is any bot's: it hands a piece of work to a teammate, which runs it as itself, with its own access. The runner stops it from running away (`runner/delegation.py`): nothing to yourself, to a coordinator or back up the chain, three delegations deep at most, four unfinished delegated tasks per bot, and nothing past a budget.
-- **`add_bot`**, for coordinators only: it writes the role card through the same code as the app, checks the crew
-  still loads (or takes the card back), and reloads the crew. The new bot has what the coordinator gives it, except
-  full access (the user's to give) and network when the coordinator has none. There is no tool to remove or edit a
+- **Delegation** is any bot's: it hands a piece of work to a teammate, which runs it as itself, with its own access. The runner stops it from running away (`runner/delegation.py`): nothing to yourself, to the chief or back up the chain, three delegations deep at most, four unfinished delegated tasks per bot, and nothing past a budget.
+- **`add_bot`**, for the chief only: it writes the role card through the same code as the app, checks the crew
+  still loads (or takes the card back), and reloads the crew. The new bot has what the chief gives it, except full
+  access (the user's to give) and network when the chief has none. There is no tool to remove or edit a
   bot.
 - **Resizing panes** (`Resizer.tsx`): each pane's width is a CSS variable on the grid it's part of, set straight on
   the element while dragging (so a re-render mid-drag can't undo it) and kept in localStorage when the drag ends. The
@@ -573,7 +573,7 @@ Checked on Claude Code 2.1.310 and codex-cli 0.164.0 (26 October 2026), before b
 
 ## Learned polishing the app
 
-- The Intel tools here came from an Intel Homebrew in `/usr/local`, ahead of `/opt/homebrew` in PATH. Installing an
+- Intel tools can come from an Intel Homebrew in `/usr/local` ahead of `/opt/homebrew` in PATH. Installing an
   Apple silicon node isn't enough: `npm` is a script that runs whichever `node` comes first, so it kept installing
   Intel binaries (codex picks its native binary by node's architecture) until the Apple silicon node came first.
 - Vite's dev server hangs at start on node 26; node 22 runs it. `vite build` works on both.
@@ -613,5 +613,5 @@ Checked on Claude Code 2.1.310 and codex-cli 0.164.0 (26 October 2026), before b
 
 - **Multiple crews:** whether crews share bots or memory (default: no, a crew is self-contained).
 - **The phone:** a Tauri 2 iOS build over the local network, paired by QR with a pinned certificate and revocable device tokens, through a second listener that's off by default ([PHONE.md](PHONE.md)). Designed, not built: it waits on a go-ahead for that listener and on signing the app.
-- **Evals for crew behavior:** a suite in the style of the refund harness's evals. Does the chief delegate instead of doing the work? Does a reviewer fail planted bugs? Scored in code against fake and real runs.
+- **Evals for crew behavior:** a suite of scored scenarios. Does the chief delegate instead of doing the work? Does a reviewer fail planted bugs? Scored in code against fake and real runs.
 - **Telemetry:** OpenTelemetry traces per task and turn, local only, for finding slow or expensive steps.

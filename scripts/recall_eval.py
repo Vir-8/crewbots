@@ -3,7 +3,7 @@ queries, each with the task it should find.
 
 The built-in set is a crew's worth of distinctive tasks among a few hundred noisy ones that share their words, with
 queries of every kind bots ask: words, paraphrases, exact and partial ids, file and code names, error text, and
-decisions that changed since. `--from-log` writes the queries bots really asked (the recall log) to a file to label,
+decisions that changed since. `--from-log` prints the queries bots really asked (the recall log) as cases to label,
 for an evaluation from real use.
 
     uv run scripts/recall_eval.py                  # the built-in set
@@ -158,7 +158,7 @@ def evaluate(runner: Runner, ids: dict[str, str], cases: list[tuple[str, str]]) 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--cases", type=Path, help="a labelled set of queries for the built-in crew")
-    parser.add_argument("--from-log", type=Path, help="write the queries in this database's recall log as cases to label")
+    parser.add_argument("--from-log", type=Path, help="print the queries in this database's recall log as cases to label")
     args = parser.parse_args()
     if args.from_log:
         store = Store(args.from_log)

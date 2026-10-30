@@ -1,4 +1,11 @@
-"""Manual daemon-path smoke check; never run by pytest. Needs the Vite preview on :5173."""
+"""Manual daemon-path smoke check; never run by pytest. Needs the Vite preview on :5173.
+
+Run it from an unsandboxed terminal: it calls the daemon's browser tools with throwaway state and saves both themes'
+screenshots and the session's URL and title under browser-evidence/ in the checkout. It logs its interpreter, the
+preview's resolved addresses and its progress. On failure it saves chrome.stderr.log, proxy.json (with the actual
+upstream address) and cdp.json (commands, attached sessions and paused requests) before cleaning up Chrome. If
+different previews listen on IPv4 and IPv6, pass --url http://127.0.0.1:5173 or --url 'http://[::1]:5173'.
+"""
 
 import argparse
 import asyncio

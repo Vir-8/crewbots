@@ -36,7 +36,7 @@ We don't write the coding loop ourselves. Claude Code (`claude -p --output-forma
 - **Orchestration tools** come from an MCP server that crewbots hosts. Each CLI is started with it (`--mcp-config` for Claude, `-c mcp_servers.*` for Codex), so any bot on either backend can call `delegate_task`, `message_bot`, `list_tasks`, `request_approval` and `remember`.
 - **Rules** become CLI flags (permission mode, allowed tools, sandbox mode). Anything that needs your sign-off goes through `request_approval`, which blocks until you answer in the app.
 
-This is the same split as the refund harness: the model can only *request*, and code decides what actually happens.
+The model can only *request*; code decides what actually happens.
 
 ## Pieces
 

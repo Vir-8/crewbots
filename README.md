@@ -58,12 +58,13 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
   - Around them: a short `CORE.md` pinned in every session, a daily log (a line for each finished task; a new session starts with the last two days), and each task's state, which the bot keeps with `update_state` and a fresh session of the task starts from. `recall` searches the logs and notes too.
   - Overnight, while the crew is idle, each bot consolidates its memory: it reads what it logged and noted, and crewbots applies what it decides (add, update, supersede, delete or share notes, and rewrite `CORE.md`), then commits the memory folder, its own git repository, so any change can be undone. `crewbots memory consolidate` runs it now.
   - `recall` searches the whole record with SQLite FTS5, and so does `GET /v1/search?q=`.
-  - A conversation that fills 65% of its context window is kept in shape at the end of a turn: the bot sets down the
+  - A conversation that fills 70% of its context window is kept in shape at the end of a turn: the bot sets down the
     task's state and a few lines for today's log, then the CLI compacts the conversation in place, and the next turn
     is told its instructions and state again. One that sat idle over an hour, past the prompt cache, carries on in a
     fresh session from memory instead (flushed ahead of time while the cache was warm), as does one that couldn't
-    be compacted. The window is the role card's `context_window` (200K tokens unless it says otherwise, up to `1m`,
-    or `auto` for the model's whole window): the CLI compacts within it too. `/status` shows how full it is.
+    be compacted. The window is the role card's `context_window`: `auto`, the default, is the model's whole window,
+    or it can name 100K to `1m` tokens. A chat or group chat holds at most 170K, whatever the card says. The CLI
+    compacts within the window too. `/status` shows how full it is.
   - Bots never use the CLIs' own memory: Claude Code's auto memory and Codex's memories are off for every bot, so
     nothing a bot learns lands beside your own Claude or Codex memory.
 - **Routines** are work the crew starts on its own: Markdown files in `routines/`, each naming a bot, a goal, and when.
@@ -132,10 +133,10 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
     `~/.codex/skills`), by name and description, and reads a skill's `SKILL.md` when a task matches it, the way Claude
     Code does. Those synced from claude.ai (documents, slides, your morning brief) reach only a bot whose card names
     them. A role card's `skills:` can name only some, `all`, or `none`: each one listed costs every turn a line.
-  - **Adding bots:** the chief (any bot that coordinates) can add a bot when you ask it to (`add_bot`), with a role
-    card it writes and whatever it chooses to give: either access short of full, delegation, any of the crew's MCP
-    servers (all of them unless it names some), and network unless the chief has none itself. No tool removes or
-    changes a bot: that's yours, in the app.
+  - **Adding bots:** the chief can add a bot when you ask it to (`add_bot`), with a role card it writes and whatever
+    it chooses to give: either access short of full, delegation, any of the crew's MCP servers (all of them unless it
+    names some), and network unless the chief has none itself. No tool removes or changes a bot: that's yours, in the
+    app.
   - Each active task keeps its CLI running between turns, so follow-ups skip start-up. Idle sessions close after 10 minutes, and `serve --no-sessions` turns this off.
   - `ANTHROPIC_API_KEY` is hidden from Claude by default, so a run stays on your subscription.
 
@@ -342,28 +343,21 @@ profiles whose recorded process has exited. It logs and leaves unverifiable or o
 A custom profile root, including the manual smoke check, never runs the orphan sweep. Chrome must be installed at
 `/Applications/Google Chrome.app`; no browser package is downloaded.
 
-CDP uses `--remote-debugging-pipe` on inherited file descriptors 3 and 4. There is no debugging TCP listener for
-bots or other local clients to connect to. The pipe transport uses Python's standard library; no dependency was added.
+CDP uses `--remote-debugging-pipe` on inherited file descriptors 3 and 4, so there is no debugging TCP listener for
+bots or other local clients to connect to.
 
 Localhost is always reachable. Other hosts follow the bot's network setting (including host lists and the user's
 network grants). Each task's proxy requires its own random credential, supplied by the daemon only for that
 proxy's CDP authentication challenge. Bots never receive the credential, and it isn't forwarded to websites or
 included in diagnostics. The proxy checks connections, including WebSockets; interception checks redirects and
 subresources. A changed network policy closes the old context before accepting or refusing the next action.
-Downloads and file uploads are disabled; popups, workers and out-of-process frames are closed in this first
-version. Child targets that cannot be closed remain paused; safely resuming and inspecting out-of-process frames
-and workers is left for the later browser pane. Use the page's own tab for UI checks. Browser actions are logged
-and do not grant permission to send, publish, spend or change accounts. The user's approvals still apply.
+Downloads and file uploads are disabled, and popups, workers and out-of-process frames are closed; a child target
+that can't be closed stays paused. Use the page's own tab for UI checks. Browser actions are logged and do not grant
+permission to send, publish, spend or change accounts. The user's approvals still apply.
 
-The session registry in `browser.py` holds each task's context, CDP session, URL and title. A later desktop pane can
-use those sessions for a screencast and user input; this version adds no pane or live browser API. For a manual
-check without restarting the daemon, start `.claude/launch.json`'s `app-preview` and run
-`uv run python scripts/check-browser.py` from an unsandboxed terminal. It calls the daemon's tool implementation
-with throwaway state, and saves both themes and session details under `browser-evidence/` in the checkout.
-The script logs its interpreter, resolved preview addresses and progress. On failure it preserves `chrome.stderr.log`,
-`proxy.json` (including the actual upstream address) and `cdp.json` (commands, attached sessions and paused requests)
-before cleaning up Chrome. If different previews listen on IPv4 and IPv6, pass `--url http://127.0.0.1:5173` or
-`--url 'http://[::1]:5173'` to select one explicitly.
+For a manual check without restarting the daemon, start `.claude/launch.json`'s `app-preview` and run
+`uv run python scripts/check-browser.py` from an unsandboxed terminal. Its docstring says what it saves and how to
+pick IPv4 or IPv6.
 
 ### WebKit check
 
@@ -410,7 +404,9 @@ No test calls a model, and none touches your own folders: each test runs with a 
 ```
 src/crewbots/
   events.py          the shared event stream
-  backends/          claude_cli, codex_cli, and the subprocess runner they share
+  backends/          claude_sdk (Claude Code through the Agent SDK), codex_app_server (Codex's app-server, started
+                     by codex_cli.CodexCLI), antigravity over ACP, and claude_cli and codex_cli.CodexExec as one-shot
+                     fallbacks
   crew.py            role cards and team files → bots and their instructions
   memory.py          bot and crew notes, as files
   routines.py        routine files, cron schedules and starter routines
@@ -427,7 +423,8 @@ src/crewbots/
     routes/          one module per area: tasks, chats, bots, crew, routines, mcp, reviews, usage, events, ...
     schemas/         the models, by area, which the app's types are generated from
     daemon.py        serve(): the server, its lifespan, daemon.json
-  mcp_server.py      the crewbots tools each bot gets (handoff, escalate, review; delegate, tasks, message, propose_merge)
+  crew_tools.py      the crew tools, defined once (handoff, escalate, review; delegate, tasks, message, propose_merge)
+  mcp_server.py      the same tools over MCP stdio, for Codex
   worktree.py        one git worktree per task
   paths.py           where crewbots keeps things, worked out when asked
   prompts.py         the prompts, read from prompts/*.md, or the crew's own copies

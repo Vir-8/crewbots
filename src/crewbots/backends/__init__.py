@@ -1,6 +1,6 @@
 """Coding CLIs that bots run on. `claude` is Claude Code through the Agent SDK and `codex` is Codex through its
-app-server: both answer to crewbots' policy. `claude-cli` (plain `claude -p`) and `codex-exec` (one-shot `codex exec`)
-are kept as fallbacks."""
+app-server: both answer to crewbots' policy. `antigravity` is an Antigravity subscription through Google's official ACP
+runtime. `claude-cli` (plain `claude -p`) and `codex-exec` (one-shot `codex exec`) are kept as fallbacks."""
 
 from crewbots.backends.antigravity import Antigravity
 from crewbots.backends.base import Access, Backend, McpServer, RunSpec
