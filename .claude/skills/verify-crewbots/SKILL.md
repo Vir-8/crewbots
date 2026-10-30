@@ -8,8 +8,8 @@ description: Prove a crewbots change works in what the user runs (the app's scre
 Tests prove units. This proves the change itself, in the running thing, and leaves evidence someone else can check
 without taking your word for it. Never hand back "tests pass" alone for a change someone can see or call.
 
-`scripts/verify` does the starting and stopping. The features, and how to reach and drive each, are in
-[features/](features/README.md).
+`scripts/verify` does the starting and stopping. The features, and how to reach and drive each, are in the map,
+[`verify/`](../../../verify/README.md) at the repo's root.
 
 ## Launch
 
@@ -22,7 +22,7 @@ Start only what the change needs, always in the background through `scripts/veri
 - **The daemon:** `scripts/verify daemon` prints `url=` (ending in `/v1`), `token=`, `home=`, `pid=` and `log=`. It's a
   crew of its own, a starter crew, in a temp HOME, so nothing of the user's is touched. Its bots can't reach a model:
   use it for routes, rooms, tasks and the store. A live check with real models is the user's or the lead's to run
-  (see [features/daemon.md](features/daemon.md)).
+  (see [verify/daemon.md](../../../verify/daemon.md)).
 - **WebKit:** the real app is a WKWebView, and some bugs exist only there (hover kept on a moved element, scroll
   clamped mid-update). `scripts/verify webkit URL --click SELECTOR --js FILE` opens the page in WebKit, clicks with real
   mouse events, runs your script, and prints what it returns as JSON. It opens a window on screen for a few seconds.
@@ -74,6 +74,7 @@ you started. Keep the evidence files (screenshots, scripts) where your handoff p
 ## Keeping this skill true
 
 When a feature's handles, journeys or gotchas differ from its file, fix the file in the same change. A new feature gets
-a file in [features/](features/README.md). The crew's verification routine runs `maintain-verification` over it: every
-feature read from source and driven in the preview or a scratch daemon, drift fixed, regressions reported. Its last
-walk is noted at the top of [features/README.md](features/README.md).
+a file in [`verify/`](../../../verify/README.md). The crew's verification routine runs `maintain-verification` over it:
+every feature read from source and driven in the preview or a scratch daemon, drift fixed, regressions reported. Its
+last walk is noted at the top of [verify/README.md](../../../verify/README.md). The map lives outside `.claude/`
+because Claude Code keeps bots from writing there.

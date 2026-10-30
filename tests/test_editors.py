@@ -38,6 +38,14 @@ def test_the_editor_for_a_project_and_the_folders_editors_have_open(tmp_path, mo
                                Path("/w/Sky Islands-1/t_1").resolve(): 103}  # not its import workers
 
 
+def test_where_processes_cant_be_listed_there_are_no_editors(monkeypatch):
+    def sandboxed(*args, **kwargs):  # a bot's scratch daemon, in a sandbox that doesn't allow ps
+        raise PermissionError(1, "Operation not permitted", "ps")
+
+    monkeypatch.setattr(unity.subprocess, "run", sandboxed)
+    assert unity.editors() == {}
+
+
 @pytest.fixture
 def unity_crew(store, tmp_path, monkeypatch):
     """A Unity project, an engineer's task in a worktree of it, and Unity as a dict of open Editors."""

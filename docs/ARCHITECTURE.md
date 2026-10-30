@@ -363,8 +363,8 @@ Each step leaves the system working.
   Editors on this crew's own tasks' worktrees count or are closed (`store.tasks_in`): another crew's, or one opened
   by hand, is left alone.
 - **Verification maps** (skills `create-verification` and `maintain-verification`, routine `verification`). Each
-  project keeps its map in `verify/` (README + a file per feature, pstack's shape), or in its own verify skill's
-  `features/` (crewbots). The weekday routine has the lead hand each project's pass to an engineer, one at a time
+  project keeps its map in `verify/` (README + a file per feature, pstack's shape; crewbots' own too), or in its own
+  verify skill in `.agents/skills/` (never in `.claude/`, which Claude Code keeps bots from writing). The weekday routine has the lead hand each project's pass to an engineer, one at a time
   for projects sharing an Editor; a pass skips a project whose commit matches the map's "Last walked", and sorts
   findings into drift (fixed in the map), harness gaps and regressions (reported, handed out as new work).
 - **Excuse comments** (`comments.py`): `handoff` refuses code work whose added lines (the worktree's diff, or in

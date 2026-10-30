@@ -44,7 +44,12 @@ def editor_app(folder: Path) -> Path | None:
 
 
 def _processes() -> str:
-    return subprocess.run(["ps", "-axo", "pid=,args="], capture_output=True, text=True).stdout
+    """Every process with its command line, or none where they can't be listed: in a sandbox, such as a bot's own
+    scratch daemon, `ps` isn't allowed, and there are no Editors of its to find."""
+    try:
+        return subprocess.run(["ps", "-axo", "pid=,args="], capture_output=True, text=True).stdout
+    except OSError:
+        return ""
 
 
 def editors() -> dict[Path, int]:

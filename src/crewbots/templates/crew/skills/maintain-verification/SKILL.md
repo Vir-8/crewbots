@@ -22,14 +22,14 @@ End with exactly one, and say which:
 ## What you may change
 
 Only the map: `verify/` at the project's root, or the project's own verify skill if it keeps one
-(`.agents/skills/verify*/SKILL.md` or `.claude/skills/verify*/`, as crewbots does). Never the project's code. A
+(`.agents/skills/verify*/SKILL.md`). Never the project's code. A
 behaviour the map describes that the project no longer has is either drift (fix the map) or a regression (report it,
 and leave the map saying what should happen).
 
 ## The pass
 
 0. **Locate, and skip if nothing changed.** Find the map: `verify/README.md`, or the project's own verify skill
-   (`.agents/skills/verify*/SKILL.md` or `.claude/skills/verify*/`, with its `features/README.md` if it has one).
+   (`.agents/skills/verify*/SKILL.md`, with its `features/README.md` if it has one).
    None: stop and say the project needs `create-verification`. Read its "Last walked" line (none yet: this pass adds
    it): if it names the commit the project is on now (`git log -1 --format=%H`) and no uncommitted work touches the
    features, the outcome is **unchanged**.
