@@ -52,6 +52,14 @@ def routes(c: Context) -> APIRouter:
             raise HTTPException(422, str(e)) from None
         return {"content": content}
 
+    @v1.post("/bot/webkit")
+    async def bot_webkit(request: Request, body: dict[str, Any]):
+        try:
+            text = await CrewTools(runner, request.state.task.id, False).call("webkit_check", body)
+        except ToolRefused as e:
+            raise HTTPException(422, str(e)) from None
+        return {"text": text}
+
     @v1.post("/bot/delegate", status_code=201)
     async def bot_delegate(request: Request, body: Delegation):
         child = runner.delegate(request.state.task.id, body.bot, body.goal, project=body.project,

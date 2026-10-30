@@ -16,6 +16,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ImageContent, TextContent
 
+from crewbots import webkit
 from crewbots.crew_tools import (
     SPECS,
     asked_text,
@@ -52,8 +53,8 @@ def build_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = F
 def _crew_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = False) -> MCPServer:
     server = MCPServer(name="crewbots", instructions=INSTRUCTIONS)
 
-    def call(method: str, path: str, body: dict[str, Any] | None = None) -> Any:
-        response = client.request(method, path, json=body)
+    def call(method: str, path: str, body: dict[str, Any] | None = None, **options: Any) -> Any:
+        response = client.request(method, path, json=body, **options)
         if response.status_code >= 400:
             try:
                 detail = response.json().get("detail", response.text)
@@ -91,6 +92,14 @@ def _crew_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = F
     @server.tool(description=describe("browser_console"))
     def browser_console(clear: bool = False) -> list[TextContent | ImageContent]:
         return browser("console", {"clear": clear})
+
+    @server.tool(description=describe("webkit_check"))
+    def webkit_check(url: str, click: str | None = None, setup: str | None = None, js: str | None = None,
+                     wait: float | None = None, width: int | None = None, height: int | None = None) -> str:
+        args = {"url": url, "click": click, "setup": setup, "js": js, "wait": wait, "width": width, "height": height}
+        # Long enough for the first check, which builds the helper too
+        limit = webkit.BUILD_TIMEOUT_S + webkit.MAX_WAIT_S + webkit.TIMEOUT_S + 30
+        return call("POST", "/bot/webkit", {k: v for k, v in args.items() if v is not None}, timeout=limit)["text"]
 
     @server.tool(description=describe("handoff"))
     def handoff(done: str, output: list[str] | str | None = None, open: str = "", needs: str = "",

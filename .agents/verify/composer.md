@@ -23,6 +23,7 @@ At the bottom of every chat, group chat and thread panel.
   preview it stays 0 as the box goes 26px → 47 → 91 → 156 → 240px (offsetHeight, one to ten lines) and stops at 240.
 
 ## Gotchas
-- **Check scrolling and sizing in WebKit too** (`scripts/verify webkit`). On 2026-10-29 a box measured by setting it to
-  `auto` pushed messages under it in WebKit only, one key at a time. Chromium never showed it.
+- **Check scrolling and sizing in WebKit too** (`webkit_check`, or `scripts/verify webkit` outside a sandbox). On
+  2026-10-29 a box measured by setting it to `auto` pushed messages under it in WebKit only, one key at a time.
+  Chromium never showed it.
 - The mic can't be checked in the preview or a sandbox. Say so rather than claiming it works.

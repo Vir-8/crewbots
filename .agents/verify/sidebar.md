@@ -27,4 +27,4 @@ Always on the left.
 ## Gotchas
 - **Toggles that move when clicked:** WebKit keeps them `:hover` until the pointer moves. A toggle's on state must not
   be a class that React rewrites on the same click (it drops `settled`). Use `aria-pressed`, and check with
-  `scripts/verify webkit --click`.
+  `webkit_check(url, click=...)` (`scripts/verify webkit --click` outside a sandbox).

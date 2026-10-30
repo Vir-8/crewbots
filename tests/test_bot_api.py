@@ -275,7 +275,7 @@ async def test_workers_delegate_but_only_coordinators_add_bots_and_propose_merge
                       "update_state", "remind_on",
                       "propose_routine", "share", "write_page", "edit_page", "set_name",
                       "ask_permission", "browser_open", "browser_screenshot", "browser_click",
-                      "browser_type", "browser_evaluate", "browser_console", "open_unity_editor"}
+                      "browser_type", "browser_evaluate", "browser_console", "webkit_check", "open_unity_editor"}
     assert coordinator == worker | {"propose_merge", "withdraw_merge", "drop_task", "next_check", "room_status",
                                     "sweep_worktrees"}
     assert chief == coordinator | {"add_bot", "propose_push", "propose_replace_main", "tell_user"}
@@ -296,7 +296,7 @@ async def test_each_task_is_offered_the_tools_for_what_it_is(crew_app):
     assert {"propose_routine", "remind_on"} <= chat & seat and not {"propose_routine", "remind_on"} & (thread | review)
     assert "review" in review and "review" not in thread
     assert not {"handoff", "delegate", "start_thread", "open_group", "write_page"} & review
-    assert {"recall", "remember", "escalate", "share", "browser_open"} <= chat & seat & thread & review
+    assert {"recall", "remember", "escalate", "share", "browser_open", "webkit_check"} <= chat & seat & thread & review
 
 
 def test_a_verdict_from_a_task_that_is_not_a_review_is_refused_with_a_reason(crew_app):
