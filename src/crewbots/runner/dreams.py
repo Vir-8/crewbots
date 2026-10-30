@@ -13,7 +13,7 @@ from crewbots import prompts
 from crewbots.backends import Access, RunSpec
 from crewbots.crew import Bot
 from crewbots.events import Done, Usage
-from crewbots.memory import CREW_SCOPE, MemoryError
+from crewbots.memory import CREW_SCOPE, MemoryError, Note
 from crewbots.runner.common import UnknownBot, _plan, _usage_data
 from crewbots.store import Status, Task
 
@@ -89,11 +89,10 @@ class Dreams:
         others = "\n".join(f"- {other}/{n.name}: {n.title} — {n.gist}" for other in self.crew.bots if other != bot.name
                            for n in memory.notes(other)) or "(none)"
         logs = memory.logs_since(bot.name, since)
-        written = "\n\n".join(f"## {n.name}\n\n{n.body}" for n in full) or "(none)"
         return prompts.text(
             "dream", self.crew.home, bot=f"{bot.label}, the {bot.title}", core=memory.core(bot.name) or "(none yet)",
-            index=index(notes), since=since, notes=written[-MATERIAL_CHARS // 2:], logs=logs[-MATERIAL_CHARS // 2:] or "(none)",
-            crew=index(memory.notes(CREW_SCOPE)), others=others,
+            index=index(notes), since=since, notes=_newest(full, MATERIAL_CHARS // 2),
+            logs=logs[-MATERIAL_CHARS // 2:] or "(none)", crew=index(memory.notes(CREW_SCOPE)), others=others,
             weekly=prompts.text("dream-weekly", self.crew.home) if weekly else "")
 
     async def _dream_call(self, task: Task, bot: Bot, materials: str, weekly: bool) -> tuple[dict[str, Any], str | None]:
@@ -149,3 +148,17 @@ class Dreams:
         counts = ", ".join(f"{n} {kind}" for kind, n in done.items()) or "no note changed"
         text = f"{reply.get('summary') or 'Consolidated.'} ({counts}{', CORE.md rewritten' if core else ''})"
         return {"text": text, "counts": done, "core": bool(core), "skipped": skipped}
+
+
+def _newest(notes: list[Note], budget: int) -> str:
+    """As many whole notes as fit in `budget` characters, from the newest (the first); only a newest note longer than
+    that is cut."""
+    parts: list[str] = []
+    used = 0
+    for n in notes:
+        part = f"## {n.name}\n\n{n.body}"
+        if parts and used + len(part) > budget:
+            break
+        parts.append(part[:budget])
+        used += len(part) + 2
+    return "\n\n".join(parts) or "(none)"

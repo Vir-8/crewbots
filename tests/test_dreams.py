@@ -2,6 +2,7 @@
 memory folder; the scheduler runs it once a night, one bot at a time, when the crew is idle with room in its plan."""
 
 import json
+import re
 import subprocess
 import time
 from datetime import datetime, timedelta
@@ -72,6 +73,19 @@ def test_a_superseded_note_stays_but_drops_out_and_a_promoted_one_moves_to_the_c
     assert "user-likes-short-replies" not in [n.name for n in memory.notes("engineer")]
 
 
+def test_a_note_written_by_hand_can_be_superseded(memory, tmp_path):
+    notes = tmp_path / "memory" / "engineer" / "notes"
+    (notes / "bare.md").write_text("just a body the user wrote\n")
+    dashes = memory.remember("engineer", "Dashes", "before\n---\nafter", "t_1")
+
+    bare = memory.supersede("engineer", "bare", "uses-pnpm")
+    dashes = memory.supersede("engineer", "dashes", "uses-pnpm")
+
+    assert bare.superseded_by == "uses-pnpm" and bare.body == "just a body the user wrote"
+    assert dashes.superseded_by == "uses-pnpm" and dashes.body == "before\n---\nafter"
+    assert "valid_from:" in dashes.path.read_text() and dashes.title == "Dashes"
+
+
 def test_the_memory_folder_is_its_own_repository_with_a_commit_per_change(memory, tmp_path):
     first = memory.commit("Consolidated engineer's memory")
     assert first and memory.commit("nothing new") is None
@@ -115,6 +129,19 @@ async def test_a_reply_that_isnt_json_changes_nothing(store, tmp_path, memory):
     await wait_until(lambda: task.id not in runner.running())
     assert store.get_task(task.id).status is Status.FAILED and "no JSON" in store.get_task(task.id).error
     assert len(memory.notes("engineer")) == 4 and memory.core("engineer") is None
+
+
+async def test_a_weekly_pass_over_too_many_notes_sends_the_newest_whole(store, tmp_path):
+    memory = Memory(tmp_path)
+    for title, day in (("Oldest", "2026-10-01"), ("Middle", "2026-10-15"), ("Newest", "2026-10-29")):
+        path = memory.remember("engineer", title, title[0] * 12_000, "t_1").path
+        path.write_text(re.sub(r"(created|updated): .*", rf"\1: '{day}'", path.read_text()))
+    runner, backend = runner_for(store, tmp_path, answering({}))
+    task = runner.dream("engineer", weekly=True)
+    await wait_until(lambda: task.id not in runner.running())
+
+    prompt = backend.specs[0].prompt
+    assert f"## newest\n\n{'N' * 12_000}\n\n## middle\n\n{'M' * 12_000}" in prompt and "## oldest" not in prompt
 
 
 async def test_it_runs_once_a_night_for_a_bot_with_something_new_when_the_crew_is_idle(store, tmp_path, memory):
