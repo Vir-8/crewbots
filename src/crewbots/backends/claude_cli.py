@@ -36,10 +36,16 @@ def shell(access: Access, write_dirs: Sequence[Path] = ()) -> dict[str, Any] | N
     return READ_SANDBOX if access is Access.READ_ONLY and not write_dirs else None
 
 
-def private_rules(extra: Sequence[Path] = ()) -> list[str]:
-    """Claude Code's deny rules for the private paths (backends/credentials.py), as the files they are or the folders
-    they might be. Its file tools obey them, and its sandbox keeps commands out of the same paths."""
-    return [rule for path in (*private_paths(), *extra) for rule in (f"Read(/{path})", f"Read(/{path}/**)")]
+def make_sandbox_temp() -> None:
+    """Made before each sandboxed run, since tools needing a temp folder fail while it's missing. Private, as Claude
+    Code makes it."""
+    SANDBOX_TEMP.mkdir(mode=0o700, exist_ok=True)
+
+
+def read_rules(paths: Sequence[Path]) -> list[str]:
+    """Claude Code's deny rules for these paths, as the files they are or the folders they might be. Its file tools
+    obey them, even on full access, and its sandbox keeps commands out of the same paths."""
+    return [rule for path in paths for rule in (f"Read(/{path})", f"Read(/{path}/**)")]
 
 
 # No "Co-Authored-By: Claude" trailer on commits, nor a "Generated with" line on pull requests. `attribution` is the
@@ -50,13 +56,15 @@ NO_ATTRIBUTION: dict[str, Any] = {"includeCoAuthoredBy": False, "attribution": {
 
 def settings(access: Access, write_dirs: Sequence[Path] = (), deny_read: Sequence[Path] = (),
              works_in: Sequence[Path] = ()) -> dict[str, Any] | None:
-    """What a bot that isn't on full access gets on top of the repo's settings: the private paths denied, and the
-    folders the user let it write in, for this task, allowed to its file tools (and so to its sandbox's commands), with
-    a writing bot's package caches. A read-only bot's shell is denied the folders it works in (`works_in`: its working
-    folder and those added), which the sandbox would otherwise let commands write in."""
+    """What a bot gets on top of the repo's settings. Short of full access: the private paths (backends/credentials.py)
+    and `deny_read` denied, and the folders the user let it write in, for this task, allowed to its file tools (and so
+    to its sandbox's commands), with a writing bot's package caches. A read-only bot's shell is denied the folders it
+    works in (`works_in`: its working folder and those added), which the sandbox would otherwise let commands write
+    in. On full access, only `deny_read` (other bots' working state), and only to its file tools: its shell has no
+    sandbox."""
     if access is Access.FULL:
-        return NO_ATTRIBUTION
-    permissions: dict[str, list[str]] = {"deny": private_rules(deny_read)}
+        return {"permissions": {"deny": read_rules(deny_read)}, **NO_ATTRIBUTION} if deny_read else NO_ATTRIBUTION
+    permissions: dict[str, list[str]] = {"deny": read_rules([*private_paths(), *deny_read])}
     if shell(access, write_dirs) is READ_SANDBOX:
         permissions["deny"] += [rule for folder in works_in for rule in (f"Edit(/{folder})", f"Edit(/{folder}/**)")]
     caches = package_caches().values() if access is Access.WORKSPACE_WRITE else ()
@@ -113,18 +121,17 @@ class ClaudeCLI:
                 bash = ["Bash"] if shell(spec.access, spec.write_dirs) else []
                 args += ["--permission-mode", "dontAsk", "--tools", ",".join([READ_ONLY_TOOLS, *bash, *edits, *web])]
                 args += ["--allowedTools", ",".join([READ_ONLY_TOOLS, *bash, *web, *mcp_tools])]
-                if bash:
-                    Path("/tmp/claude").mkdir(exist_ok=True)  # the sandbox's TMPDIR, which it doesn't create
             case Access.WORKSPACE_WRITE:
                 # acceptEdits allows edits inside the working directory; Bash has to be allowed by name, and runs in
                 # the sandbox. With --print there is nobody to ask, so anything else is denied.
                 args += ["--permission-mode", "acceptEdits", "--allowedTools", ",".join(["Bash", *web, *mcp_tools])]
-                Path("/tmp/claude").mkdir(exist_ok=True)  # the sandbox's TMPDIR, which it doesn't create
             case Access.FULL:
                 args += ["--permission-mode", "bypassPermissions"]
+        if box := shell(spec.access, spec.write_dirs):
+            make_sandbox_temp()
         works_in = [Path(folder).resolve() for folder in (spec.cwd, *spec.read_dirs)]
         if extra := settings(spec.access, spec.write_dirs, spec.deny_read, works_in):
-            args += ["--settings", json.dumps(extra | ({"sandbox": box} if (box := shell(spec.access, spec.write_dirs)) else {}))]
+            args += ["--settings", json.dumps(extra | ({"sandbox": box} if box else {}))]
         for path in [*spec.read_dirs, *spec.write_dirs]:
             args += ["--add-dir", str(path)]
         if spec.model:
