@@ -20,6 +20,7 @@ from crewbots import routines as routines_module
 from crewbots import service as svc
 from crewbots.backends import BACKENDS, Access, RunSpec
 from crewbots.events import Done, Event, Notice, SessionStarted, Text, ToolCall, ToolResult, Usage, from_json
+from crewbots.store.happenings import INTENT_FIRES
 
 PREVIEW_CHARS = 200
 POLL_S = 0.5
@@ -111,7 +112,8 @@ def main(argv: list[str] | None = None) -> int:
     restart.add_argument("--when-idle", action="store_true",
                          help="start no new turn, and restart once the ones running have finished")
     restart.add_argument("--timeout", type=float, default=api.RESTART_TIMEOUT_S / 60,
-                         help="with --when-idle, minutes to wait for running turns (default 20)")
+                         help="with --when-idle, minutes to wait for running turns (default %(default)g)")
+    restart.add_argument("--label", default=svc.LABEL, help="the launchd label, if it runs as a login service")
 
     openapi = sub.add_parser("openapi", help="print the API's OpenAPI schema (what the app's types are generated from)")
     openapi.add_argument("--out", type=Path)
@@ -135,7 +137,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"crewbots: {e}", file=sys.stderr)
         return 1
     except httpx.HTTPStatusError as e:
-        print(f"crewbots: {e.response.status_code} {e.response.json().get('detail', e.response.text)}", file=sys.stderr)
+        try:
+            detail = e.response.json().get("detail", e.response.text)
+        except ValueError:  # a plain-text error, such as a 500
+            detail = e.response.text
+        print(f"crewbots: {e.response.status_code} {detail}", file=sys.stderr)
         return 1
     except httpx.ConnectError:
         print("crewbots: the daemon is not reachable (start it with `crewbots serve`)", file=sys.stderr)
@@ -314,7 +320,8 @@ def _intents(args: argparse.Namespace) -> int:
         return 0
     for i in client.get("/intents").raise_for_status().json():
         on = f"{i['kind']} {i['match']}".strip()
-        print(f"{i['id']:>4}  {i['bot']:<10} on {on}: {i['text']}  (fired {i['fires']} of 3, until {i['expires_at'][:10]})")
+        print(f"{i['id']:>4}  {i['bot']:<10} on {on}: {i['text']}  "
+              f"(fired {i['fires']} of {INTENT_FIRES}, until {i['expires_at'][:10]})")
     return 0
 
 
@@ -358,7 +365,8 @@ def _restart(args: argparse.Namespace) -> int:
                 return 0
         except (FileNotFoundError, httpx.HTTPError, ValueError):
             gone_at = gone_at or time.monotonic()
-        if gone_at and time.monotonic() - gone_at > 30 and not svc.status().installed:
+        if (gone_at and time.monotonic() - gone_at > 30
+                and not (sys.platform == "darwin" and svc.status(args.label).installed)):
             print("the daemon stopped, and nothing started it again: it isn't a login service (`crewbots service "
                   "install`), and the app isn't running it. Start it with `crewbots serve`.", file=sys.stderr)
             return 1
@@ -499,12 +507,8 @@ def _follow(client: httpx.Client, root_id: str, after: int = 0) -> int:
     """
     cursors = {root_id: after}
     while True:
-        tasks = {t["id"]: t for t in client.get("/tasks", params={"limit": 1000}).raise_for_status().json()}
-        grew = True
-        while grew:  # the whole tree under the root, however deep
-            new = [t for t, task in tasks.items() if task["parent_id"] in cursors and t not in cursors]
-            cursors.update(dict.fromkeys(new, 0))
-            grew = bool(new)
+        tasks = _tree(client, root_id)
+        cursors.update((t, 0) for t in tasks if t not in cursors)
         events = []
         for task_id, cursor in cursors.items():
             batch = client.get(f"/tasks/{task_id}/events", params={"after": cursor}).raise_for_status().json()
@@ -514,12 +518,23 @@ def _follow(client: httpx.Client, root_id: str, after: int = 0) -> int:
         for e in sorted(events, key=lambda e: e["id"]):
             prefix = "" if e["task_id"] == root_id else f"[{tasks[e['task_id']]['bot']} {e['task_id']}] "
             print(prefix + _format_stored(e), flush=True)
-        if not events and not any(tasks[t]["status"] in ACTIVE for t in cursors if t in tasks):
+        if not events and not any(t["status"] in ACTIVE for t in tasks.values()):
             status = tasks[root_id]["status"]
             print(f"· {root_id} is {status}", file=sys.stderr)
             return 0 if status in ("idle", "needs_input") else 1
         if not events:
             time.sleep(POLL_S)
+
+
+def _tree(client: httpx.Client, root_id: str) -> dict[str, dict[str, Any]]:
+    """The root task and every task under it, however deep, by id."""
+    tasks = {root_id: client.get(f"/tasks/{root_id}").raise_for_status().json()}
+    parents = [root_id]
+    while parents:
+        children = [c for p in parents for c in client.get(f"/tasks/{p}/children").raise_for_status().json()]
+        tasks.update((c["id"], c) for c in children)
+        parents = [c["id"] for c in children]
+    return tasks
 
 
 def _format_stored(e: dict[str, Any]) -> str:
