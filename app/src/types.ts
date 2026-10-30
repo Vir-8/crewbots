@@ -25,7 +25,6 @@ import type {
   Submitted as SubmittedOut,
   CrewState as CrewStateOut,
   EventOut,
-  FindingOut,
   LiveCrew,
   LiveChatMute,
   LiveEvent,
@@ -51,7 +50,6 @@ export type Status = StatusOut;
 export type Task = TaskOut;
 export type StoredEvent = Omit<EventOut, "data"> & { data: Record<string, any> }; // each kind has its own fields
 export type Bot = BotOut;
-export type Finding = FindingOut;
 export type ReviewState = ReviewStateOut;
 export type Live = LiveChatMute | LiveTask | LiveCrew | LiveBots | LiveRoom | LiveRoomGone | LiveRoomMessage | LivePins | LivePage | (Omit<LiveEvent, "event"> & { event: StoredEvent });
 export type Chat = ChatOut;

@@ -1,4 +1,4 @@
-// Small pieces the pages share: a page frame, a side sheet for editing, a switch, and a labelled field.
+// Small pieces the pages share.
 
 import { type ReactNode, type RefObject, useEffect } from "react";
 import { Icon } from "./Icon";

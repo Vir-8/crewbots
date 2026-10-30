@@ -10,6 +10,7 @@ import type { UpdateOut } from "./api-types";
 const CHECK_EVERY_MS = 30 * 60_000; // GitHub is asked at most this often
 const FOLLOW_EVERY_MS = 2_000; // while an update runs
 const CHECKOUT_CHANGED = "The checkout changed since this update was prepared. Check for updates again.";
+const DIDNT_CLOSE = "The app didn't close. Quit and reopen it.";
 
 // `following`: you asked for the update now under way, here: the app installs its build when it's ready.
 type State = { update: UpdateOut | null; checking: boolean; installing: boolean; following: boolean; error: string | null };
@@ -24,7 +25,7 @@ function set(next: Partial<State>) {
 }
 
 export function running(update: UpdateOut | null): boolean {
-  return update?.release?.state === "running";
+  return update?.release.state === "running";
 }
 
 /** Asks the daemon what an update would bring; `fetch` asks GitHub too. */
@@ -45,16 +46,18 @@ export async function check(fetch = false) {
 
 /** An update got ready and not taken in yet: a build of the app to install, or the daemon to restart. */
 export function ready(update: UpdateOut | null): boolean {
-  const release = update?.release;
-  return release?.state === "built" && Boolean(update?.available)
-    && (update!.pull || Boolean(update!.head && release.commit === update!.head))
-    && (Boolean(release.bundle) || !update!.needs?.app)
-    && (!update!.needs?.app || release.commit !== __APP_COMMIT__);
+  if (!update) return false;
+  const release = update.release;
+  return release.state === "built" && update.available
+    && (update.pull || Boolean(update.head && release.commit === update.head))
+    && (Boolean(release.bundle) || !update.needs?.app)
+    && (!update.needs?.app || release.commit !== __APP_COMMIT__);
 }
 
 /** A build of the app to put in this one's place, rather than only the daemon to restart. */
 function newApp(update: UpdateOut | null): boolean {
-  return Boolean(update?.needs?.app && update.release.bundle) && update!.release.commit !== __APP_COMMIT__;
+  if (!update) return false;
+  return Boolean(update.needs?.app && update.release.bundle) && update.release.commit !== __APP_COMMIT__;
 }
 
 /** How far along an update's build is, from how long the last one took: null with nothing to go by. */
@@ -74,15 +77,15 @@ export function timeLeft(update: UpdateOut | null): string {
 
 /** A successful restart closes this window. If it stays open, surface the failure instead of waiting forever. */
 export async function restartApp() {
-  let timer: number | undefined;
+  let closing: number | undefined;
   try {
     await Promise.race([
       bridge.restartApp(),
-      new Promise<never>((_, reject) => { timer = window.setTimeout(() => reject(new Error("The app didn't close. Quit and reopen it.")), 10000); }),
+      new Promise<never>((_, reject) => { closing = window.setTimeout(() => reject(new Error(DIDNT_CLOSE)), 10000); }),
     ]);
-    throw new Error("The app didn't close. Quit and reopen it.");
+    throw new Error(DIDNT_CLOSE);
   } finally {
-    window.clearTimeout(timer);
+    window.clearTimeout(closing);
   }
 }
 

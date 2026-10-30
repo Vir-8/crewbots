@@ -145,12 +145,8 @@ export function Profile(props: { crew: Crew; bot: string; onOpen: (id: string) =
               {ACCESS[bot.access] ?? bot.access}
               {bot.can_delegate ? " · delegates" : ""}
             </dd>
-            {network && (
-              <>
-                <dt>Network</dt>
-                <dd>{network}</dd>
-              </>
-            )}
+            <dt>Network</dt>
+            <dd>{network}</dd>
             <dt>MCP</dt>
             <dd>{bot.mcp.length ? bot.mcp.join(", ") : "Only the crew's tools"}</dd>
             {bot.skills.length > 0 && (

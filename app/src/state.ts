@@ -232,7 +232,6 @@ export function useCrew() {
       loadChats();
       loadRoutines();
     },
-    newTask: (bot: string, goal: string, workspace?: string) => act(api.newTask(bot, goal, workspace)),
     send: (taskId: string, text: string, attachments: string[] = [], questionId?: number) => act(api.send(taskId, text, attachments, questionId)),
     cancel: (taskId: string) => act(api.cancel(taskId)),
     merge: (taskId: string, force: boolean) => act(api.merge(taskId, force)),
@@ -277,7 +276,6 @@ export function derive(tasks: Map<string, Task>, recent: StoredEvent[]) {
   const byAge = [...all].sort((a, b) => a.created_at.localeCompare(b.created_at));
   const children = new Map<string, Task[]>();
   for (const t of byAge) if (t.parent_id) children.set(t.parent_id, [...(children.get(t.parent_id) ?? []), t]);
-  const goals = byAge.filter((t) => !t.parent_id || !tasks.has(t.parent_id)).reverse();
 
   const latest = new Map<string, StoredEvent>(); // the last thing each task did, for one-line status
   const verdicts = new Map<string, StoredEvent[]>(); // review events, by the work they reviewed
@@ -322,7 +320,7 @@ export function derive(tasks: Map<string, Task>, recent: StoredEvent[]) {
 
   const family = (id: string): Task[] => (children.get(id) ?? []).flatMap((k) => [k, ...family(k.id)]);
   const running = all.filter((t) => ACTIVE.includes(t.status));
-  return { goals, children, family, latest, verdicts, inbox, running, holds, asks };
+  return { children, family, latest, verdicts, inbox, running, asks };
 }
 
 export { describe, doing, limitText, describeCall, oneLine, workingLine } from "./activityText";

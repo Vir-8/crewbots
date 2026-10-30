@@ -57,8 +57,6 @@ export const api = {
   recent: (limit = 400) => call<StoredEvent[]>("GET", `/events/recent?limit=${limit}`),
   review: (taskId: string) => call<ReviewState>("GET", `/tasks/${taskId}/review`),
   changes: (taskId: string) => call<{ diff: string | null }>("GET", `/tasks/${taskId}/changes`),
-  newTask: (bot: string, goal: string, workspace?: string) =>
-    call<Task>("POST", "/tasks", { bot, goal, workspace: workspace || null }),
   send: (taskId: string, text: string, attachments: string[] = [], questionId?: number) => call<Task>("POST", `/tasks/${taskId}/messages`, { text, attachments, question_id: questionId }),
   cancel: (taskId: string) => call<Task>("POST", `/tasks/${taskId}/cancel`),
   merge: (taskId: string, force = false) => call<Task>("POST", `/tasks/${taskId}/merge`, { force }),
@@ -81,8 +79,8 @@ export const api = {
   chats: () => call<Chat[]>("GET", "/chats"),
   threadFor: (bot: string, goal: string) => call<Task>("POST", `/chats/bot/${encodeURIComponent(bot)}/threads`, { goal }),
   rememberFor: (bot: string, text: string) => call<{ title: string; path: string }>("POST", `/chats/bot/${encodeURIComponent(bot)}/notes`, { text }),
+  muteChat: (bot: string, muted: boolean) => call<{ muted: boolean }>("PUT", `/chats/bot/${encodeURIComponent(bot)}/mute`, { muted }),
   /** Pins chats to the top of the sidebar, in this order; the rest are unpinned. */
-  muteChat: (bot: string, muted: boolean) => call<{ muted: boolean }>("PUT", `/chats/bot/${bot}/mute`, { muted }),
   setPins: (pins: string[]) => call<{ pins: string[] }>("PUT", "/pins", { pins }),
   say: (bot: string, text: string, attachments: string[] = []) => call<Task>("POST", `/chats/bot/${encodeURIComponent(bot)}/messages`, { text, attachments }),
   read: (key: string) => call<{ ok: boolean }>("POST", `/chats/${encodeURIComponent(key)}/read`),

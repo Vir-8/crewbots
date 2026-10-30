@@ -3,7 +3,6 @@ import { bridge } from "../api";
 import { readDraft, writeDraft } from "../drafts";
 import { argumentOf, commandsFor, finishMention, mentionTyped, pickerKey } from "../typing";
 import { type Actions, CommandPreview } from "./CommandPreview";
-import type { Bot } from "../types";
 import { labelOf } from "./Avatar";
 import { Icon } from "./Icon";
 import { type Pending, PendingFiles, upload } from "./Attachments";
@@ -11,26 +10,21 @@ import { StatusPanel } from "./StatusPanel";
 import { UsagePanel } from "./UsagePanel";
 import "../styles/composer.css";
 
-/** The one place you type, or talk: @ suggests who to mention, / offers commands, and the mic dictates into it. */
 /** Asks the open chat's message box to show one of its panels, as typing its command there would. */
-export const PANEL_EVENT = "crewbots:panel";
+const PANEL_EVENT = "crewbots:panel";
 // The mic is one for the whole app: what's heard goes into the box whose mic is on, of all the boxes open (a chat's,
 // and a thread's beside it). Turning on another's tells the one before to stop listening.
 const DICTATING_EVENT = "crewbots:dictating";
 let dictating: object | null = null;
 export const showPanel = (name: string) => window.dispatchEvent(new CustomEvent(PANEL_EVENT, { detail: name }));
 
+/** The one place you type, or talk: @ suggests who to mention, / offers commands, and the mic dictates into it. */
 export function Composer(props: {
   placeholder: string;
   onSend: (text: string, attachments: string[]) => Promise<unknown>;
   asking?: boolean;
   autoFocus?: boolean;
   mentions?: string[];
-  bots?: Bot[];
-  bot?: string;
-  onBot?: (name: string) => void;
-  workspace?: string;
-  onWorkspace?: (path: string) => void;
   task?: string; // the chat or thread this box talks to, for /status
   draft?: string; // where what's typed but not sent is kept, so a reload or relaunch loses nothing
   main?: boolean; // the open chat's box: it shows what the command palette asks for (Usage, Status)
@@ -319,33 +313,6 @@ export function Composer(props: {
         >
           <Icon name="plus" size={16} />
         </button>
-        {props.bots && props.onBot && (
-          <label className="chip select" onClick={(e) => e.stopPropagation()}>
-            <span className="faint">To</span>
-            <select value={props.bot} onChange={(e) => props.onBot!(e.target.value)}>
-              {props.bots.map((b) => (
-                <option key={b.name} value={b.name}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-            <Icon name="chevronDown" size={12} />
-          </label>
-        )}
-        {props.onWorkspace && (
-          <button
-            className="chip"
-            onClick={async (e) => {
-              e.stopPropagation();
-              const picked = await bridge.pickFolder();
-              if (picked) props.onWorkspace!(picked);
-            }}
-            title={props.workspace || "Choose the folder or repo to work in"}
-          >
-            <Icon name="folder" size={13} />
-            {props.workspace ? props.workspace.split("/").filter(Boolean).at(-1) : "Choose a folder"}
-          </button>
-        )}
         <span className="grow" />
         {listening ? (
           <span className="composer-hint listening-hint">Listening…</span>

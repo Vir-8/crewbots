@@ -246,7 +246,7 @@ export function Sidebar(props: {
   );
 }
 
-/** A chat's own menu, where you right-clicked it: pin it to the top, unpin it, or move it among the pinned. */
+/** A chat's own menu, where you right-clicked it: mute or unmute it, pin it to the top, unpin it, or move it among the pinned. */
 export function RowMenu(props: { at: { x: number; y: number }; place: number | null; last: number; muted: boolean; onMute: () => void; onPin: (to: number | null) => void; onClose: () => void }) {
   const { place } = props;
   useEffect(() => {

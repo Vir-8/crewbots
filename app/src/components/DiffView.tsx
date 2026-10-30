@@ -22,7 +22,7 @@ export function DiffView({ task }: { task: Task }) {
 const LINE = 19.8; // a line's height when it doesn't wrap (12px at 1.65): the room a file not drawn yet keeps
 
 /** A unified diff, a file at a time; files further down are drawn as you come to them. */
-export function DiffText({ diff }: { diff: string }) {
+function DiffText({ diff }: { diff: string }) {
   const files = diff.split(/^(?=diff --git )/m).filter(Boolean);
   return (
     <div className="diff">

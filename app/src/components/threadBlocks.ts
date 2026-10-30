@@ -354,14 +354,10 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
   return out;
 }
 
-const startsWake = (e: StoredEvent) => e.kind === "state_notice" || (e.kind === "message" && e.data.from === "crewbots");
-
-/** In a chat: the turns the crew started (a notice, a watchdog or look-around prompt, a teammate's result) are
- * the bot's own business; the daemon marks them `system: true` on their `turn_start`, and nothing is inferred
- * here (a turn_start without the flag is shown whole). One that ends silent shows nothing; one that ends in a reply shows the reply, with what
- * woke it folded into the reply's steps. Turns are the daemon's own (`turn_start` events). What a turn consumes is
- * what was recorded since the one before began, so a notice queued during a user's turn belongs to the next turn,
- * not to the user's. Warnings, errors, cards and questions always stay, and so does anything the user wrote. */
+/** In a chat, turns the crew started (`system: true` on their `turn_start`) are the bot's own business: a silent one
+ * shows nothing, and one that replies shows the reply, with what woke it folded into its steps. A turn takes what was
+ * recorded since the one before began, so a notice queued during a user's turn belongs to the next one. Warnings,
+ * errors, cards, questions and anything the user wrote always stay. */
 export function settleWakes(events: StoredEvent[], blocks: Block[]): Block[] {
   type Turn = { from: number; to: number; system: boolean; replied: boolean; wakes: Block[] };
   const turns: Turn[] = [];
@@ -379,7 +375,7 @@ export function settleWakes(events: StoredEvent[], blocks: Block[]): Block[] {
           if (p.kind === "message" && p.data.from === "crewbots") turn.wakes.push({ kind: "line", id: p.id, text: oneLine(p.data.text, 200), gist: WOKEN, wake: true });
         }
       pending = [];
-    } else if (startsWake(e) || e.kind === "message") pending.push(e);
+    } else if (e.kind === "state_notice" || e.kind === "message") pending.push(e);
     else if ((e.kind === "text" || e.kind === "shared") && turns.length) turns[turns.length - 1].replied = true;
   }
   if (!turns.length) return blocks; // events from before turns were recorded

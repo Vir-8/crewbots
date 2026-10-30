@@ -15,7 +15,7 @@ const STATUS_LABEL: Record<Status, string> = {
   held: "waiting",
 };
 
-export function StatusDot({ status }: { status: Status }) {
+function StatusDot({ status }: { status: Status }) {
   return <span className={`dot ${status}`} title={STATUS_LABEL[status]} />;
 }
 
@@ -71,7 +71,7 @@ export function MentionText({ text, everyone = false, plain = false }: { text: s
 const TASK_ID = /\bt_[0-9a-f]{10}\b/g;
 
 /** Text with task ids turned into links to those tasks; whitespace is kept. */
-export function Linked({ text, onSelect, everyone = false }: { text: string; onSelect: (id: string) => void; everyone?: boolean }) {
+function Linked({ text, onSelect, everyone = false }: { text: string; onSelect: (id: string) => void; everyone?: boolean }) {
   const parts: ReactNode[] = [];
   let last = 0;
   for (const match of text.matchAll(TASK_ID)) {
@@ -362,7 +362,7 @@ export function PageLinkTo({ page }: { page: string }) {
   return <PageLink raw={`[[${page}]]`} />;
 }
 
-export function Inline({ text, onSelect, everyone = false }: { text: string; onSelect: (id: string) => void; everyone?: boolean }) {
+function Inline({ text, onSelect, everyone = false }: { text: string; onSelect: (id: string) => void; everyone?: boolean }) {
   const parts: ReactNode[] = [];
   const pattern = /(`[^`]+`|\*\*[^*]+\*\*|\[\[[^\]\n]+\]\])/g;
   let last = 0;

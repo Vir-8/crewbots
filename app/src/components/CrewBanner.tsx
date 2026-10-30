@@ -11,7 +11,7 @@ const INSTALLED_EVERY_MS = 60_000;
 /** The daemon itself, when it isn't simply running: reconnecting, restarting once the crew is idle, or a different
  * version from this app. */
 export function CrewBanner({ crew, onUpdates }: { crew: Crew; onUpdates: () => void }) {
-  const versions = useUpdate(crew);
+  const versions = useVersions(crew);
   const ownState = useUpdates();
   const own = ownState.update; // an update to crewbots itself, from its checkout
   const [dismissed, setDismissed] = useState<string | null>(null);
@@ -26,13 +26,13 @@ export function CrewBanner({ crew, onUpdates }: { crew: Crew; onUpdates: () => v
     );
   }
   if (crew.crewState?.restarting) {
-    const running = crew.crewState.turns_running;
+    const turns = crew.crewState.turns_running;
     return (
       <div className="crew-banner" role="status">
         <Icon name="repeat" size={13} />
         <span>
           Restarting when the crew is idle
-          {running > 0 && <span className="faint"> · {running === 1 ? "1 turn" : `${running} turns`} still running</span>}
+          {turns > 0 && <span className="faint"> · {turns === 1 ? "1 turn" : `${turns} turns`} still running</span>}
         </span>
         <button className="text-button" onClick={() => crew.restart(false)} title="Turns cut off carry on after the restart">
           Restart now
@@ -88,7 +88,7 @@ interface Update {
 }
 
 /** Whether this app, the build installed over it, and the crew's daemon are the same version, and what to do if not. */
-function useUpdate(crew: Crew): Update | null {
+function useVersions(crew: Crew): Update | null {
   const connected = crew.status.state === "connected";
   const [daemon, setDaemon] = useState<VersionOut | "unversioned" | null>(null);
   const [installedNewer, setInstalledNewer] = useState(false);

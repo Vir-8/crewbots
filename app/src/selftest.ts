@@ -31,7 +31,7 @@ export async function selftest() {
 
     // The conversations: a chat with each bot and the group chats in the sidebar, and a chat's profile beside it.
     report.chats = (await until(() => document.querySelectorAll(".chat-row").length, 10_000)) ?? 0;
-    // Timings (A12's budgets): from the window starting to the first chat drawn, and to open another one.
+    // Timings: from the window starting to the first chat drawn, and to open another one.
     await until(() => document.querySelector(".thread-col"), 10_000);
     report.firstChatMs = Math.round(performance.now());
     const rows = [...document.querySelectorAll<HTMLElement>(".chat-row")];

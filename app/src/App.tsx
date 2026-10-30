@@ -168,8 +168,8 @@ export function App() {
   const page = page_ && chat?.kind === "direct" && chat.bot === page_.bot ? page_ : null; // only beside its own bot's chat
   const thread = thread_ && !page ? crew.tasks.get(thread_) : undefined;
   const showProfile = profileVisible(profileOn, Boolean(thread), Boolean(page));
-  const profile = showProfile && chat?.kind === "direct" && current === chat.key ? chat.bot : null;
-  const room = showProfile && chat?.kind === "group" && current === chat.key ? chat.room : null;
+  const profile = showProfile && chat?.kind === "direct" ? chat.bot : null;
+  const room = showProfile && chat?.kind === "group" ? chat.room : null;
   const onProfile = () => {
     const next = toggleProfile(profileOn, Boolean(thread || page));
     setProfileOn(next.profileOn);
