@@ -1,5 +1,7 @@
 """Work that must not be left waiting: a delegated task's late handoff reaches its delegator, and a bot with open work
-that has gone quiet is woken twice, told the next step for each piece, then raised with the chief. For work handed out
+that has gone quiet is woken twice, told the next step for each piece, then raised with the chief. A bot whose turn
+ended without handing back what it was asked is that piece's owner: it's woken itself, since it knows whether it's
+done or stopped partway. For work handed out
 in a group chat, both are said there, so its members see what's stuck. What it says carries only bots, ids, counts,
 kinds and steps, never another bot's text."""
 
@@ -62,14 +64,20 @@ class Watchdog:
             state = self._stalls[name, target.id] = {"key": key, "wakes": 0, "woke": None, "raised": False}
         if state["raised"] or self.store.chat_muted(name) or self._room_muted(target) or not self.idle_chat(target):
             return False  # running, queued, stopped, muted, or waiting on the user, which isn't a stall
-        # quiet is measured on the session that owes the action and its open work, not on the bot's other sessions
-        quiet_since = max(datetime.fromisoformat(t) for t in (target.updated_at, *touched, state["woke"]) if t)
+        # Quiet is timed from the open work and the last reminder, not from the session that owes the action: a lead
+        # busy with other things in its group chat would otherwise never hear that a piece of work went quiet.
+        quiet_since = max(datetime.fromisoformat(t) for t in (*touched, state["woke"]) if t)
         if now - quiet_since < idle:
             return False
         room = self.store.room(target.room_id) if target.kind == "seat" and target.room_id else None
         if state["wakes"] < WAKES:
             notice = ("Still open for you, with nothing run for a while: " + "; ".join(work)
                       + ". Pick it up, or say what is blocking it.")
+            if target.kind == "chat":  # the bot's own chat with the user, so what it says there is the user's to read
+                notice += ((" working_state, with no action, lists your Needs-me items." if self._own_needs(name) else "")
+                           + " Your reply here goes to the user: what's blocking it goes to whoever it's for instead "
+                           "(a teammate, with message or in your group chat). If there's nothing the user needs to "
+                           "know, reply with exactly NO_REPLY.")
             if room:
                 self.post(room["id"], "crewbots", f"@{name} {notice}", recipients=[name])
             else:
@@ -97,6 +105,14 @@ class Watchdog:
         """What is open for the bot, by the session that owes the action: lines of ids and counts, a key that changes
         when the work does, and when that work last changed, by that session's task id."""
         groups: dict[str, tuple[Task, list[str], list[str], list[str]]] = {}
+        queued = {*self._editor_waits, *self._editor_opening, *(t for q in self._app_queue.values() for t in q)}
+        for t in self.store.stopped_without_handback(name):  # each its own: the thread that stopped is woken
+            if t.id in queued:
+                continue  # waiting its turn for a shared app or an Editor, which wakes it
+            asker = self.store.get_task(t.parent_id).bot
+            step = (f"{t.id}: your turn ended without handing back what {asker} asked. Hand it back with handoff if it's "
+                    "done; otherwise carry on with what's left")
+            groups[t.id] = (t, [step], [f"{t.id}:stopped"], [t.updated_at])
         for t in self.store.owed_by_delegator(name) + self.store.asking_delegator(name):
             if not (step := self._next_step(t)):
                 continue
@@ -109,10 +125,7 @@ class Watchdog:
             own[0].append(f"{t.id} is {t.status}")
             own[1].append(f"{t.id}:{t.status}")
             own[2].append(t.updated_at)
-        path = self.crew.memory.root / name / "working-state" / "state.md"
-        entries = (working_state.ENTRY.match(line) for line in working_state._sections(path)["Needs me"])
-        needs = [m[2] for m in entries if m and m[1] == " "]
-        if needs:
+        if needs := self._own_needs(name):
             own[0].append(f"{len(needs)} Needs-me item(s)")
             own[1].extend(needs)
         if own[0]:
@@ -120,7 +133,7 @@ class Watchdog:
             _, work, key, touched = groups.setdefault(chat.id, (chat, [], [], []))
             work.extend(own[0])
             key.extend(own[1])
-            touched.extend(own[2])
+            touched.extend([*own[2], chat.updated_at])  # its own work waits while it's talking
         return groups
 
     def _next_step(self, work: Task) -> str | None:
@@ -129,6 +142,8 @@ class Watchdog:
         who = f"{work.id} ({work.bot})"
         if work.status is Status.NEEDS_INPUT:
             return f"{who} asked you a question: answer it with message"
+        if any(t.id == work.id for t in self.store.stopped_without_handback(work.bot)):
+            return None  # it's the bot's own to pick up (`_open_work`): it hasn't handed anything back yet
         if any(r.active or r.id in self._runs for r in self.store.reviewers_of(work.id)):
             return None
         state = self.review_state(work.id)
@@ -142,6 +157,12 @@ class Watchdog:
             return (f"{who} failed review round {state.round} of {MAX_REVIEW_ROUNDS}: send back the findings you judge "
                     "real with message, or drop it")
         return f"{who} has a review that ended without a verdict: ask the reviewer with message, or review it again"
+
+    def _own_needs(self, name: str) -> list[str]:
+        """The ids of the bot's open Needs-me items."""
+        path = self.crew.memory.root / name / "working-state" / "state.md"
+        entries = (working_state.ENTRY.match(line) for line in working_state._sections(path)["Needs me"])
+        return [m[2] for m in entries if m and m[1] == " "]
 
     def _room_muted(self, task: Task) -> bool:
         return bool(task.room_id and self.store.room(task.room_id)["muted"])

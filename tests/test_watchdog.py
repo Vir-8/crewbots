@@ -7,6 +7,7 @@ from fakes import ScriptedCrew, bot, wait_until
 
 from crewbots import working_state
 from crewbots.backends import Access
+from crewbots.crew_tools import CrewTools
 from crewbots.events import Done
 from crewbots.runner import MAX_REVIEW_ROUNDS
 from crewbots.store import Status, Store, Verdict
@@ -144,8 +145,7 @@ def needs_me(crew, bot_name):
 async def test_open_work_wakes_twice_then_goes_to_the_chief_once_raised(store, tmp_path):
     crew = stalled_crew(store, tmp_path)
     parent, work = unmerged_work(store, crew)
-    store.update_task(work.id, title="secret plan")
-    store.db.execute("update tasks set updated_at = '2020-01-01T00:00:00+00:00' where id = ?", (work.id,))  # old, still open
+    store.update_task(work.id, title="secret plan")  # handed back just now
 
     assert crew.runner.stall_check(later(5)) == []  # not idle long enough
     assert crew.runner.stall_check(later(20)) == ["eng-lead"]
@@ -163,6 +163,37 @@ async def test_open_work_wakes_twice_then_goes_to_the_chief_once_raised(store, t
     [event] = store.chief_events()
     assert (event["kind"], event["who"]) == ("stall raised", "eng-lead") and work.id in event["subject"]
     assert "eng-lead" not in crew.runner.stall_check(later(80))  # raised once, not again
+    await crew.runner.shutdown()
+
+
+async def test_a_busy_delegator_still_hears_of_work_gone_quiet(store, tmp_path):
+    crew = stalled_crew(store, tmp_path)
+    parent, work = unmerged_work(store, crew)
+    store.db.execute("update tasks set updated_at = ? where id = ?", (later(19).isoformat(), parent.id))  # busy elsewhere
+
+    assert crew.runner.stall_check(later(20)) == ["eng-lead"]  # timed from the work, not from the lead's session
+    await crew.runner.shutdown()
+
+
+async def test_a_bot_that_stopped_without_handing_back_is_woken_itself(store, tmp_path):
+    crew = stalled_crew(store, tmp_path)
+    parent = store.create_task("eng-lead", "lead", status=Status.IDLE)
+    work = store.create_task("engineer", "fix the merge", parent_id=parent.id, created_by="eng-lead", status=Status.IDLE)
+    store.append_event(work.id, kind="message", data={"from": "eng-lead", "text": "fix it"})  # in place: no branch
+    assert crew.runner._next_step(store.get_task(work.id)) is None  # not the lead's to chase: nothing came back yet
+
+    assert crew.runner.stall_check(later(20)) == ["engineer"]
+    await wait_until(lambda: any("ended without handing back what eng-lead asked" in m for m in notices(store, work.id)))
+    await wait_until(crew.settled(work.id))  # the reminder woke it
+    assert not notices(store, parent.id)
+    store.append_event(work.id, kind="handoff", data={})  # once it hands back, it's no longer stopped
+    assert store.stopped_without_handback("engineer") == []
+    store.append_event(work.id, kind="message", data={"from": "eng-lead", "text": "and the tests"})
+    crew.runner._app_queue[("UnityMCP", "/game")] = [work.id]  # its turn for the Editor wakes it
+    assert "engineer" not in crew.runner.stall_check(later(60))
+    crew.runner._app_queue.clear()
+    store.create_task("helper", "look it up", parent_id=work.id, created_by="engineer", status=Status.RUNNING)
+    assert store.stopped_without_handback("engineer") == []  # waiting on work it handed out
     await crew.runner.shutdown()
 
 
@@ -223,6 +254,10 @@ async def test_a_needs_me_item_alone_is_open_work_and_its_text_is_not_copied(sto
     assert crew.runner.stall_check(later(20)) == ["eng-lead"]
     [notice] = notices(store, chat.id)
     assert "1 Needs-me item" in notice and "secret" not in notice
+    assert "Your reply here goes to the user" in notice and "NO_REPLY" in notice  # its chat is the user's
+    tools = CrewTools(crew.runner, chat.id, can_delegate=True)
+    assert "reply to Vir about the secret" in await tools.call("working_state", {})  # a look, with no action
+    assert "reply to Vir about the secret" in await tools.call("working_state", {"section": "Needs me", "action": "list"})
     crew.runner.stall_check(later(40))
     crew.runner.stall_check(later(60))
     assert "secret" not in " ".join(needs_me(crew, "chief"))

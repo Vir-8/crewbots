@@ -106,6 +106,21 @@ class Tasks:
         rows = self.db.execute("select * from tasks where worktree_path = ? or workspace = ?", (folder, folder)).fetchall()
         return [_task(r) for r in rows]
 
+    def stopped_without_handback(self, bot: str) -> list[Task]:
+        """Threads `bot` is doing for a teammate whose turn ended without handing back what it was last asked: idle, not
+        merged, proposed or dropped, with no handoff since the teammate's latest message, whether they're code in a
+        worktree, work in a project's folder itself, or neither."""
+        rows = self.db.execute(
+            "select t.* from tasks t join tasks p on p.id = t.parent_id where t.bot = ? and t.bot != p.bot "
+            "and t.status = 'idle' and t.kind = 'thread' and t.review_of is null "
+            "and coalesce(t.merge_state, '') not in ('merged', 'merging', 'proposed', 'dropped') "
+            "and not exists (select 1 from tasks c where c.parent_id = t.id "
+            "and c.status in ('queued', 'running', 'held', 'needs_input')) "  # waiting on work it handed out
+            "and (select max(m.id) from events m where m.task_id = t.id and m.kind = 'message' "
+            "and json_extract(m.data, '$.from') = p.bot) > coalesce((select max(h.id) from events h "
+            "where h.task_id = t.id and h.kind = 'handoff'), 0) order by t.created_at, t.id", (bot,)).fetchall()
+        return [_task(r) for r in rows]
+
     def stuck_tasks(self, bot: str) -> list[Task]:
         """Tasks of the bot's own that wait to run: held, queued, or interrupted by a daemon stop."""
         rows = self.db.execute("select * from tasks where bot = ? and status in ('held', 'queued', 'interrupted') "

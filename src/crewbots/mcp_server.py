@@ -166,7 +166,7 @@ def _crew_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = F
         return f"Standing intent {intent['id']} set: on {intent['kind']} {intent['match']}".rstrip() + "."
 
     @server.tool(description=describe("working_state"))
-    def working_state(section: str, action: str, text: str = "", entry_id: str = "", done: bool = False) -> str:
+    def working_state(section: str = "", action: str = "", text: str = "", entry_id: str = "", done: bool = False) -> str:
         return call("POST", "/bot/working_state", {"section": section, "action": action, "text": text,
                                                   "entry_id": entry_id, "done": done})["result"]
 

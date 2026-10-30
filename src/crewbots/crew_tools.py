@@ -99,7 +99,7 @@ SPECS: dict[str, Spec] = {
     "forget": Spec(_object({"name": STRING, "shared": {"type": "boolean"}}, ["name"])),
     "recall": Spec(_object({"query": STRING}, ["query"])),
     "working_state": Spec(_object({"section": STRING, "action": STRING, "text": STRING, "entry_id": STRING,
-                                    "done": {"type": "boolean"}}, ["section", "action"])),
+                                    "done": {"type": "boolean"}}, [])),
     "update_state": Spec(_object({"state": STRING}, ["state"])),
     "set_name": Spec(_object({"name": STRING}, ["name"])),
     "remind_on": Spec(_object({"event": STRING, "match": STRING, "then": STRING}, ["event", "then"])),
@@ -292,10 +292,16 @@ class CrewTools:
                 case "drop_task":
                     return dropped_text(await r.drop(args["task_id"], args["reason"], by_task=me))
                 case "working_state":
-                    from crewbots.working_state import edit
+                    from crewbots.working_state import _sections, edit, read
                     task = r.store.get_task(me)
-                    entry_id, pruned = edit(r.crew.memory.root / task.bot / "working-state" / "state.md",
-                                            args["section"], args["action"],
+                    path = r.crew.memory.root / task.bot / "working-state" / "state.md"
+                    if (args.get("action") or "list") == "list":  # a look: what's there, with each entry's id
+                        if section := args.get("section"):
+                            return "\n".join(_sections(path).get(section, [])) or f"Nothing in {section}."
+                        return read(path)
+                    if not args.get("section"):
+                        raise ToolRefused("say which section to change")
+                    entry_id, pruned = edit(path, args["section"], args["action"],
                                             args.get("text", ""), args.get("entry_id", ""), bool(args.get("done")))
                     if args["section"] == "Needs me" and args["action"] == "add" and not args.get("done"):
                         r.need_added(me, pruned)
