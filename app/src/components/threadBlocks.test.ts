@@ -22,6 +22,12 @@ it("tags what the chief told the user from a group chat with where it came from"
   expect(build([checkin], [], new Map())[0]).toMatchObject({ tag: "Checked in on its own" });
 });
 
+it("names the teammate a permission the chief asks is for", () => {
+  const asked: StoredEvent = { id: 1, task_id: "chat", kind: "permission", at: "",
+    data: { permission: 8, kind: "action", what: "Use the Launch Hazard Editor", why: "to verify", bot: "chief", for: "engineer-4", task: "t_eng" } };
+  expect(build([asked], [], new Map())[0]).toMatchObject({ kind: "permission", bot: "chief", for: "engineer-4", taskId: "t_eng", here: false });
+});
+
 it("shows withdrawn proposals and searches the displayed folder", () => {
   const event: StoredEvent = { id: 1, task_id: "task", kind: "merge_withdrawn", data: { by: "user", reason: "Superseded" }, at: "" };
   expect(build([event], [], new Map())[0]).toMatchObject({ text: "You withdrew the merge proposal: Superseded" });

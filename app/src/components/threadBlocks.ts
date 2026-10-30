@@ -20,7 +20,7 @@ export type Block =
   | { kind: "activity"; id: number | string; items: Block[] }
   | { kind: "offer"; id: number; outcome?: Record<string, any> } // the chief's, under its greeting: how it was answered
   // What a bot asks the user to allow: in its own thread, and in the chat its work came from (`here` false there).
-  | { kind: "permission"; id: number; permission: number; bot: string; taskId: string; ask: string; what: string; why: string; folder?: string; here: boolean; allowed?: boolean }
+  | { kind: "permission"; id: number; permission: number; bot: string; for?: string; taskId: string; ask: string; what: string; why: string; folder?: string; here: boolean; allowed?: boolean }
   | { kind: "ask"; id: number; taskId: string; question: string; choices?: Choice[]; multiple?: boolean; answer?: string; room?: string; closed?: boolean; questionId?: number }
   | { kind: "held"; id: number; taskId: string; reason: string }
   | { kind: "handoff"; id: number; data: Record<string, any> }
@@ -211,7 +211,7 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
       case "permission":
         flush();
         out.push({
-          kind: "permission", id: e.id, permission: d.permission, bot: d.bot, taskId: d.task, ask: d.kind, what: d.what, why: d.why ?? "", folder: d.folder, here: d.task === e.task_id,
+          kind: "permission", id: e.id, permission: d.permission, bot: d.bot, for: d.for, taskId: d.task, ask: d.kind, what: d.what, why: d.why ?? "", folder: d.folder, here: d.task === e.task_id,
           allowed: events.find((x) => x.kind === "permission_answer" && x.data.permission === d.permission)?.data.allowed,
         });
         break;

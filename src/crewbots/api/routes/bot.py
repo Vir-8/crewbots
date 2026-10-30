@@ -235,7 +235,7 @@ def routes(c: Context) -> APIRouter:
 
     @v1.post("/bot/ask_permission", status_code=201)
     async def bot_ask_permission(request: Request, body: PermissionAsk):
-        asked = runner.ask_permission(request.state.task.id, body.what, body.why, body.kind, body.folder)
+        asked = runner.ask_permission(request.state.task.id, body.what, body.why, body.kind, body.folder, body.task_id)
         return {"id": asked["id"]}
 
     @v1.post("/bot/escalate")

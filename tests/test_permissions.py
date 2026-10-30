@@ -31,7 +31,7 @@ def crewbots_messages(store, task_id):
     return [e.data["text"] for e in store.events(task_id) if e.kind == "message" and e.data["from"] == "crewbots"]
 
 
-async def test_a_thread_asks_and_the_chat_it_came_from_shows_it_too(store, tmp_path):
+async def test_the_chief_asks_for_a_teammates_task_and_its_chat_shows_it(store, tmp_path):
     renders = paths.home() / "Movies" / "Renders"
     renders.mkdir(parents=True)
     crew = ScriptedCrew(store, tmp_path / "crew", bot("chief", can_delegate=True),
@@ -41,29 +41,36 @@ async def test_a_thread_asks_and_the_chat_it_came_from_shows_it_too(store, tmp_p
     def chief(spec, me):
         if spec.prompt == "go":
             state["thread"] = crew.runner.delegate(me.id, "engineer", "render the trailer")
+        elif "escalated" in spec.prompt and "asked" not in state:  # the engineer's need reaches it as a question
+            state["asked"] = crew.runner.ask_permission(
+                me.id, f"Write the trailer's frames into {renders}", "to keep them with your other renders", "folder",
+                str(renders), for_task=state["thread"].id)
         return [Done(final_text="ok")]
 
     def engineer(spec, me):
         if spec.prompt == "render the trailer":
-            crew.runner.ask_permission(me.id, f"Write the trailer's frames into {renders}", "to keep them with your "
-                                       "other renders", "folder", str(renders))
+            with pytest.raises(CrewError, match="a teammate gave you this work"):
+                crew.runner.ask_permission(me.id, "Write the frames into Renders", kind="folder", folder=str(renders))
+            crew.runner.escalate(me.id, f"I need to write the frames into {renders}")
             return [Done(final_text="asked")]
         return [Done(final_text=f"rendered: {spec.prompt[:60]}")]
 
     crew.script = {"chief": chief, "engineer": engineer}
     top = crew.runner.submit("chief", "go")
-    await wait_until(lambda: "thread" in state and crew.settled(state["thread"].id)())
+    await wait_until(lambda: "asked" in state and crew.settled(top.id)())
 
     thread = store.get_task(state["thread"].id)
-    assert thread.status is Status.NEEDS_INPUT and thread.reported  # waiting on the user, not reported as finished
+    assert thread.status is Status.NEEDS_INPUT
     [asked] = shown(store, thread.id)
-    assert asked["kind"] == "folder" and asked["folder"] == str(renders.resolve()) and asked["bot"] == "engineer"
-    assert shown(store, top.id) == [asked]  # in the chat the work came from, to answer there
+    assert asked["kind"] == "folder" and asked["folder"] == str(renders.resolve())
+    assert asked["bot"] == "chief" and asked["for"] == "engineer" and asked["task"] == thread.id
+    assert shown(store, crew.runner.chat("chief").id) == [asked]  # in the chief's chat, from the chief
 
     crew.runner.answer_permission(asked["permission"], True)
     await wait_until(lambda: crew.settled(thread.id)() and store.get_task(thread.id).status is not Status.NEEDS_INPUT)
 
-    assert shown(store, thread.id, "permission_answer") == shown(store, top.id, "permission_answer") == [
+    assert shown(store, thread.id, "permission_answer") == shown(store, crew.runner.chat("chief").id,
+                                                                 "permission_answer") == [
         {"permission": asked["permission"], "allowed": True}]
     told = crewbots_messages(store, thread.id)[-1]
     assert told.startswith("The user allowed it: Write the trailer's frames") and f"write in {renders.resolve()}" in told
@@ -117,7 +124,14 @@ def test_what_cant_be_asked_for(store, tmp_path):
         with pytest.raises(CrewError, match=why):
             crew.runner.ask_permission(chief.id, "write there", kind="folder", folder=folder)
     with pytest.raises(CrewError, match="in your task's own folder"):
-        crew.runner.ask_permission(engineer.id, "write here", kind="folder", folder=str(own))
+        crew.runner.ask_permission(chief.id, "write here", kind="folder", folder=str(own), for_task=engineer.id)
+    with pytest.raises(CrewError, match="a teammate gave you this work"):
+        crew.runner.ask_permission(engineer.id, "browse", kind="network", for_task=chief.id)
+    seat = store.create_task("engineer", "Engineering", kind="seat")  # a group chat's work goes through the chief
+    with pytest.raises(CrewError, match="a teammate gave you this work"):
+        crew.runner.ask_permission(seat.id, "browse", kind="network")
+    engineers_chat = crew.runner.chat("engineer")  # work the user gave it directly: it asks them itself
+    assert crew.runner.ask_permission(engineers_chat.id, "Look up the export format", kind="network")["kind"] == "network"
     with pytest.raises(CrewError, match="the network already"):
         crew.runner.ask_permission(chief.id, "browse", kind="network")
     with pytest.raises(CrewError, match="kind is one of"):
@@ -127,6 +141,7 @@ def test_what_cant_be_asked_for(store, tmp_path):
 
 async def test_a_session_opens_again_with_what_was_allowed(store, tmp_path):
     runner, backend = make(store, tmp_path, SessionBackend())
+    store.set_chief("worker")  # the one who asks the user's leave
     task = runner.submit("worker", "first")
     await wait_until(settled(store, runner, task.id))
     asked = runner.ask_permission(task.id, "Look things up online", kind="network")

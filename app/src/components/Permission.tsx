@@ -8,9 +8,9 @@ import type { Block } from "./threadBlocks";
 
 type Asked = Extract<Block, { kind: "permission" }>;
 
-/** What a bot asks you to allow: to write in a folder outside its own, to reach the network, or your go-ahead for
- * something big. Allow or not with a button; what you allow is its for the rest of that thread (or chat). Shown in the
- * thread that asks and in the chat its work came from, with the same answer in both. */
+/** What the chief asks you to allow, for its own work or a teammate's: to write in a folder outside the task's own, to
+ * reach the network, or your go-ahead for something big. Allow or not with a button; what you allow is that task's for
+ * the rest of it. Shown in the task's thread and in the chat it was asked from, with the same answer in both. */
 export function Permission({ crew, block, onOpen }: { crew: Crew; block: Asked; onOpen: (id: string) => void }) {
   const [answering, setAnswering] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +32,7 @@ export function Permission({ crew, block, onOpen }: { crew: Crew; block: Asked; 
     <div className={`ask permission ${answered ? "answered" : ""}`}>
       <div className="ask-head">
         <Icon name={answered ? (block.allowed ? "check" : "x") : "lock"} size={15} />
-        {answered ? (block.allowed ? "Allowed" : "Not allowed") : `${labelOf(block.bot)} asks your permission`}
+        {answered ? (block.allowed ? "Allowed" : "Not allowed") : `${labelOf(block.bot)} asks your permission${block.for ? ` for ${labelOf(block.for)}` : ""}`}
       </div>
       {!block.here && asker && (
         <button className="text-button permission-where" onClick={() => onOpen(asker.id)}>

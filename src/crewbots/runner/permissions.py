@@ -1,7 +1,11 @@
-"""Asking the user's leave. A bot that needs what its role card doesn't give it (to write in a folder outside its
-task's own, or to reach the network), or the user's go-ahead before something big or hard to undo, asks with
-`ask_permission`, and the user allows it or not with a button: in the task's thread, and in the chat its work started
-from. What's allowed is the task's for the rest of it: its next turn opens with it (`Sessions._session_for`).
+"""Asking the user's leave. Work that needs what its bot's role card doesn't give it (to write in a folder outside its
+task's own, or to reach the network), or the user's go-ahead before something big or hard to undo, is asked for with
+`ask_permission` by whoever the user gave it to: the chief, for its own work or a teammate's, or a bot for work the
+user gave it in its own chat. A bot working for a teammate escalates what it needs to them instead, who says go ahead
+when the project's rules or the brief already allow it, and otherwise passes it up, so the user hears it from the
+chief and only when it's theirs to give. The user allows it or not with a button: in
+the task's thread, and in the chat it was asked from. What's allowed is the task's for the rest of it: its next turn
+opens with it (`Sessions._session_for`).
 
 Some things can't be asked for, and no answer changes them (backends/policy.py): the user's logins and keys,
 crewbots' own files, the whole home folder, and what's the user's to do (pushing, merging, publishing).
@@ -23,10 +27,16 @@ class Permissions:
     """The part of Runner for what bots ask the user to allow."""
 
     def ask_permission(self, task_id: str, what: str, why: str = "", kind: str = "action",
-                       folder: str | None = None) -> dict[str, Any]:
-        """The `ask_permission` tool: records what the bot asks, shows it to the user, and has the task wait on the
-        answer, as a question does."""
-        task = self.store.get_task(task_id)
+                       folder: str | None = None, for_task: str | None = None) -> dict[str, Any]:
+        """The `ask_permission` tool: records what the chief asks, for its own task or `for_task`'s, shows it to the
+        user, and has that task wait on the answer, as a question does."""
+        asker = self.store.get_task(task_id)
+        if not self.is_chief(asker.bot) and (for_task or not self._from_the_user(asker)):
+            raise CrewError("a teammate gave you this work, so ask them: escalate what you need, and why, to whoever "
+                            "gave it to you. Only the chief asks the user's leave for work a teammate gave out")
+        task = self.store.get_task(for_task) if for_task else asker
+        if task.status in (Status.CANCELLED, Status.FAILED):
+            raise CrewError(f"{task.id} has ended: there's nothing to ask for")
         bot = self.crew.bots[task.bot]
         what, why = " ".join(str(what).split()), " ".join(str(why or "").split())
         if kind not in KINDS:
@@ -45,14 +55,16 @@ class Permissions:
             target = str(path)
         if kind == "network" and (bot.network is True or any(g["kind"] == "network" for g in granted)):
             raise CrewError("you have the network already")
-        asked = self.store.ask_permission(task_id, kind, target, what, why)
-        self._escalated.add(task_id)  # it waits on the user once its turn ends
+        asked = self.store.ask_permission(task.id, kind, target, what, why)
+        if task is asker or task.id in self._runs:
+            self._escalated.add(task.id)  # it waits on the user once its turn ends (a teammate's waits already)
         if task.parent_id:
-            self.store.update_task(task_id, reported=True)  # not a finished thread: the chat shows what it asks
-        shown = {"permission": asked["id"], "kind": kind, "what": what, "why": why, "bot": task.bot, "task": task_id,
-                 **({"folder": target} if target else {})}
-        for where in self._shown_in(task):
-            self._record(where, kind="permission", data=shown)
+            self.store.update_task(task.id, reported=True)  # not a finished thread: the chat shows what it asks
+        shown = {"permission": asked["id"], "kind": kind, "what": what, "why": why, "bot": asker.bot, "task": task.id,
+                 **({"for": task.bot} if task is not asker else {}), **({"folder": target} if target else {})}
+        where = self._shown_in(task) if task is asker else list(dict.fromkeys([task.id, self.chat(asker.bot).id]))
+        for place in where:
+            self._record(place, kind="permission", data=shown)
         self._refresh_working_state(task.bot)
         return asked
 
@@ -64,13 +76,23 @@ class Permissions:
         asked = self.store.answer_permission(permission_id, allowed)
         task = self.store.get_task(asked["task_id"])
         self._refresh_working_state(task.bot)
-        for where in self._shown_in(task):
+        shown = [row[0] for row in self.store.db.execute(
+            "select distinct task_id from events where kind = 'permission' and json_extract(data, '$.permission') = ?",
+            (permission_id,))]
+        for where in shown or self._shown_in(task):  # where it was asked: the chief's chat, for a teammate's
             self._record(where, kind="permission_answer", data={"permission": permission_id, "allowed": allowed})
         if task.status is not Status.CANCELLED:
             self.send(task.id, sender="crewbots", text=prompts.text(
                 "permission-allowed" if allowed else "permission-refused", self.crew.home, what=asked["what"],
                 grant=_grant(asked)))
         return asked
+
+    def _from_the_user(self, task: Task) -> bool:
+        """Whether the user gave this bot the work itself, in its chat with them or a thread they started for it, with no
+        teammate in between (a group chat's work goes through its lead and the chief)."""
+        chain = self._chain(task)
+        return (chain[-1].kind in ("chat", "thread") and chain[-1].created_by == "user"
+                and all(t.bot == task.bot for t in chain))
 
     def _shown_in(self, task: Task) -> list[str]:
         """Where what a task asks is shown: in its own thread, and in the chat (or the thread) its work started from."""

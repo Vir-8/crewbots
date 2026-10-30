@@ -18,6 +18,7 @@ from mcp.types import ImageContent, TextContent
 
 from crewbots.crew_tools import (
     SPECS,
+    asked_text,
     describe,
     dropped_text,
     lines,
@@ -105,9 +106,11 @@ def _crew_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = F
                 "words. End your turn: the answer arrives as your next message.")
 
     @server.tool(description=describe("ask_permission"))
-    def ask_permission(what: str, why: str = "", kind: str = "action", folder: str | None = None) -> str:
-        call("POST", "/bot/ask_permission", {"what": what, "why": why, "kind": kind, "folder": folder})
-        return "Asked the user. End your turn now: their answer arrives as your next message."
+    def ask_permission(what: str, why: str = "", kind: str = "action", folder: str | None = None,
+                       task_id: str | None = None) -> str:
+        call("POST", "/bot/ask_permission", {"what": what, "why": why, "kind": kind, "folder": folder,
+                                             "task_id": task_id})
+        return asked_text(task_id)
 
     @server.tool(description=describe("review"))
     def review(verdict: str, summary: str, findings: list[dict[str, str]] | None = None) -> str:

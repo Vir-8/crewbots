@@ -518,6 +518,7 @@ async def test_user_answer_to_escalation_is_shared_as_decision(store, tmp_path):
 
 async def test_open_user_questions_and_permissions_follow_answers(store, tmp_path):
     runner, _ = make(store, tmp_path)
+    store.set_chief("worker")  # the one who asks the user's leave
     chat = runner.chat("worker")
     thread = store.create_task("worker", "Export", parent_id=chat.id, kind="thread", status=Status.IDLE)
     runner.escalate(chat.id, "Which export format?")
@@ -724,6 +725,7 @@ async def test_open_session_reopens_when_another_bot_is_added(store, tmp_path):
 @pytest.mark.parametrize("terminal", [Status.FAILED, Status.CANCELLED])
 def test_unanswered_permission_is_removed_when_task_ends(store, tmp_path, terminal):
     runner, _ = make(store, tmp_path)
+    store.set_chief("worker")  # the one who asks the user's leave
     chat = runner.chat("worker")
     runner.ask_permission(chat.id, "Approve the action", kind="action")
     store.update_task(chat.id, status=Status.NEEDS_INPUT)

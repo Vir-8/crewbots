@@ -36,6 +36,12 @@ def merge_text(task_id: str, state: str | None, commit: str | None, details: dic
     return message
 
 
+def asked_text(for_task: str | None) -> str:
+    if for_task:
+        return f"Asked the user, for {for_task}: their answer goes to it, which carries on from there."
+    return "Asked the user. End your turn now: their answer arrives as your next message."
+
+
 def told_text(item: dict[str, Any]) -> str:
     return ("Told the user in your chat with them" + (", with a notification." if item["level"] == "needs_you" else
                                                        ". It's there for when they look; no notification now."))
@@ -79,7 +85,7 @@ SPECS: dict[str, Spec] = {
                              "checks": STRINGS}, ["done"])),
     "escalate": Spec(_object({"question": STRING, "choices": CHOICES, "multiple": {"type": "boolean"}}, ["question"])),
     "ask_permission": Spec(_object({"what": STRING, "why": STRING, "kind": {"type": "string", "enum": [
-        "action", "folder", "network"]}, "folder": STRING}, ["what"])),
+        "action", "folder", "network"]}, "folder": STRING, "task_id": STRING}, ["what"])),
     "review": Spec(_object({
         "verdict": {"type": "string", "enum": ["pass", "fail"]},
         "summary": STRING,
@@ -231,8 +237,8 @@ class CrewTools:
                             "words. End your turn: the answer arrives as your next message.")
                 case "ask_permission":
                     r.ask_permission(me, args["what"], args.get("why") or "", args.get("kind") or "action",
-                                     args.get("folder"))
-                    return "Asked the user. End your turn now: their answer arrives as your next message."
+                                     args.get("folder"), args.get("task_id") or None)
+                    return asked_text(args.get("task_id"))
                 case "review":
                     try:
                         verdict = Verdict(str(args["verdict"]).lower())

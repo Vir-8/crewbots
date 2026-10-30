@@ -90,6 +90,7 @@ class PermissionAsk(BaseModel):
     why: str = ""
     kind: Literal["action", "folder", "network"] = "action"
     folder: str | None = None  # for a folder: its whole path
+    task_id: str | None = None  # a teammate's task it's for, when the chief asks on its behalf
 
 class Forget(BaseModel):
     name: str
