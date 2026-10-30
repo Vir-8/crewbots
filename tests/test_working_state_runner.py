@@ -1,6 +1,8 @@
 """The working state the runner keeps for each bot: decisions from the user's answers, open questions and permissions,
 what it has under way elsewhere, and turns that carry on when the state can't be written."""
 
+import sqlite3
+
 import pytest
 from fakes import bot, make, settled, wait_until
 
@@ -118,7 +120,19 @@ async def test_choices_and_automatic_decisions_past_the_limit_keep_only_newest(s
     assert "question-12?" in decisions and "question-01?" in decisions and "question-00?" not in decisions
 
 
-@pytest.mark.parametrize("where", ["write", "sync", "read"])
+def _break_question_query(store, monkeypatch):
+    """The store fails on the query that gathers a bot's open questions, and nowhere else."""
+    execute = store.db.execute
+
+    def failing(sql, args=()):
+        if "e.kind = 'escalation'" in sql:
+            raise sqlite3.OperationalError("database is locked")
+        return execute(sql, args)
+
+    monkeypatch.setattr(store.db, "execute", failing)
+
+
+@pytest.mark.parametrize("where", ["write", "query", "read"])
 async def test_state_sync_error_does_not_stop_a_turn(store, tmp_path, monkeypatch, caplog, where):
     runner, backend = make(store, tmp_path)
 
@@ -127,8 +141,8 @@ async def test_state_sync_error_does_not_stop_a_turn(store, tmp_path, monkeypatc
 
     if where == "write":
         monkeypatch.setattr("crewbots.working_state.sync", broken)
-    elif where == "sync":
-        monkeypatch.setattr(runner, "_sync_working_state", broken)
+    elif where == "query":
+        _break_question_query(store, monkeypatch)
     else:
         monkeypatch.setattr("crewbots.working_state.read", broken)
     task = runner.say("worker", "Continue despite disk error")
@@ -182,10 +196,7 @@ def test_failed_sync_does_not_prime_or_deliver_changed_state(store, tmp_path, mo
     store.set_primed(chat.id, primed)
     edit(runner.crew.memory.root / "worker" / "working-state" / "state.md", "User's rules", "add", "new shared rule")
 
-    def broken(_bot):
-        raise OSError(28, "disk full")
-
-    monkeypatch.setattr(runner, "_sync_working_state", broken)
+    _break_question_query(store, monkeypatch)
     prompt, seen = runner._with_updates(chat, runner.crew.bots["worker"], "next")
     assert "new shared rule" not in prompt
     assert seen is None or seen["working-state"] == primed["working-state"]
