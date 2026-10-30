@@ -162,3 +162,14 @@ class BrowserProxy:
 
     def note(self, kind, **data):
         self.log.append({"at": datetime.now(UTC).isoformat(), "kind": kind, **data})
+
+    def refusal(self, since=None) -> str:
+        """The latest request turned away or unreachable after the `since` entry, in words."""
+        for entry in reversed(self.log):
+            if entry is since:
+                break
+            if entry["kind"] == "blocked":
+                return f"the proxy blocked {entry['url']}"
+            if entry["kind"] == "error":
+                return f"the proxy couldn't reach {entry['url'] or 'the site'}: {entry['error']}"
+        return ""

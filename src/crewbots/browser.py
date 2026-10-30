@@ -379,6 +379,7 @@ class Browser(BrowserControl):
             raise BrowserError(tab.failure)
         if action == "open":
             tab.loaded.clear()
+            since = tab.proxy.log[-1] if tab.proxy.log else None
             try:
                 result = await self.cdp.call("Page.navigate", {"url": args["url"]}, tab.session)
                 if result.get("errorText"):
@@ -387,11 +388,12 @@ class Browser(BrowserControl):
                     await tab.loaded.wait()
                 if tab.failure:
                     raise BrowserError(tab.failure)
-            except TimeoutError:
-                error = f"Chrome timed out: Page.loadEventFired for {args['url']} (session {tab.session}); {self.cdp.waiting()}"
-                raise BrowserError(f"{error}; proxy {tab.proxy.address}; proxy log: {json.dumps(list(tab.proxy.log))}") from None
-            except BrowserError as error:
-                raise BrowserError(f"{error}; proxy {tab.proxy.address}; proxy log: {json.dumps(list(tab.proxy.log))}") from None
+            except (TimeoutError, BrowserError) as error:
+                # The bot gets the reason; the full proxy and CDP logs stay in diagnostics().
+                reason = str(error) if isinstance(error, BrowserError) else f"{args['url']} didn't finish loading in 10 s"
+                if refusal := tab.proxy.refusal(since):
+                    reason += f"; {refusal}"
+                raise BrowserError(reason) from None
         elif action == "screenshot":
             width, height = args.get("width", 1400), args.get("height", 860)
             if type(width) is not int or type(height) is not int or not (320 <= width <= 3840 and 240 <= height <= 2160):
