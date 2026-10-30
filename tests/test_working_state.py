@@ -54,8 +54,10 @@ def test_generated_overflow_preserves_cap_and_tells_bot_to_tidy(tmp_path):
     assert "tidy up your state" in read(path)
 
 
-def test_many_concurrent_edits_and_syncs_preserve_every_entry(tmp_path):
+def test_many_concurrent_edits_and_syncs_preserve_every_entry(tmp_path, monkeypatch):
     from crewbots.working_state import sync
+
+    monkeypatch.setattr("crewbots.working_state.LOCK_TIMEOUT", 5.0)
 
     path = tmp_path / "state.md"
     workers, per_worker = 6, 8
