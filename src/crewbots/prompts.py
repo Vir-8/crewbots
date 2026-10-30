@@ -20,6 +20,7 @@ from crewbots import paths
 PACKAGED = Path(str(resources.files("crewbots") / "prompts"))
 FOLDER = "prompts"  # in a crew's folder, for its own versions
 PLACEHOLDER = re.compile(r"\{(\w+)\}")
+CLOSING = re.compile(r"<(\s*/\s*untrusted)", re.IGNORECASE)
 
 _read: dict[Path, tuple[int, str]] = {}  # a file → (its modification time, its text)
 
@@ -56,5 +57,6 @@ def _load(name: str, home: Path | None) -> str:
 
 def untrusted(source: str, text: str) -> str:
     """Text from outside the crew (a pull request, a commit, a page), marked so a bot reads it as data, never as
-    instructions (crew-tools.md says so)."""
-    return f'<untrusted source="{source}">\n{text.strip()}\n</untrusted>'
+    instructions (crew-tools.md says so). Only a closing tag inside it is escaped, so it can't end the block early,
+    and diffs and titles stay as they are."""
+    return f'<untrusted source="{source}">\n{CLOSING.sub(r"&lt;\1", text.strip())}\n</untrusted>'
