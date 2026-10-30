@@ -180,7 +180,7 @@ def test_a_granted_folder_is_writable_and_nowhere_else(tmp_path):
 
     spec = RunSpec(prompt="", cwd=tmp_path / "own", access=Access.READ_ONLY, write_dirs=[reports])
     assert f'"{reports}" = "write"' in " ".join(sandbox_overrides(spec))  # Codex
-    assert settings(Access.READ_ONLY, [reports])["permissions"]["allow"] == [f"Edit(/{reports})", f"Edit(/{reports}/**)"]
+    assert settings(spec)["permissions"]["allow"] == [f"Edit(/{reports})", f"Edit(/{reports}/**)"]
 
 
 def test_other_bots_working_state_stays_private_even_with_full_access(tmp_path):
@@ -194,7 +194,7 @@ def test_other_bots_working_state_stays_private_even_with_full_access(tmp_path):
     assert policy.check_tool("Glob", {"path": str(other), "pattern": ".state-*"}) is not None
     assert policy.check_tool("Grep", {"path": str(root), "pattern": "anything"}) is not None
     assert policy.check_tool("Glob", {"pattern": str(root / "*" / "state.md")}) is not None
-    full = settings(Access.FULL, deny_read=[other])["permissions"]["deny"]
+    full = settings(RunSpec(prompt="", cwd=tmp_path, access=Access.FULL, deny_read=[other]))["permissions"]["deny"]
     assert full == [f"Read(/{other})", f"Read(/{other}/**)"]  # not the private paths, which full access may read
 
 
@@ -202,10 +202,11 @@ def test_a_bot_asks_through_the_api_and_only_the_user_answers(crew_app):
     client, backend, store = crew_app
     task_id, token = start(client, backend, "chief")
 
-    asked = client.post("/bot/ask_permission", json={"what": "Use the network", "kind": "network"}, headers=as_bot(token))
-    permission = asked.json()["id"]
+    asked = client.post("/bot/tools/ask_permission", json={"what": "Use the network", "kind": "network"},
+                        headers=as_bot(token))
+    permission = store.last_event(task_id, ("permission",)).data["permission"]
 
-    assert asked.status_code == 201
+    assert asked.status_code == 200 and asked.json()["content"].startswith("Asked the user.")
     assert client.post(f"/permissions/{permission}", json={"allowed": True}, headers=as_bot(token)).status_code == 403
     user = {"Authorization": f"Bearer {ADMIN}"}
     answered = client.post(f"/permissions/{permission}", json={"allowed": True}, headers=user)

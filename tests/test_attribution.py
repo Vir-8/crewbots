@@ -53,8 +53,8 @@ def test_claude_sdk_sessions_turn_attribution_off(access):
 
 
 def test_the_settings_keep_the_permissions_next_to_attribution():
-    assert settings(Access.FULL) == NO_ATTRIBUTION
-    assert set(settings(Access.READ_ONLY)) == {"permissions", *NO_ATTRIBUTION}
+    assert settings(RunSpec(prompt="", cwd=".", access=Access.FULL)) == NO_ATTRIBUTION
+    assert set(settings(RunSpec(prompt="", cwd=".", access=Access.READ_ONLY))) == {"permissions", *NO_ATTRIBUTION}
 
 
 @pytest.mark.parametrize("access", list(Access))

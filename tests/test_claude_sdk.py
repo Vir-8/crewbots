@@ -504,7 +504,7 @@ def test_private_state_paths_are_carried_to_backends(store, tmp_path):
     chief_state = tmp_path / "memory" / "chief" / "working-state" / "state.md"
     own_state = tmp_path / "memory" / "worker" / "working-state" / "state.md"
     assert chief_state.parent in spec.deny_read and own_state.parent not in spec.deny_read
-    assert str(chief_state.parent) in str(settings(spec.access, spec.write_dirs, spec.deny_read))
+    assert str(chief_state.parent) in str(settings(spec))
     assert str(chief_state.parent) in str(sandbox_overrides(spec))
 
 

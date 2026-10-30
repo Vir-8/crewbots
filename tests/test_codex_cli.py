@@ -66,6 +66,15 @@ def test_mcp_calls_are_named_like_claudes():
     ]
 
 
+def test_an_mcp_screenshot_is_kept_as_an_image_not_text():
+    item = {"id": "m", "type": "mcp_tool_call", "server": "blender", "tool": "screenshot", "arguments": {},
+            "status": "completed", "result": {"content": [{"type": "image", "mimeType": "image/jpeg", "data": "jpg"}]}}
+
+    events = parse([{"type": "item.completed", "item": item}])
+
+    assert events[-1] == ToolResult(id="m", output="", images=[{"mime": "image/jpeg", "data": "jpg"}])
+
+
 def test_a_failed_turn_ends_in_an_error_and_retries_are_only_notices():
     events = parse([
         {"type": "error", "message": "Reconnecting... 1/5"},
