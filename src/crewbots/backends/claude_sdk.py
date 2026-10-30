@@ -51,6 +51,7 @@ from crewbots.backends.claude_cli import (
 )
 from crewbots.backends.credentials import without_credentials
 from crewbots.backends.policy import WEB_TOOLS, Policy
+from crewbots.backends.process import LINE_LIMIT
 from crewbots.crew_tools import CrewTools, ToolRefused
 from crewbots.events import Done, Event, Notice, SessionStarted, Text, ToolCall, ToolResult, Usage
 
@@ -132,6 +133,9 @@ class ClaudeAgent:
             # The window it compacts within, and /context's percentage is of this rather than the model's whole window.
             extra_args={"autocompact": str(spec.context_window)} if spec.context_window else {},
             stderr=session.stderr_lines.append,
+            # The SDK reads at most 1 MB a message otherwise, and a tool result can carry a whole image or file: past
+            # it, the turn fails, and so does every try again of it.
+            max_buffer_size=LINE_LIMIT,
         )
 
 

@@ -230,6 +230,7 @@ def test_the_cli_gets_only_crewbots_tools_and_the_repos_settings(tmp_path, monke
     folders = (tmp_path.resolve(), (tmp_path / "skills").resolve())
     assert {f"Edit(/{folder}/**)" for folder in folders} <= set(deny)  # its commands write in neither
     assert options.can_use_tool is session.policy
+    assert options.max_buffer_size >= 32 * 1024 * 1024  # a tool result with a whole screenshot in it
     assert set(options.mcp_servers) == {"resolve"}  # no crew tools without a CrewTools
     assert options.env["ANTHROPIC_API_KEY"] == "" and options.env["GH_TOKEN"] == ""  # no logins in its shell
     assert options.add_dirs == [str(tmp_path / "skills")]
