@@ -19,13 +19,13 @@ from crewbots import plans as plans_module
 from crewbots import service as service_module
 from crewbots.api.app import DEFAULT_PORT, create_app
 from crewbots.backends import codex_isolation
+from crewbots.paths import DAEMON_FILE, DB
 from crewbots.reviews import Reviews
 from crewbots.runner import Runner
 from crewbots.scheduler import Scheduler
 from crewbots.store import Store
 
 LOG_CHECK_S = 600.0  # how often the daemon looks at its log's size
-DAEMON_FILE = "daemon.json"  # in the crew's folder: where the daemon is and its token, readable only by the user
 
 
 def _warm_inbox(reviews: Reviews) -> None:
@@ -58,7 +58,7 @@ def read_daemon_info(home: Path) -> DaemonInfo:
 def serve(home: Path, port: int = DEFAULT_PORT, max_parallel: int = 4, sessions: bool = True, max_depth: int = 3) -> None:
     home = home.expanduser()
     crew = crew_module.load(home)
-    store = Store(home / "crewbots.db")
+    store = Store(home / DB)
     store.mark_interrupted()
     token = secrets.token_urlsafe(32)
     info_path = home / DAEMON_FILE

@@ -217,7 +217,7 @@ def _service(args: argparse.Namespace) -> int:
         print(f"{state.label}: not installed")
     else:
         print(f"{state.label}: installed ({state.plist}), {'running, pid ' + str(state.pid) if state.running else 'not running'}")
-        print(f"logs: {paths.logs() / 'daemon.log'}")
+        print(f"logs: {paths.daemon_log()}")
     return 0
 
 

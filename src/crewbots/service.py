@@ -56,8 +56,8 @@ def plist(home: Path, port: int, label: str = LABEL, executable: Path | None = N
         "KeepAlive": {"SuccessfulExit": False},  # restart after a crash, not after a clean stop
         "ThrottleInterval": 10,
         "ProcessType": "Interactive",  # it runs agents for the user; don't throttle it like a background job
-        "StandardOutPath": str(paths.logs() / "daemon.log"),
-        "StandardErrorPath": str(paths.logs() / "daemon.log"),
+        "StandardOutPath": str(paths.daemon_log()),
+        "StandardErrorPath": str(paths.daemon_log()),
         "WorkingDirectory": str(home.expanduser()),
     }
 
@@ -117,7 +117,7 @@ def rotate_log(max_bytes: int = LOG_MAX_BYTES, keep: int = LOG_KEEP, log: Path |
     """Starts a fresh daemon.log once it has grown past `max_bytes`, keeping the last `keep`. launchd opened the file
     and holds it as the daemon's output, so the daemon moves its own output: it renames the file and points its stdout
     and stderr at a new one. Only when its output is that file (not a terminal, not the app's pipe)."""
-    log = log or paths.logs() / "daemon.log"
+    log = log or paths.daemon_log()
     try:
         current = os.stat(log)
         if current.st_size <= max_bytes or (os.fstat(1).st_ino, os.fstat(1).st_dev) != (current.st_ino, current.st_dev):

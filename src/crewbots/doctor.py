@@ -41,7 +41,7 @@ def run(home: Path) -> list[Finding]:
 
 
 def _chief(home: Path) -> list[Finding]:
-    db = home / "crewbots.db"
+    db = home / paths.DB
     if not db.exists():
         return []
     try:
@@ -99,7 +99,7 @@ def _codex() -> list[Finding]:
 
 def _daemon(home: Path) -> list[Finding]:
     try:
-        info = json.loads((home / "daemon.json").read_text())
+        info = json.loads((home / paths.DAEMON_FILE).read_text())
         url, headers = info["url"], {"Authorization": f"Bearer {info['token']}"}
     except (OSError, ValueError, TypeError, KeyError):
         return [Finding(False, "Daemon: not running", "crewbots serve, or crewbots service install to run it at login")]
@@ -108,7 +108,7 @@ def _daemon(home: Path) -> list[Finding]:
         state = httpx.get(f"{url}/v1/crew", headers=headers, timeout=3).raise_for_status().json()
     except (httpx.HTTPError, ValueError, KeyError):
         return [Finding(False, f"Daemon: pid {info.get('pid')} isn't answering",
-                        f"its log: {paths.logs() / 'daemon.log'}; crewbots service start")]
+                        f"its log: {paths.daemon_log()}; crewbots service start")]
     doing = (f"{state['turns_running']} turn(s) running" if state.get("turns_running") else "idle") + (
         f", {state['held']} held" if state.get("held") else "") + (", paused" if state.get("paused") else "")
     line = f"Daemon: pid {info['pid']}, from {version.get('build') or 'an installed copy'} (API v{version['api']}); {doing}"
@@ -128,10 +128,10 @@ def _service() -> list[Finding]:
 
 
 def _database(home: Path) -> list[Finding]:
-    db = home / "crewbots.db"
+    db = home / paths.DB
     if not db.exists():
         return [Finding(None, "Database: none yet (it's made when the daemon first starts)")]
-    size = sum(p.stat().st_size for p in db.parent.glob("crewbots.db*") if p.is_file())
+    size = sum(p.stat().st_size for p in db.parent.glob(f"{paths.DB}*") if p.is_file())
     try:
         with sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=10) as conn:  # beside the running daemon
             check = conn.execute("pragma quick_check").fetchone()[0]
@@ -150,7 +150,7 @@ def _disk(home: Path) -> list[Finding]:
               ("code review checkouts", paths.review_snapshots() / "checkouts", "six kept per repo"),
               ("attachments", home / "attachments", "files sent with messages"),
               ("temp", paths.temp(), "sessions' scratch folders, removed as they close"),
-              ("logs", paths.logs(), "rotated past 10 MB")]
+              ("logs", paths.logs(), f"rotated past {_size(svc.LOG_MAX_BYTES)}")]
     sizes = {name: _du(path) for name, path, _ in places}
     line = ", ".join(f"{name} {_size(sizes[name])}" for name, _, _ in places if sizes[name])
     hints = [f"{name}: {path} ({why})" for name, path, why in places if sizes[name] > 500_000_000]
@@ -163,7 +163,7 @@ def _worktrees(home: Path) -> list[Finding]:
     root = paths.worktrees()
     if not root.is_dir():
         return []
-    tasks = _tasks(home / "crewbots.db")
+    tasks = _tasks(home / paths.DB)
     now = datetime.now(UTC)
     stale: list[tuple[Path, str, str]] = []  # folder, why, how to remove it
     for repo in sorted(p for p in root.iterdir() if p.is_dir() and p.name != "reviews"):
@@ -187,12 +187,12 @@ def _worktrees(home: Path) -> list[Finding]:
 
 
 def _log() -> list[Finding]:
-    log = paths.logs() / "daemon.log"
+    log = paths.daemon_log()
     if not log.exists():
         return []
-    rotated = sorted(log.parent.glob("daemon.log.*"))
+    rotated = sorted(log.parent.glob(f"{log.name}.*"))
     extra = f", and {len(rotated)} older" if rotated else ""
-    return [Finding(None, f"Log: {log} ({_size(log.stat().st_size)}{extra}); a fresh one starts past 10 MB")]
+    return [Finding(None, f"Log: {log} ({_size(log.stat().st_size)}{extra}); a fresh one starts past {_size(svc.LOG_MAX_BYTES)}")]
 
 
 def _tasks(db: Path) -> dict[str, dict]:

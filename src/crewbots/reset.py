@@ -25,11 +25,10 @@ from crewbots import cards, paths
 from crewbots import crew as crew_module
 from crewbots import service as svc
 from crewbots.discovery import _claude_cwd
+from crewbots.paths import DAEMON_FILE, DB
 from crewbots.runner.welcome import STARTED
 from crewbots.store import Status, Store
 
-DB = "crewbots.db"
-DAEMON_FILE = "daemon.json"
 KEPT = "kind = 'review'"  # code review's own tasks, which stay with their events
 STOP_S = 30.0  # for the daemon to shut down once its service is stopped
 FOLDERS = ("memory", "projects", "attachments")  # in the crew's folder
