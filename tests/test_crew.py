@@ -60,6 +60,15 @@ def test_a_card_without_frontmatter_is_refused():
         parse_card("---\ntitle: x\n", default_name="x")
 
 
+def test_a_value_with_dashes_in_it_stays_in_the_frontmatter():
+    card = CARD.replace("Cuts gameplay footage", "Cuts --- and trims ---")
+
+    bot = parse_card(card, default_name="x")
+
+    assert bot.description == "Cuts --- and trims --- into shorts in DaVinci Resolve."
+    assert bot.instructions.startswith("## Mission")
+
+
 def test_the_starter_crew_loads(tmp_path):
     home = crew.init(tmp_path / "crew")
 

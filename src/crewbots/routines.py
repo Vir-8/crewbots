@@ -24,6 +24,8 @@ from typing import Any
 
 import yaml
 
+from crewbots import frontmatter
+
 ROUTINE_FIELDS = {"name", "bot", "schedule", "on", "repo", "workspace", "budget", "enabled", "description", "proposed_by"}
 TRIGGERS = {"github.review_requested", "github.ci_failed"}
 PR_FIELDS = {"pr.title", "pr.url", "pr.number", "pr.repo", "pr.author", "pr.branch", "pr.diff", "pr.failures"}
@@ -88,10 +90,9 @@ def load(routines_dir: Path, bots: set[str] | None = None) -> tuple[list[Routine
 def parse(text: str, default_name: str, source: Path) -> Routine:
     if not text.startswith("---"):
         raise RoutineError("a routine starts with --- frontmatter")
-    try:
-        _, raw, body = text.split("---", 2)
-    except ValueError:
-        raise RoutineError("the frontmatter has no closing ---") from None
+    if (parts := frontmatter.split(text)) is None:
+        raise RoutineError("the frontmatter has no closing ---")
+    raw, body = parts
     meta = yaml.safe_load(raw) or {}
     if not isinstance(meta, dict):
         raise RoutineError("frontmatter must be a mapping")

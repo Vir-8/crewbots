@@ -23,7 +23,7 @@ from pathlib import Path
 
 import yaml
 
-from crewbots import attribution, paths, timefmt
+from crewbots import attribution, frontmatter, paths, timefmt
 
 CREW_SCOPE = "crew"
 INDEX_LIMIT = 60  # notes listed in a bot's instructions per scope; older ones stay in the folder
@@ -91,11 +91,11 @@ class Memory:
         """Marks a note as replaced by note `by`: it stays, with when it stopped being true, but drops out of the
         index and every session."""
         path = self._notes_dir(scope) / f"{_slug(name)}.md"
-        note = _read(path)
-        if note is None:
-            raise MemoryError(f"no note named {name!r}")
-        meta = yaml.safe_load(path.read_text().split("---", 2)[1]) or {}
-        _write(path, {**meta, "superseded_by": by, "valid_until": _today()}, note.body)
+        try:
+            meta, body = _parse(path.read_text())
+        except OSError:
+            raise MemoryError(f"no note named {name!r}") from None
+        _write(path, {**meta, "superseded_by": by, "valid_until": _today()}, body)
         self._write_index(scope)
         return _read(path)  # type: ignore[return-value]
 
@@ -280,17 +280,23 @@ def _read(path: Path) -> Note | None:
         text = path.read_text()
     except OSError:
         return None
-    meta: dict = {}
-    body = text
-    if text.startswith("---"):
-        try:
-            _, raw, body = text.split("---", 2)
-            meta = yaml.load(raw, Loader=SAFE_LOADER) or {}
-        except (ValueError, yaml.YAMLError):
-            meta = {}
+    meta, body = _parse(text)
     return Note(name=path.stem, title=str(meta.get("title") or path.stem), body=body.strip(),
                 created=str(meta.get("created") or ""), source=str(meta.get("source") or ""), path=path,
                 updated=str(meta.get("updated") or ""), superseded_by=str(meta.get("superseded_by") or ""))
+
+
+def _parse(text: str) -> tuple[dict, str]:
+    """A note's front matter and body. A note written by hand may have no front matter, or YAML that isn't a mapping:
+    it's read as having none."""
+    if (parts := frontmatter.split(text)) is None:
+        return {}, text
+    raw, body = parts
+    try:
+        meta = yaml.load(raw, Loader=SAFE_LOADER)
+    except yaml.YAMLError:
+        meta = None
+    return (meta if isinstance(meta, dict) else {}), body
 
 
 def _write(path: Path, meta: dict, body: str) -> None:

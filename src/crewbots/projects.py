@@ -24,6 +24,8 @@ from typing import Literal
 
 import yaml
 
+from crewbots import frontmatter
+
 FOLDER = "projects"
 NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
 Isolation = Literal["in_place", "worktree"]
@@ -78,10 +80,9 @@ def load(home: Path) -> tuple[dict[str, Project], dict[str, str]]:
 def parse(text: str, path: Path) -> Project:
     if not text.startswith("---"):
         raise ProjectError("a project starts with --- frontmatter naming its folder")
-    try:
-        raw, body = text[3:].split("\n---", 1)
-    except ValueError:
-        raise ProjectError("the frontmatter has no closing ---") from None
+    if (parts := frontmatter.split(text)) is None:
+        raise ProjectError("the frontmatter has no closing ---")
+    raw, body = parts
     meta = yaml.safe_load(raw) or {}
     if not isinstance(meta, dict) or not meta.get("folder"):
         raise ProjectError("the frontmatter needs `folder:`, the project's folder")

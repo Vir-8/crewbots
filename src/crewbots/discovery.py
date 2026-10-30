@@ -16,7 +16,7 @@ from pathlib import Path
 
 import yaml
 
-from crewbots import paths
+from crewbots import frontmatter, paths
 from crewbots.projects import name_for
 
 DAYS = 180  # how far back a folder counts as one the user works in
@@ -221,7 +221,7 @@ def _title(memory: Path) -> str:
         return "Its index"
     try:
         text = memory.read_text(errors="replace")
-        meta = yaml.safe_load(text[3:].split("\n---", 1)[0]) if text.startswith("---") else None
+        meta = yaml.safe_load(parts[0]) if (parts := frontmatter.split(text)) else None
     except (OSError, yaml.YAMLError):
         meta = None
     if isinstance(meta, dict):

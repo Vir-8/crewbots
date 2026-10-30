@@ -66,6 +66,13 @@ def test_a_note_edited_by_hand_is_what_the_bot_sees(memory):
     assert "Thursdays, since October" in memory.search(["chief"], "release day")[0]["text"]
 
 
+def test_a_note_whose_front_matter_isnt_a_mapping_is_read_as_having_none(memory):
+    note = memory.remember("chief", "Release day", "Fridays", "t_1")
+    note.path.write_text("---\njust a line\n---\nThursdays\n")
+
+    assert [(n.title, n.body) for n in memory.notes("chief")] == [("release-day", "Thursdays")]
+
+
 def test_the_prompt_lists_the_bots_notes_and_the_crews(memory):
     memory.remember("engineer", "Mine", "only mine", "t_1")
     memory.remember("crew", "Everyone's", "for everyone", "t_2")

@@ -17,6 +17,8 @@ from pathlib import Path
 
 import yaml
 
+from crewbots import frontmatter
+
 FIELDS = {"title", "lead", "members"}
 
 
@@ -49,10 +51,9 @@ def load(folder: Path, bots: set[str]) -> tuple[list[RoomFile], dict[str, str]]:
 def parse(text: str, name: str, bots: set[str]) -> RoomFile:
     if not text.startswith("---"):
         raise RoomFileError("a group chat file starts with --- frontmatter")
-    try:
-        _, raw, body = text.split("---", 2)
-    except ValueError:
-        raise RoomFileError("the frontmatter has no closing ---") from None
+    if (parts := frontmatter.split(text)) is None:
+        raise RoomFileError("the frontmatter has no closing ---")
+    raw, body = parts
     try:
         meta = yaml.safe_load(raw) or {}
     except yaml.YAMLError as e:

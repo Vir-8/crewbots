@@ -13,6 +13,7 @@ from typing import Any
 
 import yaml
 
+from crewbots import frontmatter
 from crewbots import routines as routines_module
 from crewbots.crew import CrewError, _context_window, parse_card
 
@@ -26,7 +27,9 @@ def read(path: Path) -> tuple[dict[str, Any], str]:
     text = path.read_text()
     if not text.startswith("---"):
         return {}, text
-    _, raw, body = text.split("---", 2)
+    if (parts := frontmatter.split(text)) is None:
+        raise CrewError(f"{path.name}: the frontmatter has no closing ---")
+    raw, body = parts
     return yaml.safe_load(raw) or {}, body.lstrip("\n")
 
 
