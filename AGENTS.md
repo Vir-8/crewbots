@@ -5,8 +5,8 @@ A Python daemon (`src/crewbots`) and a Tauri app (`app/`, React and TypeScript).
 ## Checks
 
 - `uv run ruff check src tests`
-- `uv run pytest -q` (the whole suite takes about 3 minutes: while you work, run the tests for what you changed, and
-  the whole suite once before handing back)
+- `uv run pytest -q -n auto` for the whole suite, in parallel (under a minute; about 3 serially): while you work, run the
+  tests for what you changed, without `-n`, and the whole suite once before handing back
 - `cd app && npx tsc --noEmit -p . && npm test`
 - After changing the API: `uv run crewbots openapi --ts --out app/src/api-types.ts`
 
