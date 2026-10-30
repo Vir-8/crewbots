@@ -30,8 +30,6 @@ BASE_PROFILE = {Access.READ_ONLY: ":read-only", Access.WORKSPACE_WRITE: ":worksp
 
 
 class CodexExec:
-    name = "codex-exec"
-
     def __init__(self, command: Sequence[str] = ("codex",), isolate: bool = True):
         """`isolate=False` lets the bot use the user's own Codex MCP servers and plugins; only for trying things out."""
         self.command = list(command)
@@ -91,8 +89,6 @@ class CodexExec:
 
 
 class CodexCLI(CodexExec):
-    name = "codex"
-
     async def run(self, spec: RunSpec) -> AsyncIterator[Event]:
         """One turn on its own: a session opened for it and closed after, so the policy still answers approvals."""
         session = await self.open(spec)

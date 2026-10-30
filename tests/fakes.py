@@ -33,8 +33,6 @@ def reply(spec: RunSpec):
 class FakeBackend:
     """Stands in for a CLI backend in-process. Set `gate` to hold every run until it is set."""
 
-    name = "fake"
-
     def __init__(self, reply=reply, gate: asyncio.Event | None = None):
         self.reply = reply
         self.gate = gate
@@ -160,8 +158,6 @@ class FakeSession:
 class SessionBackend:
     """A backend that keeps sessions open, as Codex's app-server and the Agent SDK do. Set `gate` to hold every turn."""
 
-    name = "fake"
-
     def __init__(self, fail_open=False):
         self.opened: list[FakeSession] = []
         self.one_shot: list[RunSpec] = []
@@ -199,8 +195,6 @@ PORT = 8765
 
 class HeldBackend:
     """Every run stays open until `release` is set, so its run token stays valid while the test uses it."""
-
-    name = "fake"
 
     def __init__(self):
         self.release = threading.Event()  # the app runs on the test client's own thread and loop

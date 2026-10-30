@@ -65,7 +65,6 @@ _END = object()
 
 
 class ClaudeAgent:
-    name = "claude"
     in_process_tools = True  # the runner hands it the crew tools as Python, not as an MCP server
 
     def __init__(self, cli_path: str | None = None, use_api_key: bool = False):
@@ -156,7 +155,6 @@ class ClaudeAgentSession:
         self.policy = ClaudePolicy(spec.access, Path(spec.cwd), set(spec.mcp_servers) | {CREW_SERVER},
                                    network=spec.network, write_dirs=spec.write_dirs, deny_read=spec.deny_read)
         self.stderr_lines: list[str] = []
-        self.temp: Path | None = None
         self._broken = False
         # A turn's prompts: its own and any steered into it, and how many have their result. Claude Code takes a steered
         # message at the turn's next step, or answers it straight after, and the turn reads on until each has its result.
@@ -305,8 +303,6 @@ class ClaudeAgentSession:
         if client:
             with contextlib.suppress(Exception):
                 await client.disconnect()
-        if self.temp:
-            shutil.rmtree(self.temp, ignore_errors=True)
 
 
 class ClaudePolicy(Policy):

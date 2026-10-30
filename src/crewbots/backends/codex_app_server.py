@@ -49,6 +49,11 @@ CLIENT = {"name": "crewbots", "title": "crewbots", "version": "0.1"}
 CREW_SERVER = "crewbots"
 
 
+def approval_policy(access: Access) -> str:
+    """Full access has nothing to ask about; otherwise Codex asks, and crewbots' policy answers."""
+    return "never" if access is Access.FULL else "on-request"
+
+
 class AppServerError(RuntimeError):
     pass
 
@@ -65,7 +70,7 @@ class CodexSession:
         self._announced = False
         self._broken = False
         full = spec.access is Access.FULL
-        self.approval_policy = "never" if full else "on-request"
+        self.approval_policy = approval_policy(spec.access)
         self.policy = None if full else Policy(spec.access, spec.cwd, set(spec.mcp_servers) | {CREW_SERVER},
                                                     network=spec.network, write_dirs=spec.write_dirs, deny_read=spec.deny_read)
         self._files: dict[str, list[str]] = {}  # file change item id → the paths it touches, for its approval
@@ -81,7 +86,6 @@ class CodexSession:
     @classmethod
     async def open(cls, cli: "CodexCLI", spec: RunSpec) -> "CodexSession":
         overrides = await asyncio.to_thread(cli.config_overrides, spec)  # may list Codex's MCP servers, which takes seconds
-        policy = "never" if spec.access is Access.FULL else "on-request"
         env = dict(os.environ)
         temp = None
         if spec.access is not Access.FULL:
@@ -93,7 +97,8 @@ class CodexSession:
         if spec.access is Access.WORKSPACE_WRITE:
             env |= without_credentials() | package_caches()
         overrides += network_overrides(spec)
-        argv = [*cli.command, "app-server", "-c", f'approval_policy="{policy}"', *overrides, *spec.extra_args]
+        argv = [*cli.command, "app-server", "-c", f'approval_policy="{approval_policy(spec.access)}"', *overrides,
+                *spec.extra_args]
         session = cls(await JsonlProcess.start(argv, cwd=spec.cwd, env=env), spec)
         session.temp = temp
         try:
@@ -306,17 +311,18 @@ class CodexSession:
         """Tells the model why something was declined, and what was steered into the turn, as input to the turn in
         progress."""
         while self._steers and self._turn_id:
-            text = self._steers.pop(0)
             with contextlib.suppress(AppServerError):
-                await self._request("turn/steer", {"threadId": self.session_id, "expectedTurnId": self._turn_id,
-                                                   "input": [{"type": "text", "text": text, "text_elements": []}]})
+                await self._send_steer(self._steers.pop(0))
         while self._asks and self._turn_id:
             text = self._asks.pop(0)
             try:
-                await self._request("turn/steer", {"threadId": self.session_id, "expectedTurnId": self._turn_id,
-                                                   "input": [{"type": "text", "text": text, "text_elements": []}]})
+                await self._send_steer(text)
             except AppServerError:  # the turn ended first: the next one takes it
                 self._missed.append(text)
+
+    async def _send_steer(self, text: str) -> None:
+        await self._request("turn/steer", {"threadId": self.session_id, "expectedTurnId": self._turn_id,
+                                           "input": [{"type": "text", "text": text, "text_elements": []}]})
 
 
 CODEX_WARNING_PERCENT = 80.0  # Codex reports how much is used, not a warning; Claude warns at about this point

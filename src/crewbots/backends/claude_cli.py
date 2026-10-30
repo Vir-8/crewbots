@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
 from typing import Any
 
-from crewbots.backends.base import CLAUDE_BOT_ENV, Access, RunSpec, claude_retry, mcp_servers_json, package_caches
+from crewbots.backends.base import CLAUDE_BOT_ENV, Access, RunSpec, claude_retry, package_caches
 from crewbots.backends.credentials import private_paths, without_credentials
 from crewbots.backends.process import JsonlProcess, stream_jsonl
 from crewbots.events import Compacted, Done, Event, Notice, RateLimit, SessionStarted, Text, ToolCall, ToolResult, Usage
@@ -18,9 +18,8 @@ READ_ONLY_TOOLS = "Read,Glob,Grep,ToolSearch"
 WEB_TOOLS = "WebFetch,WebSearch"  # with network on; this backend can't check a fetch's host, so a host list is off
 EDIT_TOOLS = "Edit,Write,MultiEdit"  # for a read-only bot, only in the folders the user let it write in
 # Claude Code's OS sandbox for a writing bot's shell commands: writes kept to the working folder, no opting out.
-# Commands may listen on local ports (the user allowed it on 2026-10-29), so a writing bot can run what it's checking,
-# such as a dev server or a scratch daemon, and look at it. Without it a bind fails with "Operation not permitted".
-# The hosts it may reach are unchanged.
+# Commands may listen on local ports, so a writing bot can run what it's checking, such as a dev server or a scratch
+# daemon, and look at it. Without it a bind fails with "Operation not permitted".
 SANDBOX = {"enabled": True, "autoAllowBashIfSandboxed": False, "allowUnsandboxedCommands": False,
            "network": {"allowLocalBinding": True}}
 # A read-only bot's shell, so it can look things up itself (git diff, a log): the same sandbox, writing nowhere but its
@@ -67,8 +66,6 @@ def settings(access: Access, write_dirs: Sequence[Path] = (), deny_read: Sequenc
 
 
 class ClaudeCLI:
-    name = "claude"
-
     def __init__(self, command: Sequence[str] = ("claude",), use_api_key: bool = False):
         """`use_api_key=False` hides ANTHROPIC_API_KEY from the CLI, so a key left in the environment never
         silently moves a run from the subscription to API billing."""
@@ -105,7 +102,7 @@ class ClaudeCLI:
             # Only crewbots' own MCP servers, and only the repo's settings: a bot must not inherit the user's
             # personal servers, hooks or plugins.
             "--strict-mcp-config",
-            "--mcp-config", json.dumps({"mcpServers": mcp_servers_json(spec.mcp_servers)}),
+            "--mcp-config", json.dumps({"mcpServers": {name: s.config() for name, s in spec.mcp_servers.items()}}),
             "--setting-sources", "project,local",
         ]
         mcp_tools = [f"mcp__{name}" for name in spec.mcp_servers]

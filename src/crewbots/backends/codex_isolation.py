@@ -27,10 +27,6 @@ BARE_KEY = re.compile(r"[A-Za-z0-9_-]+")
 _cache: dict[tuple[str, ...], tuple[float, tuple[float, float], list[str]]] = {}
 
 
-def codex_home() -> Path:
-    return paths.codex_home()
-
-
 def isolation_overrides(command: Sequence[str] = ("codex",), keep: Iterable[str] = ()) -> list[str]:
     """`-c` arguments that switch off everything the user's Codex would start, except the servers named in `keep`."""
     config = _config()
@@ -53,7 +49,7 @@ def isolation_overrides(command: Sequence[str] = ("codex",), keep: Iterable[str]
 
 
 def _config() -> dict[str, Any]:
-    path = codex_home() / "config.toml"
+    path = paths.codex_config()
     try:
         return tomllib.loads(path.read_text())
     except FileNotFoundError:
@@ -67,7 +63,7 @@ def warm(command: Sequence[str] = ("codex",)) -> None:
 
 def _listed_servers(command: Sequence[str]) -> tuple[list[str], str | None]:
     """Every server Codex knows about, from `codex mcp list --json`, cached while the config and plugins are unchanged."""
-    stamp = (_mtime(codex_home() / "config.toml"), _mtime(codex_home() / "plugins"))
+    stamp = (_mtime(paths.codex_config()), _mtime(paths.codex_home() / "plugins"))
     key = tuple(command)
     cached = _cache.get(key)
     if cached and cached[1] == stamp and time.monotonic() - cached[0] < CACHE_S:

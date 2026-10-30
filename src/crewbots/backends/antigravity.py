@@ -28,7 +28,6 @@ def mcp_config(servers: dict[str, McpServer]) -> list[dict]:
 
 
 class Antigravity:
-    name = "antigravity"
     automatic_turns = False
 
     async def open(self, spec: RunSpec) -> "AntigravitySession":
@@ -65,8 +64,6 @@ class Antigravity:
 
 
 class AntigravitySession:
-    automatic_turns = False
-
     def __init__(self, connection: Connection, spec: RunSpec):
         self.connection, self.spec = connection, spec
         self.session_id: str | None = None
@@ -88,7 +85,6 @@ class AntigravitySession:
         config.write_text(json.dumps({"cwd": str(spec.cwd.resolve()), "temp": str(self.temp),
             "access": spec.access.value, "network": spec.network,
             "write_dirs": [str(p) for p in spec.write_dirs], "deny_read": [str(p) for p in spec.deny_read]}))
-        config.chmod(0o600)
         servers = spec.mcp_servers | {WORKSPACE: McpServer(command=sys.executable,
             args=["-m", "crewbots.backends.antigravity_tools", str(config)])}
         params = {"cwd": str(spec.cwd.resolve()), "mcpServers": mcp_config(servers), "_meta": {"antigravity": {

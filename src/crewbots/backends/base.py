@@ -106,8 +106,6 @@ class Session(Protocol):
 
 
 class Backend(Protocol):
-    name: str
-
     def run(self, spec: RunSpec) -> AsyncIterator[Event]:
         """Streams the run's events, ending with exactly one `Done`. Closing the iterator stops the CLI."""
         ...
@@ -142,7 +140,3 @@ def package_caches() -> dict[str, str]:
     for folder in folders.values():
         folder.mkdir(parents=True, exist_ok=True)
     return {name: str(folder) for name, folder in folders.items()}
-
-
-def mcp_servers_json(servers: dict[str, McpServer]) -> dict[str, Any]:
-    return {name: s.config() for name, s in servers.items()}
