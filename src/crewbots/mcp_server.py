@@ -292,8 +292,8 @@ def _crew_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = F
 
     @server.tool(description=describe("withdraw_merge"))
     def withdraw_merge(task_id: str, reason: str) -> str:
-        result = call("POST", "/bot/withdraw_merge", {"task_id": task_id, "reason": reason})
-        return f"Withdrew the merge proposal for {task_id}." + (f" {result['notice']}." if result.get("notice") else "")
+        call("POST", "/bot/withdraw_merge", {"task_id": task_id, "reason": reason})
+        return f"Withdrew the merge proposal for {task_id}."
 
 
     return server

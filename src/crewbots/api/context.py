@@ -63,10 +63,7 @@ class Context:
         """A message's attachments, found in the crew's folder; a message needs text or one of them."""
         if not body.text.strip() and not body.attachments:
             raise HTTPException(422, "a message needs text, or an attachment")
-        try:
-            return [attachments_module.find(self.runner.crew.home, a) for a in body.attachments]
-        except attachments_module.AttachmentError as e:
-            raise HTTPException(422, str(e)) from None
+        return [attachments_module.find(self.runner.crew.home, a) for a in body.attachments]
 
     def reload_crew(self) -> None:
         self.runner.reload(crew_module.load(self.runner.crew.home))

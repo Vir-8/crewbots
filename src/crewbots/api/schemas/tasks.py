@@ -50,11 +50,6 @@ class TaskOut(BaseModel):
     attempt: RetryOut | None = None  # set while it waits between tries
 
 
-class MergeResultOut(TaskOut):
-    leftover_files: list[str] | None = None
-    leftover_check_error: str | None = None
-
-
 class MergeStatusOut(BaseModel):
     already_on: str | None  # the branch a proposal's changes are already part of
 
@@ -81,10 +76,6 @@ class LandedItem(BaseModel):
 class LandedOut(BaseModel):
     items: list[LandedItem]
     seen_at: str | None  # when the user last looked
-
-
-class WithdrawalResultOut(TaskOut):
-    notice: str | None = None
 
 
 class EventOut(BaseModel):

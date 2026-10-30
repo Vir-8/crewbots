@@ -159,11 +159,10 @@ for (const b of bots) {
 // A group chat: the crew's own, where bots talk to each other in the open.
 // A new, muted one nobody has written in yet. One where the bots went back and forth until they stopped. And an
 // archived one.
-type DemoRoom = Room & { stopped?: { after: number; waiting: string[]; owed?: string[] } | null };
-export const rooms: DemoRoom[] = [
+export const rooms: Room[] = [
   { id: "r_crew000001", title: "Crew", lead: "chief", members: bots.map((b) => b.name), created_at: tick(), updated_at: tick(), crew: true },
   { id: "r_review0002", title: "Review desk", lead: "reviewer", members: ["reviewer", "critic"], created_at: tick(), updated_at: tick(), muted: true },
-  { id: "r_naming0003", title: "Naming the export", lead: "engineer", members: ["engineer", "critic"], created_at: tick(), updated_at: tick(), stopped: { after: 4, waiting: ["engineer"], owed: ["engineer"] } },
+  { id: "r_naming0003", title: "Naming the export", lead: "engineer", members: ["engineer", "critic"], created_at: tick(), updated_at: tick(), stopped: { after: 4, waiting: ["engineer"] } },
   { id: "r_launch0004", title: "Launch prep", lead: "chief", members: ["chief", "engineer"], created_at: tick(), updated_at: tick(), archived_at: tick() },
 ];
 export const roomMessages = new Map<string, { id: number; room_id: string; author: string; text: string; depth: number; at: string; attachments?: Attachment[] }[]>();

@@ -4,6 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
+from crewbots import push, replace_main
 from crewbots.api.context import Context
 from crewbots.api.schemas import (
     AskBody,
@@ -108,16 +109,14 @@ def routes(c: Context) -> APIRouter:
 
     @v1.post("/bot/propose_push")
     async def bot_propose_push(request: Request, body: dict[str, str]):
-        from crewbots.push import proposal_message, propose
-        proposal = await propose(runner, request.state.task.id, body.get("project", ""), body.get("summary", ""))
-        return {"id": proposal, "message": proposal_message(runner, proposal)}
+        proposal = await push.propose(runner, request.state.task.id, body.get("project", ""), body.get("summary", ""))
+        return {"id": proposal, "message": push.proposal_message(runner, proposal)}
 
     @v1.post("/bot/propose_replace_main")
     async def bot_propose_replace_main(request: Request, body: dict[str, str]):
-        from crewbots.replace_main import proposal_message, propose
-        proposal = await propose(runner, request.state.task.id, body.get("project", ""), body.get("branch", ""),
-                                 body.get("summary", ""))
-        return {"id": proposal, "message": proposal_message(runner, proposal)}
+        proposal = await replace_main.propose(runner, request.state.task.id, body.get("project", ""),
+                                              body.get("branch", ""), body.get("summary", ""))
+        return {"id": proposal, "message": replace_main.proposal_message(runner, proposal)}
 
     @v1.post("/bot/propose_merge")
     async def bot_propose_merge(request: Request, body: MergeProposal):
@@ -125,14 +124,12 @@ def routes(c: Context) -> APIRouter:
         event = runner.store.last_event(task.id, ("merged",)) if task.merge_state == "merged" else None
         data = event.data if event and event.data.get("commit") == task.merged_commit else {}
         return {"id": task.id, "merge_state": task.merge_state, "merged_commit": task.merged_commit,
-                "leftover_files": data.get("leftover_files"), "leftover_check_error": data.get("leftover_check_error"),
                 "ignored": data.get("ignored")}
 
     @v1.post("/bot/withdraw_merge")
     async def bot_withdraw_merge(request: Request, body: MergeWithdrawal):
         task = runner.withdraw_merge(body.task_id, body.reason, parent_id=request.state.task.id)
-        event = runner.store.last_event(task.id, ("merge_withdrawn",))
-        return {"id": task.id, "merge_state": task.merge_state, "notice": event.data.get("notice") if event else None}
+        return {"id": task.id, "merge_state": task.merge_state}
 
     @v1.post("/bot/stop_task")
     async def bot_stop_task(request: Request, body: TaskStop):

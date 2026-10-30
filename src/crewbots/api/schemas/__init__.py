@@ -146,7 +146,6 @@ from crewbots.api.schemas.tasks import (
     LandedOut,
     LandedVerdict,
     MergeRequest,
-    MergeResultOut,
     MergeStatusOut,
     Message,
     NewTask,
@@ -156,7 +155,6 @@ from crewbots.api.schemas.tasks import (
     ReviewStateOut,
     TaskOut,
     TaskStatus,
-    WithdrawalResultOut,
 )
 from crewbots.api.schemas.usage import (
     BotUse,
@@ -260,9 +258,7 @@ __all__ = [
     "MergeProposal",
     "MergeWithdrawal",
     "WithdrawalReason",
-    "WithdrawalResultOut",
     "MergeRequest",
-    "MergeResultOut",
     "LandedItem",
     "LandedOut",
     "LandedVerdict",

@@ -162,7 +162,7 @@ async def test_explicit_room_limit_stops_until_carried_on_or_removed(crew, store
 
     bot_messages = [m for m in store.room_messages(room["id"]) if m["author"] != "user"]
     assert [m["depth"] for m in bot_messages] == [1, 2]
-    assert store.room(room["id"])["stopped"] == {"after": 2, "waiting": ["engineer"], "owed": []}
+    assert store.room(room["id"])["stopped"] == {"after": 2, "waiting": ["engineer"]}
 
     crew.runner.carry_on(room["id"])  # the user's "Continue": the one waiting is woken, with a fresh count
     await wait_until(idle(crew), timeout=10)
@@ -1292,7 +1292,7 @@ async def test_escalation_uses_normal_limit_and_explicit_recipient(crew, store):
     await wait_until(idle(crew))
     messages = store.room_messages(room["id"])
     assert [(m["author"], m["depth"]) for m in messages] == [("engineer", -1), ("chief", 0), ("engineer", 1)]
-    assert store.room(room["id"])["stopped"] == {"after": 1, "waiting": ["chief"], "owed": []}
+    assert store.room(room["id"])["stopped"] == {"after": 1, "waiting": ["chief"]}
     assert not crew.specs_for("reviewer")
     assert all("Should @reviewer inspect this?" not in str([e.data for e in store.events(crew.runner.chat(bot).id)])
                for bot in ("chief", "engineer", "reviewer"))

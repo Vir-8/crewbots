@@ -21,16 +21,13 @@ def routes(c: Context) -> APIRouter:
         """Keeps a file sent from the app (a pasted image, a dropped file), for a message to carry."""
         try:
             return attachments_module.save(runner.crew.home, body.name, base64.b64decode(body.data))
-        except (attachments_module.AttachmentError, binascii.Error) as e:
+        except binascii.Error as e:
             raise HTTPException(422, str(e)) from None
 
     @v1.post("/attachments/copy", response_model=AttachmentOut, status_code=201)
     async def copy_attachment(body: AttachmentCopy):
         """Keeps a copy of a file you picked."""
-        try:
-            return await asyncio.to_thread(attachments_module.copy_in, runner.crew.home, Path(body.path))
-        except attachments_module.AttachmentError as e:
-            raise HTTPException(422, str(e)) from None
+        return await asyncio.to_thread(attachments_module.copy_in, runner.crew.home, Path(body.path))
 
     @v1.get("/attachments/{attachment_id}", response_model=AttachmentData)
     async def attachment(attachment_id: str):

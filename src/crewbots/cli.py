@@ -432,12 +432,6 @@ def _review(args: argparse.Namespace) -> int:
 def _merge(args: argparse.Namespace) -> int:
     task = _client(args).post(f"/tasks/{args.task_id}/merge", json={"force": args.force}).raise_for_status().json()
     print(f"merged {task['id']} ({task['branch']}) as {task['merged_commit'][:12]}")
-    if task.get("leftover_files"):
-        print("Saved after the merge started, still uncommitted:")
-        for file in task["leftover_files"]:
-            print(f"  {file}")
-    if task.get("leftover_check_error"):
-        print(f"Could not check for later saves: {task['leftover_check_error']}")
     return 0
 
 

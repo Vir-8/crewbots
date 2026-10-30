@@ -247,7 +247,7 @@ class Rooms:
             if room["stopped"] or room["archived_at"]:  # saying something carries on, and brings it back
                 room = self._set_room(room_id, stopped=None, archived_at=None)
         elif wake and room["max_depth"] is not None and depth >= room["max_depth"]:
-            self._set_room(room_id, stopped={"after": depth, "waiting": wake, "owed": []})
+            self._set_room(room_id, stopped={"after": depth, "waiting": wake})
             wake = []
         for bot in wake:
             self._wake_seat(room, bot, depth, owes_reply=author == "user" and bot in named)
@@ -259,8 +259,7 @@ class Rooms:
         if stopped := room["stopped"]:
             still_waiting = [bot for bot in stopped["waiting"] if (seat := self.store.seat_of(room_id, bot))
                              and seat.id in self._cancelling]
-            remaining = {**stopped, "waiting": still_waiting,
-                         "owed": [bot for bot in stopped.get("owed", []) if bot in still_waiting]} if still_waiting else None
+            remaining = {**stopped, "waiting": still_waiting} if still_waiting else None
             room = self._set_room(room_id, stopped=remaining)
             for bot in stopped["waiting"]:
                 if bot in room["members"] and bot not in still_waiting:

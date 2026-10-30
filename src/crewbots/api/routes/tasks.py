@@ -10,7 +10,6 @@ from crewbots.api.schemas import (
     EventOut,
     LandedOut,
     MergeRequest,
-    MergeResultOut,
     MergeStatusOut,
     Message,
     NewTask,
@@ -20,7 +19,6 @@ from crewbots.api.schemas import (
     TaskOut,
     TaskStatus,
     WithdrawalReason,
-    WithdrawalResultOut,
 )
 from crewbots.store import Status
 
@@ -115,24 +113,18 @@ def routes(c: Context) -> APIRouter:
         task_or_404(task_id)
         return runner.review_state(task_id).to_json()
 
-    @v1.post("/tasks/{task_id}/merge", response_model=MergeResultOut)
+    @v1.post("/tasks/{task_id}/merge", response_model=TaskOut)
     async def merge(task_id: str, body: MergeRequest | None = None):
         task_or_404(task_id)
-        task = await runner.merge_off_loop(task_id, force=bool(body and body.force))
-        event = store.last_event(task_id, ("merged",))
-        data = event.data if event and event.data.get("commit") == task.merged_commit else {}
-        return task.to_json() | {"leftover_files": data.get("leftover_files"),
-                                 "leftover_check_error": data.get("leftover_check_error")}
+        return (await runner.merge_off_loop(task_id, force=bool(body and body.force))).to_json()
 
     @v1.get("/tasks/{task_id}/merge-status", response_model=MergeStatusOut)
     async def merge_status(task_id: str):
         return {"already_on": runner.already_on(task_or_404(task_id))}
 
-    @v1.post("/tasks/{task_id}/withdraw-merge", response_model=WithdrawalResultOut)
+    @v1.post("/tasks/{task_id}/withdraw-merge", response_model=TaskOut)
     async def withdraw_merge(task_id: str, body: WithdrawalReason):
         task_or_404(task_id)
-        task = runner.withdraw_merge(task_id, body.reason)
-        event = store.last_event(task_id, ("merge_withdrawn",))
-        return task.to_json() | {"notice": event.data.get("notice") if event else None}
+        return runner.withdraw_merge(task_id, body.reason).to_json()
 
     return v1

@@ -19,10 +19,6 @@ def merge_text(task_id: str, state: str | None, commit: str | None, details: dic
     if state != "merged":
         return f"Proposed {task_id} to the user for merging."
     message = f"Merged {task_id} locally as {commit}."
-    if files := details.get("leftover_files"):
-        message += " Saved after the merge started, still uncommitted: " + ", ".join(files)
-    if error := details.get("leftover_check_error"):
-        message += f" Could not check for later saves: {error}"
     if ignored := details.get("ignored"):
         message += (" Left out, as git ignores them in this project: " + ", ".join(ignored)
                     + ". Whether to track them is the user's call: say so in your report.")
@@ -273,9 +269,7 @@ class CrewTools:
                     return merge_text(task.id, task.merge_state, task.merged_commit, details)
                 case "withdraw_merge":
                     task = r.withdraw_merge(args["task_id"], args["reason"], parent_id=me)
-                    event = r.store.last_event(task.id, ("merge_withdrawn",))
-                    notice = event.data.get("notice") if event else None
-                    return f"Withdrew the merge proposal for {task.id}." + (f" {notice}." if notice else "")
+                    return f"Withdrew the merge proposal for {task.id}."
                 case "drop_task":
                     return dropped_text(await r.drop(args["task_id"], args["reason"], by_task=me))
                 case "working_state":

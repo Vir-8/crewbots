@@ -100,7 +100,7 @@ def _project_out(project: Project) -> dict[str, Any]:
 def _found_out(folder: discovery.FoundFolder, project: str | None) -> dict[str, Any]:
     return {"folder": str(folder.folder), "name": folder.name, "about": folder.about, "sources": sorted(folder.sources),
             "sessions": folder.sessions, "last_used": datetime.fromtimestamp(folder.last_used).astimezone().isoformat(),
-            "memories": [_memory_out(m) for m in folder.memories], "project": project}
+            "project": project}
 
 
 def _memory_out(memory: discovery.FoundMemory) -> dict[str, Any]:
