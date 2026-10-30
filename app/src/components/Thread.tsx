@@ -42,11 +42,12 @@ export function Thread(props: {
 
   const children = crew.children.get(task.id) ?? [];
   // In a chat, what a bot did between two messages (its steps, the notes it kept, the pages it wrote) folds into one
-  // row, so the conversation reads as one; a thread beside it shows it all.
+  // row, so the conversation reads as one; a thread beside it shows it all. The lines name bots as you call them, so
+  // a rename redraws them.
   const blocks = useMemo(() => {
     const built = build(events ?? [], children, crew.tasks);
     return props.chat ? fold(settleWakes(events ?? [], built)) : built;
-  }, [events, children, crew.tasks, props.chat]);
+  }, [events, children, crew.tasks, crew.bots, props.chat]);
   const active = ACTIVE.includes(task.status);
   // Where time has passed between messages, a centred day and time goes over the next one.
   const breaks = useMemo(() => timeBreaks(blocks.map((b) => ({ at: b.kind === "you" || b.kind === "say" ? b.at : undefined }))), [blocks]);

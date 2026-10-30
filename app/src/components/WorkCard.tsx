@@ -4,6 +4,7 @@ import type { Crew } from "../state";
 import { doing, oneLine } from "../state";
 import type { Task } from "../types";
 import { ACTIVE } from "../types";
+import { labelOf } from "./Avatar";
 import { Icon } from "./Icon";
 
 const STATUS: Record<Task["status"], string> = {
@@ -49,7 +50,7 @@ export function WorkCard({ crew, task, onOpen }: { crew: Crew; task: Task; onOpe
       <div className="work-head">
         <span className="work-bot">
           <Icon name="message" size={13} />
-          {task.created_by === "crewbots" ? "Started on its own" : task.bot === crew.tasks.get(task.parent_id ?? "")?.bot ? "Thread" : `Thread · ${task.bot}`}
+          {task.created_by === "crewbots" ? "Started on its own" : task.bot === crew.tasks.get(task.parent_id ?? "")?.bot ? "Thread" : `Thread · ${labelOf(task.bot)}`}
         </span>
         <span className="grow" />
         {task.created_by === "crewbots" && active && (
@@ -83,9 +84,9 @@ export function WorkCard({ crew, task, onOpen }: { crew: Crew; task: Task; onOpe
           {latest.map((review) => {
             const v = verdictOf(review);
             return (
-              <span key={review.id} className={`review-chip ${v ?? "pending"}`} onClick={() => onOpen(review.id)} title={`Open ${review.bot}'s review`}>
+              <span key={review.id} className={`review-chip ${v ?? "pending"}`} onClick={() => onOpen(review.id)} title={`Open ${labelOf(review.bot)}'s review`}>
                 {v === "pass" ? <Icon name="check" size={12} /> : v === "fail" ? <Icon name="x" size={12} /> : <span className="working-dot small" />}
-                {review.bot}
+                {labelOf(review.bot)}
               </span>
             );
           })}

@@ -1,10 +1,11 @@
 // What the command palette offers: every chat and group, thread, pull request and page, and the app's commands.
 
 import type { Crew } from "../state";
-import { movePin, pinsOf } from "../sidebar";
+import { movePin, PAGES, pinsOf } from "../sidebar";
 import { oneLine } from "../state";
 import type { Item } from "./Palette";
 import { labelOf } from "./Avatar";
+import { STATUS_LABEL } from "./bits";
 
 export type Go = {
   chat: (key: string) => void;
@@ -17,16 +18,6 @@ export type Go = {
   updates: () => void;
 };
 
-const PAGES: [string, string, Item["icon"]][] = [
-  ["review", "Code review", "branch"],
-  ["page:crew", "Crew", "users"],
-  ["page:activity", "Activity", "handoff"],
-  ["page:tools", "Tools", "tool"],
-  ["page:routines", "Routines", "repeat"],
-  ["page:analytics", "Analytics", "chart"],
-  ["page:settings", "Settings", "settings"],
-];
-
 export function paletteItems(crew: Crew, current: string | null, go: Go): Item[] {
   const items: Item[] = [];
   for (const chat of crew.chats) {
@@ -37,14 +28,16 @@ export function paletteItems(crew: Crew, current: string | null, go: Go): Item[]
   }
   for (const task of crew.tasks.values()) {
     if (task.kind !== "thread" || task.review_of) continue; // a review shows in the card of the work it reviews
-    items.push({ key: `task:${task.id}`, title: oneLine(task.title, 90), sub: `${labelOf(task.bot)} · ${task.status.replace("_", " ")}`, at: task.updated_at, icon: "handoff", group: "Thread", run: () => go.task(task.id) });
+    items.push({ key: `task:${task.id}`, title: oneLine(task.title, 90), sub: `${labelOf(task.bot)} · ${STATUS_LABEL[task.status]}`, at: task.updated_at, icon: "handoff", group: "Thread", run: () => go.task(task.id) });
   }
   const inbox = crew.reviewInbox;
   const pulls = [...(inbox?.assigned ?? []), ...(inbox?.direct ?? []), ...(inbox?.mine ?? []), ...(inbox?.team ?? [])];
   for (const pull of new Map(pulls.map((p) => [`${p.repo}#${p.number}`, p])).values()) {
     items.push({ key: `pull:${pull.repo}#${pull.number}`, title: pull.title, sub: `${pull.repo}#${pull.number} · ${pull.author}`, at: pull.updated_at ?? undefined, icon: "branch", group: "Pull request", run: () => go.pull(pull.repo, pull.number) });
   }
-  for (const [key, title, icon] of PAGES) items.push({ key, title, icon, group: "Page", run: () => go.chat(key) });
+  // Code review and Landed are rows of their own in the sidebar, above the chats.
+  const pages: typeof PAGES = [["review", "Code review", "branch"], ["page:landed", "Landed", "merge"], ...PAGES];
+  for (const [key, title, icon] of pages) items.push({ key, title, icon, group: "Page", run: () => go.chat(key) });
 
   const paused = crew.crewState?.paused;
   const chat = crew.chats.find((c) => c.key === current);

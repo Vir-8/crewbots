@@ -1,6 +1,18 @@
 // The sidebar's conversations: which show for a search, in what order, and which are archived out of the way.
 
+import type { IconName } from "./components/Icon";
 import type { Chat } from "./types";
+
+/** The crew's own pages, as the menu at the bottom of the sidebar lists them. */
+export const PAGES: [string, string, IconName][] = [
+  ["page:crew", "Crew", "users"],
+  ["page:projects", "Projects", "folder"],
+  ["page:activity", "Activity", "handoff"],
+  ["page:tools", "Tools", "tool"],
+  ["page:routines", "Routines", "repeat"],
+  ["page:analytics", "Analytics", "chart"],
+  ["page:settings", "Settings", "settings"],
+];
 
 /** The chats a search matches (by title, bot, last message or member): the pinned ones first, in your order, then the
  * rest, most recent first. The rail shows them all. */

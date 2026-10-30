@@ -1,6 +1,6 @@
 import { type DragEvent, type HTMLAttributes, type ReactNode, useEffect, useRef, useState } from "react";
 import type { Crew, InboxItem } from "../state";
-import { archivedApart, movePin, orderChats, pinsOf } from "../sidebar";
+import { archivedApart, movePin, orderChats, PAGES, pinsOf } from "../sidebar";
 import { oneLine } from "../state";
 import type { Chat } from "../types";
 import { Avatar, GroupAvatar, labelOf } from "./Avatar";
@@ -25,16 +25,6 @@ const NEED_ICON: Record<InboxItem["reason"], "merge" | "lock" | "question" | "pa
   failed: "alert",
   interrupted: "alert",
 };
-
-const PAGES: [string, string, "users" | "repeat" | "chart" | "settings" | "tool" | "handoff" | "folder"][] = [
-  ["page:crew", "Crew", "users"],
-  ["page:projects", "Projects", "folder"],
-  ["page:activity", "Activity", "handoff"],
-  ["page:tools", "Tools", "tool"],
-  ["page:routines", "Routines", "repeat"],
-  ["page:analytics", "Analytics", "chart"],
-  ["page:settings", "Settings", "settings"],
-];
 
 /** Your conversations, like a messaging app: a chat with each bot and the group chats, most recent first. Code review
  * sits above them; the crew's own pages are in the menu at the bottom. Collapsed, it's a rail of the same things as

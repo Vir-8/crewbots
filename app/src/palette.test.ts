@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { type Go, paletteItems } from "./components/paletteItems";
 import { rank, score } from "./palette";
+import { PAGES } from "./sidebar";
+import type { Crew } from "./state";
+import type { Task } from "./types";
 
 const entries = [
   { key: "bot:engineer", title: "Engineer", sub: "Writes and changes code", at: "2026-10-27T09:00:00Z" },
@@ -26,5 +30,15 @@ describe("the command palette's matching", () => {
   it("with nothing typed, shows what you picked lately, then the most recent", () => {
     expect(rank(entries, "", ["page:settings"]).map((e) => e.key).slice(0, 3)).toEqual(["page:settings", "bot:reviewer", "bot:engineer"]);
     expect(rank(entries, "er", ["bot:engineer"])[0].key).toBe("bot:engineer"); // picked lately: first among matches
+  });
+});
+
+describe("what the command palette offers", () => {
+  it("every page, and a thread's status as the rest of the app says it", () => {
+    const task = { id: "t_1", kind: "thread", review_of: null, title: "Add CSV export", bot: "engineer", status: "idle", updated_at: "" } as Task;
+    const crew = { chats: [], tasks: new Map([[task.id, task]]), bots: [], reviewInbox: null, crewState: null } as unknown as Crew;
+    const items = paletteItems(crew, null, {} as Go);
+    expect(items.filter((i) => i.group === "Page").map((i) => i.key)).toEqual(["review", "page:landed", ...PAGES.map(([key]) => key)]);
+    expect(items.find((i) => i.key === "task:t_1")?.sub).toBe("engineer · done");
   });
 });

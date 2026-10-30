@@ -102,9 +102,14 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => crew.ensureRoom(room.id), [room.id, crew.ensureRoom]);
   useMarkRead(crew, chat, messages?.length);
+  // A new message keeps you at the bottom if you were there; reading further up, you stay where you are.
+  const stuck = useRef(true);
   useEffect(() => {
-    if (box.current) box.current.scrollTop = box.current.scrollHeight;
-  }, [messages?.length, Boolean(room.stopped)]);
+    stuck.current = true;
+  }, [room.id]);
+  useEffect(() => {
+    if (stuck.current && box.current) box.current.scrollTop = box.current.scrollHeight;
+  }, [room.id, messages?.length, Boolean(room.stopped)]);
   useBottomAnchor(box, Boolean(messages?.length));
 
   const seats = room.members.map((m) => [...crew.tasks.values()].find((t) => t.kind === "seat" && t.room_id === room.id && t.bot === m));
@@ -157,7 +162,17 @@ export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) 
       {messages?.length === 0 ? (
         <GroupWelcome crew={crew} room={room} onSay={(text) => crew.post(room.id, text)} />
       ) : (
-        <div className="thread" ref={box} onMouseMove={hovered.onMouseMove} onMouseLeave={hovered.onMouseLeave} onScroll={hovered.clear}>
+        <div
+          className="thread"
+          ref={box}
+          onMouseMove={hovered.onMouseMove}
+          onMouseLeave={hovered.onMouseLeave}
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+            hovered.clear();
+          }}
+        >
           <Finding.Provider value={find.lookFor}>
           <div className="thread-col chat room">
             {groups.map((group) =>

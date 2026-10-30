@@ -1,6 +1,15 @@
 import { expect, it } from "vitest";
-import type { StoredEvent, Task } from "../types";
+import type { Bot, StoredEvent, Task } from "../types";
+import { setCrew } from "./Avatar";
 import { type Block, build, fold, said, settleWakes } from "./threadBlocks";
+
+it("names a bot in its lines as you call it", () => {
+  setCrew([{ name: "engineer-1", display_name: "Ada" } as Bot]);
+  const proposed: StoredEvent = { id: 1, task_id: "task", kind: "merge_proposed", data: { by: "engineer-1" }, at: "" };
+  const dropped: StoredEvent = { id: 2, task_id: "task", kind: "dropped", data: { by: "engineer-1", reason: "Superseded" }, at: "" };
+  expect(build([proposed, dropped], [], new Map()).map((b) => b.kind === "line" && b.text)).toEqual(["Ada proposed it for merging", "Ada dropped it: Superseded"]);
+  setCrew([]);
+});
 
 it("distinguishes automatic merges in the thread", () => {
   const event: StoredEvent = { id: 1, task_id: "task", kind: "merged", data: { commit: "abcdef123", automatic: true }, at: "" };

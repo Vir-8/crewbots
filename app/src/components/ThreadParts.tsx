@@ -41,7 +41,7 @@ export function VerdictBlock({ data }: { data: Record<string, any> }) {
       <div className="verdict-head">
         <Icon name={pass ? "check" : "x"} size={14} />
         <span>
-          {data.reviewer} {pass ? "passed" : "requested changes"}
+          {labelOf(data.reviewer)} {pass ? "passed" : "requested changes"}
         </span>
         <span className="faint">version {data.version}</span>
       </div>

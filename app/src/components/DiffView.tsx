@@ -9,7 +9,13 @@ export function DiffView({ task }: { task: Task }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.changes(task.id).then((r) => setDiff(r.diff), (e) => setError(String(e)));
+    api.changes(task.id).then(
+      (r) => {
+        setDiff(r.diff);
+        setError(null);
+      },
+      (e) => setError(String(e).replace(/^Error: /, "")),
+    );
   }, [task.id, task.updated_at]);
 
   if (error) return <p className="error-text pad">{error}</p>;

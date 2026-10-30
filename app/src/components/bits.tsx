@@ -4,7 +4,7 @@ import { Finding, Marked } from "./Find";
 import { crewMentionNames } from "./Avatar";
 import { Icon } from "./Icon";
 
-const STATUS_LABEL: Record<Status, string> = {
+export const STATUS_LABEL: Record<Status, string> = {
   queued: "queued",
   running: "running",
   idle: "done",

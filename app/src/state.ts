@@ -9,6 +9,10 @@ const RECENT = 400;
 const ROUTINES_EVERY_MS = 60_000; // next and last run times move on their own
 const REVIEWS_EVERY_MS = 5 * 60_000; // pull requests waiting on you, from GitHub
 
+/** An action's failure, already shown to you: a caller that awaits the action still gets it, but it isn't a crash.
+ * It keeps Error's name, so it reads "Error: …" like any other. */
+export class Shown extends Error {}
+
 /** Everything a layout needs: the crew, its tasks, recent activity, and the actions. Layouts only arrange it. */
 export function useCrew() {
   const [status, setStatus] = useState<ConnectionStatus>({ state: "connecting", home: "" });
@@ -169,8 +173,9 @@ export function useCrew() {
   const act = useCallback(
     <T,>(promise: Promise<T>) =>
       promise.catch((e) => {
-        setError(String(e).replace(/^Error: /, ""));
-        throw e;
+        const text = String(e).replace(/^Error: /, "");
+        setError(text);
+        throw new Shown(text);
       }),
     [],
   );

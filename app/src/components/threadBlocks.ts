@@ -3,6 +3,7 @@
 
 import { limitText, oneLine } from "../state";
 import type { Attachment, StoredEvent, Task } from "../types";
+import { labelOf } from "./Avatar";
 import { tokens } from "./bits";
 import { shown } from "./Find";
 
@@ -178,7 +179,7 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
         out.push({ kind: "line", id: e.id, text: `Took the name ${oneLine(String(d.input?.name ?? ""), 60)}`, icon: "check" });
       } else if (d.name === "mcp__crewbots__message") {
         flush();
-        const to = tasks.get(d.input?.task_id)?.bot ?? "the task";
+        const to = labelOf(tasks.get(d.input?.task_id)?.bot ?? "the task");
         out.push({ kind: "line", id: e.id, text: `Sent to ${to}: ${oneLine(d.input?.text ?? "", 160)}` });
       } else if (!SHOWN_ELSEWHERE.has(d.name)) {
         steps.push({ call: e, result });
@@ -238,7 +239,7 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
         break;
       case "merge_proposed":
         flush();
-        out.push({ kind: "line", id: e.id, text: `${d.by} proposed it for merging`, icon: "merge" });
+        out.push({ kind: "line", id: e.id, text: `${labelOf(d.by)} proposed it for merging`, icon: "merge" });
         break;
       case "push_proposed":
         flush();
@@ -250,11 +251,11 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
         break;
       case "dropped":
         flush();
-        out.push({ kind: "line", id: e.id, text: `${d.by === "user" ? "You" : d.by} dropped it: ${d.reason}`, icon: "merge" });
+        out.push({ kind: "line", id: e.id, text: `${d.by === "user" ? "You" : labelOf(d.by)} dropped it: ${d.reason}`, icon: "merge" });
         break;
       case "merge_withdrawn":
         flush();
-        out.push({ kind: "line", id: e.id, text: `${d.by === "user" ? "You" : d.by} withdrew the merge proposal: ${d.reason}`, icon: "merge" });
+        out.push({ kind: "line", id: e.id, text: `${d.by === "user" ? "You" : labelOf(d.by)} withdrew the merge proposal: ${d.reason}`, icon: "merge" });
         break;
       case "memory":
         flush();
@@ -321,7 +322,7 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
         break;
       case "reverted":
         flush();
-        out.push({ kind: "line", id: e.id, text: `${d.by === "user" ? "You" : d.by} reverted the merge, as ${String(d.revert_commit).slice(0, 7)}`, icon: "repeat" });
+        out.push({ kind: "line", id: e.id, text: `${d.by === "user" ? "You" : labelOf(d.by)} reverted the merge, as ${String(d.revert_commit).slice(0, 7)}`, icon: "repeat" });
         break;
       case "merge_cleanup_failed":
         flush();
