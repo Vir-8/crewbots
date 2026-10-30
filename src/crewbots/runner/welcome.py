@@ -27,11 +27,11 @@ NAME_CHARS = 40  # of the name a bot goes by
 class Welcome:
     """The part of Runner that starts a crew off."""
 
-    def coordinator(self) -> Bot | None:
+    def chief_bot(self) -> Bot | None:
         return self.crew.bots.get(self.store.chief())
 
     def is_chief(self, name: str) -> bool:
-        chief = self.coordinator()
+        chief = self.chief_bot()
         return chief is not None and chief.name == name
 
     def is_coordinator(self, name: str) -> bool:
@@ -44,7 +44,7 @@ class Welcome:
                                                or opened.chief != self.is_chief(task.bot)):
                 await self._close_session(task_id)
 
-    async def set_coordinator(self, name: str) -> None:
+    async def set_chief(self, name: str) -> None:
         """Refresh idle sessions on a chief change; active turns finish before their sessions close."""
         if self.store.chief() != name:
             self.store.set_chief(name)
@@ -62,7 +62,7 @@ class Welcome:
         """The chief's first word in its chat, once: who it is, that it keeps things moving, and an offer to bring
         in what Claude Code and Codex know. Only at a first meeting: a crew the user has talked with counts as started
         off already."""
-        chief = self.coordinator()
+        chief = self.chief_bot()
         if chief is None or self.started() or not getattr(self.backends.get(chief.backend), "automatic_turns", True):
             return None
         if self.store.talked_with_crew():
@@ -94,7 +94,7 @@ class Welcome:
             loaded, errors = projects_module.load(self.crew.home)
             self.reload(dataclasses.replace(self.crew, projects=loaded, project_errors=errors))
         self.store.routine_ran(STARTED, _now(), "")
-        chief = self.coordinator()
+        chief = self.chief_bot()
         if chief is None:
             return added, None
         chat = self.chat(chief.name)
@@ -120,7 +120,7 @@ class Welcome:
     def not_now(self) -> None:
         """The user would rather start without bringing anything in: the offer isn't made again."""
         self.store.routine_ran(STARTED, _now(), "")
-        if chief := self.coordinator():
+        if chief := self.chief_bot():
             chat = self.chat(chief.name)
             if self.store.last_events(chat.id, ("onboarding",), 1):
                 self._record(chat.id, kind="onboarding", data={"declined": True})

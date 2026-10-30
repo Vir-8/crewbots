@@ -69,14 +69,14 @@ def routes(c: Context) -> APIRouter:
 
     @v1.get("/crew/chief")
     async def chief_setting():
-        return {"chief": c.store.chief(), "available": runner.coordinator() is not None}
+        return {"chief": c.store.chief(), "available": runner.chief_bot() is not None}
 
     @v1.put("/crew/chief")
     async def set_chief(body: dict[str, str]):
         name = body.get("chief", "")
         if name not in runner.crew.bots:
             raise HTTPException(422, f"no bot named {name!r}")
-        await runner.set_coordinator(name)
+        await runner.set_chief(name)
         return {"chief": name, "available": True}
 
     @v1.get("/crew/coordinators")

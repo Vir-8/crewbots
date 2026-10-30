@@ -70,7 +70,7 @@ class Attention:
             for item in store.proactive_waiting("question"):
                 self._deliver(item)
         if now.hour >= DIGEST_HOUR and not self.quiet(now) and not store.digested_today(_midnight(now)):
-            if self.digest(now) is None and self.runner.coordinator() is not None:
+            if self.digest(now) is None and self.runner.chief_bot() is not None:
                 store.mark_digested(_midnight(now), [])  # an empty day: what comes up later waits for tomorrow's
 
     def digest(self, now: datetime) -> dict[str, Any] | None:
@@ -80,7 +80,7 @@ class Attention:
         if not items:
             return None
         crew = self.runner.crew
-        chief = self.runner.coordinator()
+        chief = self.runner.chief_bot()
         if chief is None:
             return None
         store.mark_digested(_midnight(now), [i["id"] for i in items])

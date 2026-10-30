@@ -259,7 +259,7 @@ async def test_chief_change_lets_active_turns_finish_then_refreshes(store, tmp_p
     engineer = runner.say("engineer", "first")
     await wait_until(lambda: len(backend.opened) == 2 and all(s.turns for s in backend.opened))
     original = list(backend.opened)
-    await runner.set_coordinator("engineer")
+    await runner.set_chief("engineer")
     assert all(not s.closed for s in original)
     if in_process:
         former = next(s.spec.crew for s in original if s.spec.crew.task_id == chief.id)

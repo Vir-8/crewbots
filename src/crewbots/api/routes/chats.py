@@ -71,7 +71,7 @@ def routes(c: Context) -> APIRouter:
     @v1.get("/chats", response_model=list[ChatOut])
     async def chats():
         """Every conversation: one with each bot, then the group chats (the crew's own is made the first time)."""
-        if runner.coordinator():
+        if runner.chief_bot():
             runner.crew_room()
         pinned = {key: n for n, key in enumerate(store.pins())}
         listed = [direct(b) for b in runner.crew.bots] + [group(r) for r in store.rooms()]

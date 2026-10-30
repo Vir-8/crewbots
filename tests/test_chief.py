@@ -49,11 +49,11 @@ def test_legacy_selection_is_saved_once_and_missing_chief_fails_closed(tmp_path)
     store = Store(tmp_path / "crew.db")
     crew = make_crew(tmp_path, bot("worker"), bot("old-chief", can_delegate=True))
     runner = Runner(store, crew)
-    assert store.chief() == runner.coordinator().name == "old-chief"
+    assert store.chief() == runner.chief_bot().name == "old-chief"
     changed = make_crew(tmp_path, bot("a-helper", can_delegate=True), bot("worker"))
     runner = Runner(store, changed)
     assert store.chief() == "old-chief"
-    assert runner.coordinator() is None
+    assert runner.chief_bot() is None
     assert not runner.is_coordinator("a-helper")
     assert not runner.always_on("a-helper")
     store.close()
@@ -62,9 +62,9 @@ def test_legacy_selection_is_saved_once_and_missing_chief_fails_closed(tmp_path)
 def test_no_legacy_coordinator_stays_unset_when_bots_are_added(tmp_path):
     store = Store(tmp_path / "crew.db")
     runner = Runner(store, make_crew(tmp_path, bot("first"), bot("second")))
-    assert runner.coordinator() is None and store.chief() == ""
+    assert runner.chief_bot() is None and store.chief() == ""
     runner = Runner(store, make_crew(tmp_path, bot("first"), bot("new", can_delegate=True)))
-    assert runner.coordinator() is None and store.chief() == ""
+    assert runner.chief_bot() is None and store.chief() == ""
     store.set_chief("001")  # the existing settings column has SQLite INTEGER affinity
     assert store.chief() == "001"
     store.close()
@@ -74,13 +74,13 @@ def test_migration_survives_restart_and_role_card_reordering(tmp_path):
     home = crew.init(tmp_path / "crew")
     db = tmp_path / "crew.db"
     store = Store(db)
-    assert Runner(store, crew.load(home)).coordinator().name == "chief"
+    assert Runner(store, crew.load(home)).chief_bot().name == "chief"
     store.close()
     (home / "bots" / "a-helper.md").write_text("---\nname: a-helper\ndescription: helper\ncan_delegate: true\n---\n")
     store = Store(db)
     runner = Runner(store, crew.load(home))
     assert list(runner.crew.bots)[0] == "a-helper"
-    assert runner.coordinator().name == store.chief() == "chief"
+    assert runner.chief_bot().name == store.chief() == "chief"
     store.close()
 
 
@@ -88,7 +88,7 @@ def test_missing_named_chief_refuses_merge_and_chief_chat_routing(tmp_path):
     store = Store(tmp_path / "crew.db")
     Runner(store, make_crew(tmp_path, bot("chief", can_delegate=True), bot("aaa", can_delegate=True), bot("worker")))
     runner = Runner(store, make_crew(tmp_path, bot("aaa", can_delegate=True), bot("worker")))
-    assert store.chief() == "chief" and runner.coordinator() is None
+    assert store.chief() == "chief" and runner.chief_bot() is None
     store.set_coordinators([])
     chats = {name: runner.chat(name) for name in runner.crew.bots}
     for name, chat in chats.items():

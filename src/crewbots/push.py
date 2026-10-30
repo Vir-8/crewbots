@@ -71,18 +71,39 @@ def snapshot(folder: Path) -> dict[str, Any]:
     if not tracking:
         raise SnapshotError("No upstream is configured for this branch.", branch, "(none)")
     upstream = _git(folder, "for-each-ref", "--format=%(upstream:short)", f"refs/heads/{branch}")
+    display = ""
     try:
-        return _destination_snapshot(folder, branch, upstream, tracking)
+        if not tracking.startswith("refs/remotes/"):
+            raise NotAllowed("The upstream must be a remote branch.")
+        where = destination(folder, branch)
+        display = where["push_url_display"]
+        return _destination_snapshot(folder, branch, upstream, tracking, where)
     except NotAllowed as e:
-        display = ""
-        try:
-            remote = _git(folder, "config", "--get", f"branch.{branch}.remote")
-            urls = _git(folder, "remote", "get-url", "--push", "--all", remote).splitlines()
-            if len(urls) == 1:
-                display = _display_url(urls[0])
-        except NotAllowed:
-            pass
         raise SnapshotError(str(e), branch, upstream, display) from None
+
+
+def destination(folder: Path, branch: str) -> dict[str, str]:
+    """Where a push of `branch` goes: its remote, the branch there and the one push URL, also shown without secrets and
+    hashed, so a card can tell later whether it changed. Raises NotAllowed for anything that can't be established."""
+    remote = _git(folder, "config", "--get", f"branch.{branch}.remote")
+    ref = _git(folder, "config", "--get", f"branch.{branch}.merge")
+    if remote == "." or not ref.startswith("refs/heads/"):
+        raise NotAllowed("The upstream must be a remote branch.")
+    urls = _git(folder, "remote", "get-url", "--push", "--all", remote).splitlines()
+    if len(urls) != 1:
+        raise NotAllowed("The upstream must have exactly one push URL.")
+    return {"remote": remote, "destination": ref, "url": urls[0], "push_url_display": _display_url(urls[0]),
+            "url_hash": hashlib.sha256(urls[0].encode()).hexdigest()}
+
+
+def live_tip(folder: Path, where: dict[str, str]) -> str:
+    """The destination's tip on the remote now, read from the push URL; no local ref stands in for it."""
+    tip = _remote_tip(folder, where["url"], where["destination"])
+    if tip is None:
+        raise NotAllowed("The destination branch does not exist on the remote.")
+    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", tip):
+        raise NotAllowed("Git returned an invalid remote tip.")
+    return tip
 
 
 def _display_url(url: str) -> str:
@@ -122,21 +143,10 @@ def _refuse_ai_attribution(folder: Path, tip: str, head: str) -> None:
         raise NotAllowed("These commits carry an AI co-author trailer and would be pushed: " + "; ".join(bad))
 
 
-def _destination_snapshot(folder: Path, branch: str, upstream: str, tracking: str) -> dict[str, Any]:
-    remote = _git(folder, "config", "--get", f"branch.{branch}.remote")
-    destination = _git(folder, "config", "--get", f"branch.{branch}.merge")
-    if remote == "." or not destination.startswith("refs/heads/") or not tracking.startswith("refs/remotes/"):
-        raise NotAllowed("The upstream must be a remote branch.")
-    urls = _git(folder, "remote", "get-url", "--push", "--all", remote).splitlines()
-    if len(urls) != 1:
-        raise NotAllowed("The upstream must have exactly one push URL.")
-    url_hash = hashlib.sha256(urls[0].encode()).hexdigest()
+def _destination_snapshot(folder: Path, branch: str, upstream: str, tracking: str,
+                          where: dict[str, str]) -> dict[str, Any]:
     head = _git(folder, "rev-parse", "HEAD")
-    tip = _remote_tip(folder, urls[0], destination)
-    if tip is None:
-        raise NotAllowed("The destination branch does not exist on the remote.")
-    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", tip):
-        raise NotAllowed("Git returned an invalid remote tip.")
+    tip = live_tip(folder, where)
     try:
         _git(folder, "cat-file", "-e", f"{tip}^{{commit}}")
         _git(folder, "merge-base", "--is-ancestor", tip, head)
@@ -144,9 +154,9 @@ def _destination_snapshot(folder: Path, branch: str, upstream: str, tracking: st
         raise NotAllowed("The remote has commits this folder doesn't; not a fast-forward.") from None
     commits = _git(folder, "log", "--format=%H %s", f"{tip}..{head}").splitlines()
     _refuse_ai_attribution(folder, tip, head)
-    return {"branch": branch, "upstream": upstream, "tracking": tracking, "remote": remote,
-            "destination": destination, "push_url_display": _display_url(urls[0]), "url_hash": url_hash,
-            "head": head, "tip": tip, "commits": commits}
+    return {"branch": branch, "upstream": upstream, "tracking": tracking, "remote": where["remote"],
+            "destination": where["destination"], "push_url_display": where["push_url_display"],
+            "url_hash": where["url_hash"], "head": head, "tip": tip, "commits": commits}
 
 
 SAME = ("branch", "destination", "url_hash", "head", "tip", "ci_commands")  # what makes two cards the same push
@@ -156,7 +166,7 @@ async def propose(runner: Any, task_id: str, project: str, summary: str) -> int:
     """A Push card for the user, one per project at a time: the same push again is the open card, and a different one
     replaces it. Proposals for a project are made one after another, so two at once can't both make a card."""
     task = runner.store.get_task(task_id)
-    chief = runner.coordinator()
+    chief = runner.chief_bot()
     if chief is None or task.bot != chief.name:
         raise NotAllowed("only the chief can propose a push")
     if not summary.strip():
@@ -225,7 +235,7 @@ async def perform(runner: Any, proposal_id: int) -> dict[str, Any]:
         raise NotAllowed("This push was already started; check the remote and make a new proposal.")
     runner._record(task_id, kind="push_started", data={"proposal": proposal_id})
     try:
-        result = await asyncio.to_thread(_attempt, runner, proposal_id, data)
+        result = {"proposal": proposal_id} | await asyncio.to_thread(_attempt, runner, data)
     except Exception as e:
         result = {"proposal": proposal_id, "ok": False, "reason": URL_USERINFO.sub(r"\1***@", str(e))}
     runner._record(task_id, kind="push_result", data=result)
@@ -234,42 +244,37 @@ async def perform(runner: Any, proposal_id: int) -> dict[str, Any]:
     return result
 
 
-def _attempt(runner: Any, proposal_id: int, data: dict[str, Any]) -> dict[str, Any]:
+def _attempt(runner: Any, data: dict[str, Any]) -> dict[str, Any]:
+    if data.get("error"):
+        raise NotAllowed(data["error"])
+    project = runner.crew.project(data["project"])
+    # Compared on the fresh snapshot's own keys, so a card made before a key was added reads as changed.
+    if str(project.folder.resolve()) != data["folder"] or (now := snapshot(project.folder)) != {k: data.get(k) for k in now}:
+        raise NotAllowed("The branch, upstream or commits changed since this card was made. Propose a new push.")
+    if not data["commits"]:
+        return {"ok": True, "pushed": False, "reason": "Everything up-to-date. Nothing was pushed."}
+    url = _git(project.folder, "remote", "get-url", "--push", "--all", data["remote"])
+    if hashlib.sha256(url.encode()).hexdigest() != data["url_hash"]:
+        raise NotAllowed("The upstream changed since this card was made. Propose a new push.")
+    tracking_old = _ref(project.folder, data["tracking"])
     try:
-        if data.get("error"):
-            raise NotAllowed(data["error"])
-        project = runner.crew.project(data["project"])
-        keys = ("branch", "upstream", "tracking", "remote", "destination", "push_url_display", "url_hash",
-                "head", "tip", "commits")
-        if str(project.folder.resolve()) != data["folder"] or snapshot(project.folder) != {key: data[key] for key in keys}:
-            raise NotAllowed("The branch, upstream or commits changed since this card was made. Propose a new push.")
-        if not data["commits"]:
-            return {"proposal": proposal_id, "ok": True, "pushed": False,
-                    "reason": "Everything up-to-date. Nothing was pushed."}
-        url = _git(project.folder, "remote", "get-url", "--push", "--all", data["remote"])
-        if hashlib.sha256(url.encode()).hexdigest() != data["url_hash"]:
-            raise NotAllowed("The upstream changed since this card was made. Propose a new push.")
-        tracking_old = _ref(project.folder, data["tracking"])
-        try:
-            output = _git(project.folder, "-c", "core.hooksPath=/dev/null", "push", "--porcelain", "--no-verify",
-                 f"--force-with-lease={data['destination']}:{data['tip']}",
-                 "--no-follow-tags", "--recurse-submodules=no", "--", url,
-                 f"{data['head']}:{data['destination']}", timeout=PUSH_TIMEOUT, pushing=True)
-            if any(line.startswith("=\t") for line in output.splitlines()):
-                raise NotAllowed("The remote changed; make a new proposal.")
-        except GitFailed:
-            if _remote_tip(project.folder, url, data["destination"]) != data["tip"]:
-                raise NotAllowed("The remote changed; make a new proposal.") from None
-            raise
-        try:
-            # Update the tracking ref only if it existed before, never create one. Git 2.56+ already moves (and
-            # creates) it during the push.
-            if tracking_old is not None and _ref(project.folder, data["tracking"]) != data["head"]:
-                _git(project.folder, "-c", "core.hooksPath=/dev/null", "update-ref", data["tracking"],
-                     data["head"], tracking_old)
-            reason = "Push completed."
-        except Exception as e:
-            reason = f"Push completed, but the local tracking ref was not updated: {e}"
-        return {"proposal": proposal_id, "ok": True, "pushed": True, "reason": reason}
+        output = _git(project.folder, "-c", "core.hooksPath=/dev/null", "push", "--porcelain", "--no-verify",
+             f"--force-with-lease={data['destination']}:{data['tip']}",
+             "--no-follow-tags", "--recurse-submodules=no", "--", url,
+             f"{data['head']}:{data['destination']}", timeout=PUSH_TIMEOUT, pushing=True)
+        if any(line.startswith("=\t") for line in output.splitlines()):
+            raise NotAllowed("The remote changed; make a new proposal.")
+    except GitFailed:
+        if _remote_tip(project.folder, url, data["destination"]) != data["tip"]:
+            raise NotAllowed("The remote changed; make a new proposal.") from None
+        raise
+    try:
+        # Update the tracking ref only if it existed before, never create one. Git 2.56+ already moves (and
+        # creates) it during the push.
+        if tracking_old is not None and _ref(project.folder, data["tracking"]) != data["head"]:
+            _git(project.folder, "-c", "core.hooksPath=/dev/null", "update-ref", data["tracking"],
+                 data["head"], tracking_old)
+        reason = "Push completed."
     except Exception as e:
-        return {"proposal": proposal_id, "ok": False, "reason": URL_USERINFO.sub(r"\1***@", str(e))}
+        reason = f"Push completed, but the local tracking ref was not updated: {e}"
+    return {"ok": True, "pushed": True, "reason": reason}

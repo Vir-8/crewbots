@@ -11,20 +11,18 @@ hand outside crewbots has no record and is not covered.
 
 import asyncio
 import datetime
-import hashlib
 import json
-import re
 from pathlib import Path
 from typing import Any
 
 from crewbots import ci
-from crewbots.push import REMOTE_TIMEOUT, GitFailed, _display_url, _git, _remote_tip
+from crewbots.push import REMOTE_TIMEOUT, GitFailed, _git, _ref, destination, live_tip
 from crewbots.runner.common import NotAllowed
 from crewbots.runner.merge_status import MERGE_LOCK
 
 BACKUP = "refs/backup/"
 IN_PROGRESS = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "SQUASH_MSG", "rebase-merge", "rebase-apply", "index.lock")
-KEYS = ("project", "folder", "target", "branch", "old", "new", "tree", "upstream", "remote_tip", "url_hash", "backup")
+KEYS = ("target", "branch", "old", "new", "tree", "upstream", "remote_tip", "url_hash", "backup")  # as on the card, or no swap
 
 
 def _blocking(runner: Any, folder: Path) -> list[str]:
@@ -41,43 +39,26 @@ def _remote(folder: Path, target: str) -> dict[str, str]:
     upstream = _git(folder, "for-each-ref", "--format=%(upstream:short)", f"refs/heads/{target}")
     if not upstream:
         raise NotAllowed(f"{target} has no upstream")
-    remote = _git(folder, "config", "--get", f"branch.{target}.remote")
-    destination = _git(folder, "config", "--get", f"branch.{target}.merge")
-    if remote == "." or not destination.startswith("refs/heads/"):
-        raise NotAllowed("the upstream must be a remote branch")
-    urls = _git(folder, "remote", "get-url", "--push", "--all", remote).splitlines()
-    if len(urls) != 1:
-        raise NotAllowed("the upstream must have exactly one push URL")
-    tip = _remote_tip(folder, urls[0], destination)
-    if tip is None or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", tip):
-        raise NotAllowed("the destination branch does not exist on the remote")
+    where = destination(folder, target)
+    tip = live_tip(folder, where)
     try:
-        symref = _git(folder, "ls-remote", "--symref", "--", urls[0], "HEAD", timeout=REMOTE_TIMEOUT).splitlines()
+        symref = _git(folder, "ls-remote", "--symref", "--", where["url"], "HEAD", timeout=REMOTE_TIMEOUT).splitlines()
     except NotAllowed as e:
         raise NotAllowed(f"the remote's default branch could not be read ({e})") from None
     default = next((line.split()[1] for line in symref if line.startswith("ref: refs/heads/")), "")
     if not default:
         raise NotAllowed("the remote did not say which branch is its default")
-    return {"upstream": upstream, "destination": destination, "default": default, "remote_tip": tip,
-            "push_url": _display_url(urls[0]),
-            "url_hash": hashlib.sha256(urls[0].encode()).hexdigest()}
+    return {"upstream": upstream, "destination": where["destination"], "default": default, "remote_tip": tip,
+            "push_url": where["push_url_display"], "url_hash": where["url_hash"]}
 
 
 def _backup_name(folder: Path, target: str) -> str:
     stem = f"{BACKUP}{target}-{datetime.date.today().isoformat()}"
     name, n = stem, 1
-    while _exists(folder, name):
+    while _ref(folder, name) is not None:
         n += 1
         name = f"{stem}-{n}"
     return name
-
-
-def _exists(folder: Path, ref: str) -> bool:
-    try:
-        _git(folder, "rev-parse", "--verify", "--quiet", ref)
-        return True
-    except GitFailed:
-        return False
 
 
 def snapshot(folder: Path, branch: str, blocking: list[str] | None = None) -> dict[str, Any]:
@@ -149,7 +130,7 @@ def snapshot(folder: Path, branch: str, blocking: list[str] | None = None) -> di
 
 async def propose(runner: Any, task_id: str, project: str, branch: str, summary: str) -> int:
     task = runner.store.get_task(task_id)
-    chief = runner.coordinator()
+    chief = runner.chief_bot()
     if chief is None or task.bot != chief.name:
         raise NotAllowed("only the chief can propose replacing main")
     if not summary.strip():
@@ -224,7 +205,7 @@ def _attempt(runner: Any, data: dict[str, Any]) -> dict[str, Any]:
     now = snapshot(folder, data["branch"], _blocking(runner, folder))
     if now.get("error"):
         raise NotAllowed(now["error"])
-    if str(folder) != data["folder"] or any(now[k] != data[k] for k in KEYS if k not in ("project", "folder")):
+    if str(folder) != data["folder"] or any(now[k] != data[k] for k in KEYS):
         raise NotAllowed("The branches or the backup name changed since this card was made. Propose again.")
     _backfill_tips(runner, folder)
     old, new, target, backup = data["old"], data["new"], data["target"], data["backup"]

@@ -21,6 +21,7 @@ from crewbots.attention import BREAK_S
 from crewbots.crew import NO_REPLY
 from crewbots.routines import Routine, RoutineError
 from crewbots.runner import Runner
+from crewbots.runner.common import plan
 from crewbots.runner.wakes import NEWS_GAP, URGENT_GAP
 from crewbots.store import Store, Task
 
@@ -147,7 +148,7 @@ class Scheduler:
         said = (self.store.routine_state("away") or {}).get("last_run_at")
         if away and not said and any(r.enabled for r in self.routines):
             crew = self.runner.crew
-            chief = self.runner.coordinator()
+            chief = self.runner.chief_bot()
             if chief:
                 chat = self.runner.chat(chief.name)
                 self.runner._record(chat.id, kind="text", data={"away": True, "text": prompts.text(
@@ -186,7 +187,7 @@ class Scheduler:
                     for i in checklist.items}
             first = self._first_seen.setdefault(bot, now.isoformat())  # what happened before isn't news to an item
             due = checklist.due(last, now, self.store.crew_events(_utc(now - timedelta(days=1))), first)
-            if due and self.runner.capacity.verdict(card.backend.split("-")[0]).go:
+            if due and self.runner.capacity.verdict(plan(card.backend)).go:
                 return self.check_in(bot, due, now)
         return None
 
@@ -209,8 +210,7 @@ class Scheduler:
             news = bool(events or stopped) and now - looked >= (URGENT_GAP if urgent else NEWS_GAP)
             if not (due or news) or (runner.attention.quiet(now) and not urgent):
                 continue
-            if time.time() - runner.attention.user_wrote < BREAK_S or not runner.capacity.verdict(
-                    card.backend.split("-")[0]).go:
+            if time.time() - runner.attention.user_wrote < BREAK_S or not runner.capacity.verdict(plan(card.backend)).go:
                 continue
             return runner.wake(bot, self._wake_text(bot, state, events, stopped, looked, now, due), snap)
         return None
@@ -219,10 +219,9 @@ class Scheduler:
                    looked: datetime, now: datetime, due: bool) -> str:
         reason = (f"You asked to look again now: {state['next_why'] or 'no reason given'}." if due else
                   f"Something new since you last looked, at {_human(looked)}.")
-        lines = [f"- {_clock(e['at'])} {e['kind']}: {e['text']}" for e in events]
+        lines = _crew_lines(events)
         lines += [f"- {t.id} {t.bot}'s {t.title!r} is {t.status.value.replace('_', ' ')}" for t in stopped]
-        seen = "\n".join(f"- {_clock(e['at'])} {e['kind']}: {e['text']}" for e in self.store.crew_events(_utc(looked))
-                         if e not in events)
+        seen = "\n".join(_crew_lines([e for e in self.store.crew_events(_utc(looked)) if e not in events]))
         news = ("# New\n\n" + prompts.untrusted("events", "\n".join(lines)) + "\n\n" if lines else "") + (
             "# Also\n\n" + prompts.untrusted("events", seen) + "\n\n" if seen else "") + activity(
             self.store, looked, chars=WAKE_CHARS)
@@ -237,7 +236,7 @@ class Scheduler:
             raise ValueError(f"{bot} has no checklist: write one in {checkins.path(self.runner.crew.home, bot)}")
         last = (self.runner.store.routine_state(f"checkin:{bot}") or {}).get("last_run_at")
         since = datetime.fromisoformat(last) if last else now - timedelta(days=1)
-        happened = "\n".join(f"- {_clock(e['at'])} {e['kind']}: {e['text']}" for e in self.store.crew_events(_utc(since)))
+        happened = "\n".join(_crew_lines(self.store.crew_events(_utc(since))))
         changes = ("# Events\n\n" + prompts.untrusted("events", happened) + "\n\n" if happened else "") + activity(
             self.runner.store, since, chars=CHECKIN_CHARS)
         return self.runner.check_in(bot, items if items is not None else checklist.items, changes, now)
@@ -380,10 +379,7 @@ def activity(store: Store, since: datetime, exclude_routine: str | None = None, 
         if goal.result:
             lines.append(f"Latest reply: {_clip(goal.result, EVENT_CHARS * 2)}")
         sections.append("\n".join(lines))
-    text = "\n\n".join(sections)
-    if len(text) > chars:
-        text = text[:chars] + "\n… (more; use recall or the task ids to look closer)"
-    return text
+    return _fit("\n\n".join(sections), chars)
 
 
 def corrections(store: Store, since: datetime, chars: int = CORRECTION_CHARS) -> str:
@@ -418,10 +414,7 @@ def corrections(store: Store, since: datetime, chars: int = CORRECTION_CHARS) ->
         for bot, items in by_bot.items():
             lines += [f"In {bot}'s work:", *items]
         sections.append("\n".join(lines))
-    text = "\n\n".join(sections)
-    if len(text) > chars:
-        text = text[:chars] + "\n… (more; use recall or the task ids to look closer)"
-    return text
+    return _fit("\n\n".join(sections), chars)
 
 
 def _event_line(kind: str, data: dict[str, Any], bot: str) -> str | None:
@@ -454,6 +447,14 @@ def _clock(at: str) -> str:
 
 def _human(t: datetime) -> str:
     return timefmt.to_local(t).strftime("%a %d %b %H:%M")
+
+
+def _crew_lines(events: list[dict[str, Any]]) -> list[str]:
+    return [f"- {_clock(e['at'])} {e['kind']}: {e['text']}" for e in events]
+
+
+def _fit(text: str, chars: int) -> str:
+    return text if len(text) <= chars else text[:chars] + "\n… (more; use recall or the task ids to look closer)"
 
 
 def _clip(text: str, limit: int = EVENT_CHARS) -> str:

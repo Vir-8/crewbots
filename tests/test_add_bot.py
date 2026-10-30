@@ -48,7 +48,7 @@ async def test_adding_earlier_coordinator_does_not_change_chief(crewed):
     chief, _ = tools(runner, store, "chief")
     await chief.call("add_bot", {**MARKETING, "name": "aaa", "can_delegate": True})
     assert list(runner.crew.bots)[0] == "aaa"
-    assert store.chief() == runner.coordinator().name == "chief"
+    assert store.chief() == runner.chief_bot().name == "chief"
     assert not runner.is_coordinator("aaa")
 
 
@@ -67,6 +67,17 @@ async def test_the_chief_gives_what_it_chooses_short_of_full_access_and_network_
     await chief.call("add_bot", {**MARKETING, "network": True, "can_delegate": True, "mcp": ["unity"]})
     added = runner.crew.bots["marketing"]
     assert added.network is True and added.can_delegate and added.mcp_names == ("unity",)
+
+
+async def test_a_bot_added_without_a_word_on_network_has_the_chiefs(crewed):
+    runner, store = crewed
+    cards.save_card(runner.crew.home, "chief", {"network": True}, None)
+    runner.reload(crew.load(runner.crew.home))
+    chief, _ = tools(runner, store, "chief")
+
+    await chief.call("add_bot", MARKETING)
+
+    assert runner.crew.bots["marketing"].network is True
 
 
 async def test_a_taken_name_is_refused_and_no_tool_removes_or_changes_a_bot(crewed):
