@@ -43,7 +43,7 @@ class Permissions:
             raise CrewError(f"kind is one of {', '.join(KINDS)}")
         if not what:
             raise CrewError("say what you'd do, in a line the user can say yes to")
-        granted = self.store.grants(task_id)
+        granted = self._grants(task)
         target = ""
         if kind == "folder":
             path = _writable(folder)

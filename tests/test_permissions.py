@@ -137,6 +137,21 @@ def test_what_cant_be_asked_for(store, tmp_path):
     assert shown(store, chief.id) == []
 
 
+def test_what_was_allowed_is_the_asked_for_tasks_own(store, tmp_path):
+    crew = ScriptedCrew(store, tmp_path, bot("chief", can_delegate=True), bot("engineer"))
+    chat, thread = crew.runner.chat("chief"), store.create_task("engineer", "look up the export format")
+    store.answer_permission(store.ask_permission(chat.id, "network", "", "browse", "")["id"], True)
+
+    with pytest.raises(CrewError, match="the network already"):
+        crew.runner.ask_permission(chat.id, "browse", kind="network")
+    asked = crew.runner.ask_permission(chat.id, "Look up the export format", kind="network", for_task=thread.id)
+    assert asked["task_id"] == thread.id  # the chief's network isn't the engineer's
+
+    store.answer_permission(asked["id"], True)
+    with pytest.raises(CrewError, match="the network already"):
+        crew.runner.ask_permission(chat.id, "browse again", kind="network", for_task=thread.id)
+
+
 async def test_a_session_opens_again_with_what_was_allowed(store, tmp_path):
     runner, backend = make(store, tmp_path, SessionBackend())
     store.set_chief("worker")  # the one who asks the user's leave
@@ -179,8 +194,8 @@ def test_other_bots_working_state_stays_private_even_with_full_access(tmp_path):
     assert policy.check_tool("Glob", {"path": str(other), "pattern": ".state-*"}) is not None
     assert policy.check_tool("Grep", {"path": str(root), "pattern": "anything"}) is not None
     assert policy.check_tool("Glob", {"pattern": str(root / "*" / "state.md")}) is not None
-    full = Policy(Access.FULL, tmp_path / "work", set(), deny_read=[other])
-    assert full.check_tool("Read", {"file_path": str(other / "state.md")}) is not None
+    full = settings(Access.FULL, deny_read=[other])["permissions"]["deny"]
+    assert full == [f"Read(/{other})", f"Read(/{other}/**)"]  # not the private paths, which full access may read
 
 
 def test_a_bot_asks_through_the_api_and_only_the_user_answers(crew_app):
