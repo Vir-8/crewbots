@@ -19,6 +19,21 @@ class Status(StrEnum):
     HELD = "held"  # its next turn waits on a budget or the plan's limit; it goes on by itself, or when released
 
 
+class Kind(StrEnum):
+    CHAT = "chat"  # a bot's one ongoing conversation with the user
+    SEAT = "seat"  # a bot's own conversation inside a group chat
+    THREAD = "thread"  # a piece of work
+    REVIEW = "review"  # a code review of a pull request
+    ASK = "ask"  # a question one bot put to another
+
+
+class MergeState(StrEnum):
+    PROPOSED = "proposed"
+    MERGING = "merging"
+    MERGED = "merged"
+    DROPPED = "dropped"
+
+
 @dataclass(frozen=True)
 class Task:
     id: str
@@ -45,13 +60,13 @@ class Task:
     turns: int
     review_of: str | None
     review_version: int | None
-    merge_state: str | None
+    merge_state: MergeState | None
     merged_commit: str | None
     merged_tip: str | None
     merge_lock: str | None
     merge_marker: str | None
     briefing: str | None
-    kind: str
+    kind: Kind
     room_id: str | None
     pr: str | None
     routine: str | None
@@ -69,6 +84,7 @@ class Task:
 
 ACTIVE = {Status.QUEUED, Status.RUNNING}
 STOPPED = {Status.FAILED, Status.NEEDS_INPUT, Status.HELD}  # work that stopped, which may need someone
+UNFINISHED = {Status.QUEUED, Status.RUNNING, Status.HELD, Status.NEEDS_INPUT}  # work that will go on
 
 @dataclass(frozen=True)
 class Handoff:
@@ -130,8 +146,14 @@ def _review(row: sqlite3.Row) -> Review:
 def _task(row: sqlite3.Row) -> Task:
     values = dict(row)
     values["status"] = Status(values["status"])
+    values["kind"] = Kind(values["kind"])
+    values["merge_state"] = values["merge_state"] and MergeState(values["merge_state"])
     values["reported"] = bool(values["reported"])
     return Task(**values)
+
+
+def _event(row: sqlite3.Row) -> StoredEvent:
+    return StoredEvent(id=row["id"], task_id=row["task_id"], kind=row["kind"], data=json.loads(row["data"]), at=row["at"])
 
 
 def _room(row: sqlite3.Row) -> dict[str, Any]:

@@ -1,7 +1,7 @@
 """The one event stream every backend is translated into. The app, the store and the crew only ever see these."""
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, get_args
 
 
 @dataclass(frozen=True)
@@ -94,10 +94,7 @@ class Done:
 
 Event = SessionStarted | Text | ToolCall | ToolResult | Usage | RateLimit | Notice | Compacted | Done
 
-BY_KIND: dict[str, type[Event]] = {
-    cls.__dataclass_fields__["kind"].default: cls
-    for cls in (SessionStarted, Text, ToolCall, ToolResult, Usage, RateLimit, Notice, Compacted, Done)
-}
+BY_KIND: dict[str, type[Event]] = {cls.__dataclass_fields__["kind"].default: cls for cls in get_args(Event)}
 
 
 def from_json(kind: str, data: dict[str, Any]) -> Event | None:

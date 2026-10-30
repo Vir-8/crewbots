@@ -96,10 +96,10 @@ class Happenings:
                                " order by id", (level,))
         return [dict(r) for r in rows]
 
-    def told_since(self, bot: str, since: str, limit: int) -> list[dict[str, Any]]:
-        """What `bot` told the user in its chat from elsewhere after `since`, the newest `limit` of it."""
-        rows = self.db.execute("select * from proactive where bot = ? and source like 'told from %' and at > ? "
-                               "order by id desc limit ?", (bot, since, limit)).fetchall()
+    def raised_from(self, bot: str, source: str, since: str, limit: int) -> list[dict[str, Any]]:
+        """What `bot` raised after `since` from a source starting with `source`, the newest `limit` of it."""
+        rows = self.db.execute("select * from proactive where bot = ? and source like ? || '%' and at > ? "
+                               "order by id desc limit ?", (bot, source, since, limit)).fetchall()
         return [dict(row) for row in reversed(rows)]
 
     def mark_delivered(self, item_id: int) -> None:

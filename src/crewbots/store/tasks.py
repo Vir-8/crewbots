@@ -4,9 +4,10 @@ import json
 import uuid
 from typing import Any
 
-from crewbots.store.records import STOPPED, Handoff, Review, Status, Task, Verdict, _now, _review, _task
+from crewbots.store.records import STOPPED, UNFINISHED, Handoff, Review, Status, Task, Verdict, _now, _review, _task
 
 TITLE_CHARS = 80
+UNFINISHED_MARKS = ", ".join("?" * len(UNFINISHED))  # for `status in (...)`, with *UNFINISHED as the arguments
 
 # A task and everything it delegated, however deep: the ids, for `id in (...)`.
 TREE = ("with recursive tree(id) as (select ? union select t.id from tasks t join tree on t.parent_id = tree.id)"
@@ -111,10 +112,10 @@ class Tasks:
             "and t.status = 'idle' and t.kind = 'thread' and t.review_of is null "
             "and coalesce(t.merge_state, '') not in ('merged', 'merging', 'proposed', 'dropped') "
             "and not exists (select 1 from tasks c where c.parent_id = t.id "
-            "and c.status in ('queued', 'running', 'held', 'needs_input')) "  # waiting on work it handed out
+            f"and c.status in ({UNFINISHED_MARKS})) "  # waiting on work it handed out
             "and (select max(m.id) from events m where m.task_id = t.id and m.kind = 'message' "
             "and json_extract(m.data, '$.from') = p.bot) > coalesce((select max(h.id) from events h "
-            "where h.task_id = t.id and h.kind = 'handoff'), 0) order by t.created_at, t.id", (bot,)).fetchall()
+            "where h.task_id = t.id and h.kind = 'handoff'), 0) order by t.created_at, t.id", (bot, *UNFINISHED)).fetchall()
         return [_task(r) for r in rows]
 
     def stuck_tasks(self, bot: str) -> list[Task]:
@@ -126,8 +127,8 @@ class Tasks:
     def unfinished_children(self, parent_id: str) -> int:
         """Children still running, waiting to run, held, or waiting for an answer."""
         return self.db.execute(
-            "select count(*) from tasks where parent_id = ? and status in (?, ?, ?, ?)",
-            (parent_id, Status.QUEUED, Status.RUNNING, Status.HELD, Status.NEEDS_INPUT)).fetchone()[0]
+            f"select count(*) from tasks where parent_id = ? and status in ({UNFINISHED_MARKS})",
+            (parent_id, *UNFINISHED)).fetchone()[0]
 
     def add_handoff(self, task_id: str, from_bot: str, done: str, output: list[str], open: str, needs: str,
                     evidence: list[str] | None = None, checks: list[str] | None = None) -> Handoff:
@@ -267,8 +268,8 @@ class Tasks:
     def delegated_out(self, bot: str) -> int:
         """Tasks `bot` handed to another bot that haven't finished: running, waiting, held, or asking a question."""
         return self.db.execute(
-            "select count(*) from tasks where created_by = ? and bot != ? and status in (?, ?, ?, ?)",
-            (bot, bot, Status.QUEUED, Status.RUNNING, Status.HELD, Status.NEEDS_INPUT)).fetchone()[0]
+            f"select count(*) from tasks where created_by = ? and bot != ? and status in ({UNFINISHED_MARKS})",
+            (bot, bot, *UNFINISHED)).fetchone()[0]
 
     def chat_of(self, bot: str) -> Task | None:
         row = self.db.execute("select * from tasks where kind = 'chat' and bot = ? order by created_at limit 1",

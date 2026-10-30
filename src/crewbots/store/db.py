@@ -41,13 +41,13 @@ create table if not exists tasks (
     turns         integer not null default 0,  -- runs that finished; a review is of the work as of one of these
     review_of     text references tasks(id),   -- set on a review task: the work it reviews
     review_version integer,                    -- the work's `turns` when this review was asked for
-    merge_state   text,                        -- null, proposed (by its coordinator), or merged (by the user)
+    merge_state   text,                        -- null, proposed, merging, merged or dropped
     merged_commit text,
     merged_tip    text,                        -- task branch tip at merge, before its checkout is removed
     merge_lock    text,                        -- device:inode of our in-progress index lock
     merge_marker  text,                        -- timestamp and nonce for this lock attempt
     briefing      text,                        -- where things stood, carried into a fresh session at rollover
-    kind          text not null default 'thread', -- chat, seat or thread
+    kind          text not null default 'thread', -- chat, seat, thread, review or ask
     room_id       text,                        -- a seat's room
     pr            text,                        -- a review's pull request, owner/name#number
     routine       text,                        -- the routine that started it, on a routine's top-level task
@@ -326,21 +326,21 @@ create virtual table search using fts5(
 # Columns added before migrations were numbered: the first step adds whichever an older database lacks.
 ADDED_COLUMNS = {
     "tasks": {
-        "reported": "alter table tasks add column reported integer not null default 0",
-        "turns": "alter table tasks add column turns integer not null default 0",
-        "review_of": "alter table tasks add column review_of text references tasks(id)",
-        "review_version": "alter table tasks add column review_version integer",
-        "merge_state": "alter table tasks add column merge_state text",
-        "merged_commit": "alter table tasks add column merged_commit text",
-        "briefing": "alter table tasks add column briefing text",
-        "routine": "alter table tasks add column routine text",
-        "budget": "alter table tasks add column budget integer",
-        "kind": "alter table tasks add column kind text not null default 'thread'",
-        "room_id": "alter table tasks add column room_id text",
-        "pr": "alter table tasks add column pr text",
+        "reported": "integer not null default 0",
+        "turns": "integer not null default 0",
+        "review_of": "text references tasks(id)",
+        "review_version": "integer",
+        "merge_state": "text",
+        "merged_commit": "text",
+        "briefing": "text",
+        "routine": "text",
+        "budget": "integer",
+        "kind": "text not null default 'thread'",
+        "room_id": "text",
+        "pr": "text",
     },
     "room_messages": {
-        "attachments": "alter table room_messages add column attachments text",  # JSON list, like a message event's
+        "attachments": "text",  # JSON list, like a message event's
     },
 }
 
@@ -409,10 +409,7 @@ def _catch_up(db: Connection, index_history: Callable[[], None]) -> None:
     are made, columns it lacks are added, and the search index is built from its history if it has none."""
     db.executescript(SCHEMA)
     for table, columns in ADDED_COLUMNS.items():
-        have = {r["name"] for r in db.execute(f"pragma table_info({table})")}
-        for column, sql in columns.items():
-            if column not in have:
-                db.execute(sql)
+        _add_columns(table, columns)(db, index_history)
     if not db.execute("select 1 from sqlite_master where name = 'search'").fetchone():
         db.executescript(SEARCH)
         index_history()

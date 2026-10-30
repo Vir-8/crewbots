@@ -9,6 +9,7 @@ from collections import Counter, defaultdict
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
+from crewbots.runner import common
 from crewbots.store import Store
 
 REVIEWER = "PR reviewer"
@@ -28,7 +29,7 @@ def summary(store: Store, bot_for, days: int = 371) -> dict[str, Any]:
     for row in store.usage_by(since):
         fresh = int(row["fresh"] or 0)
         bot = bot_for(row["bot"])
-        plan = row["plan"] or (bot.backend.split("-")[0] if bot else "claude")
+        plan = row["plan"] or (common.plan(bot.backend) if bot else "claude")
         model = row["model"] or (bot.model if bot and bot.model else "default")
         by_day[row["day"]][plan if plan in PLANS else "claude"] += fresh
         models[(plan, model)] += fresh
