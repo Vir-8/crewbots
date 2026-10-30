@@ -35,6 +35,7 @@ class FakeCDP:
         self.decided = set()
         self.intercept_url = None
         self.fail_requests = set()
+        self.gone_sessions = set()  # dropped by Chrome without an event
 
     async def event(self, method, params, session=None):
         await self.socket.send(json.dumps({"method": method, "params": params, "sessionId": session}))
@@ -47,6 +48,11 @@ class FakeCDP:
             method, params = request["method"], request["params"]
             self.number += 1
             result = {}
+            if request.get("sessionId") in self.gone_sessions:
+                await socket.send(json.dumps({"id": request["id"], "error": {"message": "Session with given id not found."}}))
+                continue
+            if method == "Runtime.evaluate" and params["expression"] == "new Promise(() => {})":
+                continue  # a script that never finishes
             if params.get("requestId") in self.fail_requests:
                 await socket.send(json.dumps({"id": request["id"], "error": {"message": "Session is already disposed"}}))
                 continue
@@ -478,3 +484,45 @@ async def test_navigation_error_includes_task_proxy_diagnostics(browser, tmp_pat
     assert "ERR_BLOCKED_BY_CLIENT" in str(caught.value)
     assert tab.proxy.address in str(caught.value) and '"listening"' in str(caught.value)
     assert tab.proxy.password not in str(caught.value)
+
+
+async def test_a_page_chrome_closes_or_crashes_is_dropped_and_said_why(browser, tmp_path):
+    service, fake = browser
+    for event, why in (("Target.detachedFromTarget", "Chrome closed it"), ("Inspector.targetCrashed", "it crashed")):
+        await service.action("a", tmp_path, False, "open", {"url": "http://localhost:5173"})
+        session = service.sessions["a"].session
+        if event == "Target.detachedFromTarget":
+            await fake.event(event, {"sessionId": session, "targetId": fake.session_targets[session]})
+        else:
+            await fake.event(event, {}, session)
+        for _ in range(100):
+            if "a" not in service.sessions:
+                break
+            await asyncio.sleep(0.01)
+        with pytest.raises(BrowserError, match=f"the last one went because {why}"):
+            await service.action("a", tmp_path, False, "evaluate", {"expression": "location.href"})
+    await service.action("a", tmp_path, False, "open", {"url": "http://localhost:5173"})  # a new page, not the lost one
+    assert service.sessions["a"].session != session
+
+
+async def test_an_open_that_finds_its_page_gone_starts_a_new_one(browser, tmp_path):
+    service, fake = browser
+    await service.action("a", tmp_path, False, "open", {"url": "http://localhost:5173"})
+    lost = service.sessions["a"].session
+    fake.gone_sessions.add(lost)  # Chrome dropped it and said nothing
+    await service.action("a", tmp_path, False, "open", {"url": "http://localhost:5173/again"})
+    assert service.sessions["a"].session not in {lost, None}
+
+
+async def test_an_idle_page_and_a_long_script_say_what_happened(browser, tmp_path):
+    service, fake = browser
+    await service.action("a", tmp_path, False, "open", {"url": "http://localhost:5173"})
+    service.cdp.timeout_s = 0.05
+    with pytest.raises(BrowserError, match="wait between calls rather than inside one"):
+        await service.action("a", tmp_path, False, "evaluate", {"expression": "new Promise(() => {})"})
+    service.idle_s = 0.02
+    await service.action("a", tmp_path, False, "open", {"url": "http://localhost:5173"})
+    await asyncio.sleep(0.08)
+    with pytest.raises(BrowserError, match="the last one went because no browser call came for"):
+        await service.action("a", tmp_path, False, "evaluate", {"expression": "location.href"})
+

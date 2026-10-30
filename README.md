@@ -333,7 +333,9 @@ types or presses a named key, `browser_evaluate(expression)` inspects the page w
 
 Chrome runs outside the bot's CLI sandbox with a separate disposable profile under `~/.crewbots/browser/`.
 Each task has its own context and cookies. A context closes when its turn finishes, is cancelled, or has had no
-successful browser action for five minutes. Each task has its own idle timer; refusals don't extend it. Chrome
+successful browser action for fifteen minutes (a bot can think that long between steps), or when Chrome closes or
+crashes its page; the next call says which, and an open starts a new page. Each task has its own idle timer;
+refusals don't extend it. Chrome
 exits and clears its profile when no contexts remain. On startup, an exclusive profile lock protects live browser
 owners. The daemon only stops a recorded orphan when its PID, kernel start time and user match, and only removes
 profiles whose recorded process has exited. It logs and leaves unverifiable or older unrecorded profiles alone.

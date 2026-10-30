@@ -57,7 +57,7 @@ class TargetCloseError(BrowserError):
 
 
 class Browser(BrowserControl):
-    def __init__(self, root: Path | None = None, *, idle_s: float = 300):
+    def __init__(self, root: Path | None = None, *, idle_s: float = 900):
         self.root = (root or paths.root() / "browser").absolute()
         self.idle_s = idle_s
         self.sessions: dict[str, BrowserSession] = {}
@@ -79,6 +79,7 @@ class Browser(BrowserControl):
         self._creating: dict[str, asyncio.Future] = {}
         self._disposing: dict[str, BrowserSession] = {}
         self._context_timers: dict[str, asyncio.TimerHandle] = {}
+        self._gone: dict[str, str] = {}  # why a task's page closed, for the call that finds it gone
         self._stderr = ""
         self._last_cdp: dict = {}
         self._proxy_logs: dict[str, deque] = {}
@@ -156,6 +157,7 @@ class Browser(BrowserControl):
             self._session_generation += 1
             tab = BrowserSession(task_id, context, target, session, network, proxy, generation=self._session_generation)
             self.sessions[task_id] = tab
+            self._gone.pop(task_id, None)
             await self._configure(session)
             await self.cdp.call("Runtime.runIfWaitingForDebugger", session=session)
             self._arm_idle(tab)
@@ -172,7 +174,7 @@ class Browser(BrowserControl):
 
     async def _configure(self, session):
         for method, params in (
-            ("Page.enable", {}), ("Runtime.enable", {}), ("Log.enable", {}),
+            ("Page.enable", {}), ("Runtime.enable", {}), ("Log.enable", {}), ("Inspector.enable", {}),
             ("Page.setInterceptFileChooserDialog", {"enabled": True}),
             ("Network.enable", {}), ("Network.setBypassServiceWorker", {"bypass": True}),
             ("Fetch.enable", {"patterns": [{"urlPattern": "*"}], "handleAuthRequests": True}),
@@ -227,6 +229,11 @@ class Browser(BrowserControl):
                     # A raced or non-closeable child is still paused. Do not discard its parent task.
                     log.warning("Could not close browser target %s: %s", info["targetId"], e)
                     self.cdp.note("target_close_error", targetId=info["targetId"], session=session, error=str(e))
+            return
+        if method in {"Target.detachedFromTarget", "Inspector.targetCrashed"}:
+            lost = data.get("sessionId") if method == "Target.detachedFromTarget" else session
+            if mine := next((t for t in self.sessions.values() if t.session == lost), None):
+                await self._lost(mine, "it crashed" if method == "Inspector.targetCrashed" else "Chrome closed it")
             return
         if method == "Fetch.authRequired":
             challenge = data["authChallenge"]
@@ -297,13 +304,20 @@ class Browser(BrowserControl):
                 await self._stop()
                 return
             if tab and self.sessions.get(tab.task_id) is tab:
+                self._went(tab.task_id, tab.failure)
                 await self._close_task(tab.task_id)  # fail closed for this context only
             if not self.sessions:
                 await self._stop()
 
     async def _evaluate(self, tab, expression):
-        result = await self.cdp.call("Runtime.evaluate", {"expression": expression, "returnByValue": True,
-                                                         "awaitPromise": True, "timeout": 10000}, tab.session)
+        try:
+            result = await self.cdp.call("Runtime.evaluate", {"expression": expression, "returnByValue": True,
+                                                             "awaitPromise": True, "timeout": 10000}, tab.session)
+        except BrowserError as error:
+            if not str(error).startswith("Chrome timed out"):
+                raise
+            raise BrowserError(f"The script was still going after {self.cdp.timeout_s:g} s, so its answer was given up "
+                               "on: keep each one short, and wait between calls rather than inside one") from None
         if result.get("exceptionDetails"):
             raise BrowserError(str(result["exceptionDetails"].get("exception", {}).get("description", "JavaScript failed")))
         return result.get("result", {}).get("value")
@@ -335,10 +349,21 @@ class Browser(BrowserControl):
                 if not allowed(args["url"], network) or urlsplit(args["url"]).scheme not in {"http", "https"}:
                     raise BrowserError("URL is not allowed by this bot's network setting; only HTTP(S) pages are supported")
                 tab = await self._session(task_id, network)
+                try:
+                    content = await self._perform(tab, folder, action, args)
+                except BrowserError as error:
+                    if "Session with given id not found" not in str(error):
+                        raise
+                    await self._close_task(task_id)  # Chrome dropped the page without a word: a new one, once
+                    tab = await self._session(task_id, network)
+                    content = await self._perform(tab, folder, action, args)
             elif (not tab or not self.cdp or self.cdp.reader.done()
                   or urlsplit(tab.url).scheme not in {"http", "https"}):
-                raise BrowserError("Open an HTTP(S) page first; the browser may have closed after being idle")
-            content = await self._perform(tab, folder, action, args)
+                why = self._gone.get(task_id)
+                raise BrowserError("Open an HTTP(S) page first" + (f": the last one went because {why}" if why else
+                                   "; the browser may have closed after being idle"))
+            else:
+                content = await self._perform(tab, folder, action, args)
             self._arm_idle(tab)
             if tab.notice or task_id in self._control_notices:
                 tab.notice = False
@@ -448,6 +473,7 @@ class Browser(BrowserControl):
             await asyncio.sleep(delay)
             async with self._lock:
                 if self.sessions.get(tab.task_id) is tab:
+                    self._went(tab.task_id, f"no browser call came for {delay / 60:g} minutes")
                     await self._close_task(tab.task_id)
                 if not self.sessions:
                     await self._stop()
@@ -463,6 +489,24 @@ class Browser(BrowserControl):
                         await self._stop()
                     except Exception:
                         log.exception("Could not stop browser after task %s expired", tab.task_id)
+
+    def _went(self, task_id, why):
+        self._gone[task_id] = why
+        if len(self._gone) > 64:
+            self._gone.pop(next(iter(self._gone)))
+
+    async def _lost(self, tab, why):
+        """A page Chrome closed or that crashed: its tab goes, so the next open makes a new one rather than calling a
+        session that's gone, and the call that finds it gone says why."""
+        tab.failure = f"Chrome lost this task's page: {why}"
+        tab.loaded.set()
+        self.cdp.fail_session(tab.session, tab.failure)
+        async with self._lock:
+            if self.sessions.get(tab.task_id) is tab:
+                self._went(tab.task_id, why)
+                await self._close_task(tab.task_id)
+            if not self.sessions:
+                await self._stop()
 
     @staticmethod
     def _idle_done(task):
