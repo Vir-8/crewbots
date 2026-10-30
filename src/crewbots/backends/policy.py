@@ -17,9 +17,9 @@
 - The network is off for shell commands, unless the role card says `network: true` (any host) or lists the hosts.
   Claude's sandbox asks for each new host, and the list answers. Codex's sandbox only switches the network on or off,
   so a Codex bot takes `network: true` or nothing.
-- What a bot asks the user for (`ask_permission`) and gets is its task's, for the rest of it: writing in a folder
-  outside its own (`write_dirs`; a read-only bot then writes there and nowhere else), and the network. Never the
-  private paths, and never what's the user's to do.
+- What the chief asks the user for (`ask_permission`), for its own task or a teammate's that escalated it, and gets
+  is that task's, for the rest of it: writing in a folder outside its own (`write_dirs`; a read-only bot then writes
+  there and nowhere else), and the network. Never the private paths, and never what's the user's to do.
 
 Claude asks through `can_use_tool` (`check_tool`); Codex asks through its approval requests (`check_command`,
 `check_write`). Each refusal is kept, with its reason, so the backend can show it in the transcript.
@@ -46,11 +46,14 @@ OUTWARD = re.compile(
     r"|\bgh\s+(pr\s+(create|merge)|release|repo\s+delete)\b"
     r"|\b(npm|pnpm|yarn|cargo|poetry|uv)\s+publish\b|\btwine\s+upload\b"
 )
-ASK = "ask the user with ask_permission"
+ASK = "escalate it, saying what and why, to whoever gave you the work (the chief asks the user with ask_permission)"
 READ_ONLY = f"this bot is read-only (its role card says access: read_only); to write somewhere, {ASK}"
 USERS_TO_DO = "pushing, merging, publishing and rewriting history are the user's to do (team/rules.md)"
 NO_NETWORK = f"this bot has no network access; if this task needs it, {ASK}"
 OUTSIDE_SANDBOX = "commands run in the sandbox, with no way out of it: run it as it is"
+IN_THE_FOREGROUND = ("run it in the foreground, with a timeout of up to 10 minutes: nothing wakes you when a background "
+                     "command finishes, so your work would stop there. Something that must keep running, such as a dev "
+                     "server, goes through a command that starts it detached and returns (scripts/verify, in crewbots)")
 SEARCH_NEEDS_ANY_HOST = "a web search can lead anywhere, and this bot's network is limited to some hosts"
 PRIVATE = "that's private: the user's logins and keys, or crewbots' own; no bot reads it"
 STAY_IN_SANDBOX = f"commands run inside this bot's sandbox, which a bot can't widen itself; if this task needs more, {ASK}"
@@ -88,6 +91,8 @@ class Policy:
         if name == "Bash":
             if args.get("dangerouslyDisableSandbox"):
                 return OUTSIDE_SANDBOX
+            if args.get("run_in_background"):
+                return IN_THE_FOREGROUND
             # Claude's sandbox lets a read-only bot's commands write nothing but its temp folder (claude_cli.shell)
             return self.check_command(str(args.get("command", "")), sandboxed=not self.write_dirs)
         if name == "SandboxNetworkAccess":  # the sandbox asking for a host a command wants to reach

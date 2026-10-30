@@ -55,6 +55,7 @@ def test_read_only_bots_read_and_look_things_up_in_their_sandbox(worktree):
     assert policy.check_tool("Bash", {"command": "git diff"}) is None  # its sandbox lets it write nothing
     assert "user's to do" in policy.check_tool("Bash", {"command": "git push"})
     assert "no way out" in policy.check_tool("Bash", {"command": "git diff", "dangerouslyDisableSandbox": True})
+    assert "nothing wakes you" in policy.check_tool("Bash", {"command": "uv run pytest -q", "run_in_background": True})
     let_write = ClaudePolicy(Access.READ_ONLY, worktree, set(), write_dirs=[worktree / "out"])
     assert "read-only" in let_write.check_tool("Bash", {"command": "ls"})  # no shell then: see claude_cli.shell
 
@@ -63,6 +64,8 @@ def test_writing_bots_write_only_inside_their_task_folder(worktree):
     policy = ClaudePolicy(Access.WORKSPACE_WRITE, worktree, {"crewbots"})
 
     assert policy.check_tool("Edit", {"file_path": str(worktree / "src" / "a.py")}) is None
+    assert "nothing wakes you" in policy.check_tool("Bash", {"command": "uv run pytest -q", "run_in_background": True})
+    assert policy.check_tool("Bash", {"command": "uv run pytest -q", "timeout": 600000}) is None
     assert policy.check_tool("Write", {"file_path": "notes.md"}) is None  # relative to the worktree
     assert "own folder" in policy.check_tool("Write", {"file_path": str(worktree.parent / "elsewhere.py")})
     assert "own folder" in policy.check_tool("Edit", {"file_path": str(worktree / ".." / "escape.py")})
