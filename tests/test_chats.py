@@ -612,6 +612,10 @@ def test_the_app_sees_every_conversation_with_what_is_unread(crew, store):
         profile = client.get("/bots/engineer/profile", headers=auth).json()
         assert profile["bot"] == "engineer" and profile["threads"] == []
         assert client.post("/rooms", json={"members": ["nobody"]}, headers=auth).status_code == 422
+        assert client.post("/rooms", json={"members": []}, headers=auth).status_code == 422
+        twice = client.post("/rooms", json={"members": ["engineer", "engineer", "reviewer"]}, headers=auth).json()
+        assert twice["members"] == ["engineer", "reviewer"]
+        assert client.patch(f"/rooms/{twice['id']}", json={"members": []}, headers=auth).status_code == 403
 
         changed = client.patch(f"/rooms/{room['id']}", json={"max_depth": 2}, headers=auth).json()
         assert changed["max_depth"] == 2 and changed["stopped"] is None
