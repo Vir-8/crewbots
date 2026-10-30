@@ -106,7 +106,8 @@ class ChiefEvents:
     def _report_up(self, task_id: str, now: bool = False) -> None:
         task = self.store.get_task(task_id)
         if (task.parent_id and not task.reported and not task.active and task_id not in self._runs
-                and task.kind not in NOT_THREADS and not task.review_of and task.status in (Status.IDLE, Status.FAILED)):
+                and not self._waiting_for_editor(task_id) and task.kind not in NOT_THREADS and not task.review_of
+                and task.status in (Status.IDLE, Status.FAILED)):
             latest = self.store.latest_handoff(task_id)
             seen = self.__dict__.setdefault("_chief_done", set())
             key = (task_id, task.turns, task.status, latest.id if latest else 0)

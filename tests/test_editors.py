@@ -69,7 +69,7 @@ def unity_crew(store, tmp_path, monkeypatch):
     monkeypatch.setattr(editors_module, "CONNECT_EVERY_S", 0.01)
     engineer = bot("engineer", access=Access.WORKSPACE_WRITE,
                    mcp={"UnityMCP": McpServer(url="http://unity.test/mcp", transport="http")})
-    crew = ScriptedCrew(store, tmp_path / "crew", bot("lead", can_delegate=True), engineer)
+    crew = ScriptedCrew(store, tmp_path / "crew", bot("chief", can_delegate=True), bot("lead", can_delegate=True), engineer)
 
     def work():
         task = store.create_task("engineer", "build", status=Status.IDLE)
@@ -142,6 +142,7 @@ async def test_waiting_for_its_editor_isnt_reported_as_finished_and_the_wait_sur
     crew.runner.open_unity_editor(task.id)
     crew.runner._report_up(task.id)  # its turn ended, to wait for Unity
     assert not [e for e in store.events(lead.id) if e.kind == "message" and e.data["from"] == "crewbots"]
+    assert store.chief_events() == []  # nor to the chief
 
     for watch in list(crew.runner._editor_watches):  # the daemon stops
         watch.cancel()
