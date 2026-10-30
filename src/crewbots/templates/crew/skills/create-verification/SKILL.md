@@ -12,11 +12,12 @@ which reads it cold, mid-task.
 
 ## Where it lives
 
-`verify/` at the project's root (outside `Assets/`, so Unity leaves it alone): `verify/README.md`, and one file per
-feature, with a line in the project's AGENTS.md pointing there. They're plain files, so any agent can follow and keep
-them. Never in an agent's own folder (`.claude/`, `.agents/`, `.codex/`, `.cursor/`): each agent reads only its own,
-and Claude Code keeps bots from writing in `.claude/`. A verify skill already in one moves to `verify/`, its text
-becoming the README.
+`.agents/verify/` in the project: `.agents/verify/README.md`, and one file per feature, with a line in the project's
+AGENTS.md pointing there. They're plain files, so any agent can follow and keep them, and crewbots lets every writing
+bot change this folder, though Codex keeps the rest of `.agents/` shut. Never in a skills folder (`.agents/skills/`,
+`.claude/skills/`) or another agent's own folder (`.claude/`, `.codex/`, `.cursor/`): each agent loads only its own,
+and the CLIs keep bots from writing there. A verify skill already in one moves to `.agents/verify/`, its text becoming
+the README. A project with no `.agents/` folder yet: a Codex bot can't make one, so say so in your handback.
 
 ## 1. Read the project, not the user
 
@@ -31,7 +32,7 @@ From the code and the project's own docs (AGENTS.md, README, design docs), answe
 
 Ask the user (`escalate`) only what you can't find out yourself.
 
-## 2. Write `verify/README.md`
+## 2. Write `.agents/verify/README.md`
 
 - **Run and doctor:** what's particular to this project on top of its verify skill: which scene to start from, what
   "ready" looks like, errors already in the console that aren't anyone's to chase.

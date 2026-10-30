@@ -230,14 +230,18 @@ def sandbox_overrides(spec: RunSpec, temp: Path | None = None) -> list[str]:
     one for the bot's access, with the private paths (backends/credentials.py) unreadable, and the network on only for
     a writing bot whose role card turns it on. `temp`, the session's own temp folder, takes the place of /tmp and
     $TMPDIR, which commands could otherwise write to: a way out of the task's folder. The folders the user let it
-    write in, for this task, are writable too, and a writing bot's package caches. (Codex's older sandbox settings can
-    only limit writes, and a profile set here wins over them, even with `sandbox_mode` in the user's config.)"""
+    write in, for this task, are writable too, and a writing bot's package caches and the project's verification map.
+    (Codex's older sandbox settings can only limit writes, and a profile set here wins over them, even with
+    `sandbox_mode` in the user's config.)"""
     files = {str(path): "deny" for path in private_paths()}
     if temp is not None:
         files |= {":slash_tmp": "read", ":tmpdir": "read", str(temp): "write"}
     files |= {str(folder): "write" for folder in spec.write_dirs}
     if spec.access is Access.WORKSPACE_WRITE:
         files |= {folder: "write" for folder in package_caches().values()}
+        # Codex keeps .agents/ read-only, since the skills in it are instructions. A project's verification map is
+        # an ordinary file the crew keeps up, so .agents/verify/ alone is opened.
+        files[str(Path(spec.cwd).resolve() / ".agents" / "verify")] = "write"
     files |= {str(path): "deny" for path in spec.deny_read}
     table = ", ".join(f"{json.dumps(key)} = {json.dumps(access)}" for key, access in files.items())
     network = spec.network is True and spec.access is Access.WORKSPACE_WRITE

@@ -12,7 +12,7 @@ A Python daemon (`src/crewbots`) and a Tauri app (`app/`, React and TypeScript).
 
 ## Prove it works
 
-Follow `verify/README.md`, which also maps each feature, for any change to `app/` or `src/`. Run
+Follow `.agents/verify/README.md`, which also maps each feature, for any change to `app/` or `src/`. Run
 the change in the design preview, WebKit or a scratch daemon, and hand back the evidence. "Tests pass" alone isn't done.
 `scripts/verify` starts and stops what you need, in the background. Never run a dev server in the foreground.
 

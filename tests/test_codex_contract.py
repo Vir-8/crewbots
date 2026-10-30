@@ -145,6 +145,9 @@ def test_the_sandbox_profile_keeps_commands_out_of_the_private_paths(tmp_path, m
     assert run("cat", rules).stdout == "Rules."
     assert run("cat", token).returncode != 0
     assert run("touch", work / "made").returncode == 0 and (work / "made").exists()
+    (work / ".agents" / "skills").mkdir(parents=True)
+    assert run("sh", "-c", "mkdir .agents/verify && echo map > .agents/verify/README.md").returncode == 0
+    assert run("touch", work / ".agents" / "skills" / "planted.md").returncode != 0  # the rest of .agents/ stays shut
     assert run("touch", Path(paths.home()) / "outside").returncode != 0
     assert run("touch", paths.caches() / "uv" / "downloaded").returncode == 0  # what uv and npm download, kept
     assert run("touch", paths.crew() / "made").returncode != 0

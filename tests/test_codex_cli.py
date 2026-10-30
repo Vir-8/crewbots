@@ -120,9 +120,12 @@ def test_no_codex_bot_reads_the_private_paths_and_each_keeps_to_its_own_temp_fol
     written = files(Access.WORKSPACE_WRITE, tmp_path / "temp")
     assert written[str(paths.crew() / "daemon.json")] == written[str(paths.home() / ".ssh")] == "deny"
     assert written[":slash_tmp"] == written[":tmpdir"] == "read" and written[str(tmp_path / "temp")] == "write"
+    map_folder = str(tmp_path.resolve() / ".agents" / "verify")
+    assert written[map_folder] == "write"  # the verification map, though Codex keeps the rest of .agents/ read-only
     read = files(Access.READ_ONLY, tmp_path / "temp")
     assert read[str(paths.crew() / "mcp.json")] == "deny"
     assert read[":slash_tmp"] == "read" and read[str(tmp_path / "temp")] == "write"  # scratch files, nothing of yours
+    assert map_folder not in read
 
 
 def test_mcp_servers_become_config_overrides():

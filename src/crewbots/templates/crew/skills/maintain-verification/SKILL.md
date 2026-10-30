@@ -21,18 +21,18 @@ End with exactly one, and say which:
 
 ## What you may change
 
-Only the map, `verify/` at the project's root, and the AGENTS.md line that points to it. Never the project's code. A
+Only the map, `.agents/verify/` in the project, and the AGENTS.md line that points to it. Never the project's code. A
 behaviour the map describes that the project no longer has is either drift (fix the map) or a regression (report it,
 and leave the map saying what should happen).
 
 ## The pass
 
-0. **Locate, and skip if nothing changed.** Find the map, `verify/README.md`. One still in an agent's own folder (a
-   verify skill in `.agents/skills/` or `.claude/skills/`) moves to `verify/` first, its text becoming the README,
-   with AGENTS.md pointing there: plain files any agent can follow. None at all: stop and say the project needs
-   `create-verification`. Read its "Last walked" line (none yet: this pass adds
-   it): if it names the commit the project is on now (`git log -1 --format=%H`) and no uncommitted work touches the
-   features, the outcome is **unchanged**.
+0. **Locate, and skip if nothing changed.** Find the map, `.agents/verify/README.md`. One elsewhere (a verify skill
+   in `.agents/skills/` or `.claude/skills/`, or a `verify/` at the root) moves to `.agents/verify/` first, a skill's
+   text becoming the README, with AGENTS.md pointing there: plain files any agent can follow. None at all: stop and
+   say the project needs `create-verification`. Read its "Last walked" line (none yet: this pass adds it): if it names
+   the commit the project is on now (`git log -1 --format=%H`) and no uncommitted work touches the features, the
+   outcome is **unchanged**.
 1. **Index.** Fix missing, extra, duplicate or dead entries between the index and the feature files. A map in one
    file has its features as sections instead: treat each as a feature file below.
 2. **Source.** For each feature file, read the code behind it (with your CLI's subagents in parallel, if you have

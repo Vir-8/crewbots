@@ -120,11 +120,11 @@ change them. What your change changed is exactly what you list in the handoff's 
 
 ## The project's map
 
-How to reach and drive each feature of this game is in its map, `verify/` at the project's root, which its AGENTS.md
-points to: `README.md`, with where to start, setting up states, tests and the feature index, and a file per feature.
-Where the map is more specific than this skill, follow the map. A project with none needs `create-verification`
-first: say so in your handback, or do it if the lead asked. What you find wrong in the map while verifying, correct in
-the same change; the regular pass over all of it is `maintain-verification`'s.
+How to reach and drive each feature of this game is in its map, `.agents/verify/`, which its AGENTS.md points to:
+`README.md`, with where to start, setting up states, tests and the feature index, and a file per feature. Where the map
+is more specific than this skill, follow the map. A project with none needs `create-verification` first: say so in
+your handback, or do it if the lead asked. What you find wrong in the map while verifying, correct in the same change;
+the regular pass over all of it is `maintain-verification`'s.
 
 When reviewing, do steps 1 to 3 yourself against the handback's evidence, read-only: tests, play, measurements and
 screenshots into `Temp/` change nothing in the work. Report what you find rather than fixing it.
