@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import subprocess
+import threading
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,7 @@ from crewbots.api import create_app
 from crewbots.projects import Project
 from crewbots.replace_main import propose
 from crewbots.runner import NotAllowed, Runner
+from crewbots.runner.merge_status import MERGE_LOCK
 from crewbots.store import Status, Store
 
 ADMIN = {"Authorization": "Bearer admin"}
@@ -93,6 +95,19 @@ def test_card_data_and_swap(setup):
         [data["backup"], f"refs/heads/{BRANCH}", "refs/heads/main", "refs/remotes/origin/main"])  # no other ref
     assert client.post(f"/replace-main-proposals/{proposal}/replace", headers=ADMIN).json()["detail"].startswith(
         "This replacement was already started")
+
+
+def test_the_swap_waits_for_a_running_merge(setup):
+    runner, client, repo = setup
+    proposal, data = make(runner)
+    old, results = git(repo, "rev-parse", "main"), []
+    with MERGE_LOCK:
+        pressing = threading.Thread(target=lambda: results.append(press(client, proposal)))
+        pressing.start()
+        pressing.join(timeout=1)
+        assert pressing.is_alive() and git(repo, "rev-parse", "main") == old
+    pressing.join(timeout=30)
+    assert results[0]["ok"] and git(repo, "rev-parse", "main") == data["new"]
 
 
 def test_backup_name_gets_a_suffix_when_taken(setup):

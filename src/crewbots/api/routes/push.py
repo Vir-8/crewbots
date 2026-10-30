@@ -21,6 +21,6 @@ def routes(c: Context) -> APIRouter:
     @v1.post("/replace-main-proposals/{proposal_id}/replace")
     async def replace_main(proposal_id: int):
         async with lock:
-            return replace_main_perform(c.runner, proposal_id)
+            return await replace_main_perform(c.runner, proposal_id)
 
     return v1

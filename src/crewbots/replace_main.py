@@ -20,6 +20,7 @@ from typing import Any
 from crewbots import ci
 from crewbots.push import REMOTE_TIMEOUT, GitFailed, _display_url, _git, _remote_tip
 from crewbots.runner.common import NotAllowed
+from crewbots.runner.merge_status import MERGE_LOCK
 
 BACKUP = "refs/backup/"
 IN_PROGRESS = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "SQUASH_MSG", "rebase-merge", "rebase-apply", "index.lock")
@@ -175,8 +176,9 @@ def proposal_message(runner: Any, proposal_id: int) -> str:
     return f"Replace-main proposal {proposal_id} is waiting for the user."
 
 
-def perform(runner: Any, proposal_id: int) -> dict[str, Any]:
-    """The button. Runs on the event loop, not a thread, so it cannot overlap a merge, which also runs there."""
+async def perform(runner: Any, proposal_id: int) -> dict[str, Any]:
+    """The button. The swap runs in a thread under MERGE_LOCK, so it cannot overlap a merge or an in-place commit, and
+    its remote reads don't hold up the event loop."""
     row = runner.store.db.execute("select task_id, data from events where id = ? and kind = 'replace_main_proposed'",
                                   (proposal_id,)).fetchone()
     if row is None:
@@ -187,7 +189,7 @@ def perform(runner: Any, proposal_id: int) -> dict[str, Any]:
         raise NotAllowed("This replacement was already started; make a new proposal.")
     runner._record(task_id, kind="replace_main_started", data={"proposal": proposal_id})
     try:
-        result = {"proposal": proposal_id} | _attempt(runner, data)
+        result = {"proposal": proposal_id} | await asyncio.to_thread(_locked_attempt, runner, data)
     except Exception as e:
         result = {"proposal": proposal_id, "ok": False, "reason": str(e)}
     runner._record(task_id, kind="replace_main_result", data=result)
@@ -208,6 +210,11 @@ def _backfill_tips(runner: Any, folder: Path) -> None:
                 runner.store.update_task(row["id"], merged_tip=parents[2])
         except Exception as e:
             raise NotAllowed(f"could not save the merged tip of {row['id']}; nothing was changed ({e})") from None
+
+
+def _locked_attempt(runner: Any, data: dict[str, Any]) -> dict[str, Any]:
+    with MERGE_LOCK:
+        return _attempt(runner, data)
 
 
 def _attempt(runner: Any, data: dict[str, Any]) -> dict[str, Any]:
