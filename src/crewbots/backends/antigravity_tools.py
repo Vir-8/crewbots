@@ -15,7 +15,6 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ImageContent
 
 from crewbots import paths
-from crewbots.backends.antigravity_runtime import profile
 from crewbots.backends.base import Access, package_caches, temp_env
 from crewbots.backends.credentials import without_credentials
 from crewbots.backends.policy import Policy
@@ -28,15 +27,14 @@ class Workspace:
         self.cwd = Path(config["cwd"])
         self.temp = Path(config["temp"])
         self.policy = Policy(Access(config["access"]), self.cwd, set(), network=config["network"],
-                             write_dirs=config["write_dirs"], deny_read=[Path(p) for p in config["deny_read"]])
+                             write_dirs=config["write_dirs"],
+                             deny_read=[*(Path(p) for p in config["deny_read"]), self.temp / "tools.json"])
 
     def read(self, given: str) -> Path:
         path = Path(given).expanduser()
         path = (path if path.is_absolute() else self.cwd / path).resolve()
         if reason := self.policy.check_read({"file_path": str(path)}):
             raise ToolError(reason)
-        if any(path.is_relative_to(p.resolve()) for p in (profile(), self.temp)):
-            raise ToolError("This path contains private agent configuration")
         return path
 
     def write(self, given: str) -> Path:
@@ -59,8 +57,7 @@ class Workspace:
         lines += [rule("allow file-write*", p) for p in writable]
         if self.policy.network is True:
             lines.append("(allow network*)")
-        private = [*self.policy.private, profile(), self.temp / "tools.json"]
-        lines += [rule("deny file-read* file-write*", p) for p in private]
+        lines += [rule("deny file-read* file-write*", p) for p in self.policy.private]
         # A command must not rewrite the rules governing its next command.
         lines.append(rule("deny file-write*", self.temp))
         lines.append(rule("allow file-write*", self.temp / "work"))

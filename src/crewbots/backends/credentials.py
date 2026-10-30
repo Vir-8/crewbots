@@ -37,7 +37,7 @@ def private_paths() -> tuple[Path, ...]:
     crew = paths.crew()
     return (
         crew / "daemon.json", crew / "mcp.json", *(crew / f"crewbots.db{end}" for end in ("", "-wal", "-shm")),
-        paths.logs(), paths.root() / "browser", paths.root() / "antigravity", *(paths.home() / login for login in LOGINS),
+        paths.logs(), paths.root() / "browser", paths.antigravity(), *(paths.home() / login for login in LOGINS),
     )
 
 

@@ -66,6 +66,11 @@ def no_credentials() -> Path:
     return root() / "no-credentials"
 
 
+def antigravity() -> Path:
+    """The Antigravity runtime's own profile, with its sign-in, unless CREWBOTS_ANTIGRAVITY_HOME names another."""
+    return Path(os.environ.get("CREWBOTS_ANTIGRAVITY_HOME") or root() / "antigravity")
+
+
 def codex_servers() -> Path:
     """The last list of the user's Codex MCP servers that worked (backends/codex_isolation.py)."""
     return root() / "codex-mcp-servers.json"

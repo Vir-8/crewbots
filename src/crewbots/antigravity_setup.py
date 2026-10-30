@@ -10,9 +10,12 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from crewbots.backends.antigravity_runtime import VERSION, connect, models, profile, runtime
+from crewbots import paths
+from crewbots.backends.antigravity_runtime import VERSION, connect, models, runtime
 
-REGISTRY = "https://raw.githubusercontent.com/agentclientprotocol/registry/main/antigravity-acp/agent.json"
+# The registry commit that lists VERSION: its main branch lists only the newest release.
+REGISTRY = ("https://raw.githubusercontent.com/agentclientprotocol/registry/"
+            "02b460362cfedf4d43b03df7aad6d79a353fe064/antigravity-acp/agent.json")
 
 
 def install() -> None:
@@ -22,8 +25,6 @@ def install() -> None:
         entry = json.load(response)
     if entry.get("id") != "antigravity-acp" or entry.get("authors") != ["Google LLC"]:
         raise RuntimeError("Unexpected publisher in the ACP registry")
-    if entry.get("version") != VERSION:
-        raise RuntimeError(f"The registry now offers {entry.get('version')}; update the tested runtime version first")
     target = "darwin-aarch64" if platform.machine() == "arm64" else "darwin-x86_64"
     distribution = entry["distribution"]["binary"][target]
     url = distribution["archive"]
@@ -49,8 +50,8 @@ def install() -> None:
 
 
 async def login() -> None:
-    profile().mkdir(parents=True, exist_ok=True)
-    connection, _ = await connect(profile(), login=True)
+    paths.antigravity().mkdir(parents=True, exist_ok=True)
+    connection, _ = await connect(paths.antigravity(), login=True)
     try:
         print("Complete sign-in in the browser opened by Google's official ACP runtime.", flush=True)
         await connection.request("authenticate", {"methodId": "oauth-personal"}, timeout=300)

@@ -16,15 +16,12 @@ def runtime() -> Path:
                 paths.root() / "bin" / "antigravity-acp" / VERSION / "agy_acp_server.par")
 
 
-def profile() -> Path:
-    return Path(os.environ.get("CREWBOTS_ANTIGRAVITY_HOME") or paths.root() / "antigravity")
-
-
 def environment() -> dict[str, str]:
     # Subscription authentication stays in the official runtime. Ambient API/gateway credentials must not change billing.
     env = {k: v for k, v in os.environ.items() if not k.startswith(("AGY_LLM_GATEWAY_", "AGY_GATEWAY_", "GOOGLE_", "GEMINI_"))
            and k not in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "AGY_ACP_FORCE_FILE_STORAGE")}
-    return env | {"GEMINI_HOME": str(profile()), "ANTIGRAVITY_HARNESS_PATH": str(runtime().with_name("localharness_external"))}
+    return env | {"GEMINI_HOME": str(paths.antigravity()),
+                  "ANTIGRAVITY_HARNESS_PATH": str(runtime().with_name("localharness_external"))}
 
 
 async def connect(cwd: Path, *, login: bool = False) -> tuple[Connection, dict]:
@@ -34,7 +31,7 @@ async def connect(cwd: Path, *, login: bool = False) -> tuple[Connection, dict]:
                            "`crewbots antigravity login`.")
     if not login:
         try:
-            settings = json.loads((profile() / "antigravity-acp" / "settings.json").read_text())
+            settings = json.loads((paths.antigravity() / "antigravity-acp" / "settings.json").read_text())
         except (OSError, ValueError):
             settings = {}
         if settings.get("auth", {}).get("type") != "oauth-personal":
@@ -74,10 +71,10 @@ def model_list(session: dict) -> list[dict]:
 
 
 async def models() -> list[dict]:
-    profile().mkdir(parents=True, exist_ok=True)
-    connection, _ = await connect(profile())
+    paths.antigravity().mkdir(parents=True, exist_ok=True)
+    connection, _ = await connect(paths.antigravity())
     try:
-        session = await connection.request("session/new", {"cwd": str(profile()), "mcpServers": [],
+        session = await connection.request("session/new", {"cwd": str(paths.antigravity()), "mcpServers": [],
             "_meta": {"antigravity": {"enabledTools": []}}})
         found = model_list(session)
         for model in found:
