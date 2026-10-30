@@ -2,7 +2,7 @@
 a natural break, or needs-you at once, within a daily budget and outside quiet hours."""
 
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from fakes import FakeBackend, bot, make_crew, wait_until
@@ -100,6 +100,17 @@ def test_the_morning_digest_has_the_last_days_fyis_in_the_chiefs_chat(store, run
     assert "- chief: The Q3 retro draft is ready." in digest["text"] and "Old news" not in digest["text"]
     runner.attention.tick(at(9))  # once a day
     assert len(said(store, runner, "chief")) == 1
+
+
+def test_an_fyi_after_an_empty_morning_waits_for_the_next_days_digest(store, runner):
+    runner.attention.tick(at(8))  # nothing to tell
+    runner.attention.now = lambda: at(15)
+    runner.attention.raise_("engineer", "fyi", "Two dependencies have new minor versions.", "checkin")
+    runner.attention.tick(at(15, 5))
+    assert said(store, runner, "chief") == []
+    runner.attention.tick(at(8, 5) + timedelta(days=1))
+    [digest] = said(store, runner, "chief")
+    assert "Two dependencies have new minor versions." in digest["text"]
 
 
 def test_a_reaction_becomes_a_note_about_whats_worth_raising(store, runner):

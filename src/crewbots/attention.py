@@ -70,11 +70,11 @@ class Attention:
             for item in store.proactive_waiting("question"):
                 self._deliver(item)
         if now.hour >= DIGEST_HOUR and not self.quiet(now) and not store.digested_today(_midnight(now)):
-            self.digest(now)
+            if self.digest(now) is None and self.runner.coordinator() is not None:
+                store.mark_digested(_midnight(now), [])  # an empty day: what comes up later waits for tomorrow's
 
     def digest(self, now: datetime) -> dict[str, Any] | None:
-        """The morning digest: the last day's FYIs, in the chief's chat. It's sent even with nothing in it only when
-        asked; overnight it's skipped then."""
+        """The morning digest: the last day's FYIs, in the chief's chat. With no FYIs, or no chief, nothing is sent."""
         store = self.runner.store
         items = [i for i in store.proactive_waiting("fyi") if i["expires_at"] > now.astimezone(UTC).isoformat()]
         if not items:
