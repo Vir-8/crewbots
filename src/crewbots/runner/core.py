@@ -69,6 +69,7 @@ from crewbots.runner.watchdog import Watchdog
 from crewbots.runner.welcome import Welcome
 from crewbots.runner.work import Work
 from crewbots.store import Status, Store, Task
+from crewbots.webkit import WebKit
 
 IDLE_TIMEOUT_S = 600.0  # an idle session is closed after this; its next message resumes it from the stored id
 MAX_SESSIONS = 8  # open sessions at once; past this the least recently used idle one is closed
@@ -110,6 +111,7 @@ class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Revie
         stall_s: float | None = None,
     ):
         self.browser = Browser()
+        self.webkit = WebKit()
         self.store = store
         self.crew = crew
         # Preserve the old selection once, before any bots can be added or reordered.

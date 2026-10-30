@@ -19,16 +19,21 @@ Start only what the change needs, always in the background through `scripts/veri
   use it for routes, rooms, tasks and the store. A live check with real models is the user's or the lead's to run
   (see [daemon.md](daemon.md)).
 - **WebKit:** the real app is a WKWebView, and some bugs exist only there (hover kept on a moved element, scroll
-  clamped mid-update). `scripts/verify webkit URL --click SELECTOR --js FILE` opens the page in WebKit, clicks with real
-  mouse events, runs your script, and prints what it returns as JSON. It opens a window on screen for a few seconds.
-  **It can't run in a sandbox like a bot's** (no write to `~/Library/Caches`, no Launch Services): WebKit's helper
-  processes don't start. `doctor` says so, and `webkit` gives up after 30 seconds (`--timeout`) with one line saying
-  what it waited for. Treat that as unreachable and say so; the user or lead runs it outside the sandbox.
+  clamped mid-update). It opens a window on screen for a few seconds, so use it for what only WebKit shows.
+  - **A crewbots bot** uses its `webkit_check` tool: WebKit can't start in a bot's sandbox (no write to
+    `~/Library/Caches`, no Launch Services), so the daemon runs it, as it runs Chrome for the browser tools. Start the
+    preview (or your server) first; the tool takes only localhost and 127.0.0.1 URLs, and the page can load nothing
+    from anywhere else. One check runs at a time, each gives up after 30 seconds, and the first builds the helper
+    (about a minute). A check that says another is running: try again shortly.
+  - **Outside a sandbox** (the user, or an agent that isn't a crewbots bot): `scripts/verify webkit URL --click
+    SELECTOR --js FILE` does the same from the shell. In a sandbox `doctor` says it can't, and `webkit` gives up after
+    30 seconds (`--timeout`) with one line saying what it waited for.
 
 ## Doctor
 
 Run `scripts/verify doctor` first. It says what's missing (tools, `app/node_modules`) and whether this shell can
-listen on a local port. It also loads an empty page in WebKit and fails if that can't be done (see Launch). In a fresh worktree run
+listen on a local port. It also loads an empty page in WebKit and fails if that can't be done: in a bot's sandbox it
+always does, and `webkit_check` stands in for it (see Launch). In a fresh worktree run
 `(cd app && npm ci --prefer-offline)` once, which works in a bot's sandbox. If it can't, as in some sandboxes, say so in your handoff rather than skipping the check
 quietly. Before driving the preview, check it shows the demo crew: `browser_open(url)`, then a screenshot shows Roger's
 chat with the sidebar on the left.
@@ -39,7 +44,12 @@ chat with the sidebar on the left.
   `browser_type`, `browser_evaluate(js)` and `browser_screenshot(theme=light|dark)`. Prefer a control's `title` or
   `aria-label`, or its visible text. Many sidebar rows have no accessible name, so find them by their text. Each feature
   file gives its handles.
-- **Measure, don't eyeball,** when the bug is about layout or timing. Use `browser_evaluate` (or `--js` in WebKit) for
+- **WebKit:** `webkit_check(url, setup=, click=, js=, wait=, width=, height=)` opens the page, runs `setup`, clicks
+  `click` with real mouse events, runs `js`, and returns what `js` returns as JSON (the page's title without one).
+  `setup` and `js` are the bodies of async functions, as text: `await` works, and the value `js` returns is the
+  measurement. These are `scripts/verify webkit`'s `--setup`, `--click`, `--js`, `--wait` and `--size`. Keep the
+  script in a file in your worktree too, so whoever checks your work can rerun it.
+- **Measure, don't eyeball,** when the bug is about layout or timing. Use `browser_evaluate` (or `js` in WebKit) for
   sizes, positions and computed styles, sampled across a few animation frames when it's about what happens after a
   click or a key.
 - **Do what the user does.** Type a key at a time when typing is the subject; click the real control rather than
@@ -62,8 +72,9 @@ Hand back the real path and the state after it, not a summary:
 
 Put it in the handoff's `evidence`. Whoever verifies your work reruns what matters, so make it rerunnable: the exact
 command, and the script's file if you wrote one. The commands that prove it and exit 0 when it works (a test file,
-`uv run ruff check src tests`, a `scripts/verify webkit … --js` check) go in `checks` as well: crewbots reruns them in
-a clean copy before any reviewer starts.
+`uv run ruff check src tests`) go in `checks` as well: crewbots reruns them in a clean copy before any reviewer
+starts. A WebKit check goes in `evidence`, as the `webkit_check` call with its script's file and what it returned:
+`checks` run in a sandbox, where WebKit can't.
 
 ## Cleanup
 

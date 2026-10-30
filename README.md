@@ -365,6 +365,18 @@ The script logs its interpreter, resolved preview addresses and progress. On fai
 before cleaning up Chrome. If different previews listen on IPv4 and IPv6, pass `--url http://127.0.0.1:5173` or
 `--url 'http://[::1]:5173'` to select one explicitly.
 
+### WebKit check
+
+The app runs in WebKit, which a bot's sandbox can't start, so `webkit_check(url, setup, click, js, wait, width,
+height)` runs `scripts/verify webkit` for it from the daemon: it opens a local page (localhost or 127.0.0.1 only) in a
+window for a few seconds, runs `setup`, clicks `click` with real mouse events, runs `js`, and returns what `js` returns
+(the page's title without it). The daemon compiles `src/crewbots/verify-webkit.swift` into `~/.crewbots/tmp/webkit/`,
+which no bot can write, the first time it's needed (about a minute, and a module cache of some 300 MB), and again only
+when the source changes. The page loads nothing from anywhere but localhost and 127.0.0.1 (content rules), with WebRTC
+and DNS prefetching off, whatever the bot's network setting: it's for the app's own pages. Its cookies and caches
+stay in memory, and the scripts it runs and its temp files go in a folder under `~/.crewbots/tmp/webkit/` that is
+removed after the check. One check runs at a time, and each is stopped after 30 seconds plus its wait.
+
 ## Skills from pstack
 
 pstack's skills also work inside a single bot as they are. Its Claude Code port keeps relative links to its docs, so add the whole folder:

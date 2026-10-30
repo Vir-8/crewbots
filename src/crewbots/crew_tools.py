@@ -75,6 +75,8 @@ SPECS: dict[str, Spec] = {
     "browser_type": Spec(_object({"selector": STRING, "text": STRING, "key": STRING}, [])),
     "browser_evaluate": Spec(_object({"expression": STRING}, ["expression"])),
     "browser_console": Spec(_object({"clear": {"type": "boolean"}}, [])),
+    "webkit_check": Spec(_object({"url": STRING, "click": STRING, "setup": STRING, "js": STRING, "wait": {"type": "number"},
+                                  "width": {"type": "integer"}, "height": {"type": "integer"}}, ["url"])),
     "handoff": Spec(_object({"done": STRING, "output": LINES, "open": STRING, "needs": STRING, "evidence": LINES,
                              "checks": STRINGS}, ["done"])),
     "escalate": Spec(_object({"question": STRING, "choices": CHOICES, "multiple": {"type": "boolean"}}, ["question"])),
@@ -197,12 +199,13 @@ class CrewTools:
         """Runs one tool and returns its result for the bot; raises ToolRefused with the reason it can't."""
         from crewbots.attachments import AttachmentError
         from crewbots.browser_cdp import BrowserError
-        from crewbots.browser_tools import browser_call
+        from crewbots.browser_tools import browser_call, webkit_call
         from crewbots.crew import CrewError
         from crewbots.memory import MemoryError
         from crewbots.pages import PageError
         from crewbots.runner import MergeError, NotAllowed, UnknownBot
         from crewbots.store import Verdict
+        from crewbots.webkit import WebKitError
 
         tool = SPECS.get(name)
         bot = self.runner.store.get_task(self.task_id).bot
@@ -219,6 +222,8 @@ class CrewTools:
         try:
             if name.startswith("browser_"):
                 return await browser_call(r, me, name, args)
+            if name == "webkit_check":
+                return await webkit_call(r, me, args)
             match name:
                 case "handoff":
                     r.handoff(me, args["done"], lines(args.get("output")), args.get("open") or "",
@@ -359,7 +364,7 @@ class CrewTools:
             self.runner.store.log_agent("refused", self.runner.store.get_task(self.task_id).bot, task_id=self.task_id,
                                         text=f"{name}: {e}")
             raise ToolRefused(str(e)) from None
-        except (UnknownBot, MemoryError, CrewError, AttachmentError, PageError, BrowserError, MergeError) as e:
+        except (UnknownBot, MemoryError, CrewError, AttachmentError, PageError, BrowserError, WebKitError, MergeError) as e:
             raise ToolRefused(str(e.args[0] if e.args else e)) from None
         raise ToolRefused(f"{name} is not implemented")
 

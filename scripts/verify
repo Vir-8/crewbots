@@ -8,7 +8,8 @@
 #                                   home= pid= log=. Its HOME is the temp one too, so it touches nothing of yours, and
 #                                   its bots can't reach a model (enough for routes, rooms, tasks and the store)
 #   scripts/verify stop PID [HOME]  stops what one of the above started, and removes a scratch daemon's temp home
-#   scripts/verify webkit URL ...   opens URL in WebKit, the engine the app runs in: see scripts/verify-webkit.swift
+#   scripts/verify webkit URL ...   opens URL in WebKit, the engine the app runs in: see src/crewbots/verify-webkit.swift.
+#                                   A crewbots bot can't run it in its sandbox: its webkit_check tool runs it instead
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export PATH="/opt/homebrew/bin:/opt/homebrew/opt/node@22/bin:$HOME/.cargo/bin:$PATH"
@@ -30,11 +31,11 @@ wait_for() {
 
 webkit_bin="$work/verify-webkit"
 
-# Compiles scripts/verify-webkit.swift when it's new or changed. A failed build removes the old binary and fails, so
+# Compiles src/crewbots/verify-webkit.swift when it's new or changed. A failed build removes the old binary and fails, so
 # an outdated one never runs.
 build_webkit() {
-  if [[ ! -x "$webkit_bin" || scripts/verify-webkit.swift -nt "$webkit_bin" ]]; then
-    swiftc -O scripts/verify-webkit.swift -o "$webkit_bin" -framework WebKit -framework AppKit || { rm -f "$webkit_bin"; return 1; }
+  if [[ ! -x "$webkit_bin" || src/crewbots/verify-webkit.swift -nt "$webkit_bin" ]]; then
+    swiftc -O src/crewbots/verify-webkit.swift -o "$webkit_bin" -framework WebKit -framework AppKit || { rm -f "$webkit_bin"; return 1; }
   fi
 }
 
@@ -56,7 +57,7 @@ case "${1:-}" in
         echo "WebKit can't be built here: swiftc failed (its output is above); say so in your handoff"
         ok=false
       elif ! "$webkit_bin" --probe 2>/dev/null; then
-        echo "WebKit can't run in this shell (a sandbox?): its helper processes don't start, so \`webkit\` would hang; say so in your handoff"
+        echo "WebKit can't run in this shell (a sandbox?): its helper processes don't start, so \`webkit\` would hang; a crewbots bot uses its webkit_check tool instead"
         ok=false
       fi
     fi
@@ -105,7 +106,7 @@ case "${1:-}" in
     exec "$webkit_bin" "$@"
     ;;
   *)
-    sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
     exit 2
     ;;
 esac
