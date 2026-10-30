@@ -8,6 +8,7 @@ import pytest
 from fakes import FakeSession, SessionBackend, bot, make_crew, wait_until
 
 from crewbots import prompts
+from crewbots.backends.base import SessionBase
 from crewbots.crew import NO_REPLY
 from crewbots.events import Compacted, Done, SessionStarted, Text, Usage
 from crewbots.runner import Runner
@@ -206,7 +207,7 @@ async def test_a_big_conversation_is_flushed_ahead_of_time_while_its_cache_is_wa
     assert kinds(store, task.id) == ["flushed"] and "Added the CSV export" in runner.crew.memory.recent("worker")
 
 
-class FullSession:
+class FullSession(SessionBase):
     """A session that can't compact: its context is `percent` full, and its briefing turn answers with `briefing`."""
 
     interruptible = True

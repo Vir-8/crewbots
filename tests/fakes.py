@@ -10,6 +10,7 @@ from pathlib import Path
 
 from crewbots import paths
 from crewbots.backends import Access, RunSpec
+from crewbots.backends.base import BackendBase, SessionBase
 from crewbots.crew import Bot, Crew
 from crewbots.events import Done, SessionStarted, Text, Usage
 from crewbots.runner import MCP_SERVER_NAME, Runner
@@ -30,7 +31,7 @@ def reply(spec: RunSpec):
     ]
 
 
-class FakeBackend:
+class FakeBackend(BackendBase):
     """Stands in for a CLI backend in-process. Set `gate` to hold every run until it is set."""
 
     def __init__(self, reply=reply, gate: asyncio.Event | None = None):
@@ -120,7 +121,7 @@ class ScriptedCrew:
         return lambda: not self.store.get_task(task_id).active and task_id not in self.runner.running()
 
 
-class FakeSession:
+class FakeSession(SessionBase):
     """A long-lived session that says back what each turn was asked. It can be made to fail its next turn, or to end
     after a turn as a process that died."""
 
@@ -155,7 +156,7 @@ class FakeSession:
         self.closed = True
 
 
-class SessionBackend:
+class SessionBackend(BackendBase):
     """A backend that keeps sessions open, as Codex's app-server and the Agent SDK do. Set `gate` to hold every turn."""
 
     def __init__(self, fail_open=False):
@@ -193,7 +194,7 @@ ADMIN = "admin-token"  # the user's token in conftest's `crew_app`
 PORT = 8765
 
 
-class HeldBackend:
+class HeldBackend(BackendBase):
     """Every run stays open until `release` is set, so its run token stays valid while the test uses it."""
 
     def __init__(self):

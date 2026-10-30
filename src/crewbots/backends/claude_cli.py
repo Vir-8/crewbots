@@ -7,7 +7,7 @@ from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
 from typing import Any
 
-from crewbots.backends.base import CLAUDE_BOT_ENV, Access, RunSpec, claude_retry, package_caches
+from crewbots.backends.base import CLAUDE_BOT_ENV, Access, BackendBase, RunSpec, SessionBase, claude_retry, package_caches
 from crewbots.backends.credentials import private_paths, without_credentials
 from crewbots.backends.process import JsonlProcess, stream_jsonl
 from crewbots.events import Compacted, Done, Event, Notice, RateLimit, SessionStarted, Text, ToolCall, ToolResult, Usage
@@ -54,26 +54,25 @@ def read_rules(paths: Sequence[Path]) -> list[str]:
 NO_ATTRIBUTION: dict[str, Any] = {"includeCoAuthoredBy": False, "attribution": {"commit": "", "pr": ""}}
 
 
-def settings(access: Access, write_dirs: Sequence[Path] = (), deny_read: Sequence[Path] = (),
-             works_in: Sequence[Path] = ()) -> dict[str, Any] | None:
+def settings(spec: RunSpec) -> dict[str, Any]:
     """What a bot gets on top of the repo's settings. Short of full access: the private paths (backends/credentials.py)
     and `deny_read` denied, and the folders the user let it write in, for this task, allowed to its file tools (and so
     to its sandbox's commands), with a writing bot's package caches. A read-only bot's shell is denied the folders it
-    works in (`works_in`: its working folder and those added), which the sandbox would otherwise let commands write
-    in. On full access, only `deny_read` (other bots' working state), and only to its file tools: its shell has no
-    sandbox."""
-    if access is Access.FULL:
-        return {"permissions": {"deny": read_rules(deny_read)}, **NO_ATTRIBUTION} if deny_read else NO_ATTRIBUTION
-    permissions: dict[str, list[str]] = {"deny": read_rules([*private_paths(), *deny_read])}
-    if shell(access, write_dirs) is READ_SANDBOX:
+    works in (its working folder and those added), which the sandbox would otherwise let commands write in. On full
+    access, only `deny_read` (other bots' working state), and only to its file tools: its shell has no sandbox."""
+    if spec.access is Access.FULL:
+        return {"permissions": {"deny": read_rules(spec.deny_read)}, **NO_ATTRIBUTION} if spec.deny_read else NO_ATTRIBUTION
+    permissions: dict[str, list[str]] = {"deny": read_rules([*private_paths(), *spec.deny_read])}
+    if shell(spec.access, spec.write_dirs) is READ_SANDBOX:
+        works_in = [Path(folder).resolve() for folder in (spec.cwd, *spec.read_dirs)]
         permissions["deny"] += [rule for folder in works_in for rule in (f"Edit(/{folder})", f"Edit(/{folder}/**)")]
-    caches = package_caches().values() if access is Access.WORKSPACE_WRITE else ()
-    if folders := [*map(str, write_dirs), *caches]:
+    caches = package_caches().values() if spec.access is Access.WORKSPACE_WRITE else ()
+    if folders := [*map(str, spec.write_dirs), *caches]:
         permissions["allow"] = [rule for folder in folders for rule in (f"Edit(/{folder})", f"Edit(/{folder}/**)")]
     return {"permissions": permissions, **NO_ATTRIBUTION}
 
 
-class ClaudeCLI:
+class ClaudeCLI(BackendBase):
     def __init__(self, command: Sequence[str] = ("claude",), use_api_key: bool = False):
         """`use_api_key=False` hides ANTHROPIC_API_KEY from the CLI, so a key left in the environment never
         silently moves a run from the subscription to API billing."""
@@ -129,9 +128,7 @@ class ClaudeCLI:
                 args += ["--permission-mode", "bypassPermissions"]
         if box := shell(spec.access, spec.write_dirs):
             make_sandbox_temp()
-        works_in = [Path(folder).resolve() for folder in (spec.cwd, *spec.read_dirs)]
-        if extra := settings(spec.access, spec.write_dirs, spec.deny_read, works_in):
-            args += ["--settings", json.dumps(extra | ({"sandbox": box} if box else {}))]
+        args += ["--settings", json.dumps(settings(spec) | ({"sandbox": box} if box else {}))]
         for path in [*spec.read_dirs, *spec.write_dirs]:
             args += ["--add-dir", str(path)]
         if spec.model:
@@ -145,7 +142,7 @@ class ClaudeCLI:
         return args + spec.extra_args
 
 
-class ClaudeSession:
+class ClaudeSession(SessionBase):
     def __init__(self, process: JsonlProcess, spec: RunSpec):
         self.process = process
         self.on_prompt_sent = spec.on_prompt_sent
@@ -264,23 +261,25 @@ class ClaudeParser:
         return events
 
     def _result(self, obj: dict[str, Any]) -> list[Event]:
-        u = obj.get("usage") or {}
-        cache_read = u.get("cache_read_input_tokens", 0)
-        usage = Usage(
-            # Total input, cached or not, the way Codex counts it.
-            input_tokens=u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0) + cache_read,
-            output_tokens=u.get("output_tokens", 0),
-            cached_input_tokens=cache_read,
-            cost_usd=obj.get("total_cost_usd"),
-            cache_write_tokens=u.get("cache_creation_input_tokens", 0),
-        )
-        failed = bool(obj.get("is_error")) or obj.get("subtype") != "success"
         text = obj.get("result") or self._last_text
-        error = retry = None
-        if failed:
-            error = "; ".join(obj.get("errors") or []) or obj.get("result") or obj.get("subtype") or "failed"
-            retry = claude_retry(obj.get("api_error_status"), self._api_error)
-        return [usage, Done(final_text=text, is_error=failed, error=error, retry=retry)]
+        return [claude_usage(obj.get("usage"), obj.get("total_cost_usd")), claude_done(text, obj, self._api_error)]
+
+
+def claude_usage(usage: dict[str, Any] | None, cost: float | None) -> Usage:
+    """A Claude result's usage, its input counted whole, cached or not, the way Codex counts it."""
+    u = usage or {}
+    cache_read, cache_write = u.get("cache_read_input_tokens", 0), u.get("cache_creation_input_tokens", 0)
+    return Usage(input_tokens=u.get("input_tokens", 0) + cache_write + cache_read, output_tokens=u.get("output_tokens", 0),
+                 cached_input_tokens=cache_read, cost_usd=cost, cache_write_tokens=cache_write)
+
+
+def claude_done(text: str, result: dict[str, Any], api_error: str | None) -> Done:
+    """How Claude Code's result message ends a turn: failed unless it says success, with why, and whether trying again
+    would help. `result` is the message as the CLI writes it; the SDK's ResultMessage has the same fields."""
+    if not result.get("is_error") and result.get("subtype") == "success":
+        return Done(final_text=text)
+    error = "; ".join(result.get("errors") or []) or result.get("result") or result.get("subtype") or "failed"
+    return Done(final_text=text, is_error=True, error=error, retry=claude_retry(result.get("api_error_status"), api_error))
 
 
 def _stringify(content: Any) -> str:

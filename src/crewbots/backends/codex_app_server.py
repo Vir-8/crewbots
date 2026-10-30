@@ -13,7 +13,6 @@ with its reason, since a bare "decline" doesn't tell the model why. With full ac
 
 import asyncio
 import contextlib
-import json
 import os
 import re
 import shutil
@@ -22,7 +21,17 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from crewbots.backends.base import Access, RunSpec, codex_retry, package_caches, session_temp_dir, temp_env
+from crewbots.backends.base import (
+    Access,
+    RunSpec,
+    SessionBase,
+    codex_retry,
+    mcp_images,
+    mcp_text,
+    package_caches,
+    session_temp_dir,
+    temp_env,
+)
 from crewbots.backends.codex_cli import network_overrides, sandbox_overrides
 from crewbots.backends.credentials import without_credentials
 from crewbots.backends.policy import NO_NETWORK, STAY_IN_SANDBOX, Policy
@@ -58,7 +67,7 @@ class AppServerError(RuntimeError):
     pass
 
 
-class CodexSession:
+class CodexSession(SessionBase):
     def __init__(self, process: JsonlProcess, spec: RunSpec):
         self.process = process
         self.on_prompt_sent = spec.on_prompt_sent
@@ -78,7 +87,6 @@ class CodexSession:
         self._steers: list[str] = []  # reasons to tell the model, after a refusal
         self._asks: list[str] = []  # messages steered into the turn under way, sent at its next look
         self._missed: list[str] = []  # steered messages the turn ended before taking, for the next turn
-        self.steerable = False
         self.temp: Path | None = None
         self._context: tuple[int, int] | None = None  # (tokens in the latest request, the model's context window)
         self.context_window = spec.context_window  # the bot's own window, when it's smaller than the model's
@@ -331,6 +339,30 @@ class CodexSession:
                                            "input": [{"type": "text", "text": text, "text_elements": []}]})
 
 
+async def ask_once(method: str, params: Any, capabilities: dict[str, Any] | None = None) -> dict[str, Any]:
+    """One request to an app-server started for it, for a question that needs no thread, such as the model list."""
+    cli = shutil.which("codex")
+    if not cli:
+        raise RuntimeError("Codex isn't installed")
+    process = await JsonlProcess.start([cli, "app-server"], cwd=Path.cwd(), env=dict(os.environ))
+
+    async def ask(request_id: int, method: str, params: Any) -> dict[str, Any]:
+        await process.send({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params})
+        while (message := await process.read()) is not None:
+            if isinstance(message, dict) and message.get("id") == request_id and "method" not in message:
+                if "error" in message:
+                    raise AppServerError(message["error"].get("message", message["error"]))
+                return message.get("result") or {}
+        raise AppServerError(process.exit_detail())
+
+    try:
+        await ask(1, "initialize", {"clientInfo": CLIENT, "capabilities": capabilities})
+        await process.send({"jsonrpc": "2.0", "method": "initialized"})
+        return await ask(2, method, params)
+    finally:
+        await process.stop()
+
+
 CODEX_WARNING_PERCENT = 80.0  # Codex reports how much is used, not a warning; Claude warns at about this point
 
 
@@ -448,8 +480,8 @@ def _tool_result(item: dict[str, Any]) -> ToolResult:
         case "mcpToolCall":
             error = item.get("error")
             failed = failed or bool(error)
-            output = error.get("message", "") if isinstance(error, dict) else _mcp_text(item.get("result"))
-            images = _mcp_images(item.get("result"))
+            output = error.get("message", "") if isinstance(error, dict) else mcp_text(item.get("result"))
+            images = mcp_images(item.get("result"))
         case "imageView":
             output, images = "", [{"path": item["path"]}] if item.get("path") else []
         case "imageGeneration":
@@ -459,21 +491,6 @@ def _tool_result(item: dict[str, Any]) -> ToolResult:
         case _:
             output = status or ""
     return ToolResult(id=item["id"], output=output, is_error=failed, images=images)
-
-
-def _mcp_text(result: Any) -> str:
-    if isinstance(result, dict):
-        texts = [c.get("text", "") for c in result.get("content") or [] if isinstance(c, dict) and c.get("type") == "text"]
-        if texts or _mcp_images(result):  # an image is kept on its own, never as text
-            return "\n".join(texts)
-    return "" if result is None else json.dumps(result)
-
-
-def _mcp_images(result: Any) -> list[dict[str, Any]]:
-    """An MCP tool's images (a screenshot from Blender, GIMP or Resolve), as MCP sends them."""
-    content = result.get("content") or [] if isinstance(result, dict) else []
-    return [{"mime": c.get("mimeType") or "image/png", "data": c["data"]} for c in content
-            if isinstance(c, dict) and c.get("type") == "image" and c.get("data")]
 
 
 def _unwrap(command: str) -> str:

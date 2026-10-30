@@ -15,7 +15,7 @@ from contextlib import aclosing
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from crewbots.backends.base import Access, McpServer, RunSpec, package_caches
+from crewbots.backends.base import Access, BackendBase, McpServer, RunSpec, mcp_images, mcp_text, package_caches
 from crewbots.backends.codex_isolation import isolation_overrides
 from crewbots.backends.credentials import private_paths, without_credentials
 from crewbots.backends.process import stream_jsonl
@@ -29,7 +29,7 @@ PROFILE = "crewbots"
 BASE_PROFILE = {Access.READ_ONLY: ":read-only", Access.WORKSPACE_WRITE: ":workspace"}
 
 
-class CodexExec:
+class CodexExec(BackendBase):
     def __init__(self, command: Sequence[str] = ("codex",), isolate: bool = True):
         """`isolate=False` lets the bot use the user's own Codex MCP servers and plugins; only for trying things out."""
         self.command = list(command)
@@ -167,6 +167,7 @@ def _tool_call(item: dict[str, Any]) -> ToolCall | None:
 def _tool_result(item: dict[str, Any]) -> ToolResult:
     status = item.get("status")
     failed = status in ("failed", "declined")
+    images: list[dict[str, Any]] = []
     match item.get("type"):
         case "command_execution":
             failed = failed or item.get("exit_code") not in (0, None)
@@ -174,18 +175,11 @@ def _tool_result(item: dict[str, Any]) -> ToolResult:
         case "mcp_tool_call":
             error = item.get("error")
             failed = failed or bool(error)
-            output = error.get("message", "") if isinstance(error, dict) else _mcp_text(item.get("result"))
+            output = error.get("message", "") if isinstance(error, dict) else mcp_text(item.get("result"))
+            images = mcp_images(item.get("result"))
         case _:
             output = status or ""
-    return ToolResult(id=item["id"], output=output, is_error=failed)
-
-
-def _mcp_text(result: Any) -> str:
-    if isinstance(result, dict):
-        texts = [c.get("text", "") for c in result.get("content") or [] if c.get("type") == "text"]
-        if texts:
-            return "\n".join(texts)
-    return "" if result is None else json.dumps(result)
+    return ToolResult(id=item["id"], output=output, is_error=failed, images=images)
 
 
 def _mcp_overrides(name: str, server: McpServer) -> list[str]:

@@ -1,5 +1,6 @@
 """What every backend takes and returns."""
 
+import json
 import tempfile
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
@@ -41,6 +42,23 @@ def codex_retry(info: Any) -> str | None:
     """The same for a failed Codex turn, from its `codexErrorInfo`: a kind's name, or an object keyed by it."""
     kind = next(iter(info), None) if isinstance(info, dict) else info
     return "limit" if kind in CODEX_LIMIT else "transient" if kind in CODEX_TRANSIENT else None
+
+
+def mcp_text(result: Any) -> str:
+    """An MCP tool result's text, or the whole result when it has neither text nor images. An image is kept on its
+    own (`mcp_images`), never as text."""
+    if isinstance(result, dict):
+        texts = [c.get("text", "") for c in result.get("content") or [] if isinstance(c, dict) and c.get("type") == "text"]
+        if texts or mcp_images(result):
+            return "\n".join(texts)
+    return "" if result is None else json.dumps(result)
+
+
+def mcp_images(result: Any) -> list[dict[str, Any]]:
+    """An MCP tool's images (a screenshot from Blender, GIMP or Resolve), as MCP sends them."""
+    content = result.get("content") or [] if isinstance(result, dict) else []
+    return [{"mime": c.get("mimeType") or "image/png", "data": c["data"]} for c in content
+            if isinstance(c, dict) and c.get("type") == "image" and c.get("data")]
 
 
 @dataclass(frozen=True)
@@ -94,6 +112,9 @@ class Session(Protocol):
     """
 
     session_id: str | None
+    steerable: bool
+    interruptible: bool
+    compact: Callable[[str], AsyncIterator[Event]] | None
 
     @property
     def alive(self) -> bool: ...
@@ -102,10 +123,39 @@ class Session(Protocol):
         """One turn's events, ending with exactly one `Done`."""
         ...
 
+    async def steer(self, text: str) -> bool: ...
+
+    def missed_steers(self) -> list[str]: ...
+
+    async def context_percent(self) -> float | None: ...
+
     async def close(self) -> None: ...
 
 
+class SessionBase:
+    """What a session can do besides take turns, each off until the session says otherwise."""
+
+    steerable = False  # a turn is under way that a message can be steered into
+    interruptible = False  # a turn can be stopped without ending the session
+    compact: Callable[[str], AsyncIterator[Event]] | None = None  # None: it can't compact on request, so it rolls over
+
+    async def steer(self, text: str) -> bool:
+        """Adds a message to the turn under way; False if it wasn't taken."""
+        return False
+
+    def missed_steers(self) -> list[str]:
+        """Steered messages the last turn ended before taking, for the next turn."""
+        return []
+
+    async def context_percent(self) -> float | None:
+        """How full the session's context window is; None when it can't be measured."""
+        return None
+
+
 class Backend(Protocol):
+    in_process_tools: bool
+    automatic_turns: bool
+
     def run(self, spec: RunSpec) -> AsyncIterator[Event]:
         """Streams the run's events, ending with exactly one `Done`. Closing the iterator stops the CLI."""
         ...
@@ -113,6 +163,11 @@ class Backend(Protocol):
     async def open(self, spec: RunSpec) -> Session:
         """Starts a long-lived session for `spec` (its prompt is not used; each turn brings its own)."""
         ...
+
+
+class BackendBase:
+    in_process_tools = False  # it takes the crew tools as Python (`RunSpec.crew`) rather than as an MCP server
+    automatic_turns = True  # it may run turns crewbots starts on its own, not only ones someone asked for
 
 
 # Claude Code keeps an auto memory per working folder under ~/.claude/projects/, next to the user's own. A bot's notes

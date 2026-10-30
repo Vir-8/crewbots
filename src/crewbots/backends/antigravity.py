@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator
 
 from crewbots.backends import antigravity_runtime as runtime
 from crewbots.backends.acp import Connection
-from crewbots.backends.base import Access, McpServer, RunSpec, session_temp_dir
+from crewbots.backends.base import Access, BackendBase, McpServer, RunSpec, SessionBase, mcp_images, mcp_text, session_temp_dir
 from crewbots.events import Done, Event, SessionStarted, Text, ToolCall, ToolResult, Usage
 
 WORKSPACE = "crewbots_workspace"
@@ -27,7 +27,7 @@ def mcp_config(servers: dict[str, McpServer]) -> list[dict]:
     return result
 
 
-class Antigravity:
+class Antigravity(BackendBase):
     automatic_turns = False
 
     async def open(self, spec: RunSpec) -> "AntigravitySession":
@@ -63,7 +63,7 @@ class Antigravity:
             await session.close()
 
 
-class AntigravitySession:
+class AntigravitySession(SessionBase):
     def __init__(self, connection: Connection, spec: RunSpec):
         self.connection, self.spec = connection, spec
         self.session_id: str | None = None
@@ -157,15 +157,13 @@ class AntigravitySession:
                     events.append(ToolCall(id=key, name=name, input=call.get("rawInput") or {}))
                 if (call.get("status") in ("completed", "failed")
                         and (previous or {}).get("status") not in ("completed", "failed")):
-                    texts, images = [], []
-                    for item in call.get("content") or []:
-                        block = item.get("content", {}) if item.get("type") == "content" else item
-                        if block.get("type") == "text":
-                            texts.append(block.get("text", ""))
-                        elif block.get("type") == "image" and block.get("data"):
-                            images.append({"mime": block.get("mimeType"), "data": block["data"]})
-                    output = "\n".join(texts) or json.dumps(call.get("rawOutput", ""))
-                    events.append(ToolResult(id=key, output=output, images=images, is_error=call["status"] == "failed"))
+                    # ACP wraps each MCP content block in {"type": "content", "content": block}.
+                    blocks = [item.get("content", {}) if item.get("type") == "content" else item
+                              for item in call.get("content") or []]
+                    result = {"content": blocks} if blocks else None
+                    output = mcp_text(result) or json.dumps(call.get("rawOutput", ""))
+                    events.append(ToolResult(id=key, output=output, images=mcp_images(result),
+                                             is_error=call["status"] == "failed"))
                 return events
         return []
 

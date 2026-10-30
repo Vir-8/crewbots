@@ -38,12 +38,14 @@ from claude_agent_sdk import (
     tool,
 )
 
-from crewbots.backends.base import CLAUDE_BOT_ENV, Access, RunSpec, claude_retry, package_caches
+from crewbots.backends.base import CLAUDE_BOT_ENV, Access, BackendBase, RunSpec, SessionBase, package_caches
 from crewbots.backends.claude_cli import (
     EDIT_TOOLS,
     READ_ONLY_TOOLS,
     _images,
     _stringify,
+    claude_done,
+    claude_usage,
     compacted,
     make_sandbox_temp,
     rate_limit,
@@ -54,7 +56,7 @@ from crewbots.backends.credentials import without_credentials
 from crewbots.backends.policy import WEB_TOOLS, Policy
 from crewbots.backends.process import LINE_LIMIT
 from crewbots.crew_tools import CrewTools, ToolRefused
-from crewbots.events import Done, Event, Notice, SessionStarted, Text, ToolCall, ToolResult, Usage
+from crewbots.events import Done, Event, Notice, SessionStarted, Text, ToolCall, ToolResult
 
 CREW_SERVER = "crewbots"
 INTERRUPT_GRACE_S = 20.0  # after an interrupt, how long the turn may take to wind down before the session is dropped
@@ -65,7 +67,7 @@ STEER_GRACE_S = 3.0
 _END = object()
 
 
-class ClaudeAgent:
+class ClaudeAgent(BackendBase):
     in_process_tools = True  # the runner hands it the crew tools as Python, not as an MCP server
 
     def __init__(self, cli_path: str | None = None, use_api_key: bool = False):
@@ -127,9 +129,7 @@ class ClaudeAgent:
             disallowed_tools=["Monitor"],
             permission_mode="bypassPermissions" if full else "default",
             can_use_tool=None if full else session.policy,
-            settings=json.dumps(extra) if (extra := settings(
-                spec.access, spec.write_dirs, spec.deny_read,
-                [Path(folder).resolve() for folder in (spec.cwd, *spec.read_dirs)])) else None,
+            settings=json.dumps(settings(spec)),
             env=env,
             sandbox=sandbox,
             effort=spec.effort if spec.effort in CLAUDE_EFFORTS else None,
@@ -145,7 +145,7 @@ class ClaudeAgent:
 CLAUDE_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 
 
-class ClaudeAgentSession:
+class ClaudeAgentSession(SessionBase):
     interruptible = True
 
     def __init__(self, spec: RunSpec):
@@ -160,7 +160,6 @@ class ClaudeAgentSession:
         # A turn's prompts: its own and any steered into it, and how many have their result. Claude Code takes a steered
         # message at the turn's next step, or answers it straight after, and the turn reads on until each has its result.
         self._asked = self._answered = 0
-        self.steerable = False  # a turn is under way that a message can be steered into
 
     @property
     def alive(self) -> bool:
@@ -356,7 +355,7 @@ class SdkMapper:
                 # Whatever came before it was that turn's, since this turn's prompt waits behind it.
                 self.injected = self.started = False
                 self.final_text = ""
-                return [_usage(message)]  # it spent tokens all the same
+                return [claude_usage(message.usage, message.total_cost_usd)]  # it spent tokens all the same
             case SystemMessage(subtype="init", data=data):
                 return [SessionStarted(session_id=data.get("session_id", ""))]
             case SystemMessage(subtype="compact_boundary", data=data):
@@ -380,28 +379,15 @@ class SdkMapper:
                                    images=_images(b.content)) for b in blocks if isinstance(b, ToolResultBlock)]
             case ResultMessage():
                 self.done = True
-                usage = _usage(message)
+                usage = claude_usage(message.usage, message.total_cost_usd)
                 text = message.result or self.final_text
                 if self.injected and text:  # the notification was folded into this turn after all: show its reply
                     self.injected = False
                     return [Text(text=text), *self.feed(message, timed_out, timeout_s)]
                 if timed_out:
                     return [usage, Done(final_text=text, is_error=True, error=f"timed out after {timeout_s:g}s")]
-                failed = message.is_error or message.subtype != "success"
-                error = retry = None
-                if failed:
-                    error = "; ".join(message.errors or []) or message.result or message.subtype or "failed"
-                    retry = claude_retry(message.api_error_status, self.api_error)
-                return [usage, Done(final_text=text, is_error=failed, error=error, retry=retry)]
+                return [usage, claude_done(text, vars(message), self.api_error)]
         return []
-
-
-def _usage(message: ResultMessage) -> Usage:
-    u = message.usage or {}
-    cache_read = u.get("cache_read_input_tokens", 0)
-    return Usage(input_tokens=u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0) + cache_read,
-                 output_tokens=u.get("output_tokens", 0), cached_input_tokens=cache_read, cost_usd=message.total_cost_usd,
-                 cache_write_tokens=u.get("cache_creation_input_tokens", 0))
 
 
 def crew_server(crew: "CrewTools | Any") -> Any:
