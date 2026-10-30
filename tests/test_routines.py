@@ -7,9 +7,11 @@ from pathlib import Path
 
 import pytest
 from fakes import ScriptedCrew, bot, reply, wait_until
+from fastapi.testclient import TestClient
 
 from crewbots import crew as crew_module
 from crewbots import routines
+from crewbots.api import create_app
 from crewbots.events import Done
 from crewbots.github import PullRequest, Snapshot, _prs
 from crewbots.routines import Cron, RoutineError
@@ -218,15 +220,33 @@ async def test_a_paused_crew_runs_what_came_due_once_it_resumes(crew, tmp_path):
     assert len(await scheduler.tick(at(26, 11))) == 1
 
 
-async def test_a_routine_can_be_run_by_hand(crew, tmp_path):
-    write(tmp_path, "standup", STANDUP)
+async def test_only_a_scheduled_routine_can_be_run_by_hand(crew, store, tmp_path):
+    write(tmp_path, "ci", "---\nbot: chief\non: github.ci_failed\nrepo: vir/app\n---\nFix {{pr.url}}")
     scheduler = Scheduler(crew.runner)
 
-    task = scheduler.run_now("standup")
-
-    assert task.kind == "chat" and task.bot == "chief"
+    with pytest.raises(RoutineError, match="can't be run by hand"):
+        scheduler.run_now("ci")
     with pytest.raises(RoutineError, match="no routine named"):
         scheduler.run_now("nightly")
+    assert store.list_tasks() == []
+
+
+def test_routines_over_the_api(crew, tmp_path):
+    write(tmp_path, "standup", STANDUP)
+    write(tmp_path, "bad", "---\nbot: chief\n---\nx")
+    auth = {"Authorization": "Bearer t"}
+    with TestClient(create_app(crew.runner, "t", 8765), base_url="http://127.0.0.1:8765/v1") as client:
+        listing = client.get("/routines", headers=auth).json()
+        assert [r["name"] for r in listing["routines"]] == ["standup"] and "bad.md" in listing["errors"]
+        assert listing["routines"][0]["next_run_at"] is not None
+
+        task = client.post("/routines/standup/run", headers=auth).json()
+        assert task["kind"] == "chat" and task["bot"] == "chief"
+        assert client.post("/routines/nope/run", headers=auth).status_code == 422
+
+        starters = [s["name"] for s in listing["starters"]]
+        assert "standup" not in starters and "retro" in starters  # standup.md is already there
+        assert client.post("/routines/starters/retro", headers=auth).json()["schedule"] == "0 16 * * 5"
 
 
 async def test_the_activity_a_routine_reads(crew, store, tmp_path):

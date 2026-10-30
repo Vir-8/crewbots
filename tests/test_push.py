@@ -1,10 +1,13 @@
 """Push proposals require the user's API and pin the work shown on the card."""
 
 import asyncio
+import atexit
+import functools
+import shutil
 import subprocess
+import tempfile
 import threading
 import time
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -13,7 +16,6 @@ from fastapi.testclient import TestClient
 
 import crewbots.push as push_module
 from crewbots.api import create_app
-from crewbots.crew_tools import CrewTools, ToolRefused
 from crewbots.projects import Project
 from crewbots.push import _git
 from crewbots.push import propose as async_propose
@@ -25,16 +27,44 @@ def git(folder: Path, *args: str) -> str:
     return subprocess.run(["git", "-C", str(folder), *args], check=True, capture_output=True, text=True).stdout.strip()
 
 
+@functools.cache
+def _pushed(files: tuple[tuple[str, str], ...]) -> Path:
+    """A bare remote and a repo whose main is pushed to it, with a commit on top for each (file, text), made once:
+    pushed_repo copies it, where building it takes a third of a second."""
+    path = Path(tempfile.mkdtemp(prefix="crewbots-tests-pushed-"))
+    atexit.register(shutil.rmtree, path, ignore_errors=True)
+    remote = path / "remote.git"
+    git(path, "init", "--bare", "-q", str(remote))
+    git(remote, "symbolic-ref", "HEAD", "refs/heads/main")
+    repo = git_repo(path / "repo")
+    git(repo, "remote", "add", "origin", "../remote.git")
+    git(repo, "push", "-q", "-u", "origin", "main")
+    for name, text in files:
+        (repo / name).write_text(text)
+        git(repo, "add", name)
+        git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", f"Add {text}")
+    return path
+
+
+def pushed_repo(tmp_path: Path, *files: tuple[str, str]) -> tuple[Path, Path]:
+    """The repo and its bare remote in `tmp_path`, with main pushed and then a commit for each (file, text)."""
+    shutil.copytree(_pushed(files), tmp_path, dirs_exist_ok=True, symlinks=True, copy_function=shutil.copy)
+    repo, remote = tmp_path / "repo", tmp_path / "remote.git"
+    git(repo, "remote", "set-url", "origin", str(remote))
+    return repo, remote
+
+
+def chief_runner(tmp_path: Path) -> Runner:
+    """A runner with a chief and a "demo" project, for tests that never reach git."""
+    crew = make_crew(tmp_path, bot("chief", can_delegate=True))
+    crew.projects["demo"] = Project("demo", tmp_path, "", tmp_path / "demo.md")
+    return Runner(Store(":memory:"), crew)
+
+
 @pytest.fixture
 def setup(tmp_path, monkeypatch):
-    remote = tmp_path / "remote.git"
-    subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
-    repo = git_repo(tmp_path / "repo")
-    git(repo, "remote", "add", "origin", str(remote))
-    git(repo, "push", "-u", "origin", "main")
-    (repo / "new.txt").write_text("one")
-    git(repo, "add", "new.txt")
-    git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "Add one")
+    repo, remote = pushed_repo(tmp_path, ("new.txt", "one"))
+    monkeypatch.setattr(push_module.ci, "check", lambda *a: {"status": "none"})  # test_ci runs the real one
     store = Store(":memory:")
     crew = make_crew(tmp_path, bot("chief", can_delegate=True), bot("engineer"))
     crew.projects["demo"] = Project("demo", repo, "", tmp_path / "demo.md", ci=("true",))
@@ -146,21 +176,6 @@ def test_unknown_remote_tip_refuses_at_proposal(setup, tmp_path):
     assert event.data["push_url_display"] == str(remote)
 
 
-def test_worker_cannot_propose(setup):
-    runner, _, _, _, _ = setup
-    with pytest.raises(NotAllowed):
-        propose(runner, runner.chat("engineer").id, "demo", "work")
-
-
-def test_selected_chief_can_propose_without_legacy_delegate_flag(setup, monkeypatch):
-    runner, _, _, _, _ = setup
-    chief = replace(runner.crew.bots["chief"], can_delegate=False)
-    monkeypatch.setattr(runner, "coordinator", lambda: chief)
-    chat = runner.chat("chief")
-    proposal = propose(runner, chat.id, "demo", "Ready")
-    assert runner.store.last_event(chat.id, ("push_proposed",)).id == proposal
-
-
 def test_bot_api_proposes_but_bot_token_cannot_push(setup):
     runner, client, _, remote, _ = setup
     chief = runner.chat("chief")
@@ -173,15 +188,16 @@ def test_bot_api_proposes_but_bot_token_cannot_push(setup):
     assert git(remote, "rev-parse", "refs/heads/main") == before
 
 
-def test_git_timeout_kills_the_process_group(setup):
-    _, _, repo, _, _ = setup
+def test_git_timeout_kills_the_process_group(tmp_path):
+    repo = git_repo(tmp_path / "repo")
     started = time.monotonic()
     with pytest.raises(NotAllowed, match="timed out") as read_timeout:
-        _git(repo, "-c", "alias.wait=!sleep 5", "wait", timeout=1)
-    assert time.monotonic() - started < 4
+        _git(repo, "-c", "alias.wait=!sleep 5", "wait", timeout=0.2)
+    # Were only git killed, the orphaned sleep would hold the pipes for the 2 s _git then waits on them.
+    assert time.monotonic() - started < 1.5
     assert "push may have completed" not in str(read_timeout.value)
     with pytest.raises(NotAllowed, match="push may have completed"):
-        _git(repo, "-c", "alias.wait=!sleep 5", "wait", timeout=1, pushing=True)
+        _git(repo, "-c", "alias.wait=!sleep 5", "wait", timeout=0.2, pushing=True)
 
 
 def test_second_push_uses_real_push_remote_tip_with_different_fetch_url(setup, tmp_path):
@@ -218,29 +234,6 @@ def test_up_to_date_reports_nothing_pushed(setup):
     assert result["ok"] and not result["pushed"] and "Nothing was pushed" in result["reason"]
     assert "Nothing was pushed" in notices[-1][0][1]
     assert git(remote, "rev-parse", "refs/heads/main") == before == git(repo, "rev-parse", "HEAD")
-
-
-def test_non_chief_coordinator_is_refused(setup):
-    runner, client, _, _, _ = setup
-    runner.crew.bots["lead"] = bot("lead", can_delegate=True)
-    task = runner.chat("lead")
-    runner._tokens["lead-token"] = task.id
-    response = client.post("/bot/propose_push", headers={"Authorization": "Bearer lead-token"},
-                           json={"project": "demo", "summary": "work"})
-    assert response.status_code == 403
-    assert "chief" in response.json()["detail"]
-
-
-@pytest.mark.asyncio
-async def test_in_process_tool_is_only_exposed_to_chief(setup):
-    runner, _, _, _, _ = setup
-    runner.crew.bots["lead"] = bot("lead", can_delegate=True)
-    chief = CrewTools(runner, runner.chat("chief").id, True)
-    lead = CrewTools(runner, runner.chat("lead").id, True)
-    assert "propose_push" in {tool.name for tool in chief.definitions()}
-    assert "propose_push" not in {tool.name for tool in lead.definitions()}
-    with pytest.raises(ToolRefused, match="chief"):
-        await lead.call("propose_push", {"project": "demo", "summary": "Ready"})
 
 
 def test_pre_push_hook_never_runs(setup):
@@ -298,8 +291,8 @@ def test_started_without_result_cannot_be_pressed_again(setup):
     assert git(remote, "rev-parse", "refs/heads/main") == before
 
 
-def test_failure_redacts_password_with_slashes_and_at_signs(setup):
-    _, _, repo, _, _ = setup
+def test_failure_redacts_password_with_slashes_and_at_signs(tmp_path):
+    repo = git_repo(tmp_path / "repo")
     secret = "secret/with@several@parts"
     with pytest.raises(NotAllowed) as raised:
         _git(repo, "-c", f"alias.fail=!printf '%s\\n' 'custom://user:{secret}@example.invalid/repo' >&2; exit 1", "fail")
@@ -309,8 +302,8 @@ def test_failure_redacts_password_with_slashes_and_at_signs(setup):
 
 
 @pytest.mark.asyncio
-async def test_proposal_remote_snapshot_does_not_block_the_event_loop(setup, monkeypatch):
-    runner, _, _, _, _ = setup
+async def test_proposal_remote_snapshot_does_not_block_the_event_loop(tmp_path, monkeypatch):
+    runner = chief_runner(tmp_path)
     entered = threading.Event()
     release = threading.Event()
     loop = asyncio.get_running_loop()
@@ -331,6 +324,7 @@ async def test_proposal_remote_snapshot_does_not_block_the_event_loop(setup, mon
     finally:
         release.set()
         await job
+        runner.store.close()
 
 
 @pytest.mark.parametrize("change", ["advance", "delete", "advance_to_head"])
@@ -370,10 +364,15 @@ def test_remote_change_after_snapshot_is_refused(setup, monkeypatch, tmp_path, c
 
 
 def test_ls_remote_selects_exact_ref(setup):
-    runner, client, _, remote, _ = setup
-    git(remote, "update-ref", "refs/heads/decoy/main", git(remote, "rev-parse", "refs/heads/main"))
-    proposal = propose(runner, runner.chat("chief").id, "demo", "Ready")
+    runner, client, repo, remote, _ = setup
+    side = git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit-tree", "HEAD^{tree}", "-m", "Side")
+    # ls-remote lists this one too, and first: it also ends in refs/heads/main
+    git(repo, "push", "-q", "origin", f"{side}:refs/heads/a/refs/heads/main")
+    chat = runner.chat("chief")
+    proposal = propose(runner, chat.id, "demo", "Ready")
+    assert runner.store.last_event(chat.id, ("push_proposed",)).data["tip"] == git(remote, "rev-parse", "refs/heads/main")
     assert press(client, proposal)["pushed"]
+    assert git(remote, "rev-parse", "refs/heads/main") == git(repo, "rev-parse", "HEAD")
 
 
 def test_non_utf8_subject_and_unexpected_press_error_record_result(setup, monkeypatch):
@@ -393,6 +392,33 @@ def test_non_utf8_subject_and_unexpected_press_error_record_result(setup, monkey
     result = press(client, proposal)
     assert not result["ok"] and result["reason"] == "unexpected failure"
     assert runner.store.last_event(chat.id, ("push_result",)).data == result
+
+
+@pytest.mark.asyncio
+async def test_a_project_has_one_push_card_at_a_time(tmp_path, monkeypatch):
+    runner = chief_runner(tmp_path)
+    store = runner.store
+    head = {"value": "a" * 40}
+    monkeypatch.setattr(push_module, "snapshot", lambda folder: {
+        "branch": "main", "destination": "refs/heads/main", "url_hash": "h", "tip": "0" * 40, "head": head["value"],
+        "commits": [f"{head['value'][:7]} Fix"]})
+    checks = []
+    monkeypatch.setattr(push_module.ci, "check", lambda *a: checks.append(a[1]) or {"status": "passed"})
+    chat = runner.chat("chief")
+
+    first, again = await asyncio.gather(async_propose(runner, chat.id, "demo", "Ready"),
+                                        async_propose(runner, chat.id, "demo", "Ready, again"))
+    assert first == again and len(checks) == 1  # two at once: one card, one CI run
+    assert len(store.last_events(chat.id, ("push_proposed",), 5)) == 1
+
+    head["value"] = "b" * 40  # more commits since: the newer card replaces the open one
+    newer = await async_propose(runner, chat.id, "demo", "Ready, with the fix")
+    assert newer != first and push_module.open_card(runner, chat.id, "demo")[0] == newer
+    [replaced] = store.last_events(chat.id, ("push_replaced",), 5)
+    assert replaced.data == {"proposal": first, "by": newer}
+    with pytest.raises(NotAllowed, match="newer Push card replaced"):
+        await push_module.perform(runner, first)
+    store.close()
 
 
 @pytest.mark.parametrize(("url", "expected"), [

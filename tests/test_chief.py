@@ -23,7 +23,8 @@ async def test_coordinator_migration_catalogs_and_server_refusals(tmp_path):
         tools = CrewTools(runner, chat.id, coordinator)
         catalog = {tool.name for tool in tools.definitions()}
         assert {"propose_merge", "withdraw_merge", "next_check"}.issubset(catalog) == coordinator
-        assert {"add_bot", "propose_push"}.isdisjoint(catalog) != chief
+        chief_only = {"add_bot", "propose_push", "propose_replace_main"}
+        assert catalog & chief_only == (chief_only if chief else set())
         env = next(iter(runner._crew_tools("token", bots.bots[name]).values())).env
         assert (env["CREWBOTS_DELEGATE"] == "1", env["CREWBOTS_CHIEF"] == "1") == (coordinator, chief)
         prompt = bots.system_prompt(bots.bots[name], coordinator=coordinator, chief=chief)
@@ -149,34 +150,4 @@ def test_selected_chief_gets_push_prompt_and_tools_without_legacy_flag(tmp_path)
         prompt = bots.system_prompt(member, coordinator=runner.is_coordinator(member.name), chief=selected)
         assert (crew.prompts.text("chief-push", bots.home) in prompt) == selected
         assert crew.prompts.text("coordinating", bots.home) in prompt
-    store.close()
-
-
-async def test_a_project_has_one_push_card_at_a_time(tmp_path, monkeypatch):
-    import asyncio
-
-    store = Store(tmp_path / "crew.db")
-    bots = make_crew(tmp_path, bot("chief", can_delegate=True))
-    bots.projects["demo"] = Project("demo", tmp_path, "", tmp_path / "demo.md")
-    runner = Runner(store, bots)
-    head = {"value": "a" * 40}
-    monkeypatch.setattr(push, "snapshot", lambda folder: {
-        "branch": "main", "destination": "refs/heads/main", "url_hash": "h", "tip": "0" * 40, "head": head["value"],
-        "commits": [f"{head['value'][:7]} Fix"]})
-    checks = []
-    monkeypatch.setattr(push.ci, "check", lambda *a: checks.append(a[1]) or {"status": "passed"})
-    chat = runner.chat("chief")
-
-    first, again = await asyncio.gather(push.propose(runner, chat.id, "demo", "Ready"),
-                                        push.propose(runner, chat.id, "demo", "Ready, again"))
-    assert first == again and len(checks) == 1  # two at once: one card, one CI run
-    assert len(store.last_events(chat.id, ("push_proposed",), 5)) == 1
-
-    head["value"] = "b" * 40  # more commits since: the newer card replaces the open one
-    newer = await push.propose(runner, chat.id, "demo", "Ready, with the fix")
-    assert newer != first and push.open_card(runner, chat.id, "demo")[0] == newer
-    [replaced] = store.last_events(chat.id, ("push_replaced",), 5)
-    assert replaced.data == {"proposal": first, "by": newer}
-    with pytest.raises(NotAllowed, match="newer Push card replaced"):
-        await push.perform(runner, first)
     store.close()

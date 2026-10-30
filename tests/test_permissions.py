@@ -2,9 +2,7 @@
 allowed is the task's from its next turn, and some things can't be asked for at all."""
 
 import pytest
-from fakes import ScriptedCrew, bot, wait_until
-from test_bot_api import ADMIN, as_bot, crew_app, start  # noqa: F401
-from test_sessions import SessionBackend, make, settled
+from fakes import ADMIN, ScriptedCrew, SessionBackend, as_bot, bot, make, settled, start, wait_until
 
 from crewbots import paths
 from crewbots.backends import Access, RunSpec
@@ -170,7 +168,7 @@ def test_a_granted_folder_is_writable_and_nowhere_else(tmp_path):
     assert settings(Access.READ_ONLY, [reports])["permissions"]["allow"] == [f"Edit(/{reports})", f"Edit(/{reports}/**)"]
 
 
-def test_a_bot_asks_through_the_api_and_only_the_user_answers(crew_app):  # noqa: F811
+def test_a_bot_asks_through_the_api_and_only_the_user_answers(crew_app):
     client, backend, store = crew_app
     task_id, token = start(client, backend, "chief")
 

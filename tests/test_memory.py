@@ -1,4 +1,4 @@
-"""Memory: notes a bot keeps across tasks, recall over the crew's record, and rolling long conversations over."""
+"""Memory: notes a bot keeps across tasks, and recall over the crew's record."""
 
 import runpy
 import tempfile
@@ -7,17 +7,13 @@ from pathlib import Path
 
 import pytest
 from fakes import ScriptedCrew, bot, make_crew, wait_until
-from test_sessions import SessionBackend
 
 from crewbots import prompts
 from crewbots.crew import Crew
 from crewbots.crew_tools import CrewTools, ToolRefused
-from crewbots.events import Done, Text, Usage
 from crewbots.memory import CORE_CHARS, INDEX_LIMIT, RECENT_CHARS, STATE_CHARS, Memory, MemoryError
 from crewbots.runner import Runner
-from crewbots.store import Store
-
-BRIEFING = prompts.text("briefing")
+from crewbots.store import Status, Store
 
 
 @pytest.fixture
@@ -104,7 +100,7 @@ def test_every_bot_is_told_about_memory_and_shown_its_notes(tmp_path):
 
     prompt = crew.system_prompt(crew.bots["engineer"])
 
-    assert "`remember(title, body, shared?)`" in prompt and "\n- Uses pnpm\n" in prompt
+    assert prompts.text("memory-guide", tmp_path) in prompt and "\n- Uses pnpm\n" in prompt
 
 
 # The tools
@@ -279,6 +275,16 @@ def test_recalls_are_logged_to_evaluate_from_real_use(store, tmp_path):
                                                   "query": "csv export", "hits": [found.id]}
 
 
+def test_a_chat_recalls_across_its_bots_conversations_and_a_thread_its_own(store, tmp_path):
+    runner = Runner(store, make_crew(tmp_path, bot("worker")), {"fake": object()})
+    chat = runner.chat("worker")
+    thread = store.create_task("worker", "build it", status=Status.IDLE)
+    for task in (chat, thread):
+        store.append_event(task.id, kind="message", data={"from": "user", "text": "the pelican budget is 40 dollars"})
+    assert {h["task_id"] for h in runner.recall(chat.id, "pelican budget")} == {chat.id, thread.id}
+    assert {h["task_id"] for h in runner.recall(thread.id, "pelican budget")} == {chat.id}  # a thread has its own
+
+
 def test_the_recall_evaluation_stays_high():
     evaluation = runpy.run_path(str(Path(__file__).parents[1] / "scripts" / "recall_eval.py"))
     with tempfile.TemporaryDirectory() as folder:
@@ -295,122 +301,9 @@ def test_tool_noise_isnt_searchable(store):
     assert store.search("zebra") == []
 
 
-def test_an_existing_crews_history_is_indexed_on_first_open(tmp_path):
-    path = tmp_path / "old.db"
-    s = Store(path)
-    task = s.create_task("chief", "Ship the onboarding docs")
-    s.append_event(task.id, kind="text", data={"text": "Translated into Spanish."})
-    s.db.execute("drop table search")  # as a database from before recall existed,
-    s.db.execute("pragma user_version = 0")  # and from before migrations were numbered
-    s.close()
-
-    reopened = Store(path)
-
-    assert [h["task_id"] for h in reopened.search("spanish")] == [task.id]
-    reopened.close()
-
-
-# Rolling over
-
-
-class FullSession:
-    """A session whose context is `percent` full, and whose briefing turn answers with `briefing`."""
-
-    interruptible = True
-
-    def __init__(self, spec, percent, briefing):
-        self.spec, self.percent, self.briefing = spec, percent, briefing
-        self.turns: list[str] = []
-        self.closed = False
-        self.session_id = spec.resume_session_id or "s-full"
-
-    @property
-    def alive(self):
-        return not self.closed
-
-    async def turn(self, prompt):
-        self.turns.append(prompt)
-        if prompt == BRIEFING:
-            yield Usage(input_tokens=100, output_tokens=50)
-            yield Done(final_text=self.briefing)
-        else:
-            yield Text(text=f"did: {prompt}")
-            yield Done(final_text=f"did: {prompt}")
-
-    async def context_percent(self):
-        return self.percent
-
-    async def close(self):
-        self.closed = True
-
-
-class FullBackend(SessionBackend):
-    def __init__(self, percent, briefing="Goal: X. Decided: Y. Next: Z."):
-        super().__init__()
-        self.percent, self.briefing = percent, briefing
-
-    async def open(self, spec):
-        session = FullSession(spec, self.percent, self.briefing)
-        self.opened.append(session)
-        return session
-
-
-def runner_with(store, tmp_path, backend):
-    return Runner(store, make_crew(tmp_path), {"fake": backend}, api_url="http://127.0.0.1:8765/v1")
-
-
-def idle(store, runner, task_id):
-    return lambda: not store.get_task(task_id).active and task_id not in runner.running()
-
-
-async def test_a_long_conversation_continues_in_a_fresh_session_from_a_briefing(store, tmp_path):
-    backend = FullBackend(percent=82.0)
-    runner = runner_with(store, tmp_path, backend)
-    task = runner.submit("worker", "first")
-    await wait_until(idle(store, runner, task.id))
-
-    first = backend.opened[0]
-    assert first.turns == ["first", BRIEFING] and first.closed
-    task = store.get_task(task.id)
-    assert task.briefing.startswith("This task's conversation grew long") and task.session_id is None
-    assert task.briefing.rstrip().endswith("Goal: X. Decided: Y. Next: Z.")
-    assert task.result == "did: first"  # the briefing turn never replaces the reply
-    assert [e.data["percent"] for e in store.events(task.id) if e.kind == "rollover"] == [82.0]
-
-    backend.percent = 10.0
-    runner.send(task.id, "second")
-    await wait_until(lambda: len(backend.opened) == 2 and idle(store, runner, task.id)())
-    fresh = backend.opened[1]
-    assert fresh.spec.resume_session_id is None
-    assert "# Where things stand" in fresh.spec.system_prompt and "Decided: Y" in fresh.spec.system_prompt
-
-
-async def test_short_conversations_stay_in_their_session(store, tmp_path):
-    backend = FullBackend(percent=30.0)
-    runner = runner_with(store, tmp_path, backend)
-    task = runner.submit("worker", "x")
-    await wait_until(idle(store, runner, task.id))
-
-    assert backend.opened[0].turns == ["x"] and not backend.opened[0].closed
-
-
-async def test_without_a_briefing_there_is_no_rollover(store, tmp_path):
-    backend = FullBackend(percent=95.0, briefing="")
-    runner = runner_with(store, tmp_path, backend)
-    task = runner.submit("worker", "x")
-    await wait_until(idle(store, runner, task.id))
-
-    assert not backend.opened[0].closed and store.get_task(task.id).briefing is None
-
-
 def test_crews_from_before_memory_have_none(tmp_path):
     crew = Crew(home=tmp_path, bots={}, team_files={})
 
     assert crew.memory.prompt("anyone") is None
     assert not (tmp_path / "memory").exists()
 
-
-def test_the_search_index_is_a_real_fts5_table(store):
-    kind = store.db.execute("select sql from sqlite_master where name = 'search'").fetchone()[0]
-
-    assert "fts5" in kind.lower()

@@ -167,7 +167,7 @@ def test_the_crew_can_be_paused_and_resumed_over_the_api(client):
     assert client.post("/crew/pause", headers=AUTH).json()["paused"] is True
     assert client.get("/crew", headers=AUTH).json()["background"][0]["reason"] == "waiting while the crew is paused"
     task = client.post("/tasks", json={"bot": "worker", "goal": "x"}, headers=AUTH).json()
-    time.sleep(0.2)
+    time.sleep(0.05)
     assert client.get(f"/tasks/{task['id']}", headers=AUTH).json()["status"] == "queued"
 
     assert client.post("/crew/resume", headers=AUTH).json()["paused"] is False
@@ -195,7 +195,7 @@ def test_a_restart_waits_for_the_crew_to_be_idle_then_stops_the_server(tmp_path)
         state = client.post("/crew/restart", json={"timeout_s": 60}, headers=AUTH).json()
         assert state["restarting"] and state["turns_running"] == 1 and not state["paused"]
         later = client.post("/tasks", json={"bot": "worker", "goal": "later"}, headers=AUTH).json()
-        time.sleep(0.2)
+        time.sleep(0.05)
         assert stopped == [] and client.get(f"/tasks/{later['id']}", headers=AUTH).json()["status"] == "queued"
 
         client.portal.call(gate.set)  # the running turn finishes

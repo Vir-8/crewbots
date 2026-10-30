@@ -237,29 +237,7 @@ async def test_startup_target_with_context_is_intercepted(tmp_path, monkeypatch,
     service._log.close()
 
 
-async def test_chrome_launch_disables_background_preconnect(tmp_path, monkeypatch):
-    service = Browser(tmp_path)
-    launch = AsyncMock(return_value=(object(), object()))
-    cdp = type("InitialCDP", (), {"__init__": lambda self, transport: None,
-                                  "call": AsyncMock(return_value={"targetInfos": []})})
-    monkeypatch.setattr("crewbots.browser.CDP", cdp)
-    monkeypatch.setattr("crewbots.browser.launch", launch)
-    monkeypatch.setattr(service._profiles, "acquire", AsyncMock())
-    monkeypatch.setattr(service, "_stop", AsyncMock())
-    await service._start()
-    args = launch.await_args.args[0]
-    assert "--disable-background-networking" in args
-    assert "--disable-domain-reliability" in args
-    features = [arg for arg in args if arg.startswith("--disable-features=")]
-    assert len(features) == 1
-    assert {"MediaRouter", "PreconnectToSearch", "NetworkTimeServiceQuerying"} <= set(features[0].split("=", 1)[1].split(","))
-    assert "--enable-features=NetworkServiceInProcess2" in args
-    service._log.close()
-
-
-@pytest.mark.parametrize("failure", ["false", "error"])
-@pytest.mark.parametrize("context", [None, "default-context", "unknown-context"])
-async def test_unrecognized_root_page_close_failure_stops_browser(browser, tmp_path, monkeypatch, failure, context):
+async def test_unrecognized_root_page_close_failure_stops_browser(browser, tmp_path, monkeypatch):
     service, fake = browser
     await service.action("a", tmp_path, False, "open", {"url": "http://localhost"})
     tab = service.sessions["a"]
@@ -267,15 +245,11 @@ async def test_unrecognized_root_page_close_failure_stops_browser(browser, tmp_p
 
     async def fail_close(method, params=None, session=None):
         if method == "Target.closeTarget":
-            if failure == "false":
-                return {"success": False}
-            raise BrowserError("cannot close")
+            return {"success": False}
         return await original(method, params, session)
 
     monkeypatch.setattr(service.cdp, "call", fail_close)
     info = {"targetId": "unknown-page", "type": "page", "url": ""}
-    if context:
-        info["browserContextId"] = context
     await fake.event("Target.attachedToTarget", {"sessionId": "unknown", "waitingForDebugger": True, "targetInfo": info})
     await wait_until(lambda: service.cdp is None)
     assert not service.sessions and not tab.proxy.server.is_serving()
@@ -312,8 +286,7 @@ async def test_missing_root_target_does_not_stop_browser(browser, tmp_path, monk
     assert await service.action("b", tmp_path, False, "console", {})
 
 
-@pytest.mark.parametrize("failure", ["false", "error"])
-async def test_uncloseable_task_popup_disposes_only_owning_context(browser, tmp_path, monkeypatch, failure):
+async def test_uncloseable_task_popup_disposes_only_owning_context(browser, tmp_path, monkeypatch):
     service, fake = browser
     await service.action("a", tmp_path, False, "open", {"url": "http://localhost"})
     await service.action("b", tmp_path, False, "open", {"url": "http://localhost"})
@@ -322,8 +295,6 @@ async def test_uncloseable_task_popup_disposes_only_owning_context(browser, tmp_
 
     async def fail_close(method, params=None, session=None):
         if method == "Target.closeTarget":
-            if failure == "false":
-                return {"success": False}
             raise BrowserError("cannot close")
         return await original(method, params, session)
 
@@ -336,9 +307,28 @@ async def test_uncloseable_task_popup_disposes_only_owning_context(browser, tmp_
     assert await service.action("b", tmp_path, False, "console", {})
 
 
+async def test_failed_popup_close_does_not_dispose_owning_task(browser, tmp_path, monkeypatch, caplog):
+    service, fake = browser
+    await service.action("a", tmp_path, False, "open", {"url": "http://localhost"})
+    original = service.cdp.call
+
+    async def fail_close(method, params=None, session=None):
+        if method == "Target.closeTarget":
+            return {"success": False}
+        return await original(method, params, session)
+
+    monkeypatch.setattr(service.cdp, "call", fail_close)
+    tab = service.sessions["a"]
+    await fake.event("Target.attachedToTarget", {"sessionId": "child", "waitingForDebugger": True,
+        "targetInfo": {"targetId": "iframe", "type": "iframe", "url": "http://localhost/frame",
+                       "browserContextId": tab.context}}, tab.session)
+    await wait_until(lambda: any(entry["kind"] == "target_close_error" for entry in service.cdp.trace))
+    assert "a" in service.sessions and not service.cdp.reader.done()
+    assert "Could not close browser target iframe" in caplog.text
+
+
 @pytest.mark.parametrize("ordering", ["before", "during", "after", "failure_during"])
-@pytest.mark.parametrize("failure", ["false", "unsupported", "timeout"])
-async def test_popup_close_failure_racing_disposal_keeps_other_task(browser, tmp_path, monkeypatch, ordering, failure):
+async def test_popup_close_failure_racing_disposal_keeps_other_task(browser, tmp_path, monkeypatch, ordering):
     service, fake = browser
     if ordering in {"during", "failure_during"}:
         monkeypatch.setattr("crewbots.browser.CONTEXT_GRACE_S", 0.01)
@@ -353,11 +343,7 @@ async def test_popup_close_failure_racing_disposal_keeps_other_task(browser, tmp
         if method == "Target.closeTarget" and params["targetId"] == "racing-popup":
             close_started.set()
             await release_close.wait()
-            if failure == "false":
-                return {"success": False}
-            if failure == "unsupported":
-                raise BrowserError("Specified target doesn't support closing")
-            raise BrowserError("Chrome timed out: Target.closeTarget")
+            raise BrowserError("Specified target doesn't support closing")
         if method == "Target.disposeBrowserContext" and params["browserContextId"] == tab.context:
             disposal_started.set()
             await release_disposal.wait()

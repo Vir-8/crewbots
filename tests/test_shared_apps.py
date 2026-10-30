@@ -6,9 +6,8 @@ import time
 
 import httpx
 import pytest
-from fakes import bot, make_crew
+from fakes import ADMIN, PORT, HeldBackend, bot, make_crew
 from fastapi.testclient import TestClient
-from test_bot_api import ADMIN, PORT, HeldBackend
 
 from crewbots import crew as crew_module
 from crewbots import mcp_catalog
@@ -138,10 +137,6 @@ def test_a_bot_is_told_when_its_own_task_has_the_app(app, tmp_path):
     working, through = running(client, backend, "engineer-1", game)
     seat = client.post("/tasks", json={"bot": "engineer-1", "goal": "talk"},
                        headers={"Authorization": f"Bearer {ADMIN}"}).json()["id"]
-    for _ in range(200):
-        if seat in runner._runs:
-            break
-        time.sleep(0.01)
     assert call(client, through, "tools/call").json()["result"] == {"ok": True}
     busy = runner.app_call(seat, "UnityMCP", json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call"}).encode())
     assert f"by your own task {working}, which has that work: leave it to that task" in busy["result"]["content"][0]["text"]

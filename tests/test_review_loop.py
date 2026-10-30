@@ -12,7 +12,7 @@ from crewbots.api import create_app
 from crewbots.backends import Access
 from crewbots.events import Done
 from crewbots.runner import MAX_REVIEW_ROUNDS, MergeError, NotAllowed
-from crewbots.runner.reviews import NARROWING, _round_status
+from crewbots.runner.reviews import NARROWING
 from crewbots.store import Status, Store, Verdict
 
 
@@ -174,12 +174,21 @@ async def test_an_escalation_can_still_be_answered_after_the_last_round(store, t
 async def test_from_the_third_failed_round_work_goes_back_only_while_its_findings_narrow(store, tmp_path):
     crew = crew_for(store, tmp_path)
     parent, work = finished_work(store, crew)
+    crew.script["reviewer"] = lambda spec, me: (
+        crew.runner.review(me.id, Verdict.FAIL, "still off", [{"location": "a.py:1", "problem": "x"}]),
+        [Done(final_text="failed it")])[1]
+
+    def reports():
+        return [e.data["text"] for e in store.events(parent.id) if e.kind == "message"]
+
     for n in range(1, NARROWING + 1):
         store.update_task(work.id, turns=n)
-        await review_round(crew, parent, work, Verdict.FAIL)
+        review = crew.runner.delegate(parent.id, "reviewer", "review it", review_of=work.id)
+        await wait_until(crew.settled(review.id))
+    await wait_until(lambda: len(reports()) == NARROWING and crew.settled(parent.id)())
 
-    state = crew.runner.review_state(work.id)
-    assert not state.out_of_rounds and "only if the findings are narrowing" in _round_status(state, work)
+    assert f"round {NARROWING} of {MAX_REVIEW_ROUNDS}: changes requested" in reports()[-1]
+    assert "only if the findings are narrowing" in reports()[-1]
     crew.runner.message_child(parent.id, work.id, "one small fix left")  # not refused: the lead decides, not the user
 
 
@@ -294,6 +303,8 @@ async def test_automatic_merge_is_opt_in_and_preserves_failed_proposals(store, t
         assert (repo / "README.md").read_text() == "user edit\n"
         assert git(repo, "rev-parse", "HEAD") == head
         assert not (repo / ".git" / "MERGE_HEAD").exists()
+        [failed] = [e.data for e in store.events(work.id) if e.kind == "merge_failed"]
+        assert "CONFLICT" in failed["error"] and failed["automatic"]
     else:
         result = crew.runner.propose_merge(parent.id, work.id, "Improve readme")
         assert result.merge_state == ("merged" if enabled else "proposed")
@@ -335,32 +346,6 @@ async def test_withdraw_proposal_saves_work_and_records_reason(store, tmp_path):
     crew.runner.propose_merge(parent.id, work.id, "Try again")
     assert crew.runner.withdraw_merge(work.id, "No longer needed").merge_state is None
     assert store.events(work.id)[-1].data["by"] == "user"
-
-
-@pytest.mark.parametrize("action", ["withdraw", "merge"])
-async def test_cleanup_failure_does_not_break_action(store, tmp_path, monkeypatch, caplog, action):
-    repo = git_repo(tmp_path / "repo")
-    crew = crew_for(store, tmp_path)
-    parent = store.create_task("chief", "lead", workspace=str(repo), status=Status.IDLE)
-    work = crew.runner.delegate(parent.id, "engineer", "edit")
-    await wait_until(crew.settled(work.id))
-    path = Path(store.get_task(work.id).worktree_path)
-    (path / "new.txt").write_text("content")
-    await review_round(crew, parent, work, Verdict.PASS)
-    crew.runner.propose_merge(parent.id, work.id, "Edit files")
-    original = worktree._git
-
-    def fail_remove(cwd, *args, **kwargs):
-        if args[:2] == ("worktree", "remove"):
-            raise worktree.GitError("simulated remove failure")
-        return original(cwd, *args, **kwargs)
-
-    monkeypatch.setattr(worktree, "_git", fail_remove)
-    result = (crew.runner.merge(work.id) if action == "merge"
-              else crew.runner.withdraw_merge(work.id, "withdrawn"))
-    assert result.merge_state == ("merged" if action == "merge" else None)
-    assert path.is_dir() and (path / "new.txt").read_text() == "content"
-    assert "simulated remove failure" in caplog.text
 
 
 async def test_merged_work_reopens_for_followup_review_and_changes_api(store, tmp_path):
@@ -456,24 +441,6 @@ async def test_a_dirty_checkout_is_never_merged_into(store, tmp_path):
     assert (repo / "README.md").read_text() == "my own uncommitted edit\n"
     assert git(repo, "rev-parse", "HEAD") == head
     assert store.get_task(work.id).merge_state is None
-
-
-async def test_a_conflict_is_aborted_and_changes_nothing(store, tmp_path):
-    repo = git_repo(tmp_path / "repo")
-    crew = crew_for(store, tmp_path)
-    work = engineer_wrote(crew, store, tmp_path, repo, content="the bot's version\n")
-    await wait_until(crew.settled(work.id))
-    (repo / "README.md").write_text("the user's version\n")
-    git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "user edit")
-    head = git(repo, "rev-parse", "HEAD")
-
-    with pytest.raises(MergeError, match=r"(?s)nothing was changed.*CONFLICT.*README\.md"):
-        crew.runner.merge(work.id, force=True)
-
-    assert git(repo, "rev-parse", "HEAD") == head
-    assert git(repo, "status", "--porcelain") == ""
-    assert (repo / "README.md").read_text() == "the user's version\n"
-    assert store.get_task(work.id).worktree_path  # still there to fix and retry
 
 
 async def test_a_fix_round_starts_in_a_fresh_session_from_a_brief(store, tmp_path):

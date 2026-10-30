@@ -30,6 +30,16 @@ def test_a_project_is_a_folder_and_what_it_is(tmp_path):
     assert projects.load(home) == ({}, {})
 
 
+def test_a_projects_ci_list_is_read_and_kept_when_the_project_is_saved(tmp_path):
+    folder = tmp_path / "web"
+    folder.mkdir()
+    (tmp_path / "crew" / "projects").mkdir(parents=True)
+    path = tmp_path / "crew" / "projects" / "web.md"
+    path.write_text(f"---\nfolder: {folder}\nci:\n  - make test\n---\nSite\n")
+    assert projects.parse(path.read_text(), path).ci == ("make test",)
+    assert projects.save(tmp_path / "crew", "web", folder, "Site, edited").ci == ("make test",)
+
+
 def test_only_real_folders_outside_the_crew_and_names_that_make_good_handles(tmp_path):
     home = tmp_path / "crew"
     home.mkdir()

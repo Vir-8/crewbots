@@ -2,16 +2,13 @@ import asyncio
 import json
 
 import pytest
-from fakes import FakeBackend, bot, make_crew, wait_until
-from test_bot_api import as_bot, start
+from fakes import FakeBackend, as_bot, bot, make_crew, start, wait_until
 
 from crewbots.crew_tools import CrewTools, ToolRefused
 from crewbots.events import Done
 from crewbots.runner import Runner
 from crewbots.runner.rooms import _safe_error
 from crewbots.store import Status, Store
-
-pytest_plugins = ["test_bot_api"]
 
 
 def test_error_redaction_and_limit():

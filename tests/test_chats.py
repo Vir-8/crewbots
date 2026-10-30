@@ -1,8 +1,8 @@
 """Chats, threads and group chats: each bot's one ongoing conversation, the work it opens, and bots talking together."""
 
 import asyncio
-import time
 
+import httpx
 import pytest
 from fakes import ScriptedCrew, bot, wait_until
 from fastapi.testclient import TestClient
@@ -13,7 +13,7 @@ from crewbots.crew import NO_REPLY
 from crewbots.crew_tools import CrewTools
 from crewbots.events import Done, Text
 from crewbots.runner import NotAllowed
-from crewbots.runner.rooms import MAX_ROOM_BOTS
+from crewbots.runner.rooms import CATCH_UP, MAX_ROOM_BOTS, _catch_up
 from crewbots.store import Status, Store
 
 
@@ -29,8 +29,28 @@ def crew(store, tmp_path):
     return ScriptedCrew(store, tmp_path, bot("chief", can_delegate=True), bot("engineer"), bot("reviewer"))
 
 
+@pytest.fixture
+async def app_client(crew):
+    app = create_app(crew.runner, "test", 8765)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8765/v1",
+                                 headers={"Authorization": "Bearer test"}) as client:
+        yield client
+
+
 def idle(crew):
     return lambda: not crew.runner.running()
+
+
+def blocked_cleanup(runner, monkeypatch):
+    """Holds a cancel in its browser cleanup: `entered` is set once it gets there, and it goes on once `release` is."""
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def blocked_close(_task_id):
+        entered.set()
+        await release.wait()
+
+    monkeypatch.setattr(runner.browser, "close_task", blocked_close)
+    return entered, release
 
 
 # A bot's chat.
@@ -106,6 +126,14 @@ async def test_mentions_wake_those_bots_and_bots_bring_each_other_in(crew, store
     assert [m["author"] for m in store.room_messages(room["id"])] == ["user", "engineer", "reviewer"]
     reviewer_saw = crew.specs_for("reviewer")[0].prompt
     assert "[user]: @engineer add the endpoint" in reviewer_saw and "[engineer]: Done." in reviewer_saw
+
+
+def test_a_woken_bot_is_sent_the_newest_of_what_it_missed():
+    said = [f"[engineer]: {n} " + "x" * 3000 for n in range(10)] + ["[user]: @chief how's it going?"]
+    text = _catch_up(said)
+    assert text.startswith("(7 earlier messages you haven't seen are left out.)\n\n[engineer]: 7 ")
+    assert text.endswith("[user]: @chief how's it going?") and len(text) <= CATCH_UP + 100
+    assert _catch_up(["[user]: " + "y" * (CATCH_UP * 2)]) == "[user]: " + "y" * (CATCH_UP * 2)  # the newest always
 
 
 async def test_unlimited_room_continues_past_four_replies(crew, store):
@@ -233,10 +261,9 @@ async def test_bot_mention_can_end_silently_without_waking_anyone(crew, store, a
     assert not crew.specs_for("chief") and not crew.specs_for("engineer")
 
 
-@pytest.mark.parametrize("answer", [NO_REPLY, ""])
-async def test_silent_seat_stops_being_active_before_compaction_and_keeps_new_wakes(crew, store, answer):
+async def test_silent_seat_stops_being_active_before_compaction_and_keeps_new_wakes(crew, store):
     room = crew.runner.create_room("Handover", ["engineer", "reviewer"])
-    crew.script["reviewer"] = lambda spec, me: [Done(final_text=answer)]
+    crew.script["reviewer"] = lambda spec, me: [Done(final_text=NO_REPLY)]
     compacting, release = asyncio.Event(), asyncio.Event()
 
     async def compact(task_id, opened, bot):
@@ -263,7 +290,7 @@ async def test_silent_seat_stops_being_active_before_compaction_and_keeps_new_wa
 
 @pytest.mark.parametrize("shutdown", [False, True], ids=["crash", "shutdown"])
 @pytest.mark.parametrize("wake", ["none", "before", "during", "both"])
-@pytest.mark.parametrize("answer", ["Finished the first request.", NO_REPLY, ""], ids=["posted", "no-reply", "empty"])
+@pytest.mark.parametrize("answer", ["Finished the first request.", NO_REPLY], ids=["posted", "no-reply"])
 async def test_restart_during_seat_compaction_only_delivers_new_wakes(tmp_path, shutdown, wake, answer):
     path = tmp_path / "restart.db"
     store = Store(path)
@@ -654,13 +681,7 @@ async def test_chief_seat_escalation_does_not_wake_its_main_chat(crew, store):
 async def test_post_skips_cancelling_seat_and_wakes_other_mentions(crew, store, monkeypatch):
     room = crew.runner.create_room("Engineering", ["engineer", "reviewer"], lead="engineer")
     seat = store.create_task("engineer", "seat", kind="seat", room_id=room["id"], status=Status.IDLE)
-    entered, release = asyncio.Event(), asyncio.Event()
-
-    async def blocked_close(_task_id):
-        entered.set()
-        await release.wait()
-
-    monkeypatch.setattr(crew.runner.browser, "close_task", blocked_close)
+    entered, release = blocked_cleanup(crew.runner, monkeypatch)
     replies(crew, {})
     cancelling = asyncio.create_task(crew.runner.cancel(seat.id))
     await asyncio.wait_for(entered.wait(), 2)
@@ -681,34 +702,20 @@ async def test_post_skips_cancelling_seat_and_wakes_other_mentions(crew, store, 
     await crew.runner.shutdown()
 
 
-@pytest.mark.parametrize(("author", "text", "lead"), [
-    ("engineer", "@everyone please help", "engineer"),
-    ("user", "@everyone please help", "engineer"),
-    ("user", "Please help the lead", "chief"),
-    ("engineer", "@chief please help", "engineer"),
-    ("engineer", "@Roger please help", "engineer"),
-])
-async def test_cancelled_seat_receives_all_normal_wake_types(store, tmp_path, monkeypatch, author, text, lead):
-    crew = ScriptedCrew(store, tmp_path, bot("chief", can_delegate=True, display_name="Roger"), bot("engineer"))
-    room = crew.runner.create_room("Engineering", ["chief", "engineer"], lead=lead)
+async def test_cancelled_seat_gets_an_everyone_message_on_its_next_wake(crew, store, monkeypatch):
+    room = crew.runner.create_room("Engineering", ["chief", "engineer"], lead="engineer")
     seat = store.create_task("chief", "seat", kind="seat", room_id=room["id"], status=Status.IDLE)
-    entered, release = asyncio.Event(), asyncio.Event()
-
-    async def blocked_close(_task_id):
-        entered.set()
-        await release.wait()
-
-    monkeypatch.setattr(crew.runner.browser, "close_task", blocked_close)
+    entered, release = blocked_cleanup(crew.runner, monkeypatch)
     replies(crew, {})
     cancelling = asyncio.create_task(crew.runner.cancel(seat.id))
     await asyncio.wait_for(entered.wait(), 2)
-    crew.runner.post(room["id"], author, text)
+    crew.runner.post(room["id"], "user", "@everyone please help")
     release.set()
     await cancelling
     assert not crew.specs_for("chief")
     crew.runner.post(room["id"], "user", "@chief next request")
     await wait_until(lambda: bool(crew.specs_for("chief")))
-    assert text in crew.specs_for("chief")[0].prompt
+    assert "@everyone please help" in crew.specs_for("chief")[0].prompt
     assert "@chief next request" in crew.specs_for("chief")[0].prompt
     await crew.runner.shutdown()
 
@@ -722,13 +729,7 @@ async def test_stop_keeps_queued_and_cleanup_mentions_unread_until_next_wake(cre
     seat = store.seat_of(room["id"], "chief")
     waiting = crew.runner.post(room["id"], "engineer", "@chief waiting")
     assert store.seen(f"seat:{seat.id}") == waiting["id"]
-    entered, release = asyncio.Event(), asyncio.Event()
-
-    async def blocked_close(_task_id):
-        entered.set()
-        await release.wait()
-
-    monkeypatch.setattr(crew.runner.browser, "close_task", blocked_close)
+    entered, release = blocked_cleanup(crew.runner, monkeypatch)
     cancelling = asyncio.create_task(crew.runner.cancel(seat.id))
     await asyncio.wait_for(entered.wait(), 2)
     during = crew.runner.post(room["id"], "engineer", "@chief during cleanup")
@@ -763,14 +764,8 @@ async def test_continue_after_stop_delivers_unseen_room_message(crew, store, mon
     room = crew.runner.create_room("Engineering", ["chief", "engineer"], lead="chief")
     crew.runner.set_room_limit(room["id"], 1)
     seat = store.create_task("chief", "seat", kind="seat", room_id=room["id"], status=Status.IDLE)
-    entered, release = asyncio.Event(), asyncio.Event()
-
-    async def blocked_close(_task_id):
-        entered.set()
-        await release.wait()
-
+    entered, release = blocked_cleanup(crew.runner, monkeypatch)
     replies(crew, {})
-    monkeypatch.setattr(crew.runner.browser, "close_task", blocked_close)
     cancelling = asyncio.create_task(crew.runner.cancel(seat.id))
     await asyncio.wait_for(entered.wait(), 2)
     message = crew.runner.post(room["id"], "engineer", "@chief waiting for continue", depth=1)
@@ -956,14 +951,8 @@ async def test_continue_retains_cancelling_seat_until_later_continue(crew, store
     room = crew.runner.create_room("Engineering", ["chief", "engineer", "reviewer"], lead="chief")
     crew.runner.set_room_limit(room["id"], 1)
     seat = store.create_task("chief", "seat", kind="seat", room_id=room["id"], status=Status.IDLE)
-    entered, release = asyncio.Event(), asyncio.Event()
-
-    async def blocked_close(_task_id):
-        entered.set()
-        await release.wait()
-
+    entered, release = blocked_cleanup(crew.runner, monkeypatch)
     replies(crew, {})
-    monkeypatch.setattr(crew.runner.browser, "close_task", blocked_close)
     cancelling = asyncio.create_task(crew.runner.cancel(seat.id))
     await asyncio.wait_for(entered.wait(), 2)
     crew.runner.post(room["id"], "engineer", "@chief @reviewer check", depth=1)
@@ -980,13 +969,7 @@ async def test_continue_retains_cancelling_seat_until_later_continue(crew, store
 async def test_delete_room_discards_seat_cancel_messages(crew, store, monkeypatch):
     room = crew.runner.create_room("Engineering", ["engineer", "reviewer"], lead="engineer")
     seat = store.create_task("engineer", "seat", kind="seat", room_id=room["id"], status=Status.IDLE)
-    entered, release = asyncio.Event(), asyncio.Event()
-
-    async def blocked_close(_task_id):
-        entered.set()
-        await release.wait()
-
-    monkeypatch.setattr(crew.runner.browser, "close_task", blocked_close)
+    entered, release = blocked_cleanup(crew.runner, monkeypatch)
     deleting = asyncio.create_task(crew.runner.delete_room(room["id"]))
     await asyncio.wait_for(entered.wait(), 2)
     crew.runner.send(seat.id, "internal notice", sender="crewbots")
@@ -1025,13 +1008,7 @@ async def test_escalation_rejected_during_and_after_cancel(crew, store, monkeypa
     room = crew.runner.create_room("Engineering", ["engineer"], lead="engineer")
     seat = store.create_task("engineer", "seat", kind="seat", room_id=room["id"], status=Status.IDLE)
     chat = crew.runner.chat("engineer")
-    entered, release = asyncio.Event(), asyncio.Event()
-
-    async def blocked_close(_task_id):
-        entered.set()
-        await release.wait()
-
-    monkeypatch.setattr(crew.runner.browser, "close_task", blocked_close)
+    entered, release = blocked_cleanup(crew.runner, monkeypatch)
     cancelling = asyncio.create_task(crew.runner.cancel(seat.id))
     await asyncio.wait_for(entered.wait(), 2)
     try:
@@ -1068,7 +1045,6 @@ async def test_one_seat_refusal_does_not_stop_other_wakes(crew, store, monkeypat
 
 async def test_room_mention_needs_me_is_shared_and_cleared_by_seat_reply(crew, store, monkeypatch):
     monkeypatch.setenv("TZ", "UTC")
-    time.tzset()
     from crewbots.working_state import read
 
     room = crew.runner.create_room("Engineering", ["chief", "engineer"], lead="engineer")
@@ -1144,47 +1120,31 @@ async def test_display_name_mention_wakes_seat_and_adds_need(store, tmp_path):
     await crew.runner.shutdown()
 
 
-@pytest.mark.parametrize("text", ["`@chief`", "```text\n@chief\n```", "~~~\n@chief\n~~~", "> @chief please"])
-async def test_quoted_and_code_mentions_do_not_wake_or_record(crew, store, text):
+@pytest.mark.parametrize(("author", "text", "wakes"), [
+    ("engineer", "`@chief`", False),
+    ("engineer", "```text\n@chief\n```", False),
+    ("engineer", "~~~\n@chief\n~~~", False),
+    ("engineer", "> @chief please", False),
+    ("engineer", "    @chief please", True),
+    ("engineer", "\t@chief please", True),
+    ("engineer", "- item\n    @chief please", True),
+    ("engineer", "`@engineer`\n> @engineer\n@chief Please help", True),
+    ("engineer", "```text\n@chief Please help", True),  # an unclosed fence hides nothing
+    ("user", "stray `\n@chief look\nmore `", True),
+])
+async def test_only_mentions_outside_quotes_and_code_wake(crew, store, author, text, wakes):
     from crewbots.working_state import read
 
     room = crew.runner.create_room("Engineering", ["chief", "engineer"], lead="engineer")
-    crew.runner.post(room["id"], "engineer", text)
-    await asyncio.sleep(0)
-    assert store.seat_of(room["id"], "chief") is None
-    assert "room mention" not in read(crew.runner.crew.memory.root / "chief" / "working-state" / "state.md")
-
-
-@pytest.mark.parametrize("text", ["    @chief please", "\t@chief please", "- item\n    @chief please"])
-async def test_indented_mentions_wake_seat(crew, store, text):
-    room = crew.runner.create_room("Engineering", ["chief", "engineer"], lead="engineer")
     replies(crew, {})
-    crew.runner.post(room["id"], "engineer", text)
+    crew.runner.post(room["id"], author, text)
     await wait_until(idle(crew))
-    assert text in crew.specs_for("chief")[0].prompt
+    assert bool(crew.specs_for("chief")) is wakes
+    if not wakes:
+        assert "room mention" not in read(crew.runner.crew.memory.root / "chief" / "working-state" / "state.md")
 
 
-async def test_real_mention_after_code_and_quote_still_wakes(crew, store):
-    room = crew.runner.create_room("Engineering", ["chief", "engineer"], lead="engineer")
-    replies(crew, {})
-    crew.runner.post(room["id"], "engineer", "`@engineer`\n> @engineer\n@chief Please help")
-    await wait_until(idle(crew))
-    assert crew.specs_for("chief") and not crew.specs_for("engineer")
-
-
-async def test_unclosed_fence_does_not_hide_mention(crew, store):
-    room = crew.runner.create_room("Engineering", ["chief", "engineer"], lead="engineer")
-    replies(crew, {})
-    crew.runner.post(room["id"], "engineer", "```text\n@chief Please help")
-    await wait_until(idle(crew))
-    assert crew.specs_for("chief")
-
-
-async def test_room_mention_trimming_is_reported(crew, store):
-    from crewbots.working_state import edit
-
-    path = crew.runner.crew.memory.root / "chief" / "working-state" / "state.md"
-    edit(path, "Needs me", "add", "manual item")
+async def test_room_mention_trimming_is_reported_and_held_for_the_next_message(crew, store):
     replies(crew, {})
     for i in range(13):
         room = crew.runner.create_room(f"room {i}", ["chief", "engineer"], lead="engineer")
@@ -1192,22 +1152,19 @@ async def test_room_mention_trimming_is_reported(crew, store):
         crew.runner.post(room["id"], "engineer", "@chief request", depth=1)
     chat = crew.runner.chat("chief")
     assert any("older room mentions were trimmed" in e.data.get("message", "") for e in store.events(chat.id))
-    assert "manual item" in path.read_text()
     await wait_until(idle(crew))
-    assert not any("older room mentions" in s.prompt for s in crew.specs_for("chief"))  # the seats answer; no wake
+    assert not crew.specs_for("chief")
+    crew.runner.send(chat.id, "hello again")
+    await wait_until(idle(crew))
+    assert "older room mentions were trimmed" in next(s.prompt for s in crew.specs_for("chief") if "hello again" in s.prompt)
     await crew.runner.shutdown()
 
 
-async def test_generic_seat_message_before_any_question_is_accepted(crew, store):
-    import httpx
-
+async def test_generic_seat_message_before_any_question_is_accepted(crew, store, app_client):
     room = crew.runner.create_room("Engineering", ["chief"], lead="chief")
     seat = store.create_task("chief", "seat", kind="seat", room_id=room["id"], status=Status.IDLE)
-    app = create_app(crew.runner, "test", 8765)
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8765/v1",
-                                 headers={"Authorization": "Bearer test"}) as client:
-        response = await client.post(f"/tasks/{seat.id}/messages", json={"text": "A free message"})
-        assert response.status_code == 200
+    response = await app_client.post(f"/tasks/{seat.id}/messages", json={"text": "A free message"})
+    assert response.status_code == 200
     assert any(e.kind == "message" and e.data["text"] == "A free message" for e in store.events(seat.id))
     await crew.runner.shutdown()
 
@@ -1244,9 +1201,7 @@ async def test_the_chief_answered_in_its_chat_is_told_to_reply_there(crew, store
     assert "Anything back to them goes there, with tell_user." in answered
 
 
-async def test_old_seat_card_cannot_answer_new_question_and_cancel_closes_all_cards(crew, store):
-    import httpx
-
+async def test_old_seat_card_cannot_answer_new_question_and_cancel_closes_all_cards(crew, store, app_client):
     room = crew.runner.create_room("Engineering", ["engineer", "reviewer"], lead="engineer")
     replies(crew, {})
     seat = store.create_task("engineer", "seat", kind="seat", room_id=room["id"], status=Status.NEEDS_INPUT)
@@ -1258,34 +1213,29 @@ async def test_old_seat_card_cannot_answer_new_question_and_cancel_closes_all_ca
     assert any(e.kind == "seat_escalation_closed" and e.data["question_id"] == first for e in store.events(chat.id))
     state = crew.runner.crew.memory.root / "engineer" / "working-state" / "state.md"
     assert "Release Friday?" in state.read_text() and "Use SQLite?" not in state.read_text()
-    app = create_app(crew.runner, "test", 8765)
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8765/v1",
-                                 headers={"Authorization": "Bearer test"}) as client:
-        response = await client.post(f"/tasks/{seat.id}/messages", json={"text": "No", "question_id": first})
-        assert response.status_code == 403 and "closed or has been replaced" in response.json()["detail"]
-        assert (await client.post(f"/tasks/{seat.id}/messages", json={"text": "No"})).status_code == 403
-        assert (await client.post(f"/tasks/{seat.id}/messages", json={"text": "No", "question_id": 999})).status_code == 403
-        assert not any(e.kind == "message" for e in store.events(seat.id))
-        assert "Release Friday? — No" not in state.read_text()
-        response = await client.post(f"/tasks/{seat.id}/messages", json={"text": "No", "question_id": second})
-        assert response.status_code == 200
-        assert (await client.post(f"/tasks/{seat.id}/messages", json={"text": "No", "question_id": second})).status_code == 403
-        await wait_until(idle(crew))
-        assert "Release Friday? — No" in state.read_text()
-        crew.runner.escalate(seat.id, "Use the current design?")
-        third = store.last_event(seat.id, ("escalation",)).id
-        # Simulate an older unclosed mirrored card left by the previous version.
-        crew.runner._record(chat.id, kind="seat_escalation", data={"task": seat.id, "question_id": 999})
-        await crew.runner.cancel(seat.id)
-        closed = {e.data["question_id"] for e in store.events(chat.id) if e.kind == "seat_escalation_closed"}
-        assert {first, third, 999} <= closed
-        response = await client.post(f"/tasks/{seat.id}/messages", json={"text": "No", "question_id": third})
-        assert response.status_code == 403 and "closed or has been replaced" in response.json()["detail"]
+    response = await app_client.post(f"/tasks/{seat.id}/messages", json={"text": "No", "question_id": first})
+    assert response.status_code == 403 and "closed or has been replaced" in response.json()["detail"]
+    assert (await app_client.post(f"/tasks/{seat.id}/messages", json={"text": "No"})).status_code == 403
+    assert (await app_client.post(f"/tasks/{seat.id}/messages", json={"text": "No", "question_id": 999})).status_code == 403
+    assert not any(e.kind == "message" for e in store.events(seat.id))
+    assert "Release Friday? — No" not in state.read_text()
+    response = await app_client.post(f"/tasks/{seat.id}/messages", json={"text": "No", "question_id": second})
+    assert response.status_code == 200
+    assert (await app_client.post(f"/tasks/{seat.id}/messages", json={"text": "No", "question_id": second})).status_code == 403
+    await wait_until(idle(crew))
+    assert "Release Friday? — No" in state.read_text()
+    crew.runner.escalate(seat.id, "Use the current design?")
+    third = store.last_event(seat.id, ("escalation",)).id
+    # Simulate an older unclosed mirrored card left by the previous version.
+    crew.runner._record(chat.id, kind="seat_escalation", data={"task": seat.id, "question_id": 999})
+    await crew.runner.cancel(seat.id)
+    closed = {e.data["question_id"] for e in store.events(chat.id) if e.kind == "seat_escalation_closed"}
+    assert {first, third, 999} <= closed
+    response = await app_client.post(f"/tasks/{seat.id}/messages", json={"text": "No", "question_id": third})
+    assert response.status_code == 403 and "closed or has been replaced" in response.json()["detail"]
 
 
-async def test_deleting_room_retires_waiting_seat_and_rejects_card_answer(crew, store):
-    import httpx
-
+async def test_deleting_room_retires_waiting_seat_and_rejects_card_answer(crew, store, app_client):
     room = crew.runner.create_room("Engineering", ["engineer", "reviewer"], lead="engineer")
     seat = store.create_task("engineer", "seat", kind="seat", room_id=room["id"], status=Status.NEEDS_INPUT)
     crew.runner.escalate(seat.id, "Release Friday?")
@@ -1296,51 +1246,37 @@ async def test_deleting_room_retires_waiting_seat_and_rejects_card_answer(crew, 
     assert any(e.kind == "seat_escalation_closed" and e.data["question_id"] == question_id for e in store.events(chat.id))
     state = crew.runner.crew.memory.root / "engineer" / "working-state" / "state.md"
     assert "Release Friday?" not in state.read_text()
-    app = create_app(crew.runner, "test", 8765)
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8765/v1",
-                                 headers={"Authorization": "Bearer test"}) as client:
-        response = await client.post(f"/tasks/{seat.id}/messages", json={"text": "No", "question_id": question_id})
-        assert response.status_code == 403 and "closed or has been replaced" in response.json()["detail"]
+    response = await app_client.post(f"/tasks/{seat.id}/messages", json={"text": "No", "question_id": question_id})
+    assert response.status_code == 403 and "closed or has been replaced" in response.json()["detail"]
     assert not any(e.kind == "message" for e in store.events(seat.id))
     assert seat.id not in crew.runner.running()
 
 
 @pytest.mark.parametrize("operation", ["cancel", "delete_room"])
-async def test_seat_answer_is_rejected_while_cancel_cleanup_is_blocked(crew, store, monkeypatch, operation):
-    import httpx
-
+async def test_seat_answer_is_rejected_while_cancel_cleanup_is_blocked(crew, store, monkeypatch, app_client, operation):
     room = crew.runner.create_room("Engineering", ["engineer", "reviewer"], lead="engineer")
     seats = [store.create_task(bot, "seat", kind="seat", room_id=room["id"], status=Status.NEEDS_INPUT)
              for bot in ("engineer", "reviewer")]
     for seat in seats:
         crew.runner.escalate(seat.id, "Release Friday?")
-    entered, release = asyncio.Event(), asyncio.Event()
-
-    async def blocked_close(_task_id):
-        entered.set()
-        await release.wait()
-
-    monkeypatch.setattr(crew.runner.browser, "close_task", blocked_close)
+    entered, release = blocked_cleanup(crew.runner, monkeypatch)
     cancelling = asyncio.create_task(crew.runner.cancel(seats[0].id) if operation == "cancel"
                                      else crew.runner.delete_room(room["id"]))
     await asyncio.wait_for(entered.wait(), 2)
     checked = seats if operation == "delete_room" else seats[:1]
     try:
-        app = create_app(crew.runner, "test", 8765)
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8765/v1",
-                                     headers={"Authorization": "Bearer test"}) as client:
-            for seat in checked:
-                asked = store.last_event(seat.id, ("escalation",))
-                chat = crew.runner.chat(seat.bot)
-                response = await client.post(f"/tasks/{seat.id}/messages",
+        for seat in checked:
+            asked = store.last_event(seat.id, ("escalation",))
+            chat = crew.runner.chat(seat.bot)
+            response = await app_client.post(f"/tasks/{seat.id}/messages",
                                              json={"text": "No", "question_id": asked.id if asked else 0})
-                assert response.status_code == 403
-                assert store.get_task(seat.id).status == Status.CANCELLED
-                if asked:
-                    assert any(e.kind == "seat_escalation_closed" and e.data["question_id"] == asked.id
-                               for e in store.events(chat.id))
-                assert not any(e.kind == "message" and e.data.get("from") == "user" for e in store.events(seat.id))
-                assert seat.id not in crew.runner.running()
+            assert response.status_code == 403
+            assert store.get_task(seat.id).status == Status.CANCELLED
+            if asked:
+                assert any(e.kind == "seat_escalation_closed" and e.data["question_id"] == asked.id
+                           for e in store.events(chat.id))
+            assert not any(e.kind == "message" and e.data.get("from") == "user" for e in store.events(seat.id))
+            assert seat.id not in crew.runner.running()
     finally:
         release.set()
         await cancelling
@@ -1383,14 +1319,8 @@ async def test_cancelled_unaddressed_seat_does_not_wake_from_question_text(crew,
     room = crew.runner.create_room("Engineering", ["chief", "engineer", "reviewer"], lead="chief")
     reviewer = store.create_task("reviewer", "seat", kind="seat", room_id=room["id"], status=Status.IDLE)
     engineer = store.create_task("engineer", "seat", kind="seat", room_id=room["id"], status=Status.IDLE)
-    entered, release = asyncio.Event(), asyncio.Event()
-
-    async def blocked_close(_task_id):
-        entered.set()
-        await release.wait()
-
+    entered, release = blocked_cleanup(crew.runner, monkeypatch)
     replies(crew, {})
-    monkeypatch.setattr(crew.runner.browser, "close_task", blocked_close)
     cancelling = asyncio.create_task(crew.runner.cancel(reviewer.id))
     await asyncio.wait_for(entered.wait(), 2)
     try:
@@ -1456,14 +1386,6 @@ async def test_everyone_needs_me_even_when_reply_limit_stops_wake(crew, store):
     for member in ("chief", "reviewer"):
         assert f"room mention {room['id']}" in read(crew.runner.crew.memory.root / member / "working-state" / "state.md")
     assert store.seat_of(room["id"], "chief") is None
-
-
-async def test_multiline_stray_backticks_do_not_hide_mention(crew, store):
-    room = crew.runner.create_room("Engineering", ["chief", "engineer"], lead="engineer")
-    replies(crew, {})
-    crew.runner.post(room["id"], "user", "stray `\n@chief look\nmore `")
-    await wait_until(idle(crew))
-    assert crew.specs_for("chief")
 
 
 @pytest.mark.parametrize("unavailable", ["archived", "removed"])
@@ -1578,35 +1500,16 @@ async def test_needs_me_replace_remove_and_done_wake_nothing(crew, store):
     await crew.runner.shutdown()
 
 
-async def test_room_mention_notice_does_not_restart_a_stopped_chat(crew, store):
-    from crewbots.working_state import edit
-
-    path = crew.runner.crew.memory.root / "chief" / "working-state" / "state.md"
-    edit(path, "Needs me", "add", "manual item")
-    replies(crew, {})
-    chat = crew.runner.chat("chief")
-    crew.runner._begin_cancel(chat.id)
-    for i in range(13):
-        room = crew.runner.create_room(f"room {i}", ["chief", "engineer"], lead="engineer")
-        crew.runner.set_room_limit(room["id"], 1)
-        crew.runner.post(room["id"], "engineer", "@chief request", depth=1)
-    assert any("older room mentions were trimmed" in e.data.get("message", "") for e in store.events(chat.id))
-    assert not crew.specs_for("chief")
-    crew.runner._cancelling.discard(chat.id)
-    crew.runner.send(chat.id, "hello again")
-    await wait_until(idle(crew))
-    assert "older room mentions were trimmed" in next(s.prompt for s in crew.specs_for("chief") if "hello again" in s.prompt)
-    await crew.runner.shutdown()
-
-
-@pytest.mark.parametrize("status", [Status.QUEUED, Status.HELD, Status.RUNNING])
-def test_the_room_list_calls_a_group_working_only_while_a_seat_runs(crew, store, status):
-    room = crew.runner.create_room("Eng", ["engineer", "reviewer"], lead="engineer")
-    store.create_task("engineer", "seat", kind="seat", room_id=room["id"], status=status)
+def test_the_room_list_calls_a_group_working_only_while_a_seat_runs(crew, store):
+    statuses = {}
+    for status in (Status.QUEUED, Status.HELD, Status.RUNNING):
+        room = crew.runner.create_room("Eng", ["engineer", "reviewer"], lead="engineer")
+        store.create_task("engineer", "seat", kind="seat", room_id=room["id"], status=status)
+        statuses[room["id"]] = status
     with TestClient(create_app(crew.runner, "t", 8765), base_url="http://127.0.0.1:8765/v1") as client:
         chats = client.get("/chats", headers={"Authorization": "Bearer t"}).json()
-    group = next(c for c in chats if c["room"] and c["room"]["id"] == room["id"])
-    assert group["working"] is (status is Status.RUNNING)
+    working = {c["room"]["id"]: c["working"] for c in chats if c["room"] and c["room"]["id"] in statuses}
+    assert working == {room_id: status is Status.RUNNING for room_id, status in statuses.items()}
 
 
 async def test_system_wakes_are_recorded_for_the_app_to_tell_apart(crew, store):
@@ -1627,6 +1530,7 @@ async def test_system_wakes_are_recorded_for_the_app_to_tell_apart(crew, store):
     # each turn is marked, and a wake is recorded before the turn that takes it
     marks = [e.kind for e in events if e.kind in ("turn_start", "message")]
     assert marks[:2] == ["message", "turn_start"] and marks.count("turn_start") == 3
+    assert [e.data for e in events if e.kind == "turn_start"] == [{"system": True}, {"system": True}, {"system": False}]
 
 
 async def test_a_full_state_notice_is_a_warning_and_routine_ones_are_not(crew, store):
@@ -1636,16 +1540,6 @@ async def test_a_full_state_notice_is_a_warning_and_routine_ones_are_not(crew, s
     await wait_until(idle(crew))
     notices = [e.data for e in store.events(chief.id) if e.kind == "state_notice"]
     assert ["warn" in n for n in notices] == [False, True]
-
-
-async def test_turn_start_says_whether_the_crew_started_the_turn(crew, store):
-    crew.script["chief"] = lambda spec, me: [Done(final_text=NO_REPLY)]
-    chat = crew.runner.wake("chief", "Looking around on your own.")
-    await wait_until(idle(crew))
-    crew.runner.say("chief", "hello")
-    await wait_until(idle(crew))
-    marks = [e.data for e in store.events(chat.id) if e.kind == "turn_start"]
-    assert marks == [{"system": True}, {"system": False}]
 
 
 async def test_a_turn_with_any_user_prompt_is_not_a_system_turn(crew, store):

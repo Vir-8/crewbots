@@ -4,8 +4,7 @@ its own folders only."""
 import os
 
 import pytest
-from fakes import ScriptedCrew, bot, wait_until
-from test_bot_api import ADMIN, as_bot, crew_app, start  # noqa: F401
+from fakes import ScriptedCrew, as_bot, bot, start, wait_until
 
 from crewbots import paths
 from crewbots.backends import Access
@@ -105,7 +104,7 @@ async def test_in_a_group_chat_shared_files_are_posted_there(crew, store, tmp_pa
     assert f"in the group chat ({room['id']})" in said
 
 
-def test_codex_bots_share_through_the_bot_api(crew_app, tmp_path):  # noqa: F811
+def test_codex_bots_share_through_the_bot_api(crew_app, tmp_path):
     client, backend, store = crew_app
     (tmp_path / "chart.svg").write_text("<svg xmlns='http://www.w3.org/2000/svg'/>")
     task_id, token = start(client, backend, "engineer")

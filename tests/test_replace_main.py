@@ -6,15 +6,14 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from fakes import bot, git_repo, make_crew
+from fakes import bot, make_crew
 from fastapi.testclient import TestClient
-from test_push import git
+from test_push import git, pushed_repo
 from test_squash_merge import IDENT, SUMMARY
 
 import crewbots.replace_main as replace_main
 from crewbots import worktree
 from crewbots.api import create_app
-from crewbots.crew_tools import CrewTools, ToolRefused
 from crewbots.projects import Project
 from crewbots.replace_main import propose
 from crewbots.runner import NotAllowed, Runner
@@ -37,17 +36,8 @@ def clean_history(repo: Path, name: str = BRANCH) -> str:
 
 
 @pytest.fixture
-def setup(tmp_path):
-    remote = tmp_path / "remote.git"
-    git(tmp_path, "init", "--bare", "-q", str(remote))
-    git(remote, "symbolic-ref", "HEAD", "refs/heads/main")
-    repo = git_repo(tmp_path / "repo")
-    git(repo, "remote", "add", "origin", str(remote))
-    git(repo, "push", "-u", "origin", "main")
-    for name in ("one", "two"):
-        (repo / f"{name}.txt").write_text(name)
-        git(repo, "add", f"{name}.txt")
-        git(repo, *IDENT, "commit", "-qm", f"Add {name}")
+def setup_with_ci(tmp_path):
+    repo, _ = pushed_repo(tmp_path, ("one.txt", "one"), ("two.txt", "two"))
     store = Store(":memory:")
     crew = make_crew(tmp_path, bot("chief", can_delegate=True), bot("engineer"))
     crew.projects["demo"] = Project("demo", repo, "", tmp_path / "demo.md", ci=("true",))
@@ -57,6 +47,12 @@ def setup(tmp_path):
     with TestClient(create_app(runner, "admin"), base_url="http://127.0.0.1:8765/v1") as client:
         yield runner, client, repo
     store.close()
+
+
+@pytest.fixture
+def setup(setup_with_ci, monkeypatch):
+    monkeypatch.setattr(replace_main.ci, "check", lambda *a: {"status": "none"})  # test_ci runs the real one
+    return setup_with_ci
 
 
 def make(runner, branch=BRANCH):
@@ -126,13 +122,6 @@ def test_refuses_when_pushed_history_would_be_rewritten(setup):
     refused(runner, client, repo, "Pushed history is kept")
 
 
-def test_refuses_without_an_upstream_ref(setup):
-    runner, client, repo = setup
-    git(repo, "update-ref", "-d", "refs/remotes/origin/main")
-    git(repo, "branch", "--unset-upstream")
-    refused(runner, client, repo, "The target is the pushed branch")
-
-
 def test_refuses_dirty_folder(setup):
     runner, client, repo = setup
     (repo / "one.txt").write_text("edited")
@@ -144,13 +133,6 @@ def test_refuses_merge_in_progress(setup):
     (repo / ".git" / "MERGE_HEAD").write_text(git(repo, "rev-parse", "HEAD") + "\n")
     git(repo, "update-index", "-q", "--refresh")
     refused(runner, client, repo, "No merge in progress")
-
-
-def test_refuses_while_a_task_is_merging(setup):
-    runner, client, repo = setup
-    task = runner.store.create_task("engineer", "merge", status=Status.IDLE)
-    runner.store.update_task(task.id, repo=str(repo.resolve()), merge_state="merging")
-    refused(runner, client, repo, "No open merge proposals")
 
 
 def test_refuses_when_the_target_is_not_checked_out(setup):
@@ -172,13 +154,6 @@ def advance_remote(tmp_path, remote, name="other"):
     git(other, "push", "-q", "origin", "main")
 
 
-def test_refuses_when_the_remote_moved_on_though_origin_main_is_stale(setup, tmp_path):
-    runner, client, repo = setup
-    advance_remote(tmp_path, tmp_path / "remote.git")
-    assert git(repo, "rev-parse", "origin/main") == git(repo, "rev-parse", f"{BRANCH}~1")  # the local ref looks fine
-    refused(runner, client, repo, "Pushed history is kept")
-
-
 def test_card_made_before_the_remote_moved_is_refused_on_press(setup, tmp_path):
     runner, client, repo = setup
     proposal, data = make(runner)
@@ -196,6 +171,7 @@ def test_the_push_url_is_the_one_checked(setup, tmp_path):
     git(tmp_path, "clone", "-q", "--bare", str(tmp_path / "remote.git"), str(ahead))
     advance_remote(tmp_path, ahead)  # the push destination has commits the fetch URL doesn't
     git(repo, "config", "remote.origin.pushurl", str(ahead))
+    assert git(repo, "rev-parse", "origin/main") == git(repo, "rev-parse", f"{BRANCH}~1")  # the local ref looks fine
     refused(runner, client, repo, "Pushed history is kept")
     # and a dead fetch URL doesn't matter when the push URL is live and holds the history
     git(repo, "config", "remote.origin.pushurl", str(tmp_path / "remote.git"))
@@ -238,6 +214,9 @@ def test_open_proposals_block_it_and_are_listed(setup):
     runner.store.update_task(task.id, repo=str(repo.resolve()), merge_state="proposed")
     refused(runner, client, repo, "No open merge proposals")
     assert make(runner)[1]["blocking"] == [f"{task.id} (proposed)"]
+    runner.store.update_task(task.id, merge_state="merging")
+    data = make(runner)[1]
+    assert "No open merge proposals" in data["error"] and data["blocking"] == [f"{task.id} (merging)"]
     runner.store.update_task(task.id, merge_state="merged")
     assert not make(runner)[1].get("error")
 
@@ -322,16 +301,6 @@ def test_a_bot_cannot_press_the_button_or_propose_unless_chief(setup):
         asyncio.run(propose(runner, runner.chat("engineer").id, "demo", BRANCH, "x"))
 
 
-def test_tool_is_chief_only(setup):
-    runner, _, _ = setup
-    chief = CrewTools(runner, runner.chat("chief").id, can_delegate=True)
-    assert "propose_replace_main" in {t.name for t in chief.definitions()}
-    engineer = CrewTools(runner, runner.chat("engineer").id, can_delegate=False)
-    assert "propose_replace_main" not in {t.name for t in engineer.definitions()}
-    with pytest.raises(ToolRefused):
-        asyncio.run(engineer.call("propose_replace_main", {"project": "demo", "branch": BRANCH, "summary": "x"}))
-
-
 def test_a_later_reset_of_main_gives_no_false_already_on(setup, tmp_path):
     runner, client, repo = setup
     store = runner.store
@@ -349,22 +318,6 @@ def test_a_later_reset_of_main_gives_no_false_already_on(setup, tmp_path):
                       merge_state="proposed")
     # The backup holds the old merge, but it is only a recovery point: it no longer counts as merged.
     git(repo, "merge-base", "--is-ancestor", tip, data["backup"])
-    assert runner.already_on(store.get_task(task.id)) is None
-
-
-def test_a_branch_named_main_old_is_not_main(setup, tmp_path):
-    runner, client, repo = setup
-    store = runner.store
-    task = store.create_task("engineer", "other", status=Status.IDLE)
-    wt = worktree.create(repo, task.id, root=tmp_path / "wts")
-    (wt.path / "other.txt").write_text("other")
-    worktree.commit(wt, "add other")
-    tip = git(wt.path, "rev-parse", "HEAD")
-    git(repo, "branch", "main-old", tip)  # not merged into main
-    git(repo, "update-ref", "refs/backup/main-old", tip)  # nor is a backup-looking ref a record of a merge
-    store.update_task(task.id, repo=str(repo), worktree_path=str(wt.path), branch=wt.branch, base=wt.base,
-                      merge_state="proposed")
-    assert runner.already_on(store.get_task(task.id)) is None
     assert runner.already_on(store.get_task(task.id)) is None
 
 

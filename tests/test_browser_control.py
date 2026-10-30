@@ -4,7 +4,7 @@ import asyncio
 
 import httpx
 import pytest
-from fakes import bot, make_crew
+from fakes import bot, make_crew, wait_until
 from test_browser import browser as browser_fixture
 
 from crewbots.api import create_app
@@ -112,20 +112,24 @@ async def test_release_fences_queued_input_and_survives_caller_cancellation(brow
     assert any(c["method"] == "Input.dispatchKeyEvent" and c["params"]["type"] == "keyUp" for c in fake.calls)
 
 
-async def test_mouse_button_released_on_expiry_and_idle_closes_control(browser, tmp_path, monkeypatch):
-    monkeypatch.setattr("crewbots.browser_control.LEASE_S", 0.02)
+async def test_expiry_releases_held_input_and_bot_can_resume(browser, tmp_path, monkeypatch):
+    monkeypatch.setattr("crewbots.browser_control.LEASE_S", 1)
     service, fake, generation = await opened(browser, tmp_path)
     grant = await service.take_control("a", generation, policy)
+    await service.control_input("a", *args(grant), KEY)
     await service.control_input("a", *args(grant), {"type": "mousePressed", "x": 12, "y": 20, "button": "left"})
-    await asyncio.sleep(0.08)
+    monkeypatch.setattr("crewbots.browser_control.LEASE_S", 0.02)
+    await service.renew_control("a", *args(grant))
+    await wait_until(lambda: service.sessions["a"].lease is None)
+    assert any(c["method"] == "Input.dispatchKeyEvent" and c["params"]["type"] == "keyUp" for c in fake.calls)
     assert [c["params"]["type"] for c in fake.calls if c["method"] == "Input.dispatchMouseEvent"] == [
         "mousePressed", "mouseReleased"]
+    assert "Inspect it again" in (await service.action("a", tmp_path, False, "console", {}))[0]["text"]
     service.idle_s = 0.02
     monkeypatch.setattr("crewbots.browser_control.LEASE_S", 1)
     grant = await service.take_control("a", generation, policy)
     await service.control_input("a", *args(grant), {"type": "text", "text": "x"})
-    await asyncio.sleep(0.08)
-    assert "a" not in service.sessions
+    await wait_until(lambda: "a" not in service.sessions)
 
 
 async def test_renew_and_expiry_do_not_wait_for_another_tasks_stalled_action(browser, tmp_path, monkeypatch):
@@ -297,17 +301,6 @@ async def test_control_failure_stops_last_browser_session(browser, tmp_path, fai
         while service.cdp is not None:
             await asyncio.sleep(0.01)
     assert not service.sessions
-
-
-async def test_expiry_releases_keys_and_bot_can_resume(browser, tmp_path, monkeypatch):
-    monkeypatch.setattr("crewbots.browser_control.LEASE_S", 0.02)
-    service, fake, generation = await opened(browser, tmp_path)
-    grant = await service.take_control("a", generation, policy)
-    await service.control_input("a", *args(grant), KEY)
-    await asyncio.sleep(0.08)
-    assert service.sessions["a"].lease is None
-    assert any(c["method"] == "Input.dispatchKeyEvent" and c["params"]["type"] == "keyUp" for c in fake.calls)
-    assert "Inspect it again" in (await service.action("a", tmp_path, False, "console", {}))[0]["text"]
 
 
 async def test_takeover_waits_for_bot_action(browser, tmp_path):

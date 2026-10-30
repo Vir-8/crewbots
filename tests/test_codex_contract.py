@@ -6,6 +6,7 @@ is skipped where Codex isn't installed, as in CI."""
 
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -110,6 +111,24 @@ def sandboxed() -> bool:
     return subprocess.run(["sandbox-exec", "-p", "(version 1)(allow default)", "true"], capture_output=True).returncode != 0
 
 
+def in_sandbox(overrides: list[str], work: Path, steps: dict[str, str], env=None) -> dict[str, tuple[int, str]]:
+    """Runs the steps in one Codex sandbox, which holds every process under it, and gives each step's exit status and
+    output."""
+    script = "".join(f'out=$({{ {command}; }} 2>/dev/null); echo "{name} $? $out"\n' for name, command in steps.items())
+    ran = subprocess.run(["codex", "sandbox", *overrides, "--", "sh", "-c", script], cwd=work, capture_output=True,
+                         text=True, timeout=60, env=env)
+    results = {}
+    for line in ran.stdout.splitlines():
+        name, status, out = line.split(" ", 2)
+        results[name] = int(status), out
+    assert set(results) == set(steps), ran.stderr
+    return results
+
+
+def q(path: str | Path) -> str:
+    return shlex.quote(str(path))
+
+
 @pytest.mark.skipif(sys.platform != "darwin" or sandboxed(), reason="Codex's macOS sandbox, which can't start in one")
 def test_a_reading_bot_writes_in_its_own_temp_folder_and_nowhere_else(tmp_path, monkeypatch):
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
@@ -119,13 +138,15 @@ def test_a_reading_bot_writes_in_its_own_temp_folder_and_nowhere_else(tmp_path, 
     temp.mkdir()
     overrides = sandbox_overrides(RunSpec(prompt="", cwd=work, access=Access.READ_ONLY), temp)
 
-    def run(*command: str | Path) -> subprocess.CompletedProcess:
-        return subprocess.run(["codex", "sandbox", *overrides, "--", *map(str, command)], cwd=work, capture_output=True,
-                              text=True, timeout=60, env={**os.environ, **temp_env(temp)})
+    ran = in_sandbox(overrides, work, {
+        "mktemp": "mktemp -d",  # a backup of saves, or a screenshot to share, goes here
+        "heredoc": "/bin/zsh -c " + q("cat <<EOF\nwritten\nEOF"),
+        "touch": f"touch {q(work / 'made')}",
+    }, env={**os.environ, **temp_env(temp)})
 
-    assert run("sh", "-c", "mktemp -d").returncode == 0  # a backup of saves, or a screenshot to share, goes here
-    assert run("/bin/zsh", "-c", "cat <<EOF\nwritten\nEOF").stdout == "written\n"
-    assert run("touch", work / "made").returncode != 0 and not (work / "made").exists()
+    assert ran["mktemp"][0] == 0
+    assert ran["heredoc"] == (0, "written")
+    assert ran["touch"][0] != 0 and not (work / "made").exists()
 
 
 @pytest.mark.skipif(sys.platform != "darwin" or sandboxed(), reason="Codex's macOS sandbox, which can't start in one")
@@ -137,19 +158,25 @@ def test_the_sandbox_profile_keeps_commands_out_of_the_private_paths(tmp_path, m
     token.write_text('{"token": "x"}')
     rules.write_text("Rules.")
     work = tmp_path / "work"
-    work.mkdir()
+    (work / ".agents" / "skills").mkdir(parents=True)
     overrides = sandbox_overrides(RunSpec(prompt="", cwd=work, access=Access.WORKSPACE_WRITE), tmp_path / "temp")
 
-    def run(*command: str | Path) -> subprocess.CompletedProcess:
-        return subprocess.run(["codex", "sandbox", *overrides, "--", *map(str, command)], cwd=work, capture_output=True,
-                              text=True, timeout=60)
+    ran = in_sandbox(overrides, work, {
+        "rules": f"cat {q(rules)}",
+        "token": f"cat {q(token)}",
+        "work": f"touch {q(work / 'made')}",
+        "verify": "mkdir .agents/verify && echo map > .agents/verify/README.md",
+        "skills": f"touch {q(work / '.agents' / 'skills' / 'planted.md')}",  # the rest of .agents/ stays shut
+        "home": f"touch {q(Path(paths.home()) / 'outside')}",
+        "caches": f"touch {q(paths.caches() / 'uv' / 'downloaded')}",  # what uv and npm download, kept
+        "crew": f"touch {q(paths.crew() / 'made')}",
+    })
 
-    assert run("cat", rules).stdout == "Rules."
-    assert run("cat", token).returncode != 0
-    assert run("touch", work / "made").returncode == 0 and (work / "made").exists()
-    (work / ".agents" / "skills").mkdir(parents=True)
-    assert run("sh", "-c", "mkdir .agents/verify && echo map > .agents/verify/README.md").returncode == 0
-    assert run("touch", work / ".agents" / "skills" / "planted.md").returncode != 0  # the rest of .agents/ stays shut
-    assert run("touch", Path(paths.home()) / "outside").returncode != 0
-    assert run("touch", paths.caches() / "uv" / "downloaded").returncode == 0  # what uv and npm download, kept
-    assert run("touch", paths.crew() / "made").returncode != 0
+    assert ran["rules"] == (0, "Rules.")
+    assert ran["token"][0] != 0
+    assert ran["work"][0] == 0 and (work / "made").exists()
+    assert ran["verify"][0] == 0
+    assert ran["skills"][0] != 0
+    assert ran["home"][0] != 0
+    assert ran["caches"][0] == 0
+    assert ran["crew"][0] != 0

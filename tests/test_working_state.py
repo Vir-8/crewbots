@@ -1,4 +1,3 @@
-import time
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -7,10 +6,9 @@ from crewbots.memory import MemoryError
 from crewbots.working_state import LIMIT, edit, read
 
 
-def test_concurrent_edits_and_entry_operations(tmp_path):
+def test_entries_are_added_replaced_and_removed(tmp_path):
     path = tmp_path / "state.md"
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        ids = list(pool.map(lambda text: edit(path, "User's rules", "add", text)[0], ["first", "second"]))
+    ids = [edit(path, "User's rules", "add", text)[0] for text in ("first", "second")]
     assert "first" in read(path) and "second" in read(path)
     edit(path, "User's rules", "replace", "changed", ids[0])
     edit(path, "User's rules", "remove", entry_id=ids[1])
@@ -99,7 +97,6 @@ def test_needs_me_is_capped_and_done_removes_entry(tmp_path):
 
 def test_clearing_room_mentions_preserves_other_entries(tmp_path, monkeypatch):
     monkeypatch.setenv("TZ", "UTC")
-    time.tzset()
     from crewbots.working_state import room_mentions
 
     path = tmp_path / "state.md"
@@ -168,19 +165,6 @@ def test_contended_lock_times_out_and_can_be_retried(tmp_path):
     assert "Retry me" in read(path)
 
 
-def test_automatic_decision_budget_reclaims_space_for_user_rule(tmp_path):
-    from crewbots.working_state import AUTO_CHARS
-
-    path = tmp_path / "state.md"
-    for i in range(12):
-        edit(path, "Decisions", "add", f"question-{i:02d}: " + "q" * 145, automatic=True)
-    edit(path, "User's rules", "add", "r" * 90)
-    state = read(path)
-    decisions = state.split("## Decisions", 1)[1].split("## Commitments", 1)[0].strip()
-    assert len(decisions) <= AUTO_CHARS and "question-11" in decisions and "question-00" not in decisions
-    assert "r" * 90 in state
-
-
 def test_replacing_automatic_decision_makes_it_owned(tmp_path):
     path = tmp_path / "state.md"
     automatic_id, _ = edit(path, "Decisions", "add", "original", automatic=True)
@@ -194,6 +178,8 @@ def test_replacing_automatic_decision_makes_it_owned(tmp_path):
 
 
 def test_automatic_decisions_prune_by_timestamp_not_text_order(tmp_path, monkeypatch):
+    from crewbots.working_state import AUTO_CHARS
+
     path = tmp_path / "state.md"
     timestamps = iter([300, 100, 200])
     monkeypatch.setattr("crewbots.working_state.time.time_ns", lambda: next(timestamps))
@@ -201,7 +187,8 @@ def test_automatic_decisions_prune_by_timestamp_not_text_order(tmp_path, monkeyp
     edit(path, "Decisions", "add", "zulu " + "x" * 480, automatic=True)
     edit(path, "Decisions", "add", "middle " + "x" * 480, automatic=True)
     state = read(path)
-    assert "alpha" in state and "middle" in state and "zulu" not in state
+    decisions = state.split("## Decisions", 1)[1].split("## Commitments", 1)[0].strip()
+    assert len(decisions) <= AUTO_CHARS and "alpha" in decisions and "middle" in decisions and "zulu" not in state
 
 
 def test_stale_temporary_files_are_removed_under_the_lock(tmp_path):

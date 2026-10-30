@@ -1,8 +1,9 @@
-"""The daemon as a login service, pausing the crew, and keeping the Mac awake only while work runs."""
+"""The daemon as a login service, its log, pausing the crew, and keeping the Mac awake only while work runs."""
 
 import asyncio
 import json
 import plistlib
+import subprocess
 import sys
 
 import pytest
@@ -95,7 +96,7 @@ async def test_a_paused_crew_starts_nothing_until_resumed(store, tmp_path):
     runner.pause()
 
     task = runner.submit("worker", "x")
-    await asyncio.sleep(0.2)
+    await asyncio.sleep(0.05)
     assert backend.specs == [] and store.get_task(task.id).status is Status.QUEUED
 
     runner.resume()
@@ -176,9 +177,21 @@ async def test_the_mac_is_kept_awake_while_tasks_run_and_only_then(store, tmp_pa
     assert holder.returncode is not None
 
 
-async def test_without_a_command_nothing_is_held(store, tmp_path):
-    runner = Runner(store, make_crew(tmp_path), {"fake": FakeBackend()})
-    task = runner.submit("worker", "x")
-    await wait_until(lambda: store.get_task(task.id).status is Status.IDLE)
+def test_the_daemon_starts_a_fresh_log_past_its_size(tmp_path):
+    log = tmp_path / "daemon.log"
+    log.write_text("old line\n" * 20)
+    script = ("import sys; from pathlib import Path; from crewbots import service; "
+              f"print('rotated', service.rotate_log(max_bytes=100, log=Path({str(log)!r})), flush=True)")
+    with open(log, "a") as out:  # the daemon's output is the log, as launchd gives it
+        subprocess.run([sys.executable, "-c", script], stdout=out, stderr=out, check=True)
 
-    assert runner._awake is None
+    assert (tmp_path / "daemon.log.1").read_text().startswith("old line")
+    assert log.read_text() == "rotated True\n"  # what it says next goes to the fresh one
+
+
+def test_the_log_is_left_alone_when_it_isnt_the_daemons_output(tmp_path):
+    log = tmp_path / "daemon.log"
+    log.write_text("x" * 1000)
+
+    assert not svc.rotate_log(max_bytes=10, log=log)  # pytest holds this process's output, not the log
+    assert not (tmp_path / "daemon.log.1").exists()

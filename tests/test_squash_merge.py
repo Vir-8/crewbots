@@ -41,6 +41,7 @@ def test_merge_makes_one_commit_with_the_summary(work):
     runner, store, repo, task, wt = work
     base = wt.base
     merged = runner.merge(task.id, force=True)
+    assert merged.merge_state == "merged"
     assert git(repo, "rev-list", "--count", f"{base}..HEAD") == "1"
     assert git(repo, "rev-list", "--parents", "-1", "HEAD").split() == [merged.merged_commit, base]
     assert git(repo, "log", "-1", "--format=%B") == SUMMARY + "\n\nMerged-without-review: yes"
@@ -56,13 +57,31 @@ def test_conflict_changes_nothing(work):
     git(repo, "add", "one.txt")
     git(repo, *IDENT, "commit", "-qm", "user edit")
     head = git(repo, "rev-parse", "HEAD")
-    with pytest.raises(MergeError, match="nothing was changed"):
+    with pytest.raises(MergeError, match=r"(?s)nothing was changed.*CONFLICT.*one\.txt"):
         runner.merge(task.id, force=True)
     assert git(repo, "rev-parse", "HEAD") == head
     assert git(repo, "status", "--porcelain") == ""
     assert (repo / "one.txt").read_text() == "the user's"
     assert not (repo / ".git" / "SQUASH_MSG").exists()
     assert store.get_task(task.id).merge_state == "proposed"
+    assert store.get_task(task.id).worktree_path  # still there to fix and retry
+
+
+@pytest.mark.parametrize("action", ["withdraw", "merge"])
+def test_cleanup_failure_does_not_break_action(work, monkeypatch, caplog, action):
+    runner, store, repo, task, wt = work
+    original = worktree._git
+
+    def fail_remove(cwd, *args, **kwargs):
+        if args[:2] == ("worktree", "remove"):
+            raise worktree.GitError("simulated remove failure")
+        return original(cwd, *args, **kwargs)
+
+    monkeypatch.setattr(worktree, "_git", fail_remove)
+    result = runner.merge(task.id, force=True) if action == "merge" else runner.withdraw_merge(task.id, "withdrawn")
+    assert result.merge_state == ("merged" if action == "merge" else None)
+    assert wt.path.is_dir() and (wt.path / "loose.txt").read_text() == "uncommitted"
+    assert "simulated remove failure" in caplog.text
 
 
 def squash_merged(runner, store, repo, task, wt):
@@ -84,14 +103,15 @@ def test_squash_merged_task_is_removed_by_sweep_and_drop(work):
     assert not wt.path.exists() and wt.branch not in git(repo, "branch")
 
 
-def test_sweep_keeps_a_squash_merged_branch_with_later_commits(work):
+def test_a_squash_merged_branch_with_later_commits_is_kept(work):
     runner, store, repo, task, wt = work
     squash_merged(runner, store, repo, task, wt)
     (wt.path / "later.txt").write_text("later")
     worktree.commit(wt, "later")
+    assert runner.sweep_worktrees(dry_run=True)["would_remove"][0]["reason"] == (
+        "merged, 1 later commit(s) kept on the branch")
     assert runner.drop_worktree(task.id)["status"] == "kept"  # not within what was merged
     assert wt.path.exists()
-    assert runner.sweep_worktrees()["removed"][0]["branch_status"] == "kept"
     assert git(repo, "show", f"{wt.branch}:later.txt") == "later"
 
 
@@ -102,15 +122,6 @@ def test_follow_up_restores_a_squash_merged_task(work):
     runner._restore_worktree(merged)
     assert git(wt.path, "rev-parse", "HEAD") == merged.merged_tip
     assert runner.changes(task.id) == worktree._git(repo, "diff", wt.base, merged.merged_tip, strip=False)
-
-
-def test_already_on_reports_a_squash_merge(work):
-    runner, store, repo, task, wt = work
-    worktree.commit(wt, "last")
-    worktree.merge(wt, "Squashed elsewhere", tip=git(wt.path, "rev-parse", "HEAD"))
-    assert runner.already_on(store.get_task(task.id)) == "main"
-    with pytest.raises(MergeError, match="already on main"):
-        runner.merge(task.id, force=True)
 
 
 def test_message_is_subject_blank_line_body():
@@ -168,26 +179,3 @@ def test_records_of_old_merge_commits_still_find_their_tip(work):
     assert runner._merged_tip(store.get_task(task.id)) == tip
     assert runner.drop_worktree(task.id)["branch_status"] == "deleted"  # ancestry of the merge commit, as before
 
-
-def test_forced_merge_has_the_trailer_and_approved_does_not(work):
-    runner, store, repo, task, wt = work
-    runner.merge(task.id, force=True)  # nothing approved this work
-    assert git(repo, "log", "-1", "--format=%B") == SUMMARY + "\n\nMerged-without-review: yes"
-
-
-def test_approved_merge_has_no_trailer(work, monkeypatch):
-    from types import SimpleNamespace
-    runner, store, repo, task, wt = work
-    monkeypatch.setattr(runner, "review_state", lambda _: SimpleNamespace(approved=True, round=1, rounds=[1],
-                                                                          version=1, latest=[]))
-    runner.merge(task.id)
-    assert git(repo, "log", "-1", "--format=%B") == SUMMARY
-
-
-def test_sweep_preview_shows_commits_after_the_merge(work):
-    runner, store, repo, task, wt = work
-    squash_merged(runner, store, repo, task, wt)
-    (wt.path / "later.txt").write_text("later")
-    worktree.commit(wt, "later")
-    assert runner.sweep_worktrees(dry_run=True)["would_remove"][0]["reason"] == (
-        "merged, 1 later commit(s) kept on the branch")

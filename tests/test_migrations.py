@@ -113,6 +113,20 @@ def test_previous_version_gains_merged_tip_without_changing_tasks(tmp_path):
     migrated.close()
 
 
+def test_an_older_crews_room_called_crew_becomes_its_own(tmp_path):
+    path = tmp_path / "crew.db"
+    store = Store(path)
+    crew_room = store.create_room("Crew", "chief", ["chief"])
+    store.create_room("Crew", "chief", ["chief"])  # a later one with the same name stays an ordinary group chat
+    store.db.execute("update rooms set crew = 0")
+    store.db.execute("pragma user_version = 2")  # from before rooms were marked
+    store.close()
+
+    again = Store(path)
+    assert [r["id"] for r in again.rooms() if r["crew"]] == [crew_room["id"]]
+    again.close()
+
+
 def test_a_database_from_before_numbering_but_up_to_date_is_left_as_it_was(tmp_path):
     path = tmp_path / "crewbots.db"
     store = Store(path)

@@ -1,16 +1,13 @@
 import json
 
 import pytest
-from fakes import FakeBackend, bot, git_repo, make_crew
-from test_bot_api import as_bot, start
+from fakes import FakeBackend, as_bot, bot, git_repo, make_crew, start
 from test_worktree_cleanup import setup_task
 
 from crewbots import worktree
-from crewbots.crew_tools import CrewTools, ToolRefused
+from crewbots.crew_tools import CrewTools
 from crewbots.runner import Runner
 from crewbots.store import Status, Store
-
-pytest_plugins = ["test_bot_api"]
 
 
 @pytest.fixture
@@ -19,14 +16,6 @@ def setup(tmp_path):
     runner = Runner(store, make_crew(tmp_path, bot("chief", can_delegate=True), bot("worker")), {"fake": FakeBackend()})
     yield runner, store, tmp_path
     store.close()
-
-
-async def test_non_coordinator_gets_no_tool_and_is_refused(setup):
-    runner, store, _ = setup
-    worker = CrewTools(runner, store.create_task("worker", "x").id, can_delegate=False)
-    assert "sweep_worktrees" not in {t.name for t in worker.definitions()}
-    with pytest.raises(ToolRefused):
-        await worker.call("sweep_worktrees", {})
 
 
 def test_bot_route_refuses_a_non_coordinator(crew_app):

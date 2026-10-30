@@ -26,6 +26,7 @@ from crewbots.browser_pipe import Pipe
 
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 OWNER_FILE = "crewbots-owner.json"
+REAP_TIMEOUT_S = 1.0
 log = logging.getLogger(__name__)
 
 
@@ -141,7 +142,7 @@ async def launch(argv: list[str], log_file, profile: Path | None = None):
             try:
                 with contextlib.suppress(ProcessLookupError):
                     process.kill()
-                async with asyncio.timeout(1):
+                async with asyncio.timeout(REAP_TIMEOUT_S):
                     await process.wait()
             except (OSError, TimeoutError) as failure:
                 raise LaunchStillRunning(f"Could not stop browser launcher PID {process.pid}: {failure}") from error

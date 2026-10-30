@@ -16,8 +16,13 @@ os.environ.pop("CODEX_HOME", None)
 sys.path.insert(0, str(Path(__file__).parent))  # so tests can import helpers
 
 import pytest  # noqa: E402
+from fakes import ADMIN, PORT, HeldBackend, bot, make_crew  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
 
+from crewbots.api import create_app  # noqa: E402
+from crewbots.runner import Runner  # noqa: E402
 from crewbots.runner import core as runner_core  # noqa: E402
+from crewbots.store import Store  # noqa: E402
 
 GIT_IDENTITY = "[user]\n\tname = crewbots tests\n\temail = tests@crewbots.invalid\n"
 
@@ -39,6 +44,19 @@ def own_home(tmp_path, monkeypatch):
 def quick_retries(monkeypatch):
     """A turn that failed for a passing reason is tried again at once in tests, not after minutes."""
     monkeypatch.setattr(runner_core, "RETRY_WAITS_S", (0.0, 0.0, 0.0))
+
+
+@pytest.fixture
+def crew_app(tmp_path):
+    """The daemon's API over a chief and an engineer whose runs stay open: (client, backend, store)."""
+    store = Store(tmp_path / "crew.db")
+    backend = HeldBackend()
+    crew = make_crew(tmp_path, bot("chief", can_delegate=True), bot("engineer"))
+    runner = Runner(store, crew, {"fake": backend}, api_url=f"http://127.0.0.1:{PORT}/v1")
+    with TestClient(create_app(runner, ADMIN, PORT), base_url=f"http://127.0.0.1:{PORT}/v1") as client:
+        yield client, backend, store
+        backend.release.set()
+    store.close()
 
 
 # The guard: nothing in the real ~/.crewbots or ~/.claude may change while the tests run. The crew's daemon may be

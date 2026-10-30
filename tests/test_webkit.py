@@ -9,7 +9,7 @@ from fakes import FakeBackend, bot, make_crew
 
 from crewbots import webkit
 from crewbots.api import create_app
-from crewbots.crew_tools import CrewTools, ToolRefused, tools_for
+from crewbots.crew_tools import CrewTools, ToolRefused
 from crewbots.mcp_server import build_server
 from crewbots.runner import Runner
 from crewbots.store import Store
@@ -40,11 +40,10 @@ async def test_only_local_pages_are_opened(service, tmp_path, url):
     assert not (tmp_path / "ran").exists()
 
 
-@pytest.mark.parametrize("url", ["http://127.0.0.1:5173/", "http://localhost:5173/chat?x=1", "https://LOCALHOST/"])
-async def test_localhost_and_127_0_0_1_are(service, url):
+async def test_an_upper_case_https_localhost_is_local(service):
     fake_helper(service, TITLE)
 
-    assert await service.check(url) == "crewbots"
+    assert await service.check("https://LOCALHOST/") == "crewbots"
 
 
 @pytest.mark.parametrize("options", [{"wait": 11}, {"wait": -1}, {"wait": True}, {"width": 100}, {"height": "860"},
@@ -92,12 +91,14 @@ async def test_one_check_runs_at_a_time(service, tmp_path):
 
 
 async def test_a_check_that_runs_too_long_is_stopped(service, tmp_path, monkeypatch):
-    monkeypatch.setattr(webkit, "TIMEOUT_S", 2)  # room for macOS to look over a new executable before its first run
     monkeypatch.setattr(webkit, "GRACE_S", 0)
     monkeypatch.setenv("FAKE_PID", str(tmp_path / "pid"))
-    fake_helper(service, '#!/bin/sh\necho $$ > "$FAKE_PID"\nexec sleep 30\n')
+    fake_helper(service, '#!/bin/sh\necho $$ > "$FAKE_PID"\nif [ -n "$FAKE_HANG" ]; then exec sleep 30; fi\n')
+    await service.check("http://127.0.0.1:5173/", wait=0)  # macOS looks over a new executable on its first run
+    monkeypatch.setattr(webkit, "TIMEOUT_S", 0.5)
+    monkeypatch.setenv("FAKE_HANG", "1")
 
-    with pytest.raises(WebKitError, match="didn't finish in 2 seconds"):
+    with pytest.raises(WebKitError, match="didn't finish in 0.5 seconds"):
         await service.check("http://127.0.0.1:5173/", wait=0)
     with pytest.raises(ProcessLookupError):
         os.kill(int((tmp_path / "pid").read_text()), 0)
@@ -181,6 +182,5 @@ async def test_the_tool_through_crew_tools_the_bot_api_and_mcp(service, tmp_path
     path, body, timeout = sent[0]
     assert path == "/v1/bot/webkit" and body == b'{"url":"http://127.0.0.1:5173/","js":"return 1"}'
     assert timeout["read"] > webkit.BUILD_TIMEOUT_S  # the first check builds the helper, past the client's 60s
-    assert all("webkit_check" in {t.name for t in tools_for(False, kind=kind)} for kind in ("chat", "seat", "thread"))
     await runner.shutdown()
     store.close()

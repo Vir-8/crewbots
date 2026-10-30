@@ -1,11 +1,8 @@
 """`crewbots doctor`: what it finds, on a crew made for the test (the test's own home folder, from conftest)."""
 
-import subprocess
-import sys
-
 import pytest
 
-from crewbots import doctor, paths, service
+from crewbots import doctor, paths
 from crewbots.store import Status, Store
 
 
@@ -88,23 +85,3 @@ def test_worktrees_no_task_needs_are_listed_with_how_to_remove_them(tmp_path, si
     assert f"rm -r {paths.worktrees() / 'app-1' / 't_gone000000'}" in found.hint
     assert f"rmdir {paths.worktrees() / 'empty-2'}" in found.hint
     assert live.id not in found.hint
-
-
-def test_the_daemon_starts_a_fresh_log_past_its_size(tmp_path):
-    log = tmp_path / "daemon.log"
-    log.write_text("old line\n" * 20)
-    script = ("import sys; from pathlib import Path; from crewbots import service; "
-              f"print('rotated', service.rotate_log(max_bytes=100, log=Path({str(log)!r})), flush=True)")
-    with open(log, "a") as out:  # the daemon's output is the log, as launchd gives it
-        subprocess.run([sys.executable, "-c", script], stdout=out, stderr=out, check=True)
-
-    assert (tmp_path / "daemon.log.1").read_text().startswith("old line")
-    assert log.read_text() == "rotated True\n"  # what it says next goes to the fresh one
-
-
-def test_the_log_is_left_alone_when_it_isnt_the_daemons_output(tmp_path):
-    log = tmp_path / "daemon.log"
-    log.write_text("x" * 1000)
-
-    assert not service.rotate_log(max_bytes=10, log=log)  # pytest holds this process's output, not the log
-    assert not (tmp_path / "daemon.log.1").exists()

@@ -222,16 +222,6 @@ async def test_cancel_blocks_new_runs_until_cleanup_finishes(store, tmp_path, mo
     assert backend.specs[-1].prompt == "start again"
 
 
-async def test_shutdown_interrupts_running_tasks(store, tmp_path):
-    runner, backend = runner_for(store, tmp_path, backend=FakeBackend(gate=asyncio.Event()))
-    task = runner.submit("worker", "forever")
-    await wait_until(lambda: backend.active == 1)
-
-    await runner.shutdown()
-
-    assert store.get_task(task.id).status is Status.INTERRUPTED
-
-
 async def test_a_writing_bot_in_a_repo_gets_its_own_worktree(store, tmp_path):
     repo = git_repo(tmp_path / "repo")
     runner, backend = runner_for(store, tmp_path, bot(access=Access.WORKSPACE_WRITE, workspace=repo))

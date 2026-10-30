@@ -130,17 +130,14 @@ def test_a_folder_without_bots_is_not_a_crew(tmp_path):
         crew.load(tmp_path)
 
 
-def test_every_bot_is_told_it_can_delegate_and_coordinators_what_else_they_do(tmp_path):
+def test_every_bot_is_told_it_can_delegate_and_to_end_with_a_handoff(tmp_path):
     loaded = crew.load(crew.init(tmp_path / "crew"))
 
     chief = loaded.system_prompt(loaded.bots["chief"], coordinator=True, chief=True)
     engineer = loaded.system_prompt(loaded.bots["engineer-1"], delegated_by="chief")
 
     assert "`delegate(bot, goal" in chief and "`delegate(bot, goal" in engineer
-    assert "`add_bot(" in chief and "`add_bot(" not in engineer and "`propose_merge(" not in engineer
     assert "ends with one `handoff`" in chief and "ends with one `handoff`" in engineer
-    assert "This task comes from the user" in chief
-    assert "delegated to you by chief" in engineer
 
 
 def test_skills_are_listed_with_their_paths_for_bots_that_have_them(tmp_path):

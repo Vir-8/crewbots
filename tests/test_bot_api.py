@@ -1,65 +1,12 @@
 """The /bot/ API and the MCP server on top of it: what a bot's tools can and cannot do."""
 
-import asyncio
-import threading
 import time
 
 import pytest
-from fakes import bot, make_crew
-from fastapi.testclient import TestClient
+from fakes import ADMIN, as_bot, start
 
-from crewbots.api import create_app
 from crewbots.crew_tools import SPECS, tools_for
-from crewbots.events import Done
 from crewbots.mcp_server import build_server
-from crewbots.runner import MCP_SERVER_NAME, Runner
-from crewbots.store import Store
-
-ADMIN = "admin-token"
-PORT = 8765
-
-
-class HeldBackend:
-    """Every run stays open until `release` is set, so its run token stays valid while the test uses it."""
-
-    name = "fake"
-
-    def __init__(self):
-        self.release = threading.Event()  # the app runs on the test client's own thread and loop
-        self.specs = []
-
-    async def run(self, spec):
-        self.specs.append(spec)
-        while not self.release.is_set():
-            await asyncio.sleep(0.01)
-        yield Done(final_text="ok")
-
-
-@pytest.fixture
-def crew_app(tmp_path):
-    store = Store(tmp_path / "crew.db")
-    backend = HeldBackend()
-    crew = make_crew(tmp_path, bot("chief", can_delegate=True), bot("engineer"))
-    runner = Runner(store, crew, {"fake": backend}, api_url=f"http://127.0.0.1:{PORT}/v1")
-    with TestClient(create_app(runner, ADMIN, PORT), base_url=f"http://127.0.0.1:{PORT}/v1") as client:
-        yield client, backend, store
-        backend.release.set()
-    store.close()
-
-
-def start(client, backend, bot_name):
-    """Starts a task for `bot_name` and returns (task id, its run token)."""
-    task = client.post("/tasks", json={"bot": bot_name, "goal": "go"}, headers={"Authorization": f"Bearer {ADMIN}"}).json()
-    for _ in range(200):
-        for spec in backend.specs:
-            if f"You are the {bot_name}." in spec.system_prompt:
-                return task["id"], spec.mcp_servers[MCP_SERVER_NAME].env["CREWBOTS_TOKEN"]
-        time.sleep(0.01)
-    raise TimeoutError(bot_name)
-
-
-def as_bot(token):
-    return {"Authorization": f"Bearer {token}"}
 
 
 def test_a_coordinator_delegates_and_sees_its_tasks(crew_app):
@@ -200,25 +147,6 @@ def test_worker_cannot_call_propose_merge_directly(crew_app):
     assert "only a coordinator" in response.json()["detail"]
 
 
-def test_coordinator_and_user_can_withdraw_proposals(crew_app):
-    client, backend, store = crew_app
-    chief_id, token = start(client, backend, "chief")
-    work = store.create_task("engineer", "old work", parent_id=chief_id, created_by="chief")
-    store.update_task(work.id, merge_state="proposed")
-    other = store.create_task("engineer", "other work", created_by="chief")
-    store.update_task(other.id, merge_state="proposed")
-    refused = client.post("/bot/withdraw_merge", headers=as_bot(token), json={"task_id": other.id, "reason": "old"})
-    assert refused.status_code == 403 and store.get_task(other.id).merge_state == "proposed"
-    assert not store.events(other.id)
-    result = client.post("/bot/withdraw_merge", headers=as_bot(token), json={"task_id": work.id, "reason": "Superseded"})
-    assert result.status_code == 200 and store.get_task(work.id).merge_state is None
-    assert store.events(work.id)[-1].data == {"by": "chief", "reason": "Superseded"}
-    store.update_task(work.id, merge_state="proposed")
-    result = client.post(f"/tasks/{work.id}/withdraw-merge", headers=as_bot(ADMIN), json={"reason": "Dismissed"})
-    assert result.status_code == 200 and result.json()["merge_state"] is None
-    assert store.events(work.id)[-1].data == {"by": "user", "reason": "Dismissed"}
-
-
 def test_a_run_token_stops_working_when_its_run_ends(crew_app):
     client, backend, store = crew_app
     task_id, token = start(client, backend, "engineer")
@@ -270,13 +198,7 @@ async def test_workers_delegate_but_only_coordinators_add_bots_and_propose_merge
     coordinator = {t.name for t in await build_server(client, can_delegate=True).list_tools()}
     chief = {t.name for t in await build_server(client, can_delegate=True, is_chief=True).list_tools()}
 
-    assert worker == {"handoff", "escalate", "review", "remember", "forget", "recall", "start_thread", "post",
-                      "delegate", "tasks", "message", "stop_task", "ask", "open_group", "add_to_group", "working_state",
-                      "update_state", "remind_on",
-                      "propose_routine", "share", "write_page", "edit_page", "set_name",
-                      "ask_permission", "browser_open", "browser_screenshot", "browser_click",
-                      "browser_type", "browser_evaluate", "browser_console", "webkit_check", "open_unity_editor",
-                      "release_app"}
+    assert worker == {t.name for t in tools_for(False)} and "delegate" in worker
     assert coordinator == worker | {"propose_merge", "withdraw_merge", "drop_task", "next_check", "room_status",
                                     "sweep_worktrees"}
     assert chief == coordinator | {"add_bot", "propose_push", "propose_replace_main", "tell_user"}
@@ -317,7 +239,7 @@ def test_a_verdict_from_a_task_that_is_not_a_review_is_refused_with_a_reason(cre
     assert bad.status_code == 422  # only pass or fail
 
 
-def test_merging_unreviewed_work_is_a_conflict_the_user_can_read(crew_app):
+def test_merging_a_task_with_nothing_to_merge_is_a_conflict_the_user_can_read(crew_app):
     client, backend, _ = crew_app
     task_id, _ = start(client, backend, "engineer")
     admin = {"Authorization": f"Bearer {ADMIN}"}

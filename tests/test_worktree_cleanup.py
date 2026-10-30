@@ -67,27 +67,6 @@ def test_nested_untracked_repository_is_left_in_place(tmp_path, staged):
     store.close()
 
 
-def test_failure_is_logged_and_worktree_kept(tmp_path, monkeypatch, caplog):
-    repo = git_repo(tmp_path / "repo")
-    store = Store(tmp_path / "crew.db")
-    runner = ScriptedCrew(store, tmp_path, bot("engineer")).runner
-    task, wt = setup_task(store, repo, tmp_path / "wts")
-    (wt.path / "new.txt").write_text("safe")
-    original = worktree._git
-
-    def fail(cwd, *args, **kwargs):
-        if args[:1] == ("add",):
-            raise worktree.GitError("simulated failure")
-        return original(cwd, *args, **kwargs)
-
-    monkeypatch.setattr(worktree, "_git", fail)
-    result = runner.drop_worktree(task.id)
-    assert result["status"] == "kept" and "simulated failure" in caplog.text
-    assert Path(wt.path, "new.txt").read_text() == "safe"
-    assert original(repo, "rev-parse", wt.branch)
-    store.close()
-
-
 def test_sweep_keeps_merged_branch_with_later_commits(tmp_path):
     repo = git_repo(tmp_path / "repo")
     store = Store(tmp_path / "crew.db")
@@ -100,27 +79,6 @@ def test_sweep_keeps_merged_branch_with_later_commits(tmp_path):
     assert report["removed"][0]["branch_status"] == "kept"
     assert not wt.path.exists()
     assert worktree._git(repo, "show", f"{wt.branch}:later.txt") == "later work"
-    store.close()
-
-
-def test_prune_failure_logs_after_removal_and_keeps_saved_work(tmp_path, monkeypatch, caplog):
-    repo = git_repo(tmp_path / "repo")
-    store = Store(tmp_path / "crew.db")
-    runner = ScriptedCrew(store, tmp_path, bot("engineer")).runner
-    task, wt = setup_task(store, repo, tmp_path / "wts")
-    (wt.path / "new.txt").write_text("safe")
-    original = worktree._git
-
-    def fail(cwd, *args, **kwargs):
-        if args[:2] == ("worktree", "prune"):
-            raise worktree.GitError("prune failed")
-        return original(cwd, *args, **kwargs)
-
-    monkeypatch.setattr(worktree, "_git", fail)
-    assert runner.drop_worktree(task.id)["status"] == "removed"
-    assert not wt.path.exists()
-    assert original(repo, "show", f"{wt.branch}:new.txt") == "safe"
-    assert "prune failed" in caplog.text
     store.close()
 
 
@@ -172,7 +130,7 @@ def test_merged_branch_advancing_before_removal_is_kept(tmp_path, monkeypatch):
     store.close()
 
 
-def test_partial_remove_failure_keeps_saved_branch(tmp_path, monkeypatch):
+def test_partial_remove_failure_keeps_saved_branch(tmp_path, monkeypatch, caplog):
     repo = git_repo(tmp_path / "repo")
     store = Store(tmp_path / "crew.db")
     runner = ScriptedCrew(store, tmp_path, bot("engineer")).runner
@@ -192,6 +150,7 @@ def test_partial_remove_failure_keeps_saved_branch(tmp_path, monkeypatch):
     assert runner.drop_worktree(task.id)["status"] == "kept"
     assert original(repo, "show", f"{wt.branch}:README.md") == "edited"
     assert original(repo, "show", f"{wt.branch}:new.txt") == "new"
+    assert "partial removal" in caplog.text
     store.close()
 
 
@@ -239,40 +198,18 @@ def test_remaining_dirty_state_prevents_forced_removal(tmp_path, monkeypatch):
     store.close()
 
 
-@pytest.mark.parametrize("status", [Status.RUNNING, Status.QUEUED, Status.HELD, Status.NEEDS_INPUT, Status.INTERRUPTED])
-def test_sweep_skips_unfinished_tasks(tmp_path, status):
+def test_sweep_skips_unfinished_tasks(tmp_path):
     repo = git_repo(tmp_path / "repo")
     store = Store(tmp_path / "crew.db")
     runner = ScriptedCrew(store, tmp_path, bot("engineer")).runner
-    task, wt = setup_task(store, repo, tmp_path / "wts", status)
-    (wt.path / "new").write_text("still working")
+    unfinished = [setup_task(store, repo, tmp_path / "wts", status)
+                  for status in (Status.RUNNING, Status.QUEUED, Status.HELD, Status.NEEDS_INPUT, Status.INTERRUPTED)]
+    for _, wt in unfinished:
+        (wt.path / "new").write_text("still working")
     report = runner.sweep_worktrees()
-    assert report["removed"] == [] and report["kept"][0]["task_id"] == task.id
-    assert (wt.path / "new").read_text() == "still working"
-    store.close()
-
-
-def test_failed_remove_keeps_work_and_branch(tmp_path, monkeypatch, caplog):
-    repo = git_repo(tmp_path / "repo")
-    store = Store(tmp_path / "crew.db")
-    runner = ScriptedCrew(store, tmp_path, bot("engineer")).runner
-    task, wt = setup_task(store, repo, tmp_path / "wts")
-    original = worktree._git
-    (wt.path / "README.md").write_text("changed")
-    (wt.path / "new").write_text("untracked")
-
-    def fail(cwd, *args, **kwargs):
-        if args[:2] == ("worktree", "remove"):
-            raise worktree.GitError("remove failed")
-        return original(cwd, *args, **kwargs)
-
-    monkeypatch.setattr(worktree, "_git", fail)
-    assert runner.drop_worktree(task.id)["status"] == "kept"
-    assert wt.path.is_dir()
-    assert (wt.path / "new").read_text() == "untracked"
-    assert original(repo, "show", f"{wt.branch}:new") == "untracked"
-    assert original(repo, "show", f"{wt.branch}:README.md") == "changed"
-    assert "remove failed" in caplog.text
+    assert report["removed"] == []
+    assert sorted(entry["task_id"] for entry in report["kept"]) == sorted(task.id for task, _ in unfinished)
+    assert all((wt.path / "new").read_text() == "still working" for _, wt in unfinished)
     store.close()
 
 
@@ -350,19 +287,6 @@ def squash_setup(tmp_path):
     return repo, store, ScriptedCrew(store, tmp_path, bot("engineer")).runner
 
 
-def test_sweep_removes_a_merged_worktree_on_another_crewbots_branch_and_keeps_the_branch(tmp_path):
-    repo, store, runner = squash_setup(tmp_path)
-    task, wt, name = on_own_branch(store, repo, tmp_path)
-    assert worktree._git(repo, "show", "HEAD:work.txt") == "work"
-    dry = runner.sweep_worktrees(dry_run=True)
-    assert dry["would_remove"][0]["task_id"] == task.id and "already on" in dry["would_remove"][0]["reason"]
-    assert wt.path.is_dir()
-    assert runner.sweep_worktrees()["removed"][0]["task_id"] == task.id
-    assert not wt.path.exists()
-    assert worktree._git(repo, "rev-parse", "--verify", f"refs/heads/{name}")
-    store.close()
-
-
 def test_sweep_keeps_a_worktree_on_another_branch_with_unmerged_changes(tmp_path):
     repo, store, runner = squash_setup(tmp_path)
     task, wt, name = on_own_branch(store, repo, tmp_path)
@@ -388,7 +312,9 @@ def test_sweep_keeps_a_dirty_worktree_on_another_branch(tmp_path):
 def test_sweep_removes_an_unmerged_task_whose_work_is_all_on_main(tmp_path):
     repo, store, runner = squash_setup(tmp_path)
     task, wt, name = on_own_branch(store, repo, tmp_path, merge_state=None)
-    assert runner.sweep_worktrees(dry_run=True)["would_remove"][0]["task_id"] == task.id
+    dry = runner.sweep_worktrees(dry_run=True)
+    assert dry["would_remove"][0]["task_id"] == task.id and "already on" in dry["would_remove"][0]["reason"]
+    assert wt.path.is_dir()
     assert runner.sweep_worktrees()["removed"][0]["task_id"] == task.id
     assert not wt.path.exists()
     assert worktree._git(repo, "rev-parse", "--verify", f"refs/heads/{name}")

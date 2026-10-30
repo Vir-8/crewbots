@@ -1,19 +1,20 @@
 """Keeping a long conversation in shape: flushing it to memory and compacting it in place, carrying on in a fresh
-session when it can't be compacted or sat idle past its cache, and flushing ahead of time while the cache is warm."""
+session when it can't be compacted or sat idle past its cache, rolling over from a briefing when its session has no
+way to compact, and flushing ahead of time while the cache is warm."""
 
 import time
 
 import pytest
-from fakes import bot, make_crew, wait_until
-from test_sessions import FakeSession, SessionBackend
+from fakes import FakeSession, SessionBackend, bot, make_crew, wait_until
 
 from crewbots import prompts
 from crewbots.crew import NO_REPLY
-from crewbots.events import Compacted, Done, SessionStarted
+from crewbots.events import Compacted, Done, SessionStarted, Text, Usage
 from crewbots.runner import Runner
 from crewbots.store import Store
 
 FLUSH = prompts.text("flush", no_reply=NO_REPLY)
+BRIEFING = prompts.text("briefing")
 
 
 class CompactingSession(FakeSession):
@@ -202,3 +203,76 @@ async def test_a_big_conversation_is_flushed_ahead_of_time_while_its_cache_is_wa
     assert (first, flush) == ("the big one", "<flush>")
     assert "## Lately" in after and "Added the CSV export" in after and after.endswith("meanwhile")
     assert kinds(store, task.id) == ["flushed"] and "Added the CSV export" in runner.crew.memory.recent("worker")
+
+
+class FullSession:
+    """A session that can't compact: its context is `percent` full, and its briefing turn answers with `briefing`."""
+
+    interruptible = True
+
+    def __init__(self, spec, percent, briefing):
+        self.spec, self.percent, self.briefing = spec, percent, briefing
+        self.turns: list[str] = []
+        self.closed = False
+        self.session_id = spec.resume_session_id or "s-full"
+
+    @property
+    def alive(self):
+        return not self.closed
+
+    async def turn(self, prompt):
+        self.turns.append(prompt)
+        if prompt == BRIEFING:
+            yield Usage(input_tokens=100, output_tokens=50)
+            yield Done(final_text=self.briefing)
+        else:
+            yield Text(text=f"did: {prompt}")
+            yield Done(final_text=f"did: {prompt}")
+
+    async def context_percent(self):
+        return self.percent
+
+    async def close(self):
+        self.closed = True
+
+
+class FullBackend(SessionBackend):
+    def __init__(self, percent, briefing="Goal: X. Decided: Y. Next: Z."):
+        super().__init__()
+        self.percent, self.briefing = percent, briefing
+
+    async def open(self, spec):
+        session = FullSession(spec, self.percent, self.briefing)
+        self.opened.append(session)
+        return session
+
+
+async def test_a_long_conversation_continues_in_a_fresh_session_from_a_briefing(store, tmp_path):
+    backend = FullBackend(percent=82.0)
+    runner = make(store, tmp_path, backend)
+    task = runner.submit("worker", "first")
+    await wait_until(idle(store, runner, task.id))
+
+    first = backend.opened[0]
+    assert first.turns == ["first", BRIEFING] and first.closed
+    task = store.get_task(task.id)
+    assert task.briefing.startswith("This task's conversation grew long") and task.session_id is None
+    assert task.briefing.rstrip().endswith("Goal: X. Decided: Y. Next: Z.")
+    assert task.result == "did: first"  # the briefing turn never replaces the reply
+    assert [e.data["percent"] for e in store.events(task.id) if e.kind == "rollover"] == [82.0]
+
+    backend.percent = 10.0
+    runner.send(task.id, "second")
+    await wait_until(lambda: len(backend.opened) == 2 and idle(store, runner, task.id)())
+    fresh = backend.opened[1]
+    assert fresh.spec.resume_session_id is None
+    assert "# Where things stand" in fresh.spec.system_prompt and "Decided: Y" in fresh.spec.system_prompt
+
+
+async def test_without_a_briefing_there_is_no_rollover(store, tmp_path):
+    backend = FullBackend(percent=95.0, briefing="")
+    runner = make(store, tmp_path, backend)
+    task = runner.submit("worker", "x")
+    await wait_until(idle(store, runner, task.id))
+
+    assert not backend.opened[0].closed and store.get_task(task.id).briefing is None

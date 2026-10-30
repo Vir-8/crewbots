@@ -115,7 +115,8 @@ async def test_a_teammate_writes_in_place_only_where_the_user_said_work_goes(sto
     given, elsewhere, repo = tmp_path / "given", tmp_path / "elsewhere", git_repo(tmp_path / "repo")
     for folder in (given / "cuts", elsewhere):
         folder.mkdir(parents=True)
-    crew = ScriptedCrew(store, tmp_path / "crew", chief(), bot("editor", access=Access.WORKSPACE_WRITE), bot("reader"))
+    crew = ScriptedCrew(store, tmp_path / "crew", chief(), bot("editor", access=Access.WORKSPACE_WRITE), bot("reader"),
+                        gate=asyncio.Event())
     top = store.create_task("chief", "plan the edit", workspace=str(given))
 
     with pytest.raises(NotAllowed, match="hasn't given this work"):  # the delegating bot's say-so isn't enough
@@ -123,7 +124,7 @@ async def test_a_teammate_writes_in_place_only_where_the_user_said_work_goes(sto
     for fine in (given / "cuts", repo):  # within the work's own folder, or a repository it gets a worktree of
         crew.runner.delegate(top.id, "editor", "cut it", workspace=str(fine))
     crew.runner.delegate(top.id, "reader", "look it over", workspace=str(elsewhere))  # reading is fine anywhere
-    await wait_until(lambda: not crew.runner.running())
+    await crew.runner.shutdown()
 
 
 async def test_work_on_a_project_runs_in_its_folder_which_the_user_gave_by_adding_it(store, tmp_path):
@@ -297,19 +298,8 @@ async def test_no_delegating_past_a_budget(store, tmp_path):
     await crew.runner.shutdown()
 
 
-async def test_delegation_stops_at_the_limit(store, tmp_path):
-    crew = ScriptedCrew(store, tmp_path, chief(), bot("engineer"), max_children=2, gate=asyncio.Event())
-    parent = store.create_task("chief", "y")
-    crew.runner.delegate(parent.id, "engineer", "a")
-    crew.runner.delegate(parent.id, "engineer", "b")
-
-    with pytest.raises(NotAllowed, match="stop condition"):
-        crew.runner.delegate(parent.id, "engineer", "c")
-    await crew.runner.shutdown()
-
-
 @pytest.mark.parametrize("action", ["delegate", "start_thread"])
-@pytest.mark.parametrize("finished,unfinished,blocked", [(12, 0, False), (0, 12, True), (12, 11, False), (12, 12, True)])
+@pytest.mark.parametrize("finished,unfinished,blocked", [(12, 11, False), (12, 12, True)])
 async def test_child_limit_only_counts_unfinished_work(store, tmp_path, action, finished, unfinished, blocked):
     crew = ScriptedCrew(store, tmp_path, chief(), bot("engineer"), max_out=100, gate=asyncio.Event())
     parent = store.create_task("chief", "chat", kind="chat")

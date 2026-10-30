@@ -5,6 +5,7 @@ import json
 import subprocess
 
 import pytest
+from fakes import git_repo
 
 from crewbots import attribution, paths, worktree
 from crewbots.backends import Access, ClaudeAgent, ClaudeCLI, CodexExec, RunSpec
@@ -24,15 +25,7 @@ def body(repo, rev="HEAD"):
 
 @pytest.fixture
 def repo(tmp_path):
-    path = tmp_path / "repo"
-    path.mkdir()
-    git = lambda *a: subprocess.run([paths.git(), *a], cwd=path, check=True, capture_output=True)  # noqa: E731
-    git("init", "-q", "-b", "main")
-    (path / "README.md").write_text("hello\n")
-    (path / ".gitignore").write_text("Temp/\n")
-    git("add", ".")
-    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init")
-    return path
+    return git_repo(tmp_path / "repo")
 
 
 def add_hook(repo, text):

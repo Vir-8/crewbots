@@ -250,15 +250,13 @@ def stop_events(store, task_id):
     return [e for e in store.crew_events() if e["kind"] == "task_stopped" and e["subject"] == task_id]
 
 
-def test_metadata_updates_to_a_stopped_task_emit_no_stop_event(store):
-    task = store.create_task("engineer", "Fix the jump", status=Status.FAILED)
-    assert len(stop_events(store, task.id)) == 1  # created already stopped
-    store.update_task(task.id, session_id="s1")
-    store.update_task(task.id, session_id="s2")
-    assert len(stop_events(store, task.id)) == 1
+def test_a_stop_event_is_written_only_when_a_task_stops(store):
+    born_stopped = store.create_task("engineer", "Fix the jump", status=Status.FAILED)
+    assert len(stop_events(store, born_stopped.id)) == 1
+    store.update_task(born_stopped.id, session_id="s1")
+    store.update_task(born_stopped.id, session_id="s2")
+    assert len(stop_events(store, born_stopped.id)) == 1
 
-
-def test_a_real_transition_to_failed_emits_exactly_one_stop_event(store):
     task = store.create_task("engineer", "Fix the jump", status=Status.RUNNING)
     store.update_task(task.id, session_id="s1")
     assert stop_events(store, task.id) == []

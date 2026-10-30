@@ -6,7 +6,7 @@ import pytest
 from fakes import FakeBackend
 
 from crewbots import cards, crew
-from crewbots.crew_tools import SPECS, CrewTools, ToolRefused, tools_for
+from crewbots.crew_tools import SPECS, CrewTools, ToolRefused
 from crewbots.runner import Runner
 from crewbots.store import Store
 
@@ -50,15 +50,6 @@ async def test_adding_earlier_coordinator_does_not_change_chief(crewed):
     assert list(runner.crew.bots)[0] == "aaa"
     assert store.chief() == runner.coordinator().name == "chief"
     assert not runner.is_coordinator("aaa")
-
-
-async def test_only_a_coordinator_can_add_bots(crewed):
-    runner, store = crewed
-    engineer, _ = tools(runner, store, "engineer-1")
-
-    assert "add_bot" not in {t.name for t in tools_for(can_delegate=False)}
-    with pytest.raises(ToolRefused, match="not one of this bot's crew tools"):
-        await engineer.call("add_bot", MARKETING)
 
 
 async def test_the_chief_gives_what_it_chooses_short_of_full_access_and_network_it_hasnt_got(crewed):

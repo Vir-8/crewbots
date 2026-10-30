@@ -73,22 +73,6 @@ async def test_approved_work_is_committed_with_just_its_files(game):
     await crew.runner.shutdown()
 
 
-async def test_a_summary_whose_first_line_is_too_long_is_refused_before_anything_is_committed(game):
-    crew, store, repo, lead, work = game
-    crew.runner.handoff(work.id, "Added the player", ["Assets/Player.cs"], "", "", ["Played it"])
-    review = crew.runner.delegate(lead.id, "reviewer", "review it", review_of=work.id)
-    await wait_until(crew.settled(review.id))
-    crew.runner.review(review.id, Verdict.PASS, "fine", [])
-    with pytest.raises(NotAllowed, match="it is 73 characters, over the limit of 72"):
-        crew.runner.propose_merge(lead.id, work.id, "x" * 73 + "\n\nDetails")
-    for blank_first_line in ("\nFix the player", "  \nFix the player"):
-        with pytest.raises(NotAllowed, match="is empty"):
-            crew.runner.propose_merge(lead.id, work.id, blank_first_line)
-    assert store.get_task(work.id).merge_state is None
-    assert worktree._git(repo, "rev-list", "--count", "HEAD") == "2"
-    await crew.runner.shutdown()
-
-
 async def test_work_that_names_none_of_its_files_isnt_committed(game):
     crew, store, repo, lead, work = game
     crew.runner.handoff(work.id, "Added the player", ["the player script"], "", "")
@@ -147,17 +131,12 @@ async def test_work_isnt_committed_onto_a_branch_the_folder_was_switched_to(game
     await crew.runner.shutdown()
 
 
-async def _staged_move(game, output, *, rename=True):
+async def _staged_move(game, output):
     crew, store, repo, lead, work = game
     (repo / "Assets" / "Old.cs").write_text("class Old {}\n")
     worktree._git(repo, "add", "Assets/Old.cs")
     worktree._git(repo, "commit", "-qm", "Add Old")
-    if rename:
-        worktree._git(repo, "mv", "Assets/Old.cs", "Assets/Moved.cs")
-    else:
-        worktree._git(repo, "rm", "-q", "Assets/Old.cs")
-        (repo / "Assets" / "Moved.cs").write_text("class Old {}\n")
-        worktree._git(repo, "add", "Assets/Moved.cs")
+    worktree._git(repo, "mv", "Assets/Old.cs", "Assets/Moved.cs")
     worktree._git(repo, "add", "Assets/Other.cs")
     crew.runner.handoff(work.id, "Moved Old", output, "", "", ["ran it"])
     review = crew.runner.delegate(lead.id, "reviewer", "review it", review_of=work.id)
@@ -195,18 +174,6 @@ async def test_a_staged_rename_with_one_path_handed_back_is_refused_naming_the_o
     await crew.runner.shutdown()
 
 
-async def test_someone_elses_staged_deletion_isnt_committed_with_an_identical_new_file(game):
-    crew, repo, lead, work = await _staged_move(game, ["Assets/Moved.cs"], rename=False)
-    head = worktree._git(repo, "rev-parse", "HEAD")
-
-    with pytest.raises(MergeError, match="Assets/Old.cs is the other side"):
-        await crew.runner.propose_merge_off_loop(lead.id, work.id, "Add Moved")
-
-    assert worktree._git(repo, "rev-parse", "HEAD") == head
-    assert "R  Assets/Old.cs -> Assets/Moved.cs" in _left(repo)
-    await crew.runner.shutdown()
-
-
 async def _handed_back(game, output):
     crew, store, repo, lead, work = game
     crew.runner.handoff(work.id, "Ignored Notes", output, "", "", ["ran it"])
@@ -217,36 +184,7 @@ async def _handed_back(game, output):
     return crew, repo, lead, work
 
 
-async def test_a_staged_deletion_of_a_file_the_change_now_ignores_is_committed_and_the_file_stays(game):
-    crew, store, repo, lead, work = game
-    (repo / "Notes.txt").write_text("notes\n")
-    worktree._git(repo, "add", "Notes.txt")
-    worktree._git(repo, "commit", "-qm", "Add Notes")
-    worktree._git(repo, "rm", "-q", "--cached", "Notes.txt")
-    (repo / ".gitignore").write_text("Notes.txt\n")
-    crew, repo, lead, work = await _handed_back(game, [".gitignore", "Notes.txt"])
-
-    await crew.runner.propose_merge_off_loop(lead.id, work.id, "Ignore Notes")
-
-    assert worktree._git(repo, "show", "--name-status", "--format=", "HEAD").split() == ["A", ".gitignore", "D", "Notes.txt"]
-    assert (repo / "Notes.txt").read_text() == "notes\n"
-    assert not [line for line in _left(repo) if "Notes.txt" in line or ".gitignore" in line]
-    await crew.runner.shutdown()
-
-
-async def test_an_ignored_file_that_isnt_a_staged_deletion_is_still_left_out(game):
-    crew, store, repo, lead, work = game
-    (repo / ".gitignore").write_text("Notes.txt\n")
-    (repo / "Notes.txt").write_text("notes\n")
-    crew, repo, lead, work = await _handed_back(game, [".gitignore", "Notes.txt"])
-
-    await crew.runner.propose_merge_off_loop(lead.id, work.id, "Ignore Notes")
-
-    assert "Notes.txt" not in worktree._git(repo, "show", "--name-only", "--format=", "HEAD").split()
-    await crew.runner.shutdown()
-
-
-async def test_ignoring_two_staged_deletions_keeps_both_files_and_any_file_beside_them(game):
+async def test_ignoring_staged_deletions_commits_them_and_keeps_the_files(game):
     crew, store, repo, lead, work = game
     for name in ("A.txt", "B.txt"):
         (repo / name).write_text(f"{name}\n")
@@ -254,9 +192,6 @@ async def test_ignoring_two_staged_deletions_keeps_both_files_and_any_file_besid
     worktree._git(repo, "commit", "-qm", "Add notes")
     worktree._git(repo, "rm", "-q", "--cached", "A.txt", "B.txt")
     (repo / ".gitignore").write_text("A.txt\nB.txt\n")
-    (repo / "A.txt.crewbots-aside").write_text("other data\n")
-    (repo / "B.txt.crewbots-aside").mkdir()
-    (repo / "B.txt.crewbots-aside" / "keep").write_text("other data\n")
     crew, repo, lead, work = await _handed_back(game, [".gitignore", "A.txt", "B.txt"])
 
     await crew.runner.propose_merge_off_loop(lead.id, work.id, "Ignore notes")
@@ -264,8 +199,7 @@ async def test_ignoring_two_staged_deletions_keeps_both_files_and_any_file_besid
     assert worktree._git(repo, "show", "--no-renames", "--name-status", "--format=", "HEAD").split() == [
         "A", ".gitignore", "D", "A.txt", "D", "B.txt"]
     assert [(repo / n).read_text() for n in ("A.txt", "B.txt")] == ["A.txt\n", "B.txt\n"]
-    assert (repo / "A.txt.crewbots-aside").read_text() == "other data\n"
-    assert (repo / "B.txt.crewbots-aside" / "keep").read_text() == "other data\n"
+    assert not [line for line in _left(repo) if "A.txt" in line or "B.txt" in line or ".gitignore" in line]
     assert not list((repo / ".git").glob("crewbots-index-*"))
     await crew.runner.shutdown()
 

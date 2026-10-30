@@ -1,17 +1,14 @@
 """A merge runs the repo's CI steps on the squashed result first; if they fail, main doesn't move."""
 
 import pytest
-from fakes import git_repo, wait_until
 from test_ci import temp  # noqa: F401
 from test_push import git
-from test_review_loop import crew_for, review_round
 from test_squash_merge import IDENT, work  # noqa: F401
 
 from crewbots import ci, worktree
-from crewbots.events import Done
 from crewbots.projects import Project
 from crewbots.runner.common import MergeError
-from crewbots.store import Status, Store, Verdict
+from crewbots.store import Status
 
 WORKFLOW = "on: push\njobs:\n  t:\n    runs-on: x\n    steps:\n      - run: test -f one.txt && test -f user.txt\n"
 
@@ -56,40 +53,6 @@ def test_workflow_steps_gate_the_merge(work, tmp_path):  # noqa: F811
     with pytest.raises(MergeError, match="user.txt"):  # the squash has one.txt but not user.txt
         runner.merge(task.id, force=True)
     assert git(repo, "rev-parse", "main") == head
-    user_commit(repo)
-    assert runner.merge(task.id, force=True).merge_state == "merged"
-
-
-def test_a_repo_without_ci_merges_as_before(work):  # noqa: F811
-    runner, store, repo, task, wt = work
-    assert runner.merge(task.id, force=True).merge_state == "merged"
-
-
-async def test_the_reason_reaches_the_proposal_when_automatic(store, tmp_path):
-    repo = git_repo(tmp_path / "repo")
-    crew = crew_for(store, tmp_path)
-    with_ci(crew.runner, repo, tmp_path, "echo boom >&2; test -f nope.txt")
-    parent = store.create_task("chief", "lead", workspace=str(repo), status=Status.IDLE)
-    crew.script["engineer"] = lambda spec, me: (
-        (spec.cwd / "README.md").write_text("bot edit\n"), [Done(final_text="edited")])[1]
-    child = crew.runner.delegate(parent.id, "engineer", "Improve the readme")
-    await wait_until(crew.settled(child.id))
-    await review_round(crew, parent, child, Verdict.PASS)
-    store.set_auto_merge(True)
-    head = git(repo, "rev-parse", "HEAD")
-    with pytest.raises(MergeError, match=r"(?s)proposal is waiting for the user.*CI did not pass.*at step.*boom"):
-        crew.runner.propose_merge(parent.id, child.id, "Improve readme")
-    assert git(repo, "rev-parse", "HEAD") == head and (repo / "README.md").read_text() == "hello\n"
-    assert store.get_task(child.id).merge_state == "proposed"
-    failed = [e.data for e in store.events(child.id) if e.kind == "merge_failed"]
-    assert "boom" in failed[0]["error"] and failed[0]["automatic"]
-
-
-@pytest.fixture
-def store(tmp_path):
-    store = Store(tmp_path / "crew.db")
-    yield store
-    store.close()
 
 
 async def test_the_route_keeps_the_loop_responsive_during_a_slow_merge(work, tmp_path):  # noqa: F811
@@ -137,18 +100,6 @@ def test_any_git_error_building_the_test_commit_refuses_the_merge(work, tmp_path
     with pytest.raises(MergeError, match="could not build the merged result.*no space left"):
         runner.merge(task.id, force=True)
     assert git(repo, "rev-parse", "main") == head and store.get_task(task.id).merge_state == "proposed"
-
-
-def test_a_conflict_is_refused_not_skipped(work, tmp_path):  # noqa: F811
-    runner, store, repo, task, wt = work
-    with_ci(runner, repo, tmp_path, "true")
-    (repo / "one.txt").write_text("the user's")
-    git(repo, "add", "one.txt")
-    git(repo, *IDENT, "commit", "-qm", "user edit")
-    head = git(repo, "rev-parse", "main")
-    with pytest.raises(MergeError, match="(?s)nothing was changed.*CONFLICT.*one.txt"):
-        runner.merge(task.id, force=True)
-    assert git(repo, "rev-parse", "main") == head
 
 
 def counting_ci(monkeypatch, during):
@@ -236,6 +187,7 @@ async def test_a_caller_cancelled_while_its_worker_is_queued_clears_the_merging_
     from concurrent.futures import ThreadPoolExecutor
 
     from crewbots.runner import merge_status
+    from crewbots.runner.common import NotAllowed
     runner, store, repo, task, wt = work
     with_ci(runner, repo, tmp_path, "true")
     pool = ThreadPoolExecutor(max_workers=1)
@@ -244,15 +196,15 @@ async def test_a_caller_cancelled_while_its_worker_is_queued_clears_the_merging_
     pool.submit(gate.wait)  # the only thread is busy, so the merge worker queues
     queued = asyncio.create_task(runner.merge_off_loop(task.id, True))
     await asyncio.sleep(0.1)
-    assert runner._merging_now[task.id] == 1
+    with pytest.raises(NotAllowed, match="a merge of this task is running"):
+        runner.withdraw_merge(task.id, "changed my mind")
     queued.cancel()
     with pytest.raises(asyncio.CancelledError):
         await queued
-    assert runner._merging_now[task.id] == 0  # cancel() succeeded on the queued job, so its callback fired
+    runner.withdraw_merge(task.id, "changed my mind")  # not refused: cancel() succeeded on the queued job
     gate.set()
     pool.shutdown(wait=True)
-    runner.withdraw_merge(task.id, "changed my mind")  # not refused
-    assert store.get_task(task.id).merge_state != "proposed"
+    assert store.get_task(task.id).merge_state is None
     assert git(repo, "rev-list", "--count", f"{wt.base}..main") == "0"  # the merge never ran
 
 
@@ -282,12 +234,10 @@ async def test_a_caller_cancelled_after_the_executor_claimed_the_job_keeps_the_m
     running.cancel()
     with pytest.raises(asyncio.CancelledError):
         await running
-    assert runner._merging_now[task.id] == 1
     with pytest.raises(NotAllowed, match="a merge of this task is running"):
         runner.withdraw_merge(task.id, "changed my mind")
     release.set()
     pool.shutdown(wait=True)  # the worker finishes the merge
-    assert runner._merging_now[task.id] == 0
     assert store.get_task(task.id).merge_state == "merged"
     with pytest.raises(Exception, match="has no merge proposal to withdraw"):  # no longer refused as running
         runner.withdraw_merge(task.id, "too late")

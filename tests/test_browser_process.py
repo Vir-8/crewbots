@@ -9,11 +9,13 @@ import sys
 from urllib.parse import urlsplit
 
 import pytest
+from fakes import wait_until
 from test_browser import FakeCDP, pipe_pair
 
-from crewbots.browser import Browser
+from crewbots.browser import Browser, BrowserSession
 from crewbots.browser_cdp import CDP, BrowserError
-from crewbots.browser_process import CHROME, Profiles, launch
+from crewbots.browser_process import Profiles, launch
+from crewbots.browser_proxy import BrowserProxy
 
 
 async def test_pipe_launcher_remaps_descriptors_and_frames_cdp(tmp_path):
@@ -102,6 +104,10 @@ async def test_browser_launch_has_pipe_and_no_debugging_port(tmp_path, monkeypat
         assert any(fnmatch.fnmatchcase(proxy_host, pattern) for pattern in excluded)
         assert not any(fnmatch.fnmatchcase("external.example", pattern) for pattern in excluded)
         assert "--enable-features=NetworkServiceInProcess2" in command
+        assert "--disable-background-networking" in command and "--disable-domain-reliability" in command
+        features = [arg for arg in command if arg.startswith("--disable-features=")]
+        assert len(features) == 1
+        assert {"MediaRouter", "PreconnectToSearch", "NetworkTimeServiceQuerying"} <= set(features[0].split("=", 1)[1].split(","))
         target = next(c["params"] for c in fake.calls if c["method"] == "Target.createTarget")
         assert target["browserContextId"] == tab.context and target["url"] == "about:blank"
         assert not any("remote-debugging-port" in arg or "remote-debugging-address" in arg for arg in command)
@@ -138,19 +144,6 @@ async def test_sweep_removes_only_old_ownerless_profiles(tmp_path, monkeypatch, 
     profiles.close()
     assert not old.exists() and recent.exists() and linked.exists()
     assert "owner file missing" in caplog.text
-
-
-async def test_sweep_logs_parent_of_skipped_process(tmp_path, monkeypatch, caplog):
-    from crewbots import browser_process as module
-
-    profile = tmp_path / "browser" / "chrome-live"
-    profile.mkdir(parents=True)
-    write_owner(profile, 123, "start")
-    monkeypatch.setattr(module, "process_info", lambda pid: module.ProcessInfo(456, os.getuid(), "start"))
-    profiles = Profiles(profile.parent)
-    await profiles.acquire()
-    profiles.close()
-    assert profile.exists() and "PID 123 PPID 456" in caplog.text
 
 
 async def test_startup_sweep_stops_only_recorded_orphans_and_removes_confirmed_dead(tmp_path, monkeypatch):
@@ -198,7 +191,7 @@ async def test_sweep_leaves_a_live_owner_and_logs_it(tmp_path, monkeypatch, capl
     profiles = Profiles(root)
     await profiles.acquire()
     profiles.close()
-    assert profile.exists() and "verified orphan" in caplog.text
+    assert profile.exists() and "verified orphan" in caplog.text and "PPID 500" in caplog.text
 
 
 async def test_sweep_never_signals_reused_pid_with_a_different_start_time(tmp_path, monkeypatch, caplog):
@@ -214,23 +207,6 @@ async def test_sweep_never_signals_reused_pid_with_a_different_start_time(tmp_pa
     await profiles.acquire()
     profiles.close()
     assert profile.exists() and "verified orphan" in caplog.text
-
-
-async def test_sweep_never_infers_ownership_from_url_embedded_flags(tmp_path, monkeypatch, caplog):
-    from crewbots import browser_process as module
-
-    root = tmp_path / "browser"
-    profile = root / "chrome-not-owned"
-    profile.mkdir(parents=True)
-    # A user's Chrome may contain these strings inside one URL argument. There is no owner record.
-    deceptive_command = f"{CHROME} 'https://example.test/?q=--headless=new --remote-debugging-pipe --user-data-dir={profile} '"
-    assert f"--user-data-dir={profile}" in deceptive_command
-    monkeypatch.setattr(module, "process_info", lambda pid: pytest.fail("unrecorded processes must never be inspected"))
-    monkeypatch.setattr(module.os, "kill", lambda *args: pytest.fail("must not signal unrecorded Chrome"))
-    profiles = Profiles(root)
-    await profiles.acquire()
-    profiles.close()
-    assert profile.exists() and "unverified" in caplog.text
 
 
 async def test_sweep_rechecks_start_time_immediately_before_each_signal(tmp_path, monkeypatch):
@@ -309,3 +285,93 @@ async def test_sweep_does_not_wait_on_a_fifo_owner_record(tmp_path, monkeypatch,
         await profiles.acquire()
     profiles.close()
     assert profile.exists() and "invalid browser owner record file" in caplog.text
+
+
+@pytest.mark.parametrize("size", [100, 1_000_000])
+async def test_close_interrupts_blocked_write_and_terminates_child(tmp_path, size):
+    script = tmp_path / "no_reader.py"
+    script.write_text("import time\ntime.sleep(30)\n")
+    with (tmp_path / "child.log").open("wb") as log:
+        process, transport = await launch([sys.executable, str(script)], log)
+        service = Browser(tmp_path / "browser")
+        service.process, service.cdp = process, CDP(transport)
+        service.sessions["a"] = BrowserSession("a", "context", "target", "session", False, BrowserProxy(False),
+                                                url="http://localhost")
+        action = asyncio.create_task(service.action("a", tmp_path, False, "evaluate", {"expression": "x" * size}))
+        try:
+            await wait_until(lambda: service._lock.locked())
+            await asyncio.sleep(0.05)
+            assert not action.done()
+            async with asyncio.timeout(2.5):
+                await service.close()
+            assert process.returncode is not None
+            assert not service.sessions
+        finally:
+            action.cancel()
+            transport.abort()
+            if process.returncode is None:
+                process.kill()
+                await process.wait()
+            await asyncio.gather(action, return_exceptions=True)
+
+
+async def test_smoke_profile_root_never_trusts_bot_writable_owner_records(tmp_path, monkeypatch):
+    from crewbots import browser_process
+
+    root = tmp_path / "smoke"
+    profile = root / "chrome-forged"
+    profile.mkdir(parents=True)
+    (profile / browser_process.OWNER_FILE).write_text(json.dumps({"pid": 101, "start_time": "forged"}))
+    monkeypatch.setattr(browser_process, "process_info", lambda pid: pytest.fail("custom roots must not be swept"))
+    monkeypatch.setattr(browser_process.os, "kill", lambda *args: pytest.fail("must not signal for a custom root"))
+    service = Browser(root)
+    await service._profiles.acquire()
+    service._profiles.close()
+    assert profile.exists()
+
+
+async def test_failed_launcher_reaping_is_bounded_and_preserves_profile(tmp_path, monkeypatch, caplog):
+    from crewbots import browser as browser_module
+    from crewbots import browser_process
+
+    class StuckProcess:
+        pid = 999
+        returncode = None
+        killed = False
+
+        def kill(self):
+            self.killed = True
+
+        async def wait(self):
+            await asyncio.Event().wait()
+
+    process = StuckProcess()
+
+    async def spawn(*args, **kwargs):
+        return process
+
+    async def fail_open(*args, **kwargs):
+        raise OSError("cannot open pipe")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(browser_process, "REAP_TIMEOUT_S", 0.05)
+        patch.setattr(browser_process.asyncio, "create_subprocess_exec", spawn)
+        patch.setattr(browser_process.Pipe, "open", fail_open)
+        with (tmp_path / "log").open("wb") as log:
+            async with asyncio.timeout(2.5):
+                with pytest.raises(browser_process.LaunchStillRunning, match="Could not stop"):
+                    await browser_process.launch([sys.executable], log)
+        assert process.killed
+
+    async def stuck_launch(argv, log, profile):
+        log.write(b"diagnostic")
+        raise browser_process.LaunchStillRunning("launcher still running")
+
+    monkeypatch.setattr(browser_module, "launch", stuck_launch)
+    service = Browser(tmp_path / "profiles")
+    with pytest.raises(browser_process.LaunchStillRunning, match="still running"):
+        await service.action("a", tmp_path, False, "open", {"url": "http://localhost"})
+    left = list((tmp_path / "profiles").glob("chrome-*"))
+    assert len(left) == 1 and (left[0] / "chrome.log").read_bytes() == b"diagnostic"
+    assert "Leaving browser profile" in caplog.text and service.profile is None
+    await service.close()

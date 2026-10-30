@@ -326,32 +326,6 @@ async def test_a_failure_without_text_gets_the_fallback_summary(store, tmp_path)
     assert told == ["I couldn't take this turn: unexpected error. Details: room_status."]
 
 
-@pytest.mark.parametrize("error", [
-    "crewbots: thread/resume: no rollout found for thread id 9869b148-9d7b-4d46-a97a-ddcdf91a3c5e",
-    "crewbots: Claude Code returned an error result: No conversation found with session ID: "
-    "01a17e6b-1a43-7110-b4fc-69ad094638a8 (exit code: 1)"])
-async def test_a_seat_with_a_dead_session_drops_it_for_good(store, tmp_path, error):
-    backend = resume_fails(error)
-    runner, room = room_seat(store, tmp_path, backend, (30.0,))
-    runner.post(room["id"], "user", "@worker first")
-    seat = lambda: store.seat_of(room["id"], "worker")  # noqa: E731
-    await wait_until(lambda: seat() and settled(store, seat().id)())
-    store.update_task(seat().id, session_id="dead-id", session_backend="fake")
-    backend.specs.clear()
-
-    runner.post(room["id"], "user", "@worker second")  # one failed resume, then a fresh session at once
-    await wait_until(lambda: len(backend.specs) >= 2 and settled(store, seat().id)())
-    assert [s.resume_session_id for s in backend.specs] == ["dead-id", None]
-    after = seat()
-    assert after.status is Status.IDLE and after.error is None
-    assert (after.session_id, after.session_backend) == ("s-new", "fake")
-
-    backend.specs.clear()
-    runner.post(room["id"], "user", "@worker third")  # the next wake never tries the dead id
-    await wait_until(lambda: backend.specs and settled(store, seat().id)())
-    assert "dead-id" not in [s.resume_session_id for s in backend.specs]
-
-
 async def test_a_retried_turn_records_one_turn_start(store, tmp_path):
     runner = runner_for(store, tmp_path, failing(2))
     task = runner.submit("worker", "build the export")

@@ -6,9 +6,10 @@ import textwrap
 from pathlib import Path
 
 import pytest
-from fakes import bot, git_repo, make_crew
+from fakes import bot, make_crew
+from test_push import pushed_repo
 from test_replace_main import BRANCH, IDENT, clean_history
-from test_replace_main import setup as replace_setup  # noqa: F401  (a fixture)
+from test_replace_main import setup_with_ci as replace_setup  # noqa: F401  (a fixture)
 
 from crewbots import ci, paths
 from crewbots.projects import Project
@@ -69,11 +70,7 @@ def temp(tmp_path, monkeypatch):
 
 @pytest.fixture
 def push_setup(tmp_path):
-    remote = tmp_path / "remote.git"
-    subprocess.run(["git", "init", "--bare", "-q", str(remote)], check=True)
-    repo = git_repo(tmp_path / "repo")
-    git(repo, "remote", "add", "origin", str(remote))
-    git(repo, "push", "-u", "origin", "main")
+    repo, _ = pushed_repo(tmp_path)
     store = Store(":memory:")
     crew = make_crew(tmp_path, bot("chief", can_delegate=True), bot("engineer"))
     crew.projects["demo"] = Project("demo", repo, "", tmp_path / "demo.md")
@@ -89,33 +86,29 @@ def push(runner):
     return runner.store.last_event(chat.id, ("push_proposed",))
 
 
-def test_a_passing_run_makes_the_card_with_the_sha_and_steps(push_setup):
+def test_a_passing_run_makes_the_card_with_the_sha_and_steps(push_setup, tmp_path):
     runner, repo = push_setup
     sha = with_workflow(repo)
+    before = git(repo, "status", "--porcelain")
     card = push(runner).data
     assert card["ci"]["status"] == "passed" and card["ci"]["sha"] == sha
     assert card["ci"]["note"] == f"CI passed locally on {sha[:12]}"
     assert card["ci"]["steps"] == ["first: Check", "second: test -f inner.txt", "second: true"]
     assert any("setup-python" in s for s in card["ci"]["skipped"])
     assert "error" not in card
+    assert list((tmp_path / "daemon-tmp").iterdir()) == []  # the checkout is removed and the folder untouched
+    assert git(repo, "status", "--porcelain") == before and git(repo, "worktree", "list").count("\n") == 0
 
 
-def test_a_failing_step_refuses_the_card_with_its_name_and_output(push_setup):
+def test_a_failing_step_refuses_the_card_with_its_name_and_the_end_of_its_output(push_setup):
     runner, repo = push_setup
-    with_workflow(repo, WORKFLOW.replace("test -f inner.txt", "seq 1 60; echo broken >&2; exit 3"))
+    with_workflow(repo, WORKFLOW.replace("test -f inner.txt", "seq 1 99; echo broken >&2; exit 3"))
     chat = runner.chat("chief")
-    with pytest.raises(NotAllowed, match=r"step 'second: seq 1 60.*exit 3"):
+    with pytest.raises(NotAllowed, match=r"step 'second: seq 1 99.*' \(exit 3\)") as e:
         asyncio.run(push_propose(runner, chat.id, "demo", "Ship it"))
-    assert runner.store.last_event(chat.id, ("push_proposed",)) is None
-
-
-def test_the_failure_shows_only_the_last_40_lines(push_setup):
-    runner, repo = push_setup
-    with_workflow(repo, WORKFLOW.replace("test -f inner.txt", "seq 1 100; exit 1"))
-    with pytest.raises(NotAllowed) as e:
-        asyncio.run(push_propose(runner, runner.chat("chief").id, "demo", "Ship it"))
     text = str(e.value)
-    assert "\n100" in text and "\n61" in text and "\n60\n" not in text
+    assert "\n61\n" in text and "\n60\n" not in text and text.endswith("\n99\nbroken")  # the last 40 lines
+    assert runner.store.last_event(chat.id, ("push_proposed",)) is None
 
 
 def test_a_project_with_no_checks_gets_a_card_saying_nothing_was_run(push_setup):
@@ -145,15 +138,6 @@ def test_it_runs_on_the_committed_files_not_the_working_folder(push_setup):
     (repo / "marker.txt").unlink()  # committed, but missing from the folder
     (repo / "untracked.txt").write_text("only here")  # in the folder, not in the commit
     assert push(runner).data["ci"]["status"] == "passed"
-
-
-def test_the_checkout_is_removed_and_the_folder_untouched(push_setup, tmp_path):
-    runner, repo = push_setup
-    with_workflow(repo)
-    before = git(repo, "status", "--porcelain")
-    push(runner)
-    assert list((tmp_path / "daemon-tmp").iterdir()) == []
-    assert git(repo, "status", "--porcelain") == before and git(repo, "worktree", "list").count("\n") == 0
 
 
 def test_replace_main_checks_the_replacement_tip(replace_setup):  # noqa: F811
@@ -190,18 +174,6 @@ def test_workflow_triggers_and_unsupported_things(tmp_path):
                  "on: push\njobs:\n  j:\n    steps:\n      - run: x\n        shell: pwsh\n"):
         with pytest.raises(NotAllowed):
             plan(text)
-
-
-def test_a_projects_ci_list_is_read_and_kept_when_the_project_is_saved(tmp_path):
-    from crewbots import projects
-
-    folder = tmp_path / "web"
-    folder.mkdir()
-    (tmp_path / "crew" / "projects").mkdir(parents=True)
-    path = tmp_path / "crew" / "projects" / "web.md"
-    path.write_text(f"---\nfolder: {folder}\nci:\n  - make test\n---\nSite\n")
-    assert projects.parse(path.read_text(), path).ci == ("make test",)
-    assert projects.save(tmp_path / "crew", "web", folder, "Site, edited").ci == ("make test",)
 
 
 def test_the_workflows_node_major_is_used(tmp_path, monkeypatch):

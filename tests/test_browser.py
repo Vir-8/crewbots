@@ -8,7 +8,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from fakes import FakeBackend, bot, make_crew
+from fakes import FakeBackend, bot, make_crew, wait_until
 
 from crewbots.api import create_app
 from crewbots.browser import Browser
@@ -204,6 +204,21 @@ async def test_policy_change_and_idle_dispose_context(browser, tmp_path):
     assert len([c for c in fake.calls if c["method"] == "Target.disposeBrowserContext"]) == 2
 
 
+async def test_idle_expiration_failure_is_logged_and_deregisters_session(browser, tmp_path, monkeypatch, caplog):
+    service, _ = browser
+    service.idle_s = 0.02
+    await service.action("a", tmp_path, False, "open", {"url": "http://localhost"})
+    tab = service.sessions["a"]
+
+    async def fail_close(task_id):
+        raise OSError("fake idle cleanup error")
+
+    monkeypatch.setattr(service, "_close_task", fail_close)
+    await wait_until(lambda: "a" not in service.sessions)
+    assert "fake idle cleanup error" in caplog.text
+    assert not tab.proxy.server.is_serving()
+
+
 async def test_refusal_does_not_start_chrome(browser, tmp_path):
     service, fake = browser
     for url in ("https://example.com", "file:///etc/passwd", "ws://localhost"):
@@ -229,29 +244,6 @@ async def test_proxy_blocks_external_http_connect_and_websocket():
             await writer.wait_closed()
     finally:
         await proxy.close()
-
-
-@pytest.mark.parametrize("host", ["127.0.0.1", "::1"])
-async def test_proxy_forwards_local_preview_and_closes_tunnels(host):
-    async def echo(reader, writer):
-        await reader.readuntil(b"\r\n\r\n")
-        writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK")
-        await writer.drain()
-        writer.close()
-        await writer.wait_closed()
-    async with await asyncio.start_server(echo, host, 0) as server:
-        origin = server.sockets[0].getsockname()[1]
-        proxy = BrowserProxy(False)
-        address = await proxy.start()
-        try:
-            async with httpx.AsyncClient(proxy=httpx.Proxy(address, auth=(proxy.username, proxy.password))) as client:
-                response = await client.get(f"http://localhost:{origin}")
-                assert response.text == "OK"
-                connected = next(entry for entry in proxy.log if entry["kind"] == "connected")
-                assert host in connected["peer"]
-        finally:
-            await proxy.close()
-        assert not proxy.connections
 
 
 @pytest.mark.parametrize("loop_name", ["asyncio", "uvloop"])
@@ -293,9 +285,40 @@ def test_proxy_upstream_connect_on_event_loops(loop_name, host):
                 assert host in next(entry["peer"] for entry in proxy.log if entry["kind"] == "connected")
             finally:
                 await proxy.close()
+            assert not proxy.connections
 
     with asyncio.Runner(loop_factory=loop_factory) as runner:
         runner.run(exercise())
+
+
+async def test_proxy_close_aborts_backpressured_upstream():
+    release = asyncio.Event()
+    connected = asyncio.Event()
+
+    async def no_reader(reader, writer):
+        connected.set()
+        try:
+            await release.wait()
+        finally:
+            writer.transport.abort()
+
+    async with await asyncio.start_server(no_reader, "127.0.0.1", 0) as origin:
+        origin_port = origin.sockets[0].getsockname()[1]
+        proxy = BrowserProxy(False)
+        address = await proxy.start()
+        port = int(address.rsplit(":", 1)[1])
+        _, writer = await asyncio.open_connection("127.0.0.1", port)
+        try:
+            writer.write(f"POST http://127.0.0.1:{origin_port}/ HTTP/1.1\r\nContent-Length: 1000000\r\n".encode()
+                         + b"Proxy-Authorization: " + proxy.authorization + b"\r\n\r\n" + b"x" * 1_000_000)
+            async with asyncio.timeout(1):
+                await connected.wait()
+            async with asyncio.timeout(2.5):
+                await proxy.close()
+            assert not proxy.connections
+        finally:
+            writer.transport.abort()
+            release.set()
 
 
 async def test_tools_api_auth_logging_and_mcp_images(browser, tmp_path):
@@ -449,9 +472,12 @@ async def test_blocked_intercepted_navigation_finishes_with_an_error(browser, tm
     service, fake = browser
     fake.intercept_url = "https://external.example/redirect"
     async with asyncio.timeout(1):
-        with pytest.raises(BrowserError, match="ERR_BLOCKED_BY_CLIENT"):
+        with pytest.raises(BrowserError, match="ERR_BLOCKED_BY_CLIENT") as caught:
             await service.action("a", tmp_path, False, "open", {"url": "http://localhost:5173"})
     assert set(fake.navigations) <= fake.decided
+    tab = service.sessions["a"]
+    assert tab.proxy.address in str(caught.value) and '"listening"' in str(caught.value)
+    assert tab.proxy.password not in str(caught.value)
     # Page.navigate may fail before Chrome acknowledges Fetch.failRequest on the other command.
     async with asyncio.timeout(1):
         while service.cdp.paused:
@@ -473,17 +499,6 @@ async def test_initial_blank_tab_rejects_unowned_requests(browser):
         while not any(c["method"] == "Fetch.failRequest" and c["params"]["requestId"] == "initial-request" for c in fake.calls):
             await asyncio.sleep(0.01)
     assert not any(c["method"] == "Target.closeTarget" for c in fake.calls)
-
-
-async def test_navigation_error_includes_task_proxy_diagnostics(browser, tmp_path):
-    service, fake = browser
-    fake.intercept_url = "https://denied.example"
-    with pytest.raises(BrowserError) as caught:
-        await service.action("a", tmp_path, False, "open", {"url": "http://localhost"})
-    tab = service.sessions["a"]
-    assert "ERR_BLOCKED_BY_CLIENT" in str(caught.value)
-    assert tab.proxy.address in str(caught.value) and '"listening"' in str(caught.value)
-    assert tab.proxy.password not in str(caught.value)
 
 
 async def test_a_page_chrome_closes_or_crashes_is_dropped_and_said_why(browser, tmp_path):

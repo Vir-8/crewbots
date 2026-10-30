@@ -3,7 +3,6 @@ import time
 
 import pytest
 from fakes import FakeBackend, bot, make_crew
-from test_bot_api import start  # noqa: F401
 
 from crewbots import timefmt, working_state
 from crewbots.crew_tools import CrewTools
@@ -67,11 +66,6 @@ def test_the_zone_defaults_to_the_machines_and_can_be_set(tmp_path):
     store.close()
 
 
-def test_the_turn_header_names_the_local_time_and_zone():
-    header = timefmt.header()
-    assert "IST (Asia/Kolkata, UTC+05:30)" in header and header.startswith("[crewbots: it is ")
-
-
 async def test_every_turn_starts_with_the_header(tmp_path, monkeypatch):
     from fakes import REAL_WITH_UPDATES, wait_until
 
@@ -81,7 +75,7 @@ async def test_every_turn_starts_with_the_header(tmp_path, monkeypatch):
     runner = Runner(store, make_crew(tmp_path, bot("worker")), {"fake": backend})
     task = runner.submit("worker", "hello")
     await wait_until(lambda: backend.specs)
-    assert backend.specs[0].prompt.startswith("[crewbots: it is ") and "IST (Asia/Kolkata" in backend.specs[0].prompt
+    assert backend.specs[0].prompt.startswith("[crewbots: it is ") and "IST (Asia/Kolkata, UTC+05:30)" in backend.specs[0].prompt
     assert backend.specs[0].prompt.endswith("hello")
     await wait_until(lambda: store.get_task(task.id).status is Status.IDLE)
     store.close()

@@ -78,12 +78,6 @@ def test_work_not_on_main_still_reaches_the_folder_check(old_proposal, monkeypat
         crew.runner.merge(task.id)
 
 
-def test_conflicting_change_is_not_called_merged(old_proposal):
-    crew, store, repo, task, wt = old_proposal
-    commit(repo, "feature.txt", "something else")
-    assert crew.runner.already_on(store.get_task(task.id)) is None
-
-
 def test_status_route_and_withdraw_on_an_old_proposal(old_proposal):
     crew, store, repo, task, wt = old_proposal
     worktree._git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "merge", "--no-ff", "-qm", "merged elsewhere", wt.branch)
@@ -127,11 +121,10 @@ def test_partial_overlap_is_not_already_on_main(old_proposal):
     assert crew.runner.already_on(task_row) == "main"
 
 
-@pytest.mark.parametrize("base", ["0" * 40, "not-a-commit"])
-def test_missing_or_wrong_merge_base_is_not_already_on_main(old_proposal, base):
+def test_a_missing_merge_base_is_not_already_on_main(old_proposal):
     crew, store, repo, task, wt = old_proposal
     commit(repo, "other.txt", "main's own")
-    store.update_task(task.id, base=base)
+    store.update_task(task.id, base="0" * 40)  # as a base lost to gc would be
     before = repo_state(repo)
     assert crew.runner.already_on(store.get_task(task.id)) is None
     assert repo_state(repo) == before

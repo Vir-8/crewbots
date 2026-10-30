@@ -4,6 +4,8 @@ import functools
 import shutil
 import subprocess
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 from crewbots import paths
@@ -118,3 +120,109 @@ class ScriptedCrew:
 
     def settled(self, task_id):
         return lambda: not self.store.get_task(task_id).active and task_id not in self.runner.running()
+
+
+class FakeSession:
+    """A long-lived session that says back what each turn was asked. It can be made to fail its next turn, or to end
+    after a turn as a process that died."""
+
+    def __init__(self, backend, spec: RunSpec):
+        self.backend = backend
+        self.spec = spec
+        self.session_id = spec.resume_session_id or f"s-{len(backend.opened)}"
+        self.turns: list[str] = []
+        self.closed = False
+        self.die_after_turn = False
+        self.fail_next = False
+
+    @property
+    def alive(self) -> bool:
+        return not self.closed
+
+    async def turn(self, prompt: str):
+        self.turns.append(prompt)
+        if self.backend.gate:
+            await self.backend.gate.wait()
+        yield SessionStarted(session_id=self.session_id)
+        if self.fail_next:
+            self.fail_next = False
+            yield Done(final_text="", is_error=True, error="it broke")
+            return
+        yield Text(text=f"did: {prompt}")
+        yield Done(final_text=f"did: {prompt}")
+        if self.die_after_turn:
+            self.closed = True
+
+    async def close(self):
+        self.closed = True
+
+
+class SessionBackend:
+    """A backend that keeps sessions open, as Codex's app-server and the Agent SDK do. Set `gate` to hold every turn."""
+
+    name = "fake"
+
+    def __init__(self, fail_open=False):
+        self.opened: list[FakeSession] = []
+        self.one_shot: list[RunSpec] = []
+        self.fail_open = fail_open
+        self.gate: asyncio.Event | None = None
+        self.sessions_die = False
+
+    async def open(self, spec: RunSpec) -> FakeSession:
+        if self.fail_open:
+            raise RuntimeError("no app-server here")
+        session = FakeSession(self, spec)
+        session.die_after_turn = self.sessions_die
+        self.opened.append(session)
+        return session
+
+    async def run(self, spec: RunSpec):
+        self.one_shot.append(spec)
+        yield Done(final_text="one-shot")
+
+
+def make(store, tmp_path, backend=None, *bots, **kw):
+    """A runner whose bots keep sessions open, and its backend."""
+    backend = backend or SessionBackend()
+    runner = Runner(store, make_crew(tmp_path, *bots), {"fake": backend}, api_url="http://127.0.0.1:8765/v1", **kw)
+    return runner, backend
+
+
+def settled(store, runner, task_id):
+    return lambda: not store.get_task(task_id).active and task_id not in runner.running()
+
+
+ADMIN = "admin-token"  # the user's token in conftest's `crew_app`
+PORT = 8765
+
+
+class HeldBackend:
+    """Every run stays open until `release` is set, so its run token stays valid while the test uses it."""
+
+    name = "fake"
+
+    def __init__(self):
+        self.release = threading.Event()  # the app runs on the test client's own thread and loop
+        self.specs = []
+
+    async def run(self, spec):
+        self.specs.append(spec)
+        while not self.release.is_set():
+            await asyncio.sleep(0.01)
+        yield Done(final_text="ok")
+
+
+def start(client, backend, bot_name):
+    """Starts a task for `bot_name` and returns (task id, its run token)."""
+    task = client.post("/tasks", json={"bot": bot_name, "goal": "go"}, headers={"Authorization": f"Bearer {ADMIN}"}).json()
+    for _ in range(200):
+        for spec in backend.specs:
+            if f"You are the {bot_name}." in spec.system_prompt:
+                return task["id"], spec.mcp_servers[MCP_SERVER_NAME].env["CREWBOTS_TOKEN"]
+        time.sleep(0.01)
+    raise TimeoutError(bot_name)
+
+
+def as_bot(token):
+    return {"Authorization": f"Bearer {token}"}

@@ -137,32 +137,22 @@ def test_a_budget_on_a_role_card():
         parse_card("---\ndescription: d\nbudget: 5\n---\nbody", "x")
 
 
-def test_budgets_routines_and_release_over_the_api(store, tmp_path):
+def test_budgets_and_release_over_the_api(store, tmp_path):
     runner = runner_with(store, tmp_path, bot("chief", budget=Budget(tokens=1000, per="day")))
-    (tmp_path / "routines").mkdir()
-    (tmp_path / "routines" / "standup.md").write_text("---\nbot: chief\nschedule: '0 9 * * 1-5'\n---\nStandup.")
-    (tmp_path / "routines" / "bad.md").write_text("---\nbot: chief\n---\nx")
     (tmp_path / "bots").mkdir()
     (tmp_path / "bots" / "chief.md").write_text("---\ndescription: d\nbackend: claude\n---\nYou are the chief.")
     auth = {"Authorization": "Bearer t"}
     with TestClient(create_app(runner, "t", 8765), base_url="http://127.0.0.1:8765/v1") as client:
-        listing = client.get("/routines", headers=auth).json()
-        assert [r["name"] for r in listing["routines"]] == ["standup"] and "bad.md" in listing["errors"]
-        assert listing["routines"][0]["next_run_at"] is not None
-
-        task = client.post("/routines/standup/run", headers=auth).json()
-        assert task["kind"] == "chat" and task["bot"] == "chief"
-        assert client.post("/routines/nope/run", headers=auth).status_code == 422
-        for _ in range(100):
+        task = client.post("/tasks", json={"bot": "chief", "goal": "one"}, headers=auth).json()
+        for _ in range(250):
             if client.get(f"/tasks/{task['id']}", headers=auth).json()["status"] == "idle":
                 break
             time.sleep(0.02)
+        else:
+            pytest.fail("the task never went idle")
 
         assert client.get("/budgets", headers=auth).json()[0]["used"] == 12
         assert client.post(f"/tasks/{task['id']}/release", headers=auth).json()["id"] == task["id"]
         assert client.post("/crew/reload", headers=auth).status_code == 200
-        starters = [s["name"] for s in client.get("/routines", headers=auth).json()["starters"]]
-        assert "standup" not in starters and "retro" in starters  # standup.md is already there
-        assert client.post("/routines/starters/retro", headers=auth).json()["schedule"] == "0 16 * * 5"
         assert client.get("/bots", headers=auth).json()[0]["path"].endswith("bots/chief.md")
         assert runner.crew.bots["chief"].backend == "claude"  # read from the folder again

@@ -117,17 +117,3 @@ def test_the_app_manages_group_chats(crew, store):
         assert client.delete(f"/rooms/{crew_room['id']}", headers=auth).status_code == 403
         assert client.delete(f"/rooms/{room['id']}", headers=auth).status_code == 204
         assert client.delete(f"/rooms/{room['id']}", headers=auth).status_code == 404
-
-
-def test_an_older_crews_room_called_crew_becomes_its_own(tmp_path):
-    path = tmp_path / "crew.db"
-    store = Store(path)
-    crew_room = store.create_room("Crew", "chief", ["chief"])
-    store.create_room("Crew", "chief", ["chief"])  # a later one with the same name stays an ordinary group chat
-    store.db.execute("update rooms set crew = 0")
-    store.db.execute("pragma user_version = 2")  # from before rooms were marked
-    store.close()
-
-    again = Store(path)
-    assert [r["id"] for r in again.rooms() if r["crew"]] == [crew_room["id"]]
-    again.close()

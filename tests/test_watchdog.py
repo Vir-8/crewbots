@@ -64,16 +64,6 @@ async def test_a_handoff_during_a_running_turn_reports_once_at_its_end(store, tm
     await crew.runner.shutdown()
 
 
-async def test_a_failed_delegated_task_wakes_its_delegator(store, tmp_path):
-    crew = ScriptedCrew(store, tmp_path, bot("chief", can_delegate=True), bot("engineer"))
-    crew.script["engineer"] = lambda spec, me: [Done(final_text="", is_error=True, error="boom")]
-    seat, child = seat_and_child(store, crew)
-    await wait_until(lambda: len(messages(store, seat.id)) == 1)
-    assert store.get_task(child.id).status is Status.FAILED
-    assert "boom" in messages(store, seat.id)[0]["text"]
-    await crew.runner.shutdown()
-
-
 async def test_the_review_limit_reaches_the_lead_even_when_the_verdict_comes_late(store, tmp_path):
     crew = ScriptedCrew(store, tmp_path, bot("chief", can_delegate=True), bot("engineer", access=Access.WORKSPACE_WRITE),
                         bot("reviewer"))
@@ -110,7 +100,9 @@ async def test_a_failure_does_not_wait_for_running_siblings(store, tmp_path):
     store.create_task("engineer", "still working", parent_id=parent.id, created_by="chief", status=Status.RUNNING)
     bad = crew.runner.delegate(parent.id, "engineer", "b")
     await wait_until(lambda: len(messages(store, parent.id)) == 1)
+    assert store.get_task(bad.id).status is Status.FAILED
     assert bad.id in messages(store, parent.id)[0]["text"]
+    assert "boom" in messages(store, parent.id)[0]["text"]
     await crew.runner.shutdown()
 
 
