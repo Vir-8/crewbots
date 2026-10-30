@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { api, bridge } from "../api";
+import { api, bridge, errorText } from "../api";
 import { Icon } from "../components/Icon";
 import { ModelPicker } from "../components/ModelPicker";
-import { Page, Segmented, Switch } from "../components/ui";
+import { Page, Problem, Segmented, Switch } from "../components/ui";
 import type { Crew } from "../state";
 import type { Reviewer } from "../types";
 
@@ -21,8 +21,8 @@ export function Settings({ crew }: { crew: Crew }) {
   useEffect(() => {
     bridge.startAtLogin().then(setLogin, () => setLogin(null));
     api.reviewRepos().then(setRepos, () => setRepos({}));
-    api.timezone().then((z) => { setZone(z); setZoneDraft(z.timezone); }, (e) => setZoneError(String(e)));
-    api.mergeSettings().then((s) => setAutoMerge(s.auto_merge), (e) => setMergeError(String(e)));
+    api.timezone().then((z) => { setZone(z); setZoneDraft(z.timezone); }, (e) => setZoneError(errorText(e)));
+    api.mergeSettings().then((s) => setAutoMerge(s.auto_merge), (e) => setMergeError(errorText(e)));
   }, []);
 
   const problems = [
@@ -40,7 +40,7 @@ export function Settings({ crew }: { crew: Crew }) {
       setRepos(await api.setReviewRepo(name, folder));
       setRepo("");
     } catch (e) {
-      setRepoError(String(e).replace(/^Error: /, ""));
+      setRepoError(errorText(e));
     }
   };
 
@@ -49,13 +49,7 @@ export function Settings({ crew }: { crew: Crew }) {
       {problems.length > 0 && (
         <section className="page-section">
           {problems.map((p) => (
-            <div key={p.what} className="crew-problem">
-              <Icon name="alert" size={14} />
-              <div>
-                <div>{p.what}</div>
-                <div className="crew-problem-why">{p.why}</div>
-              </div>
-            </div>
+            <Problem key={p.what} {...p} />
           ))}
         </section>
       )}
@@ -78,7 +72,7 @@ export function Settings({ crew }: { crew: Crew }) {
                 try {
                   setLogin(await bridge.startAtLogin(on));
                 } catch (e) {
-                  setLoginError(String(e));
+                  setLoginError(errorText(e));
                 }
               }}
             />
@@ -92,7 +86,7 @@ export function Settings({ crew }: { crew: Crew }) {
             <Switch on={Boolean(autoMerge)} disabled={autoMerge === null} label="Merge approved work automatically" onChange={async (on) => {
               setMergeError(null);
               try { setAutoMerge((await api.setMergeSettings(on)).auto_merge); }
-              catch (e) { setMergeError(String(e)); }
+              catch (e) { setMergeError(errorText(e)); }
             }} />
           </div>
           <div className="list-row">
@@ -106,7 +100,7 @@ export function Settings({ crew }: { crew: Crew }) {
             <input className="inline-input" list="time-zones" value={zoneDraft} disabled={zone === null} aria-label="Time zone"
               onChange={(e) => setZoneDraft(e.target.value.trim())} placeholder={zone?.system} />
             <datalist id="time-zones">
-              {(Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf?.("timeZone").map((z) => <option key={z} value={z} />)}
+              {Intl.supportedValuesOf("timeZone").map((z) => <option key={z} value={z} />)}
             </datalist>
             <button className="button small" disabled={zone === null || zoneDraft === zone.timezone} onClick={async () => {
               setZoneError(null);
@@ -114,7 +108,7 @@ export function Settings({ crew }: { crew: Crew }) {
                 const next = await api.setTimezone(zoneDraft && zoneDraft !== zone?.system ? zoneDraft : null);
                 setZone(next);
                 setZoneDraft(next.timezone);
-              } catch (e) { setZoneError(String(e)); }
+              } catch (e) { setZoneError(errorText(e)); }
             }}>
               Save
             </button>
@@ -170,7 +164,7 @@ export function Settings({ crew }: { crew: Crew }) {
               <button className="button small" onClick={() => map(name)}>
                 Change
               </button>
-              <button className="icon-button" title="Remove" onClick={async () => setRepos(await api.setReviewRepo(name, null))}>
+              <button className="icon-button" title="Remove" onClick={() => api.setReviewRepo(name, null).then(setRepos, (e) => setRepoError(errorText(e)))}>
                 <Icon name="x" size={14} />
               </button>
             </div>
@@ -207,7 +201,7 @@ function Reviewers({ crew }: { crew: Crew }) {
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    api.reviewers().then(setReviewers, (e) => setError(String(e)));
+    api.reviewers().then(setReviewers, (e) => setError(errorText(e)));
   }, []);
   if (!reviewers) return null;
 
@@ -221,7 +215,7 @@ function Reviewers({ crew }: { crew: Crew }) {
       setReviewers(await api.setReviewers(reviewers));
       setSaved("Saved");
     } catch (e) {
-      setError(String(e).replace(/^Error: /, ""));
+      setError(errorText(e));
     }
   };
   return (

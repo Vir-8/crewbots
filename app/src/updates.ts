@@ -4,7 +4,7 @@
 // Shared by the banner and Settings, so both say the same thing.
 
 import { useEffect, useSyncExternalStore } from "react";
-import { api, bridge } from "./api";
+import { api, bridge, errorText } from "./api";
 import type { UpdateOut } from "./api-types";
 
 const CHECK_EVERY_MS = 30 * 60_000; // GitHub is asked at most this often
@@ -113,7 +113,7 @@ export async function install() {
     if (newApp(current)) await restartApp();
     else set({ installing: false }); // the app stays open, and reconnects when the daemon's back
   } catch (e) {
-    set({ installing: false, error: String(e).replace(/^Error: /, "") });
+    set({ installing: false, error: errorText(e) });
   }
 }
 
@@ -124,7 +124,7 @@ export async function start() {
   try {
     set({ update: await api.startUpdate(), following: true });
   } catch (e) {
-    set({ error: String(e).replace(/^Error: /, "") });
+    set({ error: errorText(e) });
   }
   schedule();
 }

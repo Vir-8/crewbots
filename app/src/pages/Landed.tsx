@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { api } from "../api";
+import { api, errorText } from "../api";
 import type { LandedItem, LandedOut } from "../api-types";
 import { Avatar, labelOf } from "../components/Avatar";
 import { ago, Markdown } from "../components/bits";
 import { Icon } from "../components/Icon";
 import { Page } from "../components/ui";
 import type { Crew } from "../state";
-import { oneLine } from "../state";
+import { oneLine } from "../activityText";
 import "../styles/landed.css";
 
 /** What merged, the latest first, mostly by the crew on its own once reviews passed: to look over after it landed,
@@ -20,7 +20,7 @@ export function Landed({ crew, onOpen }: { crew: Crew; onOpen: (id: string) => v
   const load = useCallback(() => api.landed().then((out) => {
     setLanded(out);
     setSince((s) => (s === undefined ? out.seen_at : s));
-  }, (e) => setError(String(e).replace(/^Error: /, ""))), []);
+  }, (e) => setError(errorText(e))), []);
   const merges = [...crew.tasks.values()].filter((t) => t.merge_state === "merged").length;
   useEffect(() => { load(); }, [load, merges]);
   const opened = since !== undefined;
@@ -50,7 +50,7 @@ function LandedRow({ item, isNew, onOpen, onChange }: { item: LandedItem; isNew:
       await api.revert(task.id);
       onChange();
     } catch (e) {
-      setFailure(String(e).replace(/^Error: /, ""));
+      setFailure(errorText(e));
     } finally {
       setBusy(false);
     }

@@ -1,22 +1,34 @@
 import { useState } from "react";
-import { api } from "../api";
+import { api, errorText } from "../api";
+import type { Ci, Outcome } from "./cardEvents";
 import type { Block } from "./threadBlocks";
 
-export function PushCard({ block }: { block: Extract<Block, { kind: "push" }> }) {
+/** A proposal card's one action: whether it's under way, what came of it (recorded, or the daemon's answer), and why
+ * the call failed. */
+export function useProposal(recorded: Outcome | undefined, call: () => Promise<Outcome>) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [response, setResponse] = useState<{ ok: boolean; reason: string; pushed?: boolean }>();
-  const { data } = block;
-  const result = block.result ?? response;
-  const push = async () => {
+  const [response, setResponse] = useState<Outcome>();
+  const act = async () => {
     setBusy(true);
     try {
-      setResponse(await api.push(block.id));
+      setResponse(await call());
     } catch (e) {
-      setError(String(e).replace(/^Error: /, ""));
+      setError(errorText(e));
       setBusy(false);
     }
   };
+  return { busy, error, result: recorded ?? response, act };
+}
+
+/** The CI a proposal's commit passed, its steps on hover. */
+export function CiNote({ ci }: { ci: Ci }) {
+  return <div className="small" title={(ci.steps ?? []).join("\n")}>{ci.note}{ci.steps?.length ? ` (${ci.steps.length} steps)` : ""}</div>;
+}
+
+export function PushCard({ block }: { block: Extract<Block, { kind: "push" }> }) {
+  const { busy, error, result, act: push } = useProposal(block.result, () => api.push(block.id));
+  const { data } = block;
   if (block.replaced && !result && !block.started) {
     return <div className="ask push-card replaced">
       <div className="ask-head">Push {data.project}</div>
@@ -27,7 +39,7 @@ export function PushCard({ block }: { block: Extract<Block, { kind: "push" }> })
     <div className="ask-head">{result?.ok && result.pushed ? `Pushed ${data.project}` : `Push ${data.project}?`}</div>
     <div className="permission-what">{data.summary}</div>
     {data.branch && <div className="small">Branch: <code>{data.branch}</code> · Upstream: <code>{data.upstream}</code>{data.push_url_display && <> · Destination: <code>{data.push_url_display}</code></>}</div>}
-    {data.ci && <div className="small" title={(data.ci.steps ?? []).join("\n")}>{data.ci.note}{data.ci.steps?.length ? ` (${data.ci.steps.length} steps)` : ""}</div>}
+    {data.ci && <CiNote ci={data.ci} />}
     {data.commits && <pre className="push-commits">{data.commits.length ? data.commits.join("\n") : "Everything up-to-date. Nothing to push."}</pre>}
     {result?.ok && result.reason !== "Push completed." && <div className="small">{result.reason}</div>}
     {block.started && !result && <div className={busy ? "small" : "push-error"}>{busy ? "Pushing…" : "Push started; result unknown. Check the remote before making a new proposal."}</div>}

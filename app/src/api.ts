@@ -30,15 +30,50 @@ import type {
   Submitted,
   Attachment,
 } from "./types";
-import type { BroughtIn, FoundOut, LandedOut, PageOut, PermissionOut, ProjectOut, ProjectsOut, TimezoneOut, UpdateOut, VersionOut } from "./api-types";
+import type {
+  AttachmentData,
+  BroughtIn,
+  ChangesOut,
+  DraftBody,
+  FoundOut,
+  ImageOut,
+  LandedOut,
+  McpServerBody,
+  MergeSettings,
+  MergeStatusOut,
+  NoteOut,
+  PageOut,
+  PermissionOut,
+  ProjectOut,
+  ProjectsOut,
+  RegistryAdd,
+  SubmitReview,
+  TimezoneOut,
+  UpdateOut,
+  VersionOut,
+} from "./api-types";
 
 import { bridge } from "./bridge";
 
 export { bridge };
 
+/** A request the daemon refused: its detail as the message, and the HTTP status. */
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/** What went wrong, to show: an error's message without the "Error: " that String(e) puts before it. */
+export function errorText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const response = await bridge.request(method, path, body);
-  if (!response.ok) throw new Error(response.data?.detail ?? `request failed (${response.status})`);
+  if (!response.ok) throw new ApiError(response.data?.detail ?? `request failed (${response.status})`, response.status);
   return response.data as T;
 }
 
@@ -56,13 +91,13 @@ export const api = {
   },
   recent: (limit = 400) => call<StoredEvent[]>("GET", `/events/recent?limit=${limit}`),
   review: (taskId: string) => call<ReviewState>("GET", `/tasks/${taskId}/review`),
-  changes: (taskId: string) => call<{ diff: string | null }>("GET", `/tasks/${taskId}/changes`),
+  changes: (taskId: string) => call<ChangesOut>("GET", `/tasks/${taskId}/changes`),
   send: (taskId: string, text: string, attachments: string[] = [], questionId?: number) => call<Task>("POST", `/tasks/${taskId}/messages`, { text, attachments, question_id: questionId }),
   cancel: (taskId: string) => call<Task>("POST", `/tasks/${taskId}/cancel`),
   merge: (taskId: string, force = false) => call<Task>("POST", `/tasks/${taskId}/merge`, { force }),
   push: (id: number) => call<{ ok: boolean; reason: string; pushed?: boolean }>("POST", `/push-proposals/${id}/push`),
   replaceMain: (id: number) => call<{ ok: boolean; reason: string }>("POST", `/replace-main-proposals/${id}/replace`),
-  mergeStatus: (taskId: string) => call<{ already_on: string | null }>("GET", `/tasks/${taskId}/merge-status`),
+  mergeStatus: (taskId: string) => call<MergeStatusOut>("GET", `/tasks/${taskId}/merge-status`),
   withdrawMerge: (taskId: string, reason: string) => call<Task>("POST", `/tasks/${taskId}/withdraw-merge`, { reason }),
   release: (taskId: string) => call<Task>("POST", `/tasks/${taskId}/release`),
   landed: () => call<LandedOut>("GET", "/landed"),
@@ -70,15 +105,15 @@ export const api = {
   revert: (taskId: string) => call<Task>("POST", `/tasks/${taskId}/revert`),
   answerPermission: (id: number, allowed: boolean) => call<PermissionOut>("POST", `/permissions/${id}`, { allowed }),
   crew: () => call<CrewState>("GET", "/crew"),
-  mergeSettings: () => call<{ auto_merge: boolean }>("GET", "/crew/merge-settings"),
-  setMergeSettings: (auto_merge: boolean) => call<{ auto_merge: boolean }>("PUT", "/crew/merge-settings", { auto_merge }),
+  mergeSettings: () => call<MergeSettings>("GET", "/crew/merge-settings"),
+  setMergeSettings: (auto_merge: boolean) => call<MergeSettings>("PUT", "/crew/merge-settings", { auto_merge }),
   timezone: () => call<TimezoneOut>("GET", "/crew/timezone"),
   setTimezone: (timezone: string | null) => call<TimezoneOut>("PUT", "/crew/timezone", { timezone }),
   routines: () => call<Routines>("GET", "/routines"),
   budgets: () => call<Budget[]>("GET", "/budgets"),
   chats: () => call<Chat[]>("GET", "/chats"),
   threadFor: (bot: string, goal: string) => call<Task>("POST", `/chats/bot/${encodeURIComponent(bot)}/threads`, { goal }),
-  rememberFor: (bot: string, text: string) => call<{ title: string; path: string }>("POST", `/chats/bot/${encodeURIComponent(bot)}/notes`, { text }),
+  rememberFor: (bot: string, text: string) => call<NoteOut>("POST", `/chats/bot/${encodeURIComponent(bot)}/notes`, { text }),
   muteChat: (bot: string, muted: boolean) => call<{ muted: boolean }>("PUT", `/chats/bot/${encodeURIComponent(bot)}/mute`, { muted }),
   /** Pins chats to the top of the sidebar, in this order; the rest are unpinned. */
   setPins: (pins: string[]) => call<{ pins: string[] }>("PUT", "/pins", { pins }),
@@ -87,7 +122,7 @@ export const api = {
   roomMessages: (roomId: string) => call<RoomMessage[]>("GET", `/rooms/${roomId}/messages?limit=5000`),
   post: (roomId: string, text: string, attachments: string[] = []) => call<RoomMessage>("POST", `/rooms/${roomId}/messages`, { text, attachments }),
   uploadAttachment: (name: string, data: string) => call<Attachment>("POST", "/attachments", { name, data }),
-  attachment: (id: string) => call<{ name: string; mime: string; data: string }>("GET", `/attachments/${id}`),
+  attachment: (id: string) => call<AttachmentData>("GET", `/attachments/${id}`),
   newRoom: (title: string, members: string[], lead?: string) => call<Room>("POST", "/rooms", { title, members, lead: lead ?? null }),
   carryOn: (roomId: string) => call<Room>("POST", `/rooms/${roomId}/continue`),
   react: (id: number, reaction: "up" | "down") => call<unknown>("POST", `/proactive/${id}/react`, { reaction }),
@@ -110,32 +145,32 @@ export const api = {
   cancelRestart: () => call<CrewState>("DELETE", "/crew/restart"),
   usageSummary: (days = 365) => call<UsageSummary>("GET", `/usage/summary?days=${days}`),
   mcpServers: () => call<McpServerInfo[]>("GET", "/mcp/servers"),
-  saveMcpServer: (name: string, body: { transport: "stdio" | "http" | "sse"; command?: string; args?: string[]; env?: Record<string, string> | null; url?: string; headers?: Record<string, string> | null }) =>
+  saveMcpServer: (name: string, body: McpServerBody) =>
     call<McpServerInfo>("PUT", `/mcp/servers/${encodeURIComponent(name)}`, body),
   removeMcpServer: (name: string) => call<{ removed: string; bots: string[] }>("DELETE", `/mcp/servers/${encodeURIComponent(name)}`),
   checkMcpServer: (name: string) => call<McpCheckResult>("POST", `/mcp/servers/${encodeURIComponent(name)}/check`),
   installedMcp: () => call<InstalledMcp[]>("GET", "/mcp/installed"),
   importMcp: (id: string, name?: string) => call<McpServerInfo>("POST", "/mcp/import", { id, name }),
   searchMcp: (q: string) => call<RegistryServer[]>("GET", `/mcp/registry?q=${encodeURIComponent(q)}`),
-  addFromRegistry: (body: { server: string; version: string; option: string; name: string; values: Record<string, string> }) =>
+  addFromRegistry: (body: RegistryAdd) =>
     call<McpServerInfo>("POST", "/mcp/registry", body),
   skills: () => call<Skill[]>("GET", "/skills"),
   drafts: (repo: string, number: number) => call<Draft[]>("GET", `/reviews/${repo}/${number}/drafts`),
-  addDraft: (repo: string, number: number, body: { path: string; line: number; side: "RIGHT" | "LEFT"; body: string }) =>
+  addDraft: (repo: string, number: number, body: DraftBody) =>
     call<Draft>("POST", `/reviews/${repo}/${number}/drafts`, body),
   editDraft: (id: number, body: string) => call<Draft>("PUT", `/reviews/drafts/${id}`, { body }),
   deleteDraft: (id: number) => call<{ deleted: number }>("DELETE", `/reviews/drafts/${id}`),
-  submitReview: (repo: string, number: number, body: { event: "APPROVE" | "REQUEST_CHANGES" | "COMMENT"; body: string }) =>
+  submitReview: (repo: string, number: number, body: SubmitReview) =>
     call<Submitted>("POST", `/reviews/${repo}/${number}/submit`, body),
   pullImage: (repo: string, number: number, path: string, side: "head" | "base") =>
-    call<{ mime: string; data: string }>("GET", `/reviews/${repo}/${number}/image?path=${encodeURIComponent(path)}&side=${side}`),
+    call<ImageOut>("GET", `/reviews/${repo}/${number}/image?path=${encodeURIComponent(path)}&side=${side}`),
   taskStatus: (id: string) => call<TaskStatus>("GET", `/tasks/${id}/status`),
   plans: (fresh = false) => call<Plans>("GET", `/plans${fresh ? "?fresh=true" : ""}`),
   // Kept answers come back at once; `fresh` waits for GitHub. Your teams' list is asked for apart, when it's opened.
   reviewInbox: (fresh = false, lists = ["assigned", "direct", "mine"]) =>
     call<ReviewInbox>("GET", `/reviews/inbox?lists=${lists.join(",")}${fresh ? "&fresh=true" : ""}`),
   pull: (repo: string, number: number) => call<Pull>("GET", `/reviews/${repo}/${number}`),
-  pullDiff: (repo: string, number: number) => call<{ diff: string | null }>("GET", `/reviews/${repo}/${number}/diff`),
+  pullDiff: (repo: string, number: number) => call<ChangesOut>("GET", `/reviews/${repo}/${number}/diff`),
   startReview: (repo: string, number: number, note = "") => call<Task[]>("POST", `/reviews/${repo}/${number}/review`, { note }),
   reviewers: () => call<Reviewer[]>("GET", "/reviews/reviewers"),
   setReviewers: (reviewers: Reviewer[]) => call<Reviewer[]>("PUT", "/reviews/reviewers", reviewers),

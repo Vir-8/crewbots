@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useState } from "react";
-import { api, bridge } from "../api";
+import { api, bridge, errorText } from "../api";
 import { TEXT, highlight } from "../highlight";
 import type { Attachment } from "../types";
 import { Icon } from "./Icon";
@@ -25,7 +25,7 @@ export function upload(files: File[], update: (key: string, fields: Partial<Pend
         if (kind === "image") shown.set(saved.id, url);
         update(key, { id: saved.id, path: saved.path });
       } catch (e) {
-        update(key, { error: String(e).replace(/^Error: /, "") });
+        update(key, { error: errorText(e) });
       }
     };
     reader.onerror = () => update(key, { error: "couldn't read it" });

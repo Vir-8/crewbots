@@ -1,17 +1,17 @@
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, errorText } from "../api";
 import { Avatar, COLORS, COLOR_NAMES, SHAPE_NAMES, face, labelOf } from "../components/Avatar";
+import { tokens } from "../components/bits";
 import { Icon } from "../components/Icon";
 import { backendFamily, ModelPicker } from "../components/ModelPicker";
-import { tokens } from "../components/StatusPanel";
-import { Field, Page, Segmented, Sheet, Switch } from "../components/ui";
+import { ACCESS } from "../components/Profile";
+import { Field, Page, Problem, Segmented, Sheet, Switch } from "../components/ui";
 import type { Crew } from "../state";
 import type { Bot, Card, McpServerInfo } from "../types";
 import "../styles/crew.css";
 
 // The window a bot's sessions compact within; "auto" is the model's whole window (a million tokens on some).
 const WINDOWS: [string, string][] = [["200000", "200K"], ["400000", "400K"], ["1000000", "1M"], ["auto", "The model's"]];
-const ACCESS: Record<string, string> = { read_only: "Reads only", workspace_write: "Writes in its task's folder", full: "Full access" };
 
 /** Your bots: who they are, what each may do, and an editor for each. Saving rewrites its role card. */
 export function CrewBots({ crew, onEdit, onChat }: { crew: Crew; onEdit: (bot: string) => void; onChat: (bot: string) => void }) {
@@ -25,15 +25,7 @@ export function CrewBots({ crew, onEdit, onChat }: { crew: Crew; onEdit: (bot: s
         </button>
       }
     >
-      {crew.routines?.crew_error && (
-        <div className="crew-problem">
-          <Icon name="alert" size={14} />
-          <div>
-            <div>A role card couldn't be read, so the crew carries on as it was.</div>
-            <div className="crew-problem-why">{crew.routines.crew_error}</div>
-          </div>
-        </div>
-      )}
+      {crew.routines?.crew_error && <Problem what="A role card couldn't be read, so the crew carries on as it was." why={crew.routines.crew_error} />}
       <div className="bot-grid">
         {crew.bots.map((b) => (
           <BotTile key={b.name} bot={b} working={crew.running.some((t) => t.bot === b.name)} onEdit={() => onEdit(b.name)} onChat={() => onChat(b.name)} />
@@ -104,7 +96,7 @@ export function BotEditor({ crew, name, onClose }: { crew: Crew; name: string | 
     if (creating) return;
     api.card(name!).then(
       (card) => setDraft({ ...card, hosts: Array.isArray(card.network) ? card.network.join(", ") : "", budgetOn: Boolean(card.budget) }),
-      (e) => setError(String(e)),
+      (e) => setError(errorText(e)),
     );
   }, [name]);
 
@@ -139,7 +131,7 @@ export function BotEditor({ crew, name, onClose }: { crew: Crew; name: string | 
       await crew.refresh();
       onClose();
     } catch (e) {
-      setError(String(e).replace(/^Error: /, ""));
+      setError(errorText(e));
     } finally {
       setSaving(false);
     }

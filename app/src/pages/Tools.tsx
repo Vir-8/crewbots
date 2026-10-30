@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, bridge } from "../api";
+import { api, bridge, errorText } from "../api";
 import { Avatar, labelOf } from "../components/Avatar";
 import { Icon } from "../components/Icon";
 import { Field, Page, Segmented, Sheet } from "../components/ui";
@@ -15,7 +15,7 @@ export function Tools({ crew }: { crew: Crew }) {
   const [adding, setAdding] = useState(false);
   const [checks, setChecks] = useState<Record<string, McpCheckResult | "checking">>({});
   const [error, setError] = useState<string | null>(null);
-  const load = () => api.mcpServers().then(setServers, (e) => setError(String(e).replace(/^Error: /, "")));
+  const load = () => api.mcpServers().then(setServers, (e) => setError(errorText(e)));
   useEffect(() => {
     load();
     api.skills().then(setSkills, () => setSkills([]));
@@ -23,13 +23,13 @@ export function Tools({ crew }: { crew: Crew }) {
 
   const check = async (name: string) => {
     setChecks((c) => ({ ...c, [name]: "checking" }));
-    const result = await api.checkMcpServer(name).catch((e) => ({ ok: false, tools: [], error: String(e) }));
+    const result = await api.checkMcpServer(name).catch((e) => ({ ok: false, tools: [], error: errorText(e) }));
     setChecks((c) => ({ ...c, [name]: result }));
   };
   const remove = async (s: McpServerInfo) => {
     const users = s.bots.length ? ` ${s.bots.map(labelOf).join(", ")} will lose it too.` : "";
     if (!window.confirm(`Remove ${s.name} from the crew?${users}`)) return;
-    await api.removeMcpServer(s.name).catch((e) => setError(String(e)));
+    await api.removeMcpServer(s.name).catch((e) => setError(errorText(e)));
     load();
   };
   const groups = [...new Set(skills.map((s) => s.source))];
@@ -141,7 +141,7 @@ function FromApps({ taken, onAdded }: { taken: Set<string>; onAdded: () => void 
   const [added, setAdded] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    api.installedMcp().then(setFound, (e) => setError(String(e)));
+    api.installedMcp().then(setFound, (e) => setError(errorText(e)));
   }, []);
   if (error) return <p className="error-text small">{error}</p>;
   if (!found) return <p className="faint small">Looking in Claude Code, Claude's desktop app and Codex…</p>;
@@ -169,7 +169,7 @@ function FromApps({ taken, onAdded }: { taken: Set<string>; onAdded: () => void 
                     setAdded(new Set([...added, s.id]));
                     onAdded();
                   } catch (e) {
-                    setError(String(e).replace(/^Error: /, ""));
+                    setError(errorText(e));
                   }
                 }}
               >
@@ -196,7 +196,7 @@ function FromRegistry({ taken, onAdded }: { taken: Set<string>; onAdded: () => v
     try {
       setResults(await api.searchMcp(query.trim()));
     } catch (e) {
-      setError(String(e).replace(/^Error: /, ""));
+      setError(errorText(e));
     } finally {
       setSearching(false);
     }
@@ -287,7 +287,7 @@ function RegistryForm({ entry, taken, onAdded }: { entry: RegistryServer; taken:
               setState("added");
               onAdded();
             } catch (e) {
-              setError(String(e).replace(/^Error: /, ""));
+              setError(errorText(e));
               setState("idle");
             }
           }}
@@ -325,7 +325,7 @@ function Custom({ taken, onAdded }: { taken: Set<string>; onAdded: () => void })
       setState("added");
       onAdded();
     } catch (e) {
-      setError(String(e).replace(/^Error: /, ""));
+      setError(errorText(e));
       setState("idle");
     }
   };

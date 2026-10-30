@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, errorText } from "../api";
 import type { BroughtIn, FoundFolderOut, FoundMemoryOut, FoundOut } from "../api-types";
-import { ago } from "./bits";
+import { ago, tilde } from "./bits";
 import { Icon } from "./Icon";
 import "../styles/dialogs.css";
 
@@ -23,7 +23,7 @@ export function BringIn(props: { chief: string; onDone: (brought: BroughtIn) => 
         setFolders(new Set(f.folders.filter((d) => !d.project).map((d) => d.folder)));
         setMemories(new Set([...f.folders.filter((d) => d.memories.some(isNew)).map((d) => d.folder), ...(f.memories.some(isNew) ? [""] : [])]));
       },
-      (e) => setError(String(e).replace(/^Error: /, "")),
+      (e) => setError(errorText(e)),
     );
     const key = (e: KeyboardEvent) => e.key === "Escape" && props.onClose();
     window.addEventListener("keydown", key);
@@ -47,7 +47,7 @@ export function BringIn(props: { chief: string; onDone: (brought: BroughtIn) => 
     try {
       props.onDone(await api.bringIn(picked.map((d) => ({ name: d.name, folder: d.folder, about: d.about })), memoryPaths));
     } catch (e) {
-      setError(String(e).replace(/^Error: /, ""));
+      setError(errorText(e));
       setBringing(false);
     }
   };
@@ -60,7 +60,7 @@ export function BringIn(props: { chief: string; onDone: (brought: BroughtIn) => 
           The folders you've worked in lately become projects the crew can work in, and their memories go to {props.chief}, who keeps
           what's worth keeping. Only the folders are read from your sessions, never what was said in them.
         </p>
-        {error && <p className="bad small">{error}</p>}
+        {error && <p className="error-text small">{error}</p>}
         {!found && !error && (
           <div className="updates-working">
             <span className="working-dot" />
@@ -121,7 +121,7 @@ function Found(props: { folder: FoundFolderOut; adding: boolean; remembering: bo
           {d.name}
           {d.project && <span className="pill">Added</span>}
         </span>
-        <span className="found-path faint small">{d.folder.replace(/^\/Users\/[^/]+/, "~")}</span>
+        <span className="found-path faint small">{tilde(d.folder)}</span>
         {d.about && <span className="found-about small">{d.about}</span>}
         <span className="faint small">
           {from} · {d.sessions} {d.sessions === 1 ? "session" : "sessions"} · {ago(d.last_used)}

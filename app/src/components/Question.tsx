@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { errorText } from "../api";
 import type { Crew } from "../state";
 import { Markdown } from "./bits";
 import { Marked } from "./Find";
@@ -22,9 +23,7 @@ export function Question({ crew, block, onOpen }: { crew: Crew; block: Asked; on
     if (!text.trim() || sending) return;
     setSending(true);
     setError("");
-    const request = block.questionId === undefined ? crew.send(block.taskId, text.trim()) :
-      crew.send(block.taskId, text.trim(), [], block.questionId);
-    request.catch((e) => { setSending(false); setError(String(e).replace(/^Error: /, "")); });
+    crew.send(block.taskId, text.trim(), [], block.questionId).catch((e) => { setSending(false); setError(errorText(e)); });
   };
   // Several picked: one a line, with your own words last.
   const several = () => send([...picked.map((p) => `- ${p}`), other?.trim() ? `- ${other.trim()}` : ""].filter(Boolean).join("\n"));

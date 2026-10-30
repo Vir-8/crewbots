@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, bridge } from "./api";
+import { api, bridge, errorText } from "./api";
 import { askPlans } from "./plans";
 import { setCrew } from "./components/Avatar";
-import type { Bot, Chat, ConnectionStatus, CrewState, Live, Models, ReviewInbox, RoomChange, RoomMessage, Routines, StoredEvent, Task } from "./types";
+import type { Bot, Chat, ConnectionStatus, CrewState, Live, Models, ReviewInbox, RoomChange, RoomMessage, RoutineFile, Routines, StoredEvent, Task } from "./types";
 import { ACTIVE } from "./types";
 
 const RECENT = 400;
 const ROUTINES_EVERY_MS = 60_000; // next and last run times move on their own
 const REVIEWS_EVERY_MS = 5 * 60_000; // pull requests waiting on you, from GitHub
 
-/** An action's failure, already shown to you: a caller that awaits the action still gets it, but it isn't a crash.
- * It keeps Error's name, so it reads "Error: …" like any other. */
+/** An action's failure, already shown to you: a caller that awaits the action still gets it, but it isn't a crash. */
 export class Shown extends Error {}
 
 /** Everything a layout needs: the crew, its tasks, recent activity, and the actions. Layouts only arrange it. */
@@ -44,6 +43,15 @@ export function useCrew() {
   const loadReviews = useCallback((fresh = false) => api.reviewInbox(fresh).then(setReviewInbox, () => undefined), []);
 
   const loadRoutines = useCallback(() => api.routines().then(setRoutines, () => setRoutines(null)), []);
+  const loadBots = useCallback(
+    () =>
+      api.bots().then((b) => {
+        setCrew(b);
+        setBots(b);
+        loadChats();
+      }),
+    [loadChats],
+  );
 
   const loadAll = useCallback(async () => {
     try {
@@ -54,11 +62,11 @@ export function useCrew() {
       setBots(b);
       setCrew(b);
       setTasks(new Map(t.map((task) => [task.id, task])));
-      setRecent(r as StoredEvent[]);
+      setRecent(r);
       setEvents(new Map());
       setError(null);
     } catch (e) {
-      setError(String(e));
+      setError(errorText(e));
     }
   }, [loadRoutines, loadChats]);
 
@@ -78,11 +86,7 @@ export function useCrew() {
           return;
         }
         if (message.type === "bots") {
-          api.bots().then((b) => {
-            setCrew(b);
-            setBots(b);
-            loadChats();
-          }, () => undefined);
+          loadBots().catch(() => undefined);
           return;
         }
         if (message.type === "room") {
@@ -127,7 +131,7 @@ export function useCrew() {
       }),
     ];
     return () => offs.forEach((off) => off());
-  }, [loadAll, reloadChats]);
+  }, [loadAll, loadBots, reloadChats]);
 
   useEffect(() => {
     if (status.state === "connected") {
@@ -150,9 +154,9 @@ export function useCrew() {
       setEvents((current) => new Map(current).set(taskId, [])); // claim it, so it loads once
       api.events(taskId).then(
         (loaded) => setEvents((current) => current.has(taskId)
-          ? new Map(current).set(taskId, mergeLoadedEvents(loaded as StoredEvent[], current.get(taskId)!))
+          ? new Map(current).set(taskId, mergeLoadedEvents(loaded,current.get(taskId)!))
           : current),
-        (e) => setError(String(e)),
+        (e) => setError(errorText(e)),
       );
     },
     [events],
@@ -164,7 +168,7 @@ export function useCrew() {
       setRoomMessages((current) => new Map(current).set(roomId, []));
       api.roomMessages(roomId).then(
         (loaded) => setRoomMessages((current) => new Map(current).set(roomId, loaded)),
-        (e) => setError(String(e)),
+        (e) => setError(errorText(e)),
       );
     },
     [roomMessages],
@@ -173,7 +177,7 @@ export function useCrew() {
   const act = useCallback(
     <T,>(promise: Promise<T>) =>
       promise.catch((e) => {
-        const text = String(e).replace(/^Error: /, "");
+        const text = errorText(e);
         setError(text);
         throw new Shown(text);
       }),
@@ -197,7 +201,7 @@ export function useCrew() {
     carryOn: (roomId: string) => act(api.carryOn(roomId)),
     react: (id: number, reaction: "up" | "down") => act(api.react(id, reaction)),
     muteChat: (chat: Chat, muted: boolean) => (chat.kind === "group"
-      ? act(api.changeRoom(chat.room!.id, { muted })) : act(api.muteChat(chat.bot!, muted))).then(() => loadChats()),
+      ? act(api.changeRoom(chat.room.id, { muted })) : act(api.muteChat(chat.bot, muted))).then(() => loadChats()),
     changeRoom: (roomId: string, change: RoomChange) => act(api.changeRoom(roomId, change)),
     deleteRoom: (roomId: string) => act(api.deleteRoom(roomId)),
     threadFor: (bot: string, goal: string) => act(api.threadFor(bot, goal)),
@@ -231,10 +235,7 @@ export function useCrew() {
     connectedOnce,
     /** Reads the crew again after an edit: its bots, their chats and the routines. */
     refresh: async () => {
-      const b = await api.bots();
-      setCrew(b);
-      setBots(b);
-      loadChats();
+      await loadBots();
       loadRoutines();
     },
     send: (taskId: string, text: string, attachments: string[] = [], questionId?: number) => act(api.send(taskId, text, attachments, questionId)),
@@ -255,6 +256,10 @@ export function useCrew() {
       const task = await act(api.confirmRoutine(name));
       loadRoutines();
       return task;
+    },
+    saveRoutine: async (name: string, fields: Partial<RoutineFile>) => {
+      await act(api.saveRoutine(name, fields));
+      loadRoutines();
     },
     deleteRoutine: async (name: string) => {
       await act(api.deleteRoutine(name));
@@ -327,5 +332,3 @@ export function derive(tasks: Map<string, Task>, recent: StoredEvent[]) {
   const running = all.filter((t) => ACTIVE.includes(t.status));
   return { children, family, latest, verdicts, inbox, running, asks };
 }
-
-export { describe, doing, limitText, describeCall, oneLine, workingLine } from "./activityText";

@@ -6,7 +6,7 @@ const { api, bridge } = vi.hoisted(() => ({
   api: { update: vi.fn(), restart: vi.fn(), startUpdate: vi.fn() },
   bridge: { installUpdate: vi.fn(), restartApp: vi.fn() },
 }));
-vi.mock("./api", () => ({ api, bridge }));
+vi.mock("./api", async (original) => ({ ...(await original<typeof import("./api")>()), api, bridge }));
 
 import { check, install, ready, restartApp, useUpdates } from "./updates";
 import { UpdatesDialog } from "./components/UpdatesDialog";

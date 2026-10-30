@@ -1,16 +1,13 @@
 import { useEffect, useState } from "react";
-import { api } from "../api";
-import { resets, usePlans } from "../plans";
+import { api, errorText } from "../api";
+import { resets } from "../activityText";
+import { usePlans } from "../plans";
 import type { TaskStatus } from "../types";
 import { labelOf } from "./Avatar";
+import { tokens } from "./bits";
 import { Icon } from "./Icon";
+import { EFFORT_LABEL } from "./ModelPicker";
 
-/** 200000 → "200K", 1000000 → "1M". */
-export function tokens(n: number): string {
-  return n >= 1_000_000 ? `${+(n / 1_000_000).toFixed(1)}M` : `${Math.round(n / 1000)}K`;
-}
-
-const EFFORT: Record<string, string> = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max", ultra: "Ultra" };
 
 /** /status: this chat's bot, model and session, how full its context is, and what's left on its plan. */
 export function StatusPanel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
@@ -18,7 +15,7 @@ export function StatusPanel({ taskId, onClose }: { taskId: string; onClose: () =
   const [error, setError] = useState<string | null>(null);
   const { plans } = usePlans();
   useEffect(() => {
-    api.taskStatus(taskId).then(setStatus, (e) => setError(String(e).replace(/^Error: /, "")));
+    api.taskStatus(taskId).then(setStatus, (e) => setError(errorText(e)));
   }, [taskId]);
   const plan = status?.plan === "codex" ? plans?.codex : status?.plan === "claude" ? plans?.claude : undefined;
   const used = status?.context_percent ?? null;
@@ -42,7 +39,7 @@ export function StatusPanel({ taskId, onClose }: { taskId: string; onClose: () =
           </dd>
           <dt>Model</dt>
           <dd>
-            {status.backend ?? "?"} · {status.model ?? "default model"} · {status.effort ? EFFORT[status.effort] ?? status.effort : "default effort"}
+            {status.backend ?? "?"} · {status.model ?? "default model"} · {status.effort ? EFFORT_LABEL[status.effort] ?? status.effort : "default effort"}
           </dd>
           <dt>Session</dt>
           <dd>

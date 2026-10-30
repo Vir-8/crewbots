@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useState } from "react";
-import { api, bridge } from "../api";
+import { api, bridge, errorText } from "../api";
 import type { PageOut } from "../api-types";
 import type { Crew } from "../state";
 import { Avatar, labelOf } from "./Avatar";
@@ -57,7 +57,7 @@ export function PagePanel(props: { crew: Crew; bot: string; page: string; onPage
       setDraft(null);
       setError(null);
     } catch (e) {
-      setError(String(e).replace(/^Error: /, ""));
+      setError(errorText(e));
     } finally {
       setSaving(false);
     }
@@ -105,7 +105,7 @@ export function PagePanel(props: { crew: Crew; bot: string; page: string; onPage
         </button>
       </header>
       <div className="page-body">
-        {error && <p className="bad small">{error}</p>}
+        {error && <p className="error-text small">{error}</p>}
         {draft !== null ? (
           <textarea
             className="page-editor"

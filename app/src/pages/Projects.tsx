@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { api, bridge } from "../api";
+import { api, bridge, errorText } from "../api";
 import type { ProjectOut } from "../api-types";
 import { labelOf } from "../components/Avatar";
+import { tilde } from "../components/bits";
 import { BringIn } from "../components/BringIn";
 import { Icon } from "../components/Icon";
-import { Field, Page, Segmented, Sheet } from "../components/ui";
+import { Field, Page, Problem, Segmented, Sheet } from "../components/ui";
 import type { Crew } from "../state";
 
 type Draft = { name: string; folder: string; about: string; existing: boolean; isolation?: ProjectOut["isolation"] };
@@ -34,7 +35,7 @@ export function Projects(props: { crew: Crew; onChat: (bot: string) => void }) {
         setProjects(p.projects);
         setErrors(p.errors);
       },
-      (e) => setError(message(e)),
+      (e) => setError(errorText(e)),
     );
   useEffect(() => {
     void load();
@@ -51,7 +52,7 @@ export function Projects(props: { crew: Crew; onChat: (bot: string) => void }) {
       setError(null);
       await load();
     } catch (e) {
-      setError(message(e));
+      setError(errorText(e));
     }
   };
   const remove = async (name: string) => {
@@ -60,7 +61,7 @@ export function Projects(props: { crew: Crew; onChat: (bot: string) => void }) {
       setDraft(null);
       await load();
     } catch (e) {
-      setError(message(e));
+      setError(errorText(e));
     }
   };
 
@@ -84,15 +85,9 @@ export function Projects(props: { crew: Crew; onChat: (bot: string) => void }) {
         writes in a git repository, or, for a Unity project unless you change it, in the folder itself, beside you. Every bot sees this list, with
         what each project is.
       </p>
-      {error && <p className="bad small">{error}</p>}
+      {error && <p className="error-text small">{error}</p>}
       {Object.entries(errors).map(([file, why]) => (
-        <div key={file} className="crew-problem">
-          <Icon name="alert" size={14} />
-          <div>
-            <div>projects/{file} couldn't be read</div>
-            <div className="crew-problem-why">{why}</div>
-          </div>
-        </div>
+        <Problem key={file} what={`projects/${file} couldn't be read`} why={why} />
       ))}
       <div className="list">
         {projects?.map((p) => (
@@ -177,13 +172,5 @@ export function Projects(props: { crew: Crew; onChat: (bot: string) => void }) {
 
 function nameFor(folder: string): string {
   const base = folder.split("/").filter(Boolean).at(-1) ?? "";
-  return base.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "project";
-}
-
-function tilde(path: string): string {
-  return path.replace(/^\/Users\/[^/]+/, "~");
-}
-
-function message(e: unknown): string {
-  return String(e).replace(/^Error: /, "");
+  return base.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "") || "project";
 }

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { bridge } from "../api";
+import { bridge, errorText } from "../api";
 import { readDraft, writeDraft } from "../drafts";
-import { argumentOf, commandsFor, finishMention, mentionTyped, pickerKey } from "../typing";
-import { type Actions, CommandPreview } from "./CommandPreview";
+import { type CommandName, argumentOf, commandsFor, insertMention, mentionAt, pickerKey } from "../typing";
+import { type Action, type Actions, CommandPreview } from "./CommandPreview";
 import { labelOf } from "./Avatar";
 import { Icon } from "./Icon";
 import { type Pending, PendingFiles, upload } from "./Attachments";
@@ -58,26 +58,37 @@ export function Composer(props: {
   const area = useRef<HTMLTextAreaElement>(null);
   const before = useRef(""); // what was typed before dictation started; what's heard goes after it
 
+  // Where the caret is, so an @ typed anywhere in the message gets suggestions, not only one at the end.
+  const [caret, setCaret] = useState(text.length);
   const [dismissedMention, setDismissedMention] = useState<string | null>(null);
-  const typing = mentionTyped(text);
-  const suggestions = typing === undefined || dismissedMention === text ? [] : (props.mentions ?? []).filter((m) => m.toLowerCase().startsWith(typing.toLowerCase()));
+  const at = mentionAt(text, caret);
+  const suggestions = !at || dismissedMention === text ? [] : (props.mentions ?? []).filter((m) => m.toLowerCase().startsWith(at.query.toLowerCase()));
+  const look = (value: string, where: number) => {
+    const next = mentionAt(value, where);
+    if (next?.start !== at?.start || next?.query !== at?.query) setPick(0);
+    setCaret(where);
+  };
   const mention = (name: string) => {
+    if (!at) return;
+    const next = insertMention(text, at, name);
     setPick(0);
     setDismissedMention(null);
-    setText(finishMention(text, name));
+    setText(next.value);
+    setCaret(next.caret);
     area.current?.focus();
+    requestAnimationFrame(() => area.current?.setSelectionRange(next.caret, next.caret));
   };
 
   // "/" and a command's start (or a whole one and what it takes): Tab or Enter shows the one picked above the box,
   // instead of sending. /usage and /status are shown at once; the others say what they'll do, and ↩ again does it.
   const actions = props.actions ?? {};
-  const can = (name: string) => name === "usage" || (name === "status" ? Boolean(props.task) : Boolean(actions[name as keyof Actions]));
+  const can = (name: CommandName) => name === "usage" || (name === "status" ? Boolean(props.task) : Boolean(actions[name]));
   const commands = commandsFor(text, can);
   const [pick, setPick] = useState(0);
   const [panel, setPanel] = useState<string | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
+  const [preview, setPreview] = useState<Action | null>(null);
   const [confirmed, setConfirmed] = useState(0);
-  const run = (name: string) => {
+  const run = (name: CommandName) => {
     setPick(0);
     area.current?.focus();
     if (name === "usage" || name === "status") {
@@ -104,7 +115,12 @@ export function Composer(props: {
     const taken = (e: Event) => (e as CustomEvent<object>).detail !== me && setListening(false);
     window.addEventListener(DICTATING_EVENT, taken);
     const offs = [
-      bridge.dictation.onHeard((heard) => dictating === me && setText(joined(before.current, heard))),
+      bridge.dictation.onHeard((heard) => {
+        if (dictating !== me) return;
+        const value = joined(before.current, heard);
+        setText(value);
+        setCaret(value.length);
+      }),
       bridge.dictation.onStopped((error) => {
         if (dictating !== me) return;
         dictating = null;
@@ -136,7 +152,7 @@ export function Composer(props: {
     } catch (e) {
       setListening(false);
       dictating = null;
-      setMicError(String(e).replace(/^Error: /, ""));
+      setMicError(errorText(e));
     }
   };
 
@@ -176,6 +192,7 @@ export function Composer(props: {
       await props.onSend(value, ready.map((f) => f.id!));
     } catch {
       setText(value);
+      setCaret(value.length);
       setFiles(sent);
     } finally {
       setSending(false);
@@ -257,10 +274,11 @@ export function Composer(props: {
         value={text}
         placeholder={props.placeholder}
         onChange={(e) => {
-          if (mentionTyped(text) !== mentionTyped(e.target.value)) setPick(0);
+          look(e.target.value, e.target.selectionStart);
           setDismissedMention(null);
           setText(e.target.value);
         }}
+        onSelect={(e) => look(e.currentTarget.value, e.currentTarget.selectionStart)}
         onKeyDown={(e) => {
           if (e.nativeEvent.isComposing) return;
           const menu = commands.length ? "commands" : suggestions.length ? "mentions" : null;

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { api } from "../api";
+import { api, errorText } from "../api";
 import type { Crew } from "../state";
-import { doing, oneLine } from "../state";
+import { doing, oneLine } from "../activityText";
 import type { Task } from "../types";
 import { ACTIVE } from "../types";
 import { labelOf } from "./Avatar";
@@ -106,9 +106,9 @@ export function MergeButton({ crew, task }: { crew: Crew; task: Task }) {
   const [failure, setFailure] = useState<string | null>(null);
   const [alreadyOn, setAlreadyOn] = useState<string | null>(null);
   // Main can move under a proposal: ask again when the task has news and when the window comes back.
-  const news = crew.events?.get(task.id)?.length ?? 0;
+  const news = crew.events.get(task.id)?.length ?? 0;
   let merges = 0; // another task merging moves main, so every proposal is asked about again
-  for (const other of crew.tasks?.values() ?? []) if (other.merge_state === "merged") merges++;
+  for (const other of crew.tasks.values()) if (other.merge_state === "merged") merges++;
   const asked = useRef(0);
   useEffect(() => {
     let current = true;
@@ -140,7 +140,7 @@ export function MergeButton({ crew, task }: { crew: Crew; task: Task }) {
     );
   }
   if (task.merge_state === "dropped") {
-    const dropped = (crew.events?.get(task.id) ?? []).filter((event) => event.kind === "dropped").at(-1);
+    const dropped = (crew.events.get(task.id) ?? []).filter((event) => event.kind === "dropped").at(-1);
     return (
       <span className="merged dropped" title={dropped?.data.reason}>
         <Icon name="x" size={13} /> Dropped
@@ -164,7 +164,7 @@ export function MergeButton({ crew, task }: { crew: Crew; task: Task }) {
       setReason("");
     } catch (e) {
       // Keep the reason for another try, and say why it failed where the user is looking.
-      setFailure(String(e).replace(/^Error: /, ""));
+      setFailure(errorText(e));
     } finally {
       setBusy(false);
     }

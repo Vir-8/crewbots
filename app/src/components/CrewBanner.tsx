@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, bridge } from "../api";
+import { api, ApiError, bridge, errorText } from "../api";
 import { API_SCHEMA, API_VERSION, type VersionOut } from "../api-types";
 import type { Crew } from "../state";
 import { install, ready, restartApp, running, start, timeLeft, useUpdates } from "../updates";
@@ -98,7 +98,7 @@ function useVersions(crew: Crew): Update | null {
   useEffect(() => {
     if (!connected) return;
     const ask = () =>
-      api.version().then(setDaemon, (e) => setDaemon(String(e).includes("Not Found") ? "unversioned" : null));
+      api.version().then(setDaemon, (e) => setDaemon(e instanceof ApiError && e.status === 404 ? "unversioned" : null));
     ask();
     const timer = window.setInterval(ask, VERSION_EVERY_MS);
     return () => window.clearInterval(timer);
@@ -123,7 +123,7 @@ function useVersions(crew: Crew): Update | null {
     bad: Boolean(restartError),
     action: { label: restartError ? "Try again" : "Restart to update", run: () => {
       setRestartError(null);
-      void restartApp().catch((e) => setRestartError(String(e).replace(/^Error: /, "")));
+      void restartApp().catch((e) => setRestartError(errorText(e)));
     } },
   };
   if (relaunchFailure) return { text: relaunchFailure, bad: true };

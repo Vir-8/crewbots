@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, errorText } from "../api";
 import { Later } from "./Later";
 import type { Task } from "../types";
 import "../styles/panels.css";
@@ -14,7 +14,7 @@ export function DiffView({ task }: { task: Task }) {
         setDiff(r.diff);
         setError(null);
       },
-      (e) => setError(String(e).replace(/^Error: /, "")),
+      (e) => setError(errorText(e)),
     );
   }, [task.id, task.updated_at]);
 

@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { api } from "../api";
+import { api, errorText } from "../api";
 import type { Crew } from "../state";
 import { labelOf } from "./Avatar";
-import { Markdown } from "./bits";
+import { Markdown, tilde } from "./bits";
 import { Icon } from "./Icon";
 import type { Block } from "./threadBlocks";
 
@@ -21,7 +21,7 @@ export function Permission({ crew, block, onOpen }: { crew: Crew; block: Asked; 
     api.answerPermission(block.permission, allowed).then(
       () => setError(null),
       (e) => {
-        setError(String(e).replace(/^Error: /, ""));
+        setError(errorText(e));
         setAnswering(false);
       },
     );
@@ -40,9 +40,9 @@ export function Permission({ crew, block, onOpen }: { crew: Crew; block: Asked; 
         </button>
       )}
       <div className="permission-what"><Markdown text={block.what} onSelect={onOpen} /></div>
-      {block.folder && <div className="permission-folder"><Icon name="folder" size={13} /> {block.folder.replace(/^\/Users\/[^/]+/, "~")}</div>}
+      {block.folder && <div className="permission-folder"><Icon name="folder" size={13} /> {tilde(block.folder)}</div>}
       {block.why && <div className="permission-why"><Markdown text={block.why} onSelect={onOpen} /></div>}
-      {error && <p className="bad small">{error}</p>}
+      {error && <p className="error-text small">{error}</p>}
       {!answered && (
         <div className="permission-actions">
           <button className="button small primary" disabled={answering} onClick={() => answer(true)}>

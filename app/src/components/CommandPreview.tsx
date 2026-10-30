@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { errorText } from "../api";
 import type { Crew } from "../state";
 
 /** What the message box's commands can do here: each is there only where it makes sense (a thread to stop, a
@@ -13,13 +14,15 @@ export type Actions = {
   resume?: () => Promise<unknown>;
 };
 
+export type Action = Exclude<keyof Actions, "who">;
+
 /** /pause or /resume, whichever the crew can do now. */
 export const crewCommands = (crew: Crew): Actions =>
   crew.crewState?.paused ? { resume: () => crew.pause(false) } : { pause: () => crew.pause(true) };
 
 type Said = { title: string; text: string; button: string; needs?: string };
 
-function said(name: string, arg: string, who: string): Said {
+function said(name: Action, arg: string, who: string): Said {
   switch (name) {
     case "new":
       return { title: "New thread", text: `${who} starts a thread on: “${arg}”. It works beside this chat, and its result comes back here.`, button: "Start it", needs: "what it's for" };
@@ -31,29 +34,29 @@ function said(name: string, arg: string, who: string): Said {
       return { title: "Stop", text: "Stops what's running here now. A message carries it on again.", button: "Stop it" };
     case "pause":
       return { title: "Pause the crew", text: "No bot starts a new turn until you resume. Turns already running finish.", button: "Pause" };
-    default:
+    case "resume":
       return { title: "Resume the crew", text: "Bots start turns again, and what waited goes ahead.", button: "Resume" };
   }
 }
 
 /** A command, shown before it runs: what it will do, and the button that does it, or ↩ in the box (each ↩ bumps
  * `confirmed`). Nothing runs until then. */
-export function CommandPreview(props: { name: string; arg: string; actions: Actions; confirmed: number; onDone: () => void; onCancel: () => void }) {
+export function CommandPreview(props: { name: Action; arg: string; actions: Actions; confirmed: number; onDone: () => void; onCancel: () => void }) {
   const { name, arg, actions } = props;
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const s = said(name, arg, actions.who ?? "this bot");
   const missing = Boolean(s.needs && !arg);
   const go = async () => {
-    const act = { new: () => actions.new?.(arg), group: () => actions.group?.(arg), remember: () => actions.remember?.(arg), stop: actions.stop, pause: actions.pause, resume: actions.resume }[name];
+    const act = actions[name];
     if (!act || missing || busy) return;
     setBusy(true);
     setError(null);
     try {
-      await act();
+      await act(arg);
       props.onDone();
     } catch (e) {
-      setError(String(e).replace(/^Error: /, ""));
+      setError(errorText(e));
     } finally {
       setBusy(false);
     }
@@ -74,7 +77,7 @@ export function CommandPreview(props: { name: string; arg: string; actions: Acti
         </button>
       </div>
       <p className="command-preview-text">{missing ? `Type ${s.needs} after /${name}.` : s.text}</p>
-      {error && <p className="command-preview-text bad">{error}</p>}
+      {error && <p className="command-preview-text error-text">{error}</p>}
     </div>
   );
 }

@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { api, bridge } from "../api";
+import { api, bridge, errorText } from "../api";
 import { Avatar, labelOf } from "../components/Avatar";
 import { ago } from "../components/bits";
 import { Icon } from "../components/Icon";
-import { Field, Page, Segmented, Sheet, Switch } from "../components/ui";
+import { Field, Page, Problem, Segmented, Sheet, Switch } from "../components/ui";
 import type { Crew } from "../state";
 import type { Routine, RoutineFile } from "../types";
 
@@ -32,13 +32,7 @@ export function Routines({ crew, onOpen }: { crew: Crew; onOpen: (id: string) =>
     >
       <p className="page-lede">Work the crew starts on its own: on a schedule, as a message in that bot's chat, or when GitHub has something for you, as a thread.</p>
       {errors.map(([file, why]) => (
-        <div key={file} className="crew-problem">
-          <Icon name="alert" size={14} />
-          <div>
-            <div>routines/{file} couldn't be read</div>
-            <div className="crew-problem-why">{why}</div>
-          </div>
-        </div>
+        <Problem key={file} what={`routines/${file} couldn't be read`} why={why} />
       ))}
       <div className="list">
         {routines.map((r) => (
@@ -71,10 +65,7 @@ export function Routines({ crew, onOpen }: { crew: Crew; onOpen: (id: string) =>
 }
 
 function RoutineRow({ routine: r, crew, onEdit, onOpen }: { routine: Routine; crew: Crew; onEdit: () => void; onOpen: (id: string) => void }) {
-  const toggle = async (on: boolean) => {
-    await api.saveRoutine(r.name, { enabled: on });
-    crew.refresh();
-  };
+  const toggle = (on: boolean) => crew.saveRoutine(r.name, { enabled: on }).catch(() => undefined);
   return (
     <div className={`list-row routine ${r.enabled ? "" : "off"}`} onClick={onEdit} role="button" tabIndex={0}>
       <Avatar name={r.bot} size={32} />
@@ -176,7 +167,7 @@ function RoutineEditor({ crew, name, onClose }: { crew: Crew; name: string | nul
     if (!creating) api.routineFile(name!).then((r) => {
       setDraft({ ...r, enabled: r.enabled ?? true });
       setCustom(parse(r.schedule ?? "").when === "custom");
-    }, (e) => setError(String(e)));
+    }, (e) => setError(errorText(e)));
   }, [name]);
   if (!draft) return <Sheet title="Edit routine" onClose={onClose} footer={null}>{error ? <p className="error-text">{error}</p> : <p className="faint">Loading…</p>}</Sheet>;
 
@@ -200,16 +191,12 @@ function RoutineEditor({ crew, name, onClose }: { crew: Crew; name: string | nul
       await crew.refresh();
       onClose();
     } catch (e) {
-      setError(String(e).replace(/^Error: /, ""));
+      setError(errorText(e));
     } finally {
       setSaving(false);
     }
   };
-  const remove = async () => {
-    await api.deleteRoutine(name!);
-    await crew.refresh();
-    onClose();
-  };
+  const remove = () => crew.deleteRoutine(name!).then(onClose, () => undefined);
 
   return (
     <Sheet
@@ -218,7 +205,7 @@ function RoutineEditor({ crew, name, onClose }: { crew: Crew; name: string | nul
       footer={
         <>
           {!creating && (
-            <button className="button danger-text" onClick={remove}>
+            <button className="button error-text" onClick={remove}>
               Delete
             </button>
           )}
