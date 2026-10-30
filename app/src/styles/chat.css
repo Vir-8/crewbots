@@ -179,7 +179,7 @@
   color: var(--faint);
 }
 
-.step.failed .step-name {
+.step.failed .step-arg {
   color: var(--red);
 }
 
@@ -225,11 +225,11 @@
 }
 
 .working-indicator.retrying {
-  color: var(--muted);
+  color: var(--faint);
 }
 
 .working-indicator.retrying .working-dot {
-  background: var(--muted);
+  background: var(--faint);
   animation: none;
 }
 

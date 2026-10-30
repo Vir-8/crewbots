@@ -68,7 +68,7 @@ export function PagePanel(props: { crew: Crew; bot: string; page: string; onPage
     <aside className="panel page-panel">
       {props.edge}
       <div className="panel-drag" data-tauri-drag-region />
-      <header className="page-head">
+      <header className="page-panel-head">
         {trail.length > 0 && (
           <button className="icon-button" onClick={back} title={`Back to ${trail.at(-1)}`}>
             <Icon name="back" size={15} />

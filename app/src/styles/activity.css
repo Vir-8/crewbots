@@ -49,6 +49,10 @@
   white-space: nowrap;
 }
 
+.pill.bad {
+  color: var(--red);
+}
+
 .activity-pairs {
   display: flex;
   flex-wrap: wrap;
