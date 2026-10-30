@@ -140,8 +140,9 @@ def test_the_crews_use_by_day_plan_model_and_bot(store):
 
     s = summary(store, bots.get, days=30)
 
-    assert s["totals"] == {"claude": 500 + 350, "codex": 5500} and s["turns"] == 3
-    assert s["daily"][-1] == {"date": datetime.now().astimezone().date().isoformat(), "claude": 850, "codex": 5500}
+    assert s["totals"] == {"claude": 500 + 350, "codex": 5500, "antigravity": 0} and s["turns"] == 3
+    assert s["daily"][-1] == {"date": datetime.now().astimezone().date().isoformat(), "claude": 850,
+                              "codex": 5500, "antigravity": 0}
     assert s["models"][0] == {"plan": "codex", "model": "gpt-6.1-sol", "tokens": 5500, "input": 5000,
                               "cached": 0, "written": 0}  # put down to its bot's model
     assert s["cache"] == {"input": 6300, "cached": 600, "written": 350}

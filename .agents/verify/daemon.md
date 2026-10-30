@@ -26,6 +26,10 @@ The app talks to it at `~/.crewbots/crew/daemon.json` (`url`, `token`), on route
   look for.
 
 ## Gotchas
+- Antigravity uses the official Google ACP runtime (see `docs/ANTIGRAVITY.md`). Run `crewbots antigravity models`
+  to discover account-specific models without a model turn. For a user-authorized live check, point only the scratch
+  daemon at the runtime-owned signed-in profile with `CREWBOTS_ANTIGRAVITY_HOME` and the official binary with
+  `CREWBOTS_ANTIGRAVITY_ACP`; never copy tokens. Verify workspace MCP, crew MCP, a follow-up and separate usage totals.
 - Most daemon behaviour has fakes in `tests/fakes.py` (`ScriptedCrew`, fake sessions). A focused test there is the
   first proof. The scratch daemon is for what crosses the API.
 - Never point anything at the user's own daemon (`~/.crewbots/crew`): it's their running crew.

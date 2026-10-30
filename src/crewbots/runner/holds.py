@@ -147,6 +147,8 @@ class Holds:
 
     def _wake_held(self) -> None:
         self._recheck.set()
+        # Wake every current waiter once; tasks still held must wait on a fresh signal.
+        self._recheck = asyncio.Event()
 
     @contextlib.asynccontextmanager
     async def _turn_slot(self, task_id: str) -> AsyncIterator[None]:
@@ -163,7 +165,6 @@ class Holds:
             yield
         finally:
             self._slots.release()
-        self._recheck = asyncio.Event()
 
     def _note_limit(self, task_id: str, limit: RateLimit) -> None:
         """Keeps the plan's latest limit, and tells the crew when its status changes (getting close, reached)."""

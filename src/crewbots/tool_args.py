@@ -230,7 +230,7 @@ class AddBot(Args):
     description: str
     instructions: str
     display_name: str | None = None
-    backend: Literal["claude", "codex"] | None = None
+    backend: Literal["claude", "codex", "antigravity"] | None = None
     model: str | None = None
     effort: str | None = None
     # Shown as a choice of these, but any is read: the runner refuses full access with why

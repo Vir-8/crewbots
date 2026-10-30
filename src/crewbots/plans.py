@@ -41,7 +41,9 @@ async def plans(fresh: bool = False) -> dict[str, Any]:
         return await asyncio.shield(_ask(name))
 
     claude, codex = await asyncio.gather(one("claude"), one("codex"))
-    return {"claude": claude, "codex": codex}
+    return {"claude": claude, "codex": codex, "antigravity": {
+        "available": False, "error": None, "windows": [], "checked_at": 0,
+        "notes": ["Check quota in Antigravity. Crewbots records ACP token usage; subscription limits are not polled."]}}
 
 
 def _ask(name: str) -> asyncio.Task:

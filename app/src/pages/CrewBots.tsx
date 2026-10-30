@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Avatar, COLORS, COLOR_NAMES, SHAPE_NAMES, face, labelOf } from "../components/Avatar";
 import { Icon } from "../components/Icon";
-import { ModelPicker } from "../components/ModelPicker";
+import { backendFamily, ModelPicker } from "../components/ModelPicker";
 import { tokens } from "../components/StatusPanel";
 import { Field, Page, Segmented, Sheet, Switch } from "../components/ui";
 import type { Crew } from "../state";
@@ -207,26 +207,27 @@ export function BotEditor({ crew, name, onClose }: { crew: Crew; name: string | 
 
       <Field label="Runs on">
         <Segmented
-          value={(draft.backend ?? "claude").startsWith("codex") ? "codex" : "claude"}
-          options={[["claude", "Claude"], ["codex", "Codex"]]}
-          onChange={(backend) => set({ backend, model: null, effort: null })}
+          value={backendFamily(draft.backend ?? "claude")}
+          options={[["claude", "Claude"], ["codex", "Codex"], ["antigravity", "Antigravity"]]}
+          onChange={(backend) => set({ backend, model: null, effort: null, ...(backend === "antigravity" ? { proactive: false, network: draft.network === true, access: draft.access === "full" ? "workspace_write" : draft.access } : {}) })}
         />
       </Field>
+      {draft.backend === "antigravity" && <p className="faint small">Uses your Antigravity subscription through Google's ACP runtime. Set up once with <code>crewbots antigravity install</code> and <code>crewbots antigravity login</code>. Requested work only; no automatic retries or background turns.</p>}
       <Field label="Model and reasoning" hint="Its chat and every thread it opens use these. Blank: the CLI's own default.">
         <ModelPicker crew={crew} backend={draft.backend ?? "claude"} model={draft.model} effort={draft.effort} onChange={(model, effort) => set({ model, effort })} />
       </Field>
 
-      <Field label="Context window" hint="How much of a conversation it keeps before compacting: past 70% of it (about 700K on a 1M model), it sets down where things stand and compacts. Smaller is quicker and cheaper.">
+      {draft.backend !== "antigravity" && <Field label="Context window" hint="How much of a conversation it keeps before compacting: past 70% of it (about 700K on a 1M model), it sets down where things stand and compacts. Smaller is quicker and cheaper.">
         <Segmented
           value={draft.context_window == null ? "auto" : String(draft.context_window)}
           options={[...WINDOWS, ...(typeof draft.context_window === "number" && !WINDOWS.some(([v]) => v === String(draft.context_window)) ? [[String(draft.context_window), tokens(draft.context_window)] as [string, string]] : [])]}
           onChange={(v) => set({ context_window: v === "auto" ? "auto" : Number(v) })}
         />
-      </Field>
+      </Field>}
 
       <Field label="Access">
         <select value={draft.access ?? "read_only"} onChange={(e) => set({ access: e.target.value as Card["access"] })}>
-          {Object.entries(ACCESS).map(([value, label]) => (
+          {Object.entries(ACCESS).filter(([value]) => draft.backend !== "antigravity" || value !== "full").map(([value, label]) => (
             <option key={value} value={value}>
               {label}
             </option>
@@ -236,7 +237,7 @@ export function BotEditor({ crew, name, onClose }: { crew: Crew; name: string | 
       <Field label="Network" hint="Web search and pages, and a writing bot's commands, such as installing dependencies. Your logins never reach it.">
         <Segmented
           value={networkMode}
-          options={(draft.backend ?? "").startsWith("codex") ? [["off", "Off"], ["any", "Any host"]] : [["off", "Off"], ["any", "Any host"], ["hosts", "Only these hosts"]]}
+          options={(draft.backend ?? "").startsWith("codex") || draft.backend === "antigravity" ? [["off", "Off"], ["any", "Any host"]] : [["off", "Off"], ["any", "Any host"], ["hosts", "Only these hosts"]]}
           onChange={(mode) => set({ network: mode === "any" ? true : mode === "hosts" ? (draft.hosts ?? "").split(/[\s,]+/).filter(Boolean) : false })}
         />
         {networkMode === "hosts" && <input value={draft.hosts ?? ""} onChange={(e) => set({ hosts: e.target.value, network: e.target.value.split(/[\s,]+/).filter(Boolean) })} placeholder="pypi.org, files.pythonhosted.org" />}
@@ -269,7 +270,7 @@ export function BotEditor({ crew, name, onClose }: { crew: Crew; name: string | 
         </span>
       </Field>
       <Field label="Starts work on its own" hint="From a check-in, it may open a thread for low-risk work: a draft, some research, a branch in its own worktree. Up to three a day, only with spare capacity, and it never merges, pushes, posts or spends.">
-        <Switch on={draft.proactive !== false} onChange={(on) => set({ proactive: on })} label="Starts work on its own" />
+        {draft.backend !== "antigravity" && <Switch on={draft.proactive !== false} onChange={(on) => set({ proactive: on })} label="Starts work on its own" />}
       </Field>
       <Field label="Role card" hint="Its mission, what it owns and doesn't, and what done means. Every turn, it reads this.">
         <textarea className="mono-area" rows={14} value={draft.instructions ?? ""} onChange={(e) => set({ instructions: e.target.value })} />

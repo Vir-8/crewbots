@@ -6,7 +6,7 @@ import type { ConnectionStatus, Live, StoredEvent, Task } from "../types";
 import * as demo from "./demo";
 import { landedRequest } from "./demo/landed";
 import { projectRequest } from "./demo/projects";
-import { chats, crewState, mcpServers, pins, plans, previewFiles, setPins, reviewDrafts, reviewInbox, routines, skills, status, usageSummary } from "./fixtures";
+import { chats, crewState, mcpServers, pins, plans, previewFiles, previewModels, setPins, reviewDrafts, reviewInbox, routines, skills, status, usageSummary } from "./fixtures";
 
 type Listener<T> = (payload: T) => void;
 const liveListeners = new Set<Listener<Live>>();
@@ -197,19 +197,7 @@ async function request(method: string, path: string, body?: any) {
   if (method === "GET" && url.pathname === "/reviews/inbox") return ok(reviewInbox);
   if (method === "GET" && url.pathname === "/reviews/repos") return ok({ "acme/web": "~/code/acme-web" });
   if (url.pathname === "/reviews/reviewers") return ok(method === "PUT" ? body : [{ backend: "claude", model: "sonnet", effort: "high" }, { backend: "codex", model: null, effort: "high" }]);
-  if (method === "GET" && url.pathname === "/models") {
-    return ok({
-      claude: [
-        { id: "default", label: "Default (recommended)", description: "Opus", efforts: ["low", "medium", "high", "max"], default_effort: null, default: true },
-        { id: "sonnet", label: "Sonnet", description: "Best for everyday tasks", efforts: ["low", "medium", "high"], default_effort: null, default: false },
-        { id: "haiku", label: "Haiku", description: "Fastest", efforts: [], default_effort: null, default: false },
-      ],
-      codex: [
-        { id: "gpt-6.1-sol", label: "GPT-6.1-Sol", description: "", efforts: ["low", "medium", "high", "xhigh", "max", "ultra"], default_effort: "low", default: true },
-        { id: "gpt-6-luna", label: "GPT-6-Luna", description: "", efforts: ["low", "medium", "high", "xhigh", "max"], default_effort: "medium", default: false },
-      ],
-    });
-  }
+  if (method === "GET" && url.pathname === "/models") return ok(previewModels);
   if (method === "POST" && url.pathname === "/attachments") {
     const id = Math.random().toString(16).slice(2, 14).padEnd(12, "0");
     const ext = String(body.name).split(".").pop()!.toLowerCase();

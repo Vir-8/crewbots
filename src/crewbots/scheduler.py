@@ -131,7 +131,9 @@ class Scheduler:
             self._check_in_due(now)
             self._wake_due(now)
         self.runner.attention.tick(now)
-        triggers = [r for r in self.routines if r.enabled and r.on and not away]
+        triggers = [r for r in self.routines if r.enabled and r.on and not away
+                    and self.runner.crew.bots.get(r.bot)
+                    and getattr(self.runner.backends[self.runner.crew.bots[r.bot].backend], "automatic_turns", True)]
         if (triggers or self._wants_github()) and (self._polled is None or loop.time() - self._polled >= self.github_every_s):
             self._polled = loop.time()
             started += await self._poll_github(triggers, now)
@@ -262,6 +264,9 @@ class Scheduler:
     # Schedules.
 
     def _check_schedule(self, routine: Routine, now: datetime) -> Task | None:
+        bot = self.runner.crew.bots.get(routine.bot)
+        if bot and not getattr(self.runner.backends[bot.backend], "automatic_turns", True):
+            return None
         assert routine.schedule
         state = self.store.routine_state(routine.name)
         self.store.routine_checked(routine.name, now.isoformat())

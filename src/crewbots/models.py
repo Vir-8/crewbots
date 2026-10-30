@@ -32,8 +32,11 @@ async def models(fresh: bool = False) -> dict[str, list[dict[str, Any]]]:
         _cache[name] = (time.monotonic(), found)
         return found
 
-    claude, codex = await asyncio.gather(one("claude", _claude), one("codex", _codex))
-    return {"claude": claude, "codex": codex}
+    from crewbots.backends.antigravity_runtime import models as antigravity_models
+
+    claude, codex, antigravity = await asyncio.gather(
+        one("claude", _claude), one("codex", _codex), one("antigravity", antigravity_models))
+    return {"claude": claude, "codex": codex, "antigravity": antigravity}
 
 
 async def _codex() -> list[dict[str, Any]]:

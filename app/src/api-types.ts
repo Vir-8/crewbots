@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "34f3b17e690a";
+export const API_SCHEMA = "9a7e98a57d15";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -630,6 +630,7 @@ export interface ModelUse {
 export interface ModelsOut {
   claude: ModelOut[];
   codex: ModelOut[];
+  antigravity?: ModelOut[];
 }
 
 export interface NameBody {
@@ -791,6 +792,7 @@ export interface PlanWindow {
 export interface PlansOut {
   claude: PlanOut;
   codex: PlanOut;
+  antigravity?: PlanOut | null;
 }
 
 export interface PostBody {
@@ -1293,6 +1295,7 @@ export interface UsageDay {
   date: string;
   claude: number;
   codex: number;
+  antigravity?: number;
 }
 
 export interface UsagePeak {

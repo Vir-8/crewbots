@@ -1,5 +1,6 @@
 """Budgets and plan limits: a turn that would go past one waits, instead of failing mid-task."""
 
+import asyncio
 import time
 from dataclasses import replace
 
@@ -104,6 +105,48 @@ async def test_the_plans_limit_holds_every_bot_on_that_plan_until_it_resets(stor
     runner.limits["claude"]["five_hour"] = RateLimit(plan="claude", window="five_hour", status="ok")
     runner.reload(runner.crew)  # wakes held tasks to look again, as the minute-by-minute check would
     await wait_until(status_is(store, second.id, Status.IDLE))
+
+
+@pytest.mark.parametrize("wake", ["reload", "release"])
+async def test_waking_tasks_still_over_the_limit_doesnt_block_other_work(store, tmp_path, monkeypatch, wake):
+    bots = [replace(bot(name), backend="claude") for name in ("one", "two")]
+    gate = asyncio.Event()
+    runner = Runner(store, make_crew(tmp_path, *bots), {"claude": FakeBackend(gate=gate)})
+    runner.limits["claude"] = {"five_hour": RateLimit(
+        plan="claude", window="five_hour", status="limited", resets_at=int(time.time()) + 3600)}
+    tasks = [runner.submit(b.name, "wait for capacity") for b in bots]
+    await wait_until(lambda: all(store.get_task(t.id).status is Status.HELD for t in tasks))
+    checks = 0
+    reason = runner.hold_reason
+
+    def bounded_reason(task):
+        nonlocal checks
+        checks += 1
+        # Fail a busy loop without hanging pytest's event loop and its timeouts too.
+        if checks > 100:
+            raise RuntimeError("held tasks are spinning without yielding")
+        return reason(task)
+
+    monkeypatch.setattr(runner, "hold_reason", bounded_reason)
+    try:
+        if wake == "release":
+            runner.release(tasks[0].id)
+            await wait_until(status_is(store, tasks[0].id, Status.RUNNING))
+        else:
+            runner.reload(runner.crew)
+        await asyncio.sleep(0.02)
+        assert checks < 10
+        assert store.get_task(tasks[1].id).status is Status.HELD
+
+        # A second wake must reach all remaining waiters after another turn has completed.
+        gate.set()
+        if wake == "release":
+            await wait_until(status_is(store, tasks[0].id, Status.IDLE))
+        runner.limits["claude"].clear()
+        runner.reload(runner.crew)
+        await wait_until(lambda: all(store.get_task(t.id).status is Status.IDLE for t in tasks))
+    finally:
+        await runner.shutdown()
 
 
 async def test_a_limit_is_recorded_when_it_changes_not_on_every_turn(store, tmp_path):

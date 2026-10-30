@@ -81,6 +81,10 @@ export function usageSummary(days: number) {
 }
 
 export const plans = {
+  antigravity: {
+    available: false, error: null, windows: [], checked_at: 0,
+    notes: ["Check quota in Antigravity. Crewbots records ACP token usage; subscription limits are not polled."],
+  },
   claude: {
     available: true, error: null, notes: [], checked_at: Date.now() / 1000,
     windows: [
@@ -144,3 +148,18 @@ export function routines() {
     starters: [{ name: "ci-failed", description: "Works out why checks failed on one of your pull requests, and what would fix it.", when: "on github.ci_failed in owner/name" }],
   };
 }
+
+export const previewModels = {
+      claude: [
+        { id: "default", label: "Default (recommended)", description: "Opus", efforts: ["low", "medium", "high", "max"], default_effort: null, default: true },
+        { id: "sonnet", label: "Sonnet", description: "Best for everyday tasks", efforts: ["low", "medium", "high"], default_effort: null, default: false },
+        { id: "haiku", label: "Haiku", description: "Fastest", efforts: [], default_effort: null, default: false },
+      ],
+      codex: [
+        { id: "gpt-6.1-sol", label: "GPT-6.1-Sol", description: "", efforts: ["low", "medium", "high", "xhigh", "max", "ultra"], default_effort: "low", default: true },
+        { id: "gpt-6-luna", label: "GPT-6-Luna", description: "", efforts: ["low", "medium", "high", "xhigh", "max"], default_effort: "medium", default: false },
+      ],
+      antigravity: [
+        { id: "gemini-3.8-flash", label: "Gemini 3.8 Flash", description: "", efforts: ["low", "medium", "high"], default_effort: "medium", default: true },
+      ],
+    };

@@ -75,6 +75,8 @@ class Sessions:
     def _window(self, task: Task, bot: Bot) -> int | None:
         """The context a task's sessions hold before compacting: its bot's, and at most CONVERSATION_WINDOW for a chat
         or group chat."""
+        if not getattr(self.backends[bot.backend], "automatic_turns", True):
+            return None  # the official ACP runtime manages its own context
         if task.kind in ("chat", "seat"):
             return min(bot.context_window or CONVERSATION_WINDOW, CONVERSATION_WINDOW)
         return bot.context_window
@@ -328,6 +330,8 @@ class Sessions:
         cache is warm: its bot first sets down where things stand (`_flush`), then the CLI compacts it in place with
         the crew's instructions. If that fails twice, it carries on in a fresh session from its notes, logs and state.
         A session that can't compact on request rolls over to a fresh one from a briefing instead (`_roll_over`)."""
+        if not getattr(self.backends[bot.backend], "automatic_turns", True):
+            return
         measure = getattr(opened.session, "context_percent", None) if opened and opened.session.alive else None
         if not self.rollover_percent or measure is None:
             return
@@ -359,6 +363,8 @@ class Sessions:
         """Before compacting, or about 50 minutes into idleness while the cache is warm: the bot sets down where the
         task stands (`update_state`) and what's worth keeping from it in today's log. Nobody sees the turn; a quiet
         line in the thread says it happened."""
+        if not getattr(self.backends[bot.backend], "automatic_turns", True):
+            return
         done, _ = await self._hidden(task_id, opened.session.turn(prompts.text("flush", self.crew.home,
                                                                                  no_reply=NO_REPLY)), bot)
         text = (done.final_text if done and not done.is_error else "").strip()
@@ -426,6 +432,9 @@ class Sessions:
         things stand, so a fresh session after the cache has gone (`_gone_cold`) loses nothing."""
         now = time.time()
         for task_id, ended in list(self._turn_ended.items()):
+            bot = self.bot_for(self.store.get_task(task_id).bot)
+            if bot and not getattr(self.backends[bot.backend], "automatic_turns", True):
+                continue
             if (task_id in self._flushed or task_id in self._runs or task_id in self._cancelling
                     or not self.flush_idle_s <= now - ended < self.cold_s
                     or (self._context_seen.get(task_id) or 0) < COLD_PERCENT):

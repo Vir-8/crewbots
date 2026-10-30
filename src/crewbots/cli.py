@@ -15,7 +15,7 @@ from typing import Any
 
 import httpx
 
-from crewbots import api, crew, doctor, paths, reset, typescript, worktree
+from crewbots import antigravity_setup, api, crew, doctor, paths, reset, typescript, worktree
 from crewbots import routines as routines_module
 from crewbots import service as svc
 from crewbots.backends import BACKENDS, Access, RunSpec
@@ -70,6 +70,9 @@ def main(argv: list[str] | None = None) -> int:
     service.add_argument("--port", type=int, default=api.DEFAULT_PORT)
     service.add_argument("--label", default=svc.LABEL, help="the launchd label (another one for a second crew)")
     service.add_argument("--json", action="store_true")
+
+    antigravity = sub.add_parser("antigravity", help="install or sign in to Google's official ACP runtime")
+    antigravity.add_argument("action", choices=["install", "login", "models"])
 
     skills = sub.add_parser("skills", help="list the crew's skills, or add some")
     skills_sub = skills.add_subparsers(dest="skills_command")
@@ -127,7 +130,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     try:
-        return COMMANDS[args.command](args)
+        return antigravity_setup.main(args) if args.command == "antigravity" else COMMANDS[args.command](args)
     except (crew.CrewError, routines_module.RoutineError, FileNotFoundError, RuntimeError) as e:
         print(f"crewbots: {e}", file=sys.stderr)
         return 1

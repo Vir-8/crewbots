@@ -78,6 +78,7 @@ class ModelOut(BaseModel):
 class ModelsOut(BaseModel):
     claude: list[ModelOut]
     codex: list[ModelOut]
+    antigravity: list[ModelOut] = []
 
 class OutputOut(BaseModel):
     path: str
