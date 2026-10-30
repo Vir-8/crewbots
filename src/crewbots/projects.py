@@ -24,7 +24,7 @@ from typing import Literal
 
 import yaml
 
-from crewbots import frontmatter
+from crewbots import frontmatter, paths
 
 FOLDER = "projects"
 NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
@@ -121,8 +121,7 @@ def save(home: Path, name: str, folder: Path, about: str, isolation: Isolation |
     if isolation is None and old:
         isolation = old.isolation_setting
     path.parent.mkdir(parents=True, exist_ok=True)
-    shown = str(folder).replace(str(Path.home()), "~", 1) if folder.is_relative_to(Path.home()) else str(folder)
-    meta = {"folder": shown, **({"isolation": isolation} if isolation is not None else {}),
+    meta = {"folder": paths.shown(folder), **({"isolation": isolation} if isolation is not None else {}),
             **({"ci": list(old.ci)} if old and old.ci else {})}
     path.write_text(f"---\n{yaml.safe_dump(meta, sort_keys=False)}---\n{about.strip()}\n")
     return parse(path.read_text(), path)
@@ -139,5 +138,5 @@ def listing(projects: dict[str, Project]) -> str:
     """The projects as bots see them: name, folder, how its work is done, and what it is."""
     how = {"in_place": "worked in its folder itself, on its current branch: no worktrees or branches",
            "worktree": "each task in a worktree of its own"}
-    return "\n".join(f"- {p.name} ({str(p.folder).replace(str(Path.home()), '~', 1)}; {how[p.isolation]})"
+    return "\n".join(f"- {p.name} ({paths.shown(p.folder)}; {how[p.isolation]})"
                      + (f": {p.gist}" if p.gist else "") for p in projects.values())

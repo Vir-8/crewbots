@@ -12,9 +12,17 @@ import subprocess
 import sys
 from pathlib import Path
 
+DB = "crewbots.db"  # in the crew's folder
+DAEMON_FILE = "daemon.json"  # in the crew's folder: where the daemon is and its token, readable only by the user
+
 
 def home() -> Path:
     return Path.home()
+
+
+def shown(path: Path) -> str:
+    """The path with ~ for the home folder, as people and bots read it."""
+    return str(path).replace(str(home()), "~", 1) if path.is_relative_to(home()) else str(path)
 
 
 def root() -> Path:
@@ -49,6 +57,10 @@ def bot_folders() -> Path:
 
 def logs() -> Path:
     return root() / "logs"
+
+
+def daemon_log() -> Path:
+    return logs() / "daemon.log"
 
 
 def temp() -> Path:

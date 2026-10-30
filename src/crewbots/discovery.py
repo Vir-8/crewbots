@@ -86,7 +86,7 @@ def digest(memories: list[FoundMemory], limit: int = MEMORY_CHARS) -> tuple[str,
             text = memory.path.read_text(errors="replace")
         except OSError:
             continue
-        where = f"{'Claude Code' if memory.source == 'claude' else 'Codex'}: {_shown(memory.path)}"
+        where = f"{'Claude Code' if memory.source == 'claude' else 'Codex'}: {paths.shown(memory.path)}"
         block = f"## {where}\n\n{text.strip()}\n"
         if used + len(block) > limit:
             parts.append(f"## {where}\n\n(left out: there was more than fits)\n")
@@ -229,7 +229,3 @@ def _title(memory: Path) -> str:
             if meta.get(key):
                 return " ".join(str(meta[key]).split())
     return memory.stem
-
-
-def _shown(path: Path) -> str:
-    return str(path).replace(str(paths.home()), "~", 1)

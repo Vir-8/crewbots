@@ -30,6 +30,18 @@ def test_a_project_is_a_folder_and_what_it_is(tmp_path):
     assert projects.load(home) == ({}, {})
 
 
+def test_bots_see_folders_under_home_with_a_tilde_and_others_in_full(tmp_path):
+    crew, inside, beside = tmp_path / "crew", paths.home() / "code" / "web", paths.home().with_name("home-backup")
+    for folder in (crew, inside, beside):
+        folder.mkdir(parents=True)
+
+    saved = {name: projects.save(crew, name, folder, "") for name, folder in (("web", inside), ("old", beside))}
+
+    assert projects.listing(saved) == ("- web (~/code/web; each task in a worktree of its own)\n"
+                                       f"- old ({beside}; each task in a worktree of its own)")
+    assert "folder: ~/code/web" in (crew / "projects" / "web.md").read_text()
+
+
 def test_a_projects_ci_list_is_read_and_kept_when_the_project_is_saved(tmp_path):
     folder = tmp_path / "web"
     folder.mkdir()
