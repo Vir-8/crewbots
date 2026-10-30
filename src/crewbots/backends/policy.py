@@ -12,6 +12,9 @@
 - **No bot** short of full access reads what's private (backends/credentials.py): the user's logins and keys, and
   crewbots' own, its admin token above all. Claude's file tools are refused them here and by Claude Code's own rules,
   and both CLIs' sandboxes keep commands out of them.
+- **No bot** reads another bot's working state (`deny_read`). A full-access bot runs without this policy, so only
+  Claude Code's own rules (claude_cli.settings) keep its file tools out: its unsandboxed shell, and a Codex bot on
+  full access, aren't kept from it.
 - Work a bot starts on its own (a check-in, a thread from one) reaches nothing outside crewbots: it gets none of the
   bot's MCP servers, only crewbots' own (runner/core.py).
 - The network is off for shell commands, unless the role card says `network: true` (any host) or lists the hosts.
