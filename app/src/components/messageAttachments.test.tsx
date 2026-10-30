@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Crew } from "../state";
-import type { Attachment, Chat, Room, StoredEvent, Task } from "../types";
+import type { GroupChatOut } from "../api-types";
+import type { Attachment, Room, StoredEvent, Task } from "../types";
 import { GroupChat } from "./ChatView";
 import { Thread } from "./Thread";
 
@@ -36,7 +37,7 @@ describe("user message attachments", () => {
   });
 
   it("renders attachments above text in group chats", () => {
-    const chat = { key: "group", room, unread: 0 } as Chat;
+    const chat = { key: "group", kind: "group", room, unread: 0 } as GroupChatOut;
     expectFilesFirst(renderToStaticMarkup(<GroupChat crew={crew} chat={chat} onOpen={() => {}} panelOpen={false} onPanel={() => {}} />));
   });
 });

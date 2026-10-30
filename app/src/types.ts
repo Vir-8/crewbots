@@ -4,7 +4,8 @@ import type {
   BotOut,
   BudgetOut,
   CardOut,
-  ChatOut,
+  DirectChatOut,
+  GroupChatOut,
   Inbox as InboxOut,
   ModelOut,
   ModelsOut,
@@ -52,7 +53,7 @@ export type StoredEvent = Omit<EventOut, "data"> & { data: Record<string, any> }
 export type Bot = BotOut;
 export type ReviewState = ReviewStateOut;
 export type Live = LiveChatMute | LiveTask | LiveCrew | LiveBots | LiveRoom | LiveRoomGone | LiveRoomMessage | LivePins | LivePage | (Omit<LiveEvent, "event"> & { event: StoredEvent });
-export type Chat = ChatOut;
+export type Chat = DirectChatOut | GroupChatOut;
 export type Room = RoomOut;
 export type { RoomChange };
 export type RoomMessage = RoomMessageOut;

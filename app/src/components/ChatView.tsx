@@ -1,6 +1,7 @@
 import { Fragment, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { Crew } from "../state";
-import { doing, oneLine } from "../state";
+import { doing, oneLine } from "../activityText";
+import type { DirectChatOut, GroupChatOut } from "../api-types";
 import type { Chat, Room, RoomMessage } from "../types";
 import { ACTIVE } from "../types";
 import { Files } from "./Attachments";
@@ -17,9 +18,9 @@ import { settle, useBottomAnchor } from "./ui";
 import "../styles/chat.css";
 
 /** Your ongoing chat with one bot. Work it takes on shows as thread cards, which open beside the chat. */
-export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) => void; onPage: (page: string) => void; onCustomize: () => void; onProfile: () => void; profileOpen: boolean; onNewGroup: (title: string, members: string[]) => void }) {
+export function DirectChat(props: { crew: Crew; chat: DirectChatOut; onOpen: (id: string) => void; onPage: (page: string) => void; onCustomize: () => void; onProfile: () => void; profileOpen: boolean; onNewGroup: (title: string, members: string[]) => void }) {
   const { crew, chat } = props;
-  const task = chat.task_id ? crew.tasks.get(chat.task_id) : undefined;
+  const task = crew.tasks.get(chat.task_id);
   const bot = crew.bots.find((b) => b.name === chat.bot);
   const find = useFind();
   useMarkRead(crew, chat);
@@ -38,9 +39,9 @@ export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string)
     <>
       <header className="chat-head" data-tauri-drag-region="deep">
         <button className="chat-head-who" onClick={props.onProfile} title="Profile">
-          <Avatar name={chat.bot!} size={30} working={chat.working} />
+          <Avatar name={chat.bot} size={30} working={chat.working} />
           <span className="chat-head-text">
-            <span className="chat-head-title">{labelOf(chat.bot!)}</span>
+            <span className="chat-head-title">{labelOf(chat.bot)}</span>
             <span className="chat-head-sub">{oneLine(status, 90)}</span>
           </span>
         </button>
@@ -57,11 +58,11 @@ export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string)
           <Icon name="profile" size={16} />
         </button>
       </header>
-      {find.finding && <FindBar find={find} placeholder={`Find in your chat with ${labelOf(chat.bot!)}`} />}
+      {find.finding && <FindBar find={find} placeholder={`Find in your chat with ${labelOf(chat.bot)}`} />}
       <PageOpener.Provider value={props.onPage}>
         <Welcoming.Provider value={{ customize: props.onCustomize }}>
           {task && isEmpty(crew, task.id) ? (
-            <Welcome crew={crew} bot={chat.bot!} onSay={(text) => crew.say(chat.bot!, text)} />
+            <Welcome crew={crew} bot={chat.bot} onSay={(text) => crew.say(chat.bot, text)} />
           ) : task ? (
             <Thread crew={crew} task={task} onOpen={props.onOpen} chat find={{ query: find.lookFor, current: find.current, onFound: find.setFound }} />
           ) : (
@@ -72,19 +73,19 @@ export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string)
       <div className="dock">
         <Composer
           key={chat.key}
-          placeholder={task?.status === "needs_input" ? `Answer ${labelOf(chat.bot!)}` : `Message ${labelOf(chat.bot!)}`}
+          placeholder={task?.status === "needs_input" ? `Answer ${labelOf(chat.bot)}` : `Message ${labelOf(chat.bot)}`}
           asking={task?.status === "needs_input"}
           mentions={crew.bots.map((b) => b.name)}
-          onSend={(text, files) => crew.say(chat.bot!, text, files)}
+          onSend={(text, files) => crew.say(chat.bot, text, files)}
           task={task?.id}
           draft={chat.key}
           autoFocus
           main
           actions={{
-            who: labelOf(chat.bot!),
-            new: (goal) => crew.threadFor(chat.bot!, goal),
-            group: (title) => props.onNewGroup(title, [chat.bot!]),
-            remember: (note) => crew.rememberFor(chat.bot!, note),
+            who: labelOf(chat.bot),
+            new: (goal) => crew.threadFor(chat.bot, goal),
+            group: (title) => props.onNewGroup(title, [chat.bot]),
+            remember: (note) => crew.rememberFor(chat.bot, note),
             stop: task && ACTIVE.includes(task.status) ? () => crew.cancel(task.id) : undefined,
             ...crewCommands(crew),
           }}
@@ -95,9 +96,9 @@ export function DirectChat(props: { crew: Crew; chat: Chat; onOpen: (id: string)
 }
 
 /** A group chat: you and some bots. The lead answers; whoever is @mentioned joins in, and bots can bring each other in. */
-export function GroupChat(props: { crew: Crew; chat: Chat; onOpen: (id: string) => void; panelOpen: boolean; onPanel: () => void }) {
+export function GroupChat(props: { crew: Crew; chat: GroupChatOut; onOpen: (id: string) => void; panelOpen: boolean; onPanel: () => void }) {
   const { crew, chat } = props;
-  const room = chat.room!;
+  const room = chat.room;
   const messages = crew.roomMessages.get(room.id);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => crew.ensureRoom(room.id), [room.id, crew.ensureRoom]);

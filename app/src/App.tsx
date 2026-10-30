@@ -136,7 +136,7 @@ export function App() {
       setThread(null);
       setPage(null);
     },
-    task: (id: string) => openTask(id),
+    task: openTask,
     pull: (repo: string, number: number) => {
       setPull({ repo, number });
       setCurrent("review");
@@ -195,13 +195,9 @@ export function App() {
         crew={crew}
         current={current}
         rail={sideHidden}
-        onChat={(key) => {
-          setCurrent(key);
-          setThread(null);
-          setPage(null);
-        }}
+        onChat={go.chat}
         onOpen={openTask}
-        onNewGroup={() => setNewGroup({ title: "", members: [] })}
+        onNewGroup={go.newGroup}
         onExpand={() => setSideHidden(false)}
         edge={
           sideHidden ? (
@@ -237,8 +233,8 @@ export function App() {
             crew={crew}
             chat={chat}
             onOpen={openTask}
-            onPage={(p) => openPage(chat.bot!, p)}
-            onCustomize={() => setEditing(chat.bot!)}
+            onPage={(p) => openPage(chat.bot, p)}
+            onCustomize={() => setEditing(chat.bot)}
             profileOpen={Boolean(profile)}
             onProfile={onProfile}
             onNewGroup={(title, members) => setNewGroup({ title, members })}
@@ -385,7 +381,7 @@ function Connecting({ status }: { status: ConnectionStatus }) {
   return (
     <div className="connecting" data-tauri-drag-region>
       <div className="connecting-mark">crewbots</div>
-      <p className={failed ? "bad" : "faint"}>{status.message ?? "Connecting to your crew…"}</p>
+      <p className={failed ? "error-text" : "faint"}>{status.message ?? "Connecting to your crew…"}</p>
     </div>
   );
 }

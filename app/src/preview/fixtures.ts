@@ -1,7 +1,7 @@
 // The demo crew's answers for the pages and lists the bridge serves: chats, code review's inbox and drafts, usage and
 // plans, tools, routines and the crew's state.
 
-import type { ConnectionStatus, McpServerInfo } from "../types";
+import type { Chat, ConnectionStatus, McpServerInfo } from "../types";
 import * as demo from "./demo";
 
 export const status: ConnectionStatus = { state: "connected", home: "design preview", ownsDaemon: false };
@@ -10,8 +10,8 @@ export const status: ConnectionStatus = { state: "connected", home: "design prev
 export let pins = ["bot:chief", "room:r_crew000001"];
 export const setPins = (keys: string[]) => (pins = keys);
 
-export function chats() {
-  const direct = demo.bots.map((b) => {
+export function chats(): Chat[] {
+  const direct = demo.bots.map((b): Chat => {
     const id = demo.chatIds[b.name];
     const events = demo.events.get(id) ?? [];
     const last = [...events].reverse().find((e) => e.kind === "text" || (e.kind === "message" && e.data.from === "user"));
@@ -23,7 +23,7 @@ export function chats() {
       updated_at: last?.at ?? "",
     };
   });
-  const groups = demo.rooms.map((room) => {
+  const groups = demo.rooms.map((room): Chat => {
     const last = demo.roomMessages.get(room.id)?.at(-1);
     return { key: `room:${room.id}`, kind: "group", title: room.title, bot: null, task_id: null, room, muted: Boolean(room.muted), last: last ? { author: last.author, text: last.text, at: last.at } : null, unread: 0, working: false, updated_at: last?.at ?? room.updated_at };
   });

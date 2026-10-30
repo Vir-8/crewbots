@@ -1,5 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
+import type { Chat } from "./types";
 
 // Drive the components' event props with persistent hook state, without a browser.
 const hooks = vi.hoisted(() => ({ values: [] as any[], index: 0, crew: {} as any, effects: [] as (() => any)[] }));
@@ -54,7 +55,8 @@ it("toggles mute from the existing chat menu", () => {
 });
 
 it("opens the row menu with a right click or keyboard and mutes the selected chat", () => {
-  const chat = { key: "bot:chief", kind: "direct", bot: "chief", title: "Chief", muted: false, unread: 0, working: false, updated_at: "" } as any;
+  const chat: Chat = { key: "bot:chief", kind: "direct", bot: "chief", task_id: "chat", room: null, title: "Chief", last: null,
+    muted: false, unread: 0, working: false, updated_at: "" };
   const muteChat = vi.fn().mockResolvedValue(undefined);
   const props = { crew: { chats: [chat], inbox: [], bots: [], muteChat } as any, current: null, rail: false,
     onChat: vi.fn(), onOpen: vi.fn(), onNewGroup: vi.fn(), onExpand: vi.fn() };
@@ -87,7 +89,7 @@ it("opens and sends an Other answer from a question", () => {
   expect(button.props.className).toBe("button small");
   expect(button.props.disabled).toBe(false);
   button.props.onClick();
-  expect(send).toHaveBeenCalledWith("question", "My answer");
+  expect(send).toHaveBeenCalledWith("question", "My answer", [], undefined);
 });
 
 it("sends a free-text room question to its seat", () => {
@@ -155,10 +157,13 @@ it("offers no room reply limit by default and lets a room opt in", () => {
   expect(changeRoom).toHaveBeenCalledWith("room", { max_depth: null });
 });
 
+// A crew for MergeButton: no events and no other tasks, unless a test gives them.
+const mergeCrew = (parts: object) => ({ events: new Map(), tasks: new Map(), ...parts }) as any;
+
 it("keeps the withdraw dialog open and shows why the withdrawal failed", async () => {
   const withdrawMerge = vi.fn().mockRejectedValue(new Error("Worktree maintenance is running; try again when it finishes."));
   const task = { id: "work", status: "idle", merge_state: "proposed" } as any;
-  const draw = () => render(() => MergeButton({ crew: { withdrawMerge } as any, task })!);
+  const draw = () => render(() => MergeButton({ crew: mergeCrew({ withdrawMerge }), task })!);
   find(draw(), "button")!.props.onClick();
   find(draw(), "input")!.props.onChange({ target: { value: "Superseded" } });
   await find(draw(), "form")!.props.onSubmit({ preventDefault: () => {} });
@@ -177,7 +182,7 @@ it("marks a proposal already on main and offers only Withdraw, and follows main 
   const status = vi.spyOn(api, "mergeStatus").mockResolvedValue({ already_on: "main" });
   const task = { id: "work", status: "idle", merge_state: "proposed" } as any;
   const events = new Map<string, unknown[]>();
-  const draw = () => render(() => MergeButton({ crew: { events } as any, task })!);
+  const draw = () => render(() => MergeButton({ crew: mergeCrew({ events }), task })!);
   const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
   const focus = vi.fn();
   vi.stubGlobal("addEventListener", focus);
@@ -231,7 +236,7 @@ it("moves a second proposal to Already on main when the first one merges, withou
   vi.stubGlobal("addEventListener", vi.fn());
   vi.stubGlobal("removeEventListener", vi.fn());
   const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
-  const draw = () => render(() => MergeButton({ crew: { tasks } as any, task: second })!);
+  const draw = () => render(() => MergeButton({ crew: mergeCrew({ tasks }), task: second })!);
   draw();
   hooks.effects[0]!();
   await settle();
@@ -256,7 +261,7 @@ it("ignores a merge-status answer that arrives after a newer question was asked"
   vi.stubGlobal("addEventListener", vi.fn());
   vi.stubGlobal("removeEventListener", vi.fn());
   const events = new Map<string, unknown[]>();
-  const draw = () => render(() => MergeButton({ crew: { events } as any, task })!);
+  const draw = () => render(() => MergeButton({ crew: mergeCrew({ events }), task })!);
   const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
   draw();
   hooks.effects[0]!(); // question 1
@@ -276,7 +281,7 @@ it("ignores a merge-status answer that arrives after a newer question was asked"
 it("withdraws through the in-app dialog and allows cancellation", async () => {
   const withdrawMerge = vi.fn().mockResolvedValue(undefined);
   const task = { id: "work", status: "idle", merge_state: "proposed" } as any;
-  const draw = () => render(() => MergeButton({ crew: { withdrawMerge } as any, task })!);
+  const draw = () => render(() => MergeButton({ crew: mergeCrew({ withdrawMerge }), task })!);
   let tree = draw();
   find(tree, "button")!.props.onClick();
   tree = draw();
@@ -356,8 +361,10 @@ it("shows saves left uncommitted after a branch merge", () => {
 
 it("composer ignores IME keys and resets the highlighted mention as typing narrows results", () => {
   const draw = () => render(() => Composer({ placeholder: "Message", onSend: async () => {}, mentions: ["alice", "albert", "alfred", "alfie"] }));
+  vi.stubGlobal("requestAnimationFrame", (run: () => void) => run());
   let tree = draw();
-  find(tree, "textarea")!.props.onChange({ target: { value: "@al" } });
+  const type = (value: string, caret = value.length) => find(tree, "textarea")!.props.onChange({ target: { value, selectionStart: caret } });
+  type("@al");
   tree = draw();
   const key = (name: string, composing = false) => {
     let prevented = false;
@@ -369,11 +376,17 @@ it("composer ignores IME keys and resets the highlighted mention as typing narro
   expect(key("Enter", true)).toBe(false);
   expect(key("Tab", true)).toBe(false);
   expect(find(tree, "textarea")!.props.value).toBe("@al");
-  find(tree, "textarea")!.props.onChange({ target: { value: "@alf" } });
+  type("@alf");
   tree = draw();
   expect(key("Tab")).toBe(true);
   tree = draw();
   expect(find(tree, "textarea")!.props.value).toBe("@alfred ");
+  type("ask @alic about the build", 9);
+  tree = draw();
+  expect(key("Tab")).toBe(true);
+  tree = draw();
+  expect(find(tree, "textarea")!.props.value).toBe("ask @alice  about the build");
+  vi.unstubAllGlobals();
 });
 
 for (const kind of ["direct", "group"] as const) {

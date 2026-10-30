@@ -2,7 +2,7 @@
 
 import type { Crew } from "../state";
 import { movePin, PAGES, pinsOf } from "../sidebar";
-import { oneLine } from "../state";
+import { oneLine } from "../activityText";
 import type { Item } from "./Palette";
 import { labelOf } from "./Avatar";
 import { STATUS_LABEL } from "./bits";
@@ -21,10 +21,9 @@ export type Go = {
 export function paletteItems(crew: Crew, current: string | null, go: Go): Item[] {
   const items: Item[] = [];
   for (const chat of crew.chats) {
-    const bot = chat.bot ? crew.bots.find((b) => b.name === chat.bot) : undefined;
     items.push(chat.kind === "direct"
-      ? { key: chat.key, title: labelOf(chat.bot!), sub: bot?.title, at: chat.updated_at, icon: "message", group: "Chat", run: () => go.chat(chat.key) }
-      : { key: chat.key, title: chat.title, sub: chat.room?.members.map(labelOf).join(", "), at: chat.updated_at, icon: "users", group: "Group chat", run: () => go.chat(chat.key) });
+      ? { key: chat.key, title: labelOf(chat.bot), sub: crew.bots.find((b) => b.name === chat.bot)?.title, at: chat.updated_at, icon: "message", group: "Chat", run: () => go.chat(chat.key) }
+      : { key: chat.key, title: chat.title, sub: chat.room.members.map(labelOf).join(", "), at: chat.updated_at, icon: "users", group: "Group chat", run: () => go.chat(chat.key) });
   }
   for (const task of crew.tasks.values()) {
     if (task.kind !== "thread" || task.review_of) continue; // a review shows in the card of the work it reviews

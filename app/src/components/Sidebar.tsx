@@ -1,7 +1,7 @@
 import { type DragEvent, type HTMLAttributes, type ReactNode, useEffect, useRef, useState } from "react";
 import type { Crew, InboxItem } from "../state";
 import { archivedApart, movePin, orderChats, PAGES, pinsOf } from "../sidebar";
-import { oneLine } from "../state";
+import { oneLine } from "../activityText";
 import type { Chat } from "../types";
 import { Avatar, GroupAvatar, labelOf } from "./Avatar";
 import { ago } from "./bits";
@@ -152,8 +152,8 @@ export function Sidebar(props: {
         <div className="rail-sep" />
         <div className="chat-list rail-chats">
           {chats.map((chat) => (
-            <button key={chat.key} className={`rail-chat ${props.current === chat.key ? "on" : ""}`} onClick={() => props.onChat(chat.key)} title={chat.kind === "group" ? chat.title : labelOf(chat.bot!)} {...rowProps(chat)}>
-              {chat.kind === "group" ? <GroupAvatar members={chat.room!.members} size={34} /> : <Avatar name={chat.bot!} size={34} working={chat.working} />}
+            <button key={chat.key} className={`rail-chat ${props.current === chat.key ? "on" : ""}`} onClick={() => props.onChat(chat.key)} title={chat.kind === "group" ? chat.title : labelOf(chat.bot)} {...rowProps(chat)}>
+              {chat.kind === "group" ? <GroupAvatar members={chat.room.members} size={34} /> : <Avatar name={chat.bot} size={34} working={chat.working} />}
               {chat.muted && <Icon name="bellOff" size={12} className="chat-row-muted" />}
               {chat.unread > 0 && props.current !== chat.key && <span className="unread-dot" />}
             </button>
@@ -346,14 +346,14 @@ export function ChatRow({ chat, on, onClick, extra, className = "" }: { chat: Ch
   const preview = chat.last
     ? `${chat.kind === "group" ? `${chat.last.author === "user" ? "You" : labelOf(chat.last.author)}: ` : chat.last.author === "user" ? "You: " : ""}${oneLine(chat.last.text, 90)}`
     : chat.kind === "group"
-      ? chat.room!.members.map(labelOf).join(", ")
+      ? chat.room.members.map(labelOf).join(", ")
       : "Say hello";
   return (
     <button className={`chat-row ${on ? "on" : ""} ${className}`} onClick={onClick} {...extra}>
-      {chat.kind === "group" ? <GroupAvatar members={chat.room!.members} size={38} /> : <Avatar name={chat.bot!} size={38} working={chat.working} />}
+      {chat.kind === "group" ? <GroupAvatar members={chat.room.members} size={38} /> : <Avatar name={chat.bot} size={38} working={chat.working} />}
       <span className="chat-row-text">
         <span className="chat-row-top">
-          <span className="chat-row-title">{chat.kind === "group" ? chat.title : labelOf(chat.bot!)}</span>
+          <span className="chat-row-title">{chat.kind === "group" ? chat.title : labelOf(chat.bot)}</span>
           {chat.muted && <Icon name="bellOff" size={12} className="chat-row-muted" />}
           {chat.last && <span className="chat-row-time">{ago(chat.last.at, true)}</span>}
         </span>

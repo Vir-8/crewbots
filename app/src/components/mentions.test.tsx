@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Crew } from "../state";
-import type { Chat, Room } from "../types";
+import type { DirectChatOut, GroupChatOut } from "../api-types";
+import type { Room } from "../types";
 import { bots } from "../preview/demo/make";
 import { setCrew } from "./Avatar";
 import { DirectChat, GroupChat } from "./ChatView";
@@ -16,7 +17,7 @@ describe("mention suggestions", () => {
   it("offers crew handles in a direct chat", () => {
     setCrew(bots);
     draft("direct", "@eng");
-    const chat = { key: "direct", bot: "chief", task_id: null, unread: 0 } as Chat;
+    const chat = { key: "direct", kind: "direct", bot: "chief", task_id: "chat", unread: 0 } as DirectChatOut;
     const html = renderToStaticMarkup(<DirectChat crew={crew} chat={chat} onOpen={() => {}} onPage={() => {}} onCustomize={() => {}} onProfile={() => {}} profileOpen={false} onNewGroup={() => {}} />);
     expect(html).toContain('aria-selected="true" class="mention-option on"');
     expect(html).toContain("@engineer");
@@ -26,7 +27,7 @@ describe("mention suggestions", () => {
   it("keeps group suggestions to members and everyone", () => {
     setCrew(bots);
     draft("group", "@");
-    const chat = { key: "group", room, unread: 0 } as Chat;
+    const chat = { key: "group", kind: "group", room, unread: 0 } as GroupChatOut;
     const html = renderToStaticMarkup(<GroupChat crew={crew} chat={chat} onOpen={() => {}} panelOpen={false} onPanel={() => {}} />);
     expect(html).toContain("@chief");
     expect(html).toContain("@reviewer");

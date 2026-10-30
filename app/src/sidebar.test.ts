@@ -1,20 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { archivedApart, chatToOpen, latestChat, movePin, orderChats, pinsOf } from "./sidebar";
-import type { Chat } from "./types";
+import type { DirectChatOut } from "./api-types";
+import type { Chat, Room } from "./types";
 
-const chat = (key: string, updated: string, fields: Partial<Chat> = {}): Chat => ({
-  key, kind: "direct", title: key, bot: key, task_id: null, room: null, last: null, unread: 0, working: false,
+const chat = (key: string, updated: string, fields: Partial<DirectChatOut> = {}): Chat => ({
+  key, kind: "direct", title: key, bot: key, task_id: key, room: null, last: null, unread: 0, working: false,
   updated_at: updated, ...fields,
+});
+
+const group = (id: string, updated: string, room: Partial<Room> = {}): Chat => ({
+  key: `room:${id}`, kind: "group", title: room.title ?? id, bot: null, task_id: null, last: null, unread: 0,
+  working: false, updated_at: updated,
+  room: { id, title: id, lead: "chief", members: ["chief"], created_at: "", updated_at: "", ...room },
 });
 
 describe("the sidebar's chats", () => {
   const chats = [
     chat("chief", "2026-10-26T09:00:00Z", { last: { author: "chief", text: "Merged the CSV export", at: "" } }),
     chat("critic", "2026-10-26T11:00:00Z"),
-    chat("room:r1", "2026-10-26T10:00:00Z", {
-      kind: "group", title: "Release", bot: null,
-      room: { id: "r1", title: "Release", lead: "chief", members: ["chief", "engineer"], created_at: "", updated_at: "" },
-    }),
+    group("r1", "2026-10-26T10:00:00Z", { title: "Release", members: ["chief", "engineer"] }),
   ];
 
   it("lists the most recent first", () => {
@@ -39,8 +43,7 @@ describe("the sidebar's chats", () => {
 });
 
 describe("archived group chats", () => {
-  const room = (id: string, archived_at: string | null) =>
-    chat(`room:${id}`, "2026-10-26T10:00:00Z", { kind: "group", title: id, bot: null, room: { id, title: id, lead: "chief", members: ["chief"], created_at: "", updated_at: "", archived_at } });
+  const room = (id: string, archived_at: string | null) => group(id, "2026-10-26T10:00:00Z", { archived_at });
   const chats = [chat("chief", "2026-10-26T09:00:00Z"), room("live", null), room("old", "2026-10-25T10:00:00Z")];
 
   it("are kept apart from the list", () => {

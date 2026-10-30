@@ -1,6 +1,6 @@
 """Chats and group chats, their messages and attachments."""
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -45,19 +45,33 @@ class LastMessage(BaseModel):
     text: str
     at: str
 
-class ChatOut(BaseModel):
+class Chat(BaseModel):
     key: str  # bot:<name> or room:<id>
-    kind: Literal["direct", "group"]
     title: str
-    bot: str | None  # a direct chat's bot
-    task_id: str | None  # a direct chat's task, whose events are the conversation
-    room: RoomOut | None
     last: LastMessage | None
     unread: int
     muted: bool = False
     working: bool
     updated_at: str
     pinned: int | None = None  # its place among the chats pinned to the top of the sidebar
+
+
+# Each kind keeps the other's fields as null, so code that hasn't checked the kind can still read them.
+class DirectChatOut(Chat):
+    kind: Literal["direct"]
+    bot: str
+    task_id: str  # the chat's task, whose events are the conversation
+    room: None
+
+
+class GroupChatOut(Chat):
+    kind: Literal["group"]
+    bot: None
+    task_id: None
+    room: RoomOut
+
+
+ChatOut = Annotated[DirectChatOut | GroupChatOut, Field(discriminator="kind")]
 
 
 class ChatMute(BaseModel):
