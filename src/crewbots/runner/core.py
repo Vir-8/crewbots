@@ -2,12 +2,12 @@
 
 A follow-up resumes the same session. Messages arriving mid-run wait for the next turn.
 
-Each active task keeps its CLI running between turns. A session closes when idle, cancelled or stopped; otherwise a
-backends without sessions use one process per turn, resuming from the stored session id.
+Each active task keeps its CLI running between turns, until it's idle, cancelled or stopped. Backends without sessions
+use one process per turn instead, resuming from the stored session id.
 
 Delegation: coordinators create child tasks through MCP tools, then end their turns. Once all children finish, their
-handoffs and results go back as one message. The coordinator
-never waits or polls. Each run gets a token that lets its MCP server act for that task only, and only while it runs.
+handoffs and results go back as one message. The coordinator never waits or polls. Each run gets a token that lets its
+MCP server act for that task only, and only while it runs.
 
 Chats and rooms: each bot has one ongoing chat with the user, which never ends; real work goes into threads opened
 from it. A room is a group chat. A message there wakes the bots it @mentions, or the room's lead if it mentions no
@@ -84,9 +84,7 @@ STALL_S = 1200.0  # no event at all from a turn for this long: it's stuck, so it
 
 class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams, Checkins, Wakes,
              Welcome, Permissions, Watchdog):
-    """Runs the crew's tasks. Its parts are by area: sessions, rooms, delegation, reviews, work, files bots show the
-    user, holds, dreams (memory consolidated overnight), check-ins, the chief's own looks around (wakes), starting a
-    crew off (welcome), and what bots ask the user to allow (permissions)."""
+    """Runs the crew's tasks. Each base class is one part of it, kept in its own runner module."""
     def __init__(
         self,
         store: Store,

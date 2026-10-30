@@ -3,7 +3,7 @@ worktree's work would be merged: the lead proposes it with `propose_merge` as us
 the work handed back as its output, with their Unity .meta files and those of new folders they're in, on whatever
 branch the folder is on, which must still be the one it was on when the work began. Other work in progress there, the
 user's or another engineer's, stays uncommitted. The commit shows on the Landed page as a merge does, and the chief
-proposes the push. It runs under the merge lock its caller holds (merge_status._off_loop), as a merge does."""
+proposes the push. Like a merge, it runs under merge_status.MERGE_LOCK, which its caller holds."""
 
 import shlex
 from pathlib import Path

@@ -8,7 +8,7 @@ from typing import Any
 
 from crewbots import worktree
 from crewbots.runner.common import NotAllowed, _iso
-from crewbots.runner.merge_status import _MERGE_LOCK
+from crewbots.runner.merge_status import MERGE_LOCK
 from crewbots.store import Task
 
 LANDED = 50  # merges listed, the latest first
@@ -57,7 +57,7 @@ class Landed:
         if self.store.last_event(task_id, ("reverted",)):
             raise NotAllowed(f"{task_id} was reverted already")
         commit, repo = merged.data["commit"], Path(merged.data["into"])
-        if not _MERGE_LOCK.acquire(blocking=False):
+        if not MERGE_LOCK.acquire(blocking=False):
             raise NotAllowed("a merge is running: try again in a moment")
         try:
             try:
@@ -77,7 +77,7 @@ class Landed:
                 raise NotAllowed(f"reverting {commit[:7]} conflicts with what came after it: {e}") from None
             revert_commit = worktree._git(repo, "rev-parse", "HEAD")
         finally:
-            _MERGE_LOCK.release()
+            MERGE_LOCK.release()
         self._record(task_id, kind="reverted", data={"commit": commit, "revert_commit": revert_commit, "by": "user"})
         self.bus.publish({"type": "task", "task": task.to_json()})
         return task

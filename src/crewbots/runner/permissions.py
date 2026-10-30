@@ -3,9 +3,9 @@ task's own, or to reach the network), or the user's go-ahead before something bi
 `ask_permission` by whoever the user gave it to: the chief, for its own work or a teammate's, or a bot for work the
 user gave it in its own chat. A bot working for a teammate escalates what it needs to them instead, who says go ahead
 when the project's rules or the brief already allow it, and otherwise passes it up, so the user hears it from the
-chief and only when it's theirs to give. The user allows it or not with a button: in
-the task's thread, and in the chat it was asked from. What's allowed is the task's for the rest of it: its next turn
-opens with it (`Sessions._session_for`).
+chief and only when it's theirs to give. The user allows it or not with a button: in the task's thread, and in the
+chat it was asked from. What's allowed is the task's for the rest of it: its next turn opens with it
+(`Sessions._session_for`).
 
 Some things can't be asked for, and no answer changes them (backends/policy.py): the user's logins and keys,
 crewbots' own files, the whole home folder, and what's the user's to do (pushing, merging, publishing).

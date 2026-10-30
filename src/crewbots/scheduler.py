@@ -190,9 +190,10 @@ class Scheduler:
         return None
 
     def _wake_due(self, now: datetime) -> Task | None:
-        """The chief's look around on its own (runner/wakes.py), when it's worth one: the time it asked for has come,
-        or there's news and it's been NEWS_GAP since its last look (URGENT_GAP for something failing). Never while
-        it's working, while the user is mid-conversation, or in quiet hours unless something's urgent. One a tick."""
+        """A coordinator's look around on its own (runner/wakes.py), when it's worth one: the time it asked for has
+        come, or there's news and it's been NEWS_GAP since its last look (URGENT_GAP for something failing). Never
+        while it's working, while the user is mid-conversation, or in quiet hours unless something's urgent. A card
+        with `proactive: false` never looks. One a tick."""
         runner = self.runner
         for bot, card in runner.crew.bots.items():
             if not runner.always_on(bot) or runner.bot_busy(bot):
@@ -282,8 +283,6 @@ class Scheduler:
         return self._start(routine, now)
 
     def _start(self, routine: Routine, now: datetime, values: dict[str, Any] | None = None) -> Task:
-        name = routine.name.replace("-", " ").replace("_", " ").capitalize()
-        title = f"{name}: {values['pr.repo']}#{values['pr.number']} {values['pr.title']}" if values else f"{name}, {now:%a %d %b}"
         if values is None:
             state = self.store.routine_state(routine.name) or {}
             since = datetime.fromisoformat(state["last_run_at"]) if state.get("last_run_at") else self._first_since(
@@ -299,6 +298,8 @@ class Scheduler:
             task = self.runner.say(routine.bot, f"[routine: {routine.name}]\n\n{goal}", sender=f"routine:{routine.name}")
         else:  # a trigger is work: a thread under its bot's chat, which hears how it went
             chat = self.runner.chat(routine.bot)
+            name = routine.name.replace("-", " ").replace("_", " ").capitalize()
+            title = f"{name}: {values['pr.repo']}#{values['pr.number']} {values['pr.title']}"
             task = self.runner.submit(routine.bot, goal, created_by="routine", parent_id=chat.id,
                                       workspace=str(routine.workspace) if routine.workspace else None,
                                       routine=routine.name, budget=routine.budget, title=title)
@@ -308,7 +309,8 @@ class Scheduler:
     def _first_since(self, routine: Routine, now: datetime) -> datetime:
         """What a first run looks back over: since the time before this one it would have run (Friday's standup for
         Monday's, last week for a retro)."""
-        before = routine.schedule.due(now - routines_module.LOOKBACK, now - timedelta(minutes=1)) if routine.schedule else None
+        assert routine.schedule
+        before = routine.schedule.due(now - routines_module.LOOKBACK, now - timedelta(minutes=1))
         return before or now - FIRST_SINCE
 
     # GitHub.

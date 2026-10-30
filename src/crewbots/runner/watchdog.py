@@ -1,9 +1,8 @@
 """Work that must not be left waiting: a delegated task's late handoff reaches its delegator, and a bot with open work
 that has gone quiet is woken twice, told the next step for each piece, then raised with the chief. A bot whose turn
 ended without handing back what it was asked is that piece's owner: it's woken itself, since it knows whether it's
-done or stopped partway. For work handed out
-in a group chat, both are said there, so its members see what's stuck. What it says carries only bots, ids, counts,
-kinds and steps, never another bot's text."""
+done or stopped partway. For work handed out in a group chat, both are said there, so its members see what's stuck.
+What it says carries only bots, ids, counts, kinds and steps, never another bot's text."""
 
 import logging
 import re
@@ -14,7 +13,8 @@ from crewbots import working_state
 from crewbots.runner.reviews import MAX_REVIEW_ROUNDS
 from crewbots.store import Status, Task
 
-WAKES = 2  # reminders a bot gets, a quiet stall_minutes apart, before the chief hears of it
+STALL = timedelta(minutes=15)  # how long a bot with open work may sit quiet before it's woken
+WAKES = 2  # reminders a bot gets, a quiet STALL apart, before the chief hears of it
 NEEDS = "Needs-me item(s)"
 
 log = logging.getLogger(__name__)
@@ -40,11 +40,10 @@ class Watchdog:
 
     def stall_check(self, now: datetime | None = None) -> list[str]:
         """For each bot, and each session that owes it an action (the one that delegated work to it, or its main chat for its
-        own): wake that session when it has been idle `stall_minutes` with work open, twice, and after another such wait
+        own): wake that session when it has been idle for STALL with work open, twice, and after another such wait
         put the group in the chief's Needs me. Groups are kept apart, so one that waits on the user or is stopped doesn't
         hold back another. Returns the bots woken or raised."""
         now = now or datetime.now(UTC)
-        idle = timedelta(minutes=self.store.stall_minutes())
         acted: list[str] = []
         for name in self.crew.bots:
             try:
@@ -52,14 +51,13 @@ class Watchdog:
                 for key in [k for k in self._stalls if k[0] == name and k[1] not in groups]:
                     del self._stalls[key]  # nothing open there any more
                 for target, work, key, touched in groups.values():
-                    if self._stalled(name, target, work, key, touched, now, idle):
+                    if self._stalled(name, target, work, key, touched, now):
                         acted.append(name)
             except Exception:
                 log.exception("stall check of %s failed", name)
         return acted
 
-    def _stalled(self, name: str, target: Task, work: list[str], key: list[str], touched: list[str], now: datetime,
-                 idle: timedelta) -> bool:
+    def _stalled(self, name: str, target: Task, work: list[str], key: list[str], touched: list[str], now: datetime) -> bool:
         state = self._stalls.get((name, target.id))
         if state is None or state["key"] != key:
             state = self._stalls[name, target.id] = {"key": key, "wakes": 0, "woke": None, "raised": False}
@@ -68,7 +66,7 @@ class Watchdog:
         # Quiet is timed from the open work and the last reminder, not from the session that owes the action: a lead
         # busy with other things in its group chat would otherwise never hear that a piece of work went quiet.
         quiet_since = max(datetime.fromisoformat(t) for t in (*touched, state["woke"]) if t)
-        if now - quiet_since < idle:
+        if now - quiet_since < STALL:
             return False
         room = self.store.room(target.room_id) if target.kind == "seat" and target.room_id else None
         if state["wakes"] < WAKES:

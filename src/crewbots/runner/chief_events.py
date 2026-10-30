@@ -2,8 +2,8 @@
 merges, escalations and stall alerts, for any bot but the chief itself (its own work reports to it already). They are
 kept in the store and go to its main chat as one short notice, at most once every BATCH, or after QUIET when none of
 them needs the chief, listing kinds, ids and bot names and a short title, with no message text, like the "State
-changed" notice. Nothing happened, nothing sent. While
-the chat is stopped or waiting on the user the events just stay in the store until a tick finds it idle."""
+changed" notice. Nothing happened, nothing sent. While the chat is stopped or waiting on the user the events just stay
+in the store until a tick finds it idle."""
 
 import logging
 from datetime import UTC, datetime, timedelta

@@ -1,4 +1,4 @@
-"""Always on: the crew's coordinator (the chief) looks around on its own whenever there's something worth a look,
+"""Always on: a coordinator, the chief or another, looks around on its own whenever there's something worth a look,
 rather than on a fixed timer. Something it should know about wakes it: a thread finishing, checks failing, a review
 asked for, work that stopped on the user or failed. So does the time it chose itself with `next_check`: soon while
 something's moving, later when it's quiet. Each look is a turn in its own chat, prompted by crewbots where the user
@@ -27,7 +27,7 @@ STOP_EVENT = "task_stopped"  # the crew event the store records when a task stop
 
 
 class Wakes:
-    """The part of Runner that lets the chief look around on its own."""
+    """The part of Runner that lets a coordinator look around on its own, unless its card says `proactive: false`."""
 
     def always_on(self, bot: str) -> bool:
         card = self.crew.bots.get(bot)
@@ -37,7 +37,7 @@ class Wakes:
         """The `next_check` tool: when the bot wants to look around again, and what for."""
         task = self.store.get_task(task_id)
         if not self.always_on(task.bot):
-            raise NotAllowed("only the crew's coordinator looks around on its own")
+            raise NotAllowed("only coordinators look around on their own")
         at = datetime.now(UTC) + timedelta(minutes=min(max(float(minutes), SOONEST), LATEST))
         self.store.set_wake(task.bot, next_at=at.isoformat(timespec="seconds"), next_why=" ".join(why.split())[:300])
         return timefmt.to_local(at)

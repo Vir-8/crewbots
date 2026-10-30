@@ -1,4 +1,7 @@
-"""Whether a proposed task's changes are already on the branch they would merge into."""
+"""Merging, one at a time and gated on CI. Merges run in a worker thread under MERGE_LOCK, so a long CI run doesn't
+freeze the daemon and two merges never share a checkout (`landed.py`'s revert takes the same lock). Here too: whether a
+proposed task's changes are already on the branch they'd merge into, and what to tell a task whose worktree has left
+its own branch."""
 
 import asyncio
 import threading
@@ -11,7 +14,7 @@ from crewbots.events import Notice
 from crewbots.runner.common import MergeError, NotAllowed
 from crewbots.store import Task
 
-_MERGE_LOCK = threading.Lock()  # one merge at a time, in the daemon
+MERGE_LOCK = threading.Lock()  # one merge at a time, in the daemon
 _MERGING_LOCK = threading.Lock()  # guards the per-task in-flight counts
 _EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="merge")
 
@@ -66,7 +69,7 @@ class MergeStatus:
         return await self._off_loop(task_id, self.propose_merge, parent_id, task_id, summary)
 
     async def _off_loop(self, task_id: str, call, *args):
-        """Merges run one at a time, whichever task: the worker thread holds _MERGE_LOCK for the whole operation (CI and
+        """Merges run one at a time, whichever task: the worker thread holds MERGE_LOCK for the whole operation (CI and
         landing), so a caller that gives up can't release it, a retry waits its turn (and finds the task merged), and
         two merges never use one checkout together. Until the worker finishes, the task counts as being merged."""
         merging = self.__dict__.setdefault("_merging_now", {})
@@ -74,7 +77,7 @@ class MergeStatus:
             merging[task_id] = merging.get(task_id, 0) + 1
 
         def worker():
-            with _MERGE_LOCK:
+            with MERGE_LOCK:
                 return call(*args)
 
         def finished(_):  # runs once: when the worker ends, or when a still-queued job is cancelled
