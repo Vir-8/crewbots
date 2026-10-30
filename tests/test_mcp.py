@@ -72,6 +72,17 @@ def test_removing_a_server_takes_it_off_every_card(tmp_path):
     assert set(mcp_catalog.servers(home)) == {"blender"} and oct((home / "mcp.json").stat().st_mode)[-3:] == "600"
 
 
+def test_removing_a_server_finds_a_card_by_its_name_not_its_file(tmp_path):
+    home = a_crew(tmp_path)
+    card = home / "bots" / "engineer-1.md"
+    (home / "bots" / "first.md").write_text(card.read_text().replace("---\n", "---\nname: engineer-1\n", 1))
+    card.unlink()
+
+    assert mcp_catalog.remove(home, "unity") == ["engineer-1"]
+
+    assert crew.load(home).bots["engineer-1"].mcp_names == ("blender",)
+
+
 def test_your_apps_servers_are_found_once_each(tmp_path, monkeypatch):
     claude = tmp_path / "claude.json"
     claude.write_text(json.dumps({"mcpServers": {"blender": BLENDER, "crewbots": {"command": "x"}},
@@ -99,7 +110,10 @@ REGISTRY_SERVER = {
          "environmentVariables": [{"name": "BLENDER_PORT", "isRequired": True, "description": "Its port"},
                                   {"name": "API_KEY", "isSecret": True}]},
         {"registryType": "pypi", "identifier": "blender-mcp", "version": "0.4", "transport": {"type": "stdio"},
-         "packageArguments": [{"type": "named", "name": "scene", "isRequired": True}]},
+         "runtimeArguments": [{"type": "named", "name": "--python", "value": "3.12"}],
+         "packageArguments": [{"type": "positional", "value": "serve"},
+                              {"type": "named", "name": "--scene", "isRequired": True},
+                              {"type": "positional", "valueHint": "file_path"}]},
         {"registryType": "npm", "identifier": "x", "transport": {"type": "sse", "url": "http://127.0.0.1:{port}/sse"}},
     ],
     "remotes": [{"type": "streamable-http", "url": "https://mcp.blender.example/mcp",
@@ -115,8 +129,9 @@ def test_a_registry_server_becomes_an_entry_the_crew_can_start():
     assert mcp_catalog.from_registry(entry, "package:0", {"BLENDER_PORT": "9876"}, added) == {
         "command": "npx", "args": ["-y", "--before=2026-10-27T09:30:00Z", "@someone/blender-mcp@1.2.0"],
         "env": {"BLENDER_PORT": "9876"}}
-    assert mcp_catalog.from_registry(entry, "package:1", {"scene": "a.blend"}, added) == {
-        "command": "uvx", "args": ["--exclude-newer", "2026-10-27T09:30:00Z", "blender-mcp==0.4", "--scene", "a.blend"]}
+    assert mcp_catalog.from_registry(entry, "package:1", {"--scene": "a.blend", "file_path": "b.blend"}, added) == {
+        "command": "uvx", "args": ["--python", "3.12", "--exclude-newer", "2026-10-27T09:30:00Z", "blender-mcp==0.4",
+                                   "serve", "--scene", "a.blend", "b.blend"]}
     assert mcp_catalog.from_registry(entry, "remote:0", {"Authorization": "Bearer k"}) == {
         "type": "http", "url": "https://mcp.blender.example/mcp", "headers": {"Authorization": "Bearer k"}}
     with pytest.raises(CrewError, match="needs BLENDER_PORT"):

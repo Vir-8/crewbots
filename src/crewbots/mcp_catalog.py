@@ -52,8 +52,9 @@ def remove(home: Path, name: str) -> list[str]:
     for card_path in sorted((home / "bots").glob("*.md")):
         meta, _ = cards.read(card_path)
         if isinstance(meta.get("mcp"), list) and name in meta["mcp"]:
-            cards.save_card(home, card_path.stem, {"mcp": [n for n in meta["mcp"] if n != name]}, None)
-            users.append(card_path.stem)
+            bot = str(meta.get("name", card_path.stem))
+            cards.save_card(home, bot, {"mcp": [n for n in meta["mcp"] if n != name]}, None)
+            users.append(bot)
     del found[name]
     _write(home, found)
     return users
@@ -149,7 +150,7 @@ def _entry(server: dict[str, Any]) -> dict[str, Any]:
         if (package.get("transport") or {}).get("type", "stdio") != "stdio":
             continue  # a package that serves on a port it opens itself: not one a bot's CLI can start
         fields = [*(_field(v, "env") for v in package.get("environmentVariables") or []),
-                  *(_field(a, "arg") for a in package.get("packageArguments") or [] if a.get("isRequired") or a.get("name"))]
+                  *(_field(a, "arg") for a in package.get("packageArguments") or [])]
         options.append({"id": f"package:{i}", "label": f"{package.get('registryType', 'package')} · "
                         f"{package.get('identifier', '')} {package.get('version', '')}".strip(), "fields": fields})
     for i, remote in enumerate(server.get("remotes") or []):
@@ -162,9 +163,15 @@ def _entry(server: dict[str, Any]) -> dict[str, Any]:
 
 
 def _field(raw: dict[str, Any], kind: str) -> dict[str, Any]:
-    return {"kind": kind, "key": raw.get("name") or raw.get("valueHint") or "", "description": raw.get("description") or "",
+    key = raw.get("name") or raw.get("valueHint") or raw.get("value") or ""
+    return {"kind": kind, "key": key, "description": raw.get("description") or "",
             "required": bool(raw.get("isRequired")), "secret": bool(raw.get("isSecret")),
-            "default": raw.get("default") or raw.get("value") or None}
+            "default": raw.get("default") or raw.get("value") or None, "named": raw.get("type") == "named"}
+
+
+def _argv(named: bool, name: str, value: str) -> list[str]:
+    """A named argument's name is its flag, dashes and all; a positional one's valueHint isn't on the command line."""
+    return [name, value] if named else [value]
 
 
 def from_registry(entry: dict[str, Any], option: str, values: dict[str, str], now: datetime | None = None) -> dict[str, Any]:
@@ -192,7 +199,8 @@ def from_registry(entry: dict[str, Any], option: str, values: dict[str, str], no
                 **({"headers": headers} if headers else {})}
     package = server["packages"][int(index)]
     ident, version = package.get("identifier", ""), package.get("version", "")
-    runtime = [a.get("value") for a in package.get("runtimeArguments") or [] if a.get("value")]
+    runtime = [part for a in package.get("runtimeArguments") or [] if a.get("value")
+               for part in _argv(a.get("type") == "named", a.get("name", ""), a["value"])]
     match package.get("registryType"):
         case "npm":
             command, args = "npx", [*(runtime or ["-y"]), f"--before={added}", f"{ident}@{version}" if version else ident]
@@ -206,7 +214,7 @@ def from_registry(entry: dict[str, Any], option: str, values: dict[str, str], no
             raise CrewError(f"crewbots can't start a {other} package yet; add it by hand instead")
     for f in chosen["fields"]:
         if f["kind"] == "arg" and value(f):
-            args += [f"--{f['key']}", value(f)] if f["key"] and not f["key"].startswith("-") else [value(f)]
+            args += _argv(f["named"], f["key"], value(f))
     env = {f["key"]: value(f) for f in chosen["fields"] if f["kind"] == "env" and value(f)}
     return {"command": command, "args": args, **({"env": env} if env else {})}
 
