@@ -71,7 +71,8 @@ async def stream_jsonl(
                 remaining = None if deadline is None else max(0.0, deadline - loop.time())
                 line = await asyncio.wait_for(proc.stdout.readline(), remaining)
             except TimeoutError:
-                yield Done(final_text=parser.final_text(), is_error=True, error=f"timed out after {timeout_s:g}s")
+                if not done_seen:
+                    yield Done(final_text=parser.final_text(), is_error=True, error=f"timed out after {timeout_s:g}s")
                 return
             if not line:
                 break

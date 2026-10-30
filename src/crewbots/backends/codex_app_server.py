@@ -99,7 +99,13 @@ class CodexSession:
         overrides += network_overrides(spec)
         argv = [*cli.command, "app-server", "-c", f'approval_policy="{approval_policy(spec.access)}"', *overrides,
                 *spec.extra_args]
-        session = cls(await JsonlProcess.start(argv, cwd=spec.cwd, env=env), spec)
+        try:
+            process = await JsonlProcess.start(argv, cwd=spec.cwd, env=env)
+        except BaseException:
+            if temp:
+                shutil.rmtree(temp, ignore_errors=True)
+            raise
+        session = cls(process, spec)
         session.temp = temp
         try:
             await session._request("initialize", {"clientInfo": CLIENT, "capabilities": None})

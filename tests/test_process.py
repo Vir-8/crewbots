@@ -95,6 +95,14 @@ async def test_a_timeout_ends_the_run_and_kills_the_cli(tmp_path, monkeypatch):
     assert wait_dead(json.loads(record.read_text())["pid"])
 
 
+async def test_a_finished_run_stays_finished_when_the_cli_lingers(tmp_path, monkeypatch):
+    monkeypatch.setenv("FAKE_SLEEP", "60")
+
+    events = await collect(run(tmp_path, write_fixture(tmp_path, [{"end": "done"}]), timeout_s=0.5))
+
+    assert events == [Done(final_text="done")]
+
+
 async def test_stopping_early_kills_the_cli(tmp_path, monkeypatch):
     record = tmp_path / "record.json"
     monkeypatch.setenv("FAKE_RECORD", str(record))

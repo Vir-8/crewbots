@@ -5,7 +5,7 @@ import pytest
 from helpers import collect, fake_command, kinds, lines
 
 from crewbots import paths
-from crewbots.backends import Access, CodexExec, McpServer, RunSpec, codex_isolation
+from crewbots.backends import Access, CodexCLI, CodexExec, McpServer, RunSpec, codex_isolation
 from crewbots.backends.codex_cli import CodexParser, sandbox_overrides
 from crewbots.events import Done, Notice, SessionStarted, Text, ToolCall, ToolResult, Usage
 
@@ -244,3 +244,12 @@ def test_reasoning_effort_goes_to_codex():
 
     assert 'model_reasoning_effort="high"' in argv
     assert not any(a.startswith("model_reasoning") for a in CodexExec(isolate=False).argv(RunSpec(prompt="x", cwd=".")))
+
+
+async def test_a_session_that_cannot_start_leaves_no_temp_folder(tmp_path):
+    codex = CodexCLI(command=[str(tmp_path / "no-codex")], isolate=False)
+
+    with pytest.raises(FileNotFoundError):
+        await codex.open(RunSpec(prompt="x", cwd=tmp_path, access=Access.WORKSPACE_WRITE))
+
+    assert not any(paths.temp().glob("session-*"))
