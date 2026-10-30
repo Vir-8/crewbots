@@ -67,10 +67,6 @@ class Workspace:
         return "\n".join(lines)
 
     async def command(self, command: str, timeout: float = 120) -> str:
-        if sys.platform != "darwin":
-            raise ToolError("Antigravity workspace commands currently require the macOS sandbox")
-        if isinstance(self.policy.network, tuple):
-            raise ToolError("Use network on or off for Antigravity workspace commands")
         if reason := self.policy.check_command(command, sandboxed=True):
             raise ToolError(reason)
         work = self.temp / "work"

@@ -9,10 +9,9 @@ from crewbots.backends.process import JsonlProcess
 
 class ACPError(RuntimeError):
     def __init__(self, error: dict[str, Any]):
-        self.code = error.get("code")
         detail = error.get("data") or {}
-        super().__init__(detail.get("message") or error.get("message", "ACP request failed")
-                         if isinstance(detail, dict) else error.get("message", "ACP request failed"))
+        message = detail.get("message") if isinstance(detail, dict) else None
+        super().__init__(message or error.get("message", "ACP request failed"))
 
 
 class Connection:
@@ -75,7 +74,7 @@ class Connection:
         finally:
             for future in self.pending.values():
                 if not future.done():
-                    future.set_exception(RuntimeError("Antigravity ACP disconnected"))
+                    future.set_exception(RuntimeError("ACP agent disconnected"))
 
     async def close(self) -> None:
         await self.process.stop()

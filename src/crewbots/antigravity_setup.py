@@ -10,7 +10,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from crewbots.backends.antigravity_runtime import VERSION, connect, profile, runtime
+from crewbots.backends.antigravity_runtime import VERSION, connect, models, profile, runtime
 
 REGISTRY = "https://raw.githubusercontent.com/agentclientprotocol/registry/main/antigravity-acp/agent.json"
 
@@ -65,7 +65,5 @@ def main(args) -> int:
     elif args.action == "login":
         asyncio.run(login())
     else:
-        from crewbots.backends.antigravity_runtime import models
-
         print(json.dumps(asyncio.run(models()), indent=2))
     return 0
