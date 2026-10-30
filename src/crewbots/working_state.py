@@ -7,6 +7,7 @@ import re
 import tempfile
 import time
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -29,6 +30,12 @@ ROOM_NEED = re.compile(r" · room mention (r_[a-f0-9]+) · last (\d+) · count (
 def _room_need(line: str):
     entry = ENTRY.match(line)
     return ROOM_NEED.search(line) if entry and len(entry[2]) == 25 and entry[2].startswith("a") else None
+
+
+def added_at(entry_id: str) -> datetime | None:
+    """When an entry was added: its id starts with the time in nanoseconds, after an "a" for one crewbots wrote."""
+    digits = entry_id.removeprefix("a")
+    return datetime.fromtimestamp(int(digits[:16], 16) / 1e9, UTC) if len(digits) == 24 else None
 
 
 def prompt_data(text: str) -> str:

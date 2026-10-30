@@ -154,6 +154,10 @@ def routes(c: Context) -> APIRouter:
     async def bot_open_unity_editor(request: Request):
         return {"result": runner.open_unity_editor(request.state.task.id)}
 
+    @v1.post("/bot/release_app")
+    async def bot_release_app(request: Request):
+        return {"result": runner.release_app(request.state.task.id)}
+
     @v1.post("/bot/next_check")
     async def bot_next_check(request: Request, body: NextCheck):
         return {"at": runner.next_check(request.state.task.id, body.minutes, body.why).isoformat()}

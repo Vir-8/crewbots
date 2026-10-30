@@ -197,6 +197,10 @@ def _crew_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = F
     def open_unity_editor() -> str:
         return call("POST", "/bot/open_unity_editor", {})["result"]
 
+    @server.tool(description=describe("release_app"))
+    def release_app() -> str:
+        return call("POST", "/bot/release_app", {})["result"]
+
     @server.tool(description=describe("share"))
     def share(files: list[str], text: str = "", room: str | None = None) -> str:
         return shared_text(call("POST", "/bot/share", {"files": files, "text": text, "room": room}))

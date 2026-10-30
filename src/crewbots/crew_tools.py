@@ -135,6 +135,7 @@ SPECS: dict[str, Spec] = {
     "drop_task": Spec(_object({"task_id": STRING, "reason": STRING}, ["task_id", "reason"]), coordinator_only=True),
     "next_check": Spec(_object({"minutes": {"type": "number"}, "why": STRING}, ["minutes", "why"]), coordinator_only=True),
     "open_unity_editor": Spec(_object({}, [])),
+    "release_app": Spec(_object({}, [])),
 }
 
 
@@ -320,6 +321,8 @@ class CrewTools:
                     return remembered_text({"title": note.title, "path": str(note.path), "earlier": earlier})
                 case "open_unity_editor":
                     return r.open_unity_editor(me)
+                case "release_app":
+                    return r.release_app(me)
                 case "next_check":
                     at = r.next_check(me, args["minutes"], args["why"])
                     return f"You'll look around again at {at:%H:%M} ({at:%a %d %b}), unless something comes up first."

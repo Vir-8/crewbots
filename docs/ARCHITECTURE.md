@@ -374,9 +374,11 @@ Each step leaves the system working.
 - **Shared apps** (`runner/shared_apps.py`, `api/routes/shared_apps.py`). An http MCP server marked `one_at_a_time`
   in mcp.json reaches a bot at `/v1/bot/mcp/<server>`, with its run token, and the daemon passes everything on except a
   `tools/call` while another task holds that project's app (keyed by server and the task's folder): that's answered with a tool error naming the holder, and the task
-  queued. A task holds it from its first tool call while its turn runs, until APP_IDLE_S (5 min) after its last call;
-  `free_apps` (as turns end, and on the scheduler's tick) lets go and tells the next task in line, one at a time,
-  WAKE_AGAIN_S apart. A task working in a worktree under the worktree root (or reviewing one) never waits
+  queued. A task in no folder (a chat, a room's seat) can point the server at any project's app, so its key matches
+  every folder's: it waits for any holder and holds them all, and is told when its own bot's task is the holder. A task
+  holds it from its first tool call while its turn runs, until it calls `release_app`, or APP_IDLE_S (5 min) after its
+  last call; `free_apps` (as turns end, on `release_app`, and on the scheduler's tick) lets go and tells the next task
+  in line, one at a time, WAKE_AGAIN_S apart, or at once when the one told last has taken it. A task working in a worktree under the worktree root (or reviewing one) never waits
   (`_own_checkout`): its app is the one opened on its own folder. Checked against MCP for Unity 3.4.8 (event-stream replies): two tasks' sessions, one call
   through, the other answered busy.
 - **Trusting a verdict, cheaply.** A review records its work's change (`worktree.change_id`: `git patch-id
@@ -390,7 +392,9 @@ Each step leaves the system working.
 - **Chasing** (`runner/watchdog.py`): open work owed by its delegator (handed back, a verdict, or a question escalated
   to it) gets two reminders and then goes to the chief, each line naming the next step (`_next_step`); work waiting on
   its reviewers, or out of rounds (the chief hears `review limit`), isn't chased. A delegator's seat in a room is
-  reminded in the room, by `crewbots`, and the chief raised there too when it's a member.
+  reminded in the room, by `crewbots`, and the chief raised there too when it's a member. A bot's Needs-me items are
+  timed from when each was added (its id starts with the time); an @mention in a room is its seat's, so it waits while
+  the seat runs or is queued and is reminded in the room, where the seat can read it, never in the user's chat.
 - **Routines:** a scheduled one is a message in its bot's chat, from the routine; a trigger opens a thread under the
   bot's chat, with its per-run budget, and the chat hears how it went.
 - **Unread** is kept in the daemon (`reads`), so the app and the menu bar agree.

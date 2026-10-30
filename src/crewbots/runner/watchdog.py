@@ -15,6 +15,7 @@ from crewbots.runner.reviews import MAX_REVIEW_ROUNDS
 from crewbots.store import Status, Task
 
 WAKES = 2  # reminders a bot gets, a quiet stall_minutes apart, before the chief hears of it
+NEEDS = "Needs-me item(s)"
 
 log = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ class Watchdog:
         state = self._stalls.get((name, target.id))
         if state is None or state["key"] != key:
             state = self._stalls[name, target.id] = {"key": key, "wakes": 0, "woke": None, "raised": False}
-        if state["raised"] or self.store.chat_muted(name) or self._room_muted(target) or not self.idle_chat(target):
+        if state["raised"] or self.store.chat_muted(name) or self._room_held(target) or not self.idle_chat(target):
             return False  # running, queued, stopped, muted, or waiting on the user, which isn't a stall
         # Quiet is timed from the open work and the last reminder, not from the session that owes the action: a lead
         # busy with other things in its group chat would otherwise never hear that a piece of work went quiet.
@@ -74,7 +75,8 @@ class Watchdog:
             notice = ("Still open for you, with nothing run for a while: " + "; ".join(work)
                       + ". Pick it up, or say what is blocking it.")
             if target.kind == "chat":  # the bot's own chat with the user, so what it says there is the user's to read
-                notice += ((" working_state, with no action, lists your Needs-me items." if self._own_needs(name) else "")
+                notice += ((" working_state, with no action, lists your Needs-me items." if any(NEEDS in w for w in work)
+                            else "")
                            + " Your reply here goes to the user: what's blocking it goes to whoever it's for instead "
                            "(a teammate, with message or in your group chat). If there's nothing the user needs to "
                            "know, reply with exactly NO_REPLY.")
@@ -125,8 +127,20 @@ class Watchdog:
             own[0].append(f"{t.id} is {t.status}")
             own[1].append(f"{t.id}:{t.status}")
             own[2].append(t.updated_at)
-        if needs := self._own_needs(name):
-            own[0].append(f"{len(needs)} Needs-me item(s)")
+        needs = []
+        for entry_id, line in self._own_needs(name):
+            added = working_state.added_at(entry_id)
+            mention = working_state._room_need(line)
+            if mention and (seat := self.store.seat_of(mention[1], name)):  # its seat answers it, where it can read it
+                _, work, key, touched = groups.setdefault(seat.id, (seat, [], [], []))
+                work.append(_unanswered(line, int(mention[3])))
+                key.append(entry_id)
+                touched.extend([added.isoformat() if added else "", seat.updated_at])
+            else:
+                needs.append(entry_id)
+                own[2].append(added.isoformat() if added else "")
+        if needs:
+            own[0].append(f"{len(needs)} {NEEDS}")
             own[1].extend(needs)
         if own[0]:
             chat = self.chat(name)
@@ -158,15 +172,30 @@ class Watchdog:
                     "real with message, or drop it")
         return f"{who} has a review that ended without a verdict: ask the reviewer with message, or review it again"
 
-    def _own_needs(self, name: str) -> list[str]:
-        """The ids of the bot's open Needs-me items."""
+    def _own_needs(self, name: str) -> list[tuple[str, str]]:
+        """The bot's open Needs-me items: each one's id and line."""
         path = self.crew.memory.root / name / "working-state" / "state.md"
-        entries = (working_state.ENTRY.match(line) for line in working_state._sections(path)["Needs me"])
-        return [m[2] for m in entries if m and m[1] == " "]
+        lines = working_state._sections(path)["Needs me"]
+        return [(m[2], line) for line in lines if (m := working_state.ENTRY.match(line)) and m[1] == " "]
 
-    def _room_muted(self, task: Task) -> bool:
-        return bool(task.room_id and self.store.room(task.room_id)["muted"])
+    def _room_held(self, task: Task) -> bool:
+        """Whether the task's group chat is muted, stopped or archived: any of them waits on the user."""
+        if not task.room_id:
+            return False
+        try:
+            room = self.store.room(task.room_id)
+        except KeyError:
+            return True
+        return bool(room["muted"] or room["stopped"] or room["archived_at"])
 
     @property
     def _stalls(self) -> dict[tuple[str, str], dict[str, Any]]:
         return self.__dict__.setdefault("_stall_state", {})
+
+
+def _unanswered(line: str, count: int) -> str:
+    """A room mention's Needs-me entry, as a step: who and when, not what they said."""
+    *_, minute, author = line.split(" · room mention ")[0].rsplit(" · ", 2)
+    if count == 1:
+        return f"the @mention here from {author} at {minute}, which you haven't answered"
+    return f"{count} @mentions here, the last from {author} at {minute}, which you haven't answered"

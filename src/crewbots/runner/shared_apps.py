@@ -2,10 +2,12 @@
 one play mode, one test run and one open scene, so two tasks at once would undo each other. A server marked
 `one_at_a_time` in mcp.json reaches bots through the daemon (`/v1/bot/mcp/<server>`), which lets one task's calls
 through at a time for each project: tasks in different projects' folders drive different Editors, and don't wait. A
-task holds its project's app from its first tool call while its turn runs, until it has made no call for APP_IDLE_S;
-another's calls meanwhile are answered that it's busy, and by whom, and the first one turned away is told when it's
-free. Listing tools and reading resources never wait, and nor does a task in a worktree of its own, whose app is its
-own: an Editor opened on that worktree, as Unity opens a folder in one Editor only."""
+task holds its project's app from its first tool call while its turn runs, until it lets go (`release_app`) or has made
+no call for APP_IDLE_S; another's calls meanwhile are answered that it's busy, and by whom, and the first one turned
+away is told when it's free. A task in no project's folder (a chat, or a group chat's seat) can point the server at any
+project's app, so it waits for whichever is held, and holds them all while it uses one. Listing tools and reading
+resources never wait, and nor does a task in a worktree of its own, whose app is its own: an Editor opened on that
+worktree, as Unity opens a folder in one Editor only."""
 
 import json
 import time
@@ -68,22 +70,38 @@ class SharedApps:
             return None
         now = time.monotonic()
         app = self._app_of(task_id, name)
-        holder = self._apps.get(app)
-        if holder is None or holder["task"] == task_id or not self._holding(holder, now):
+        if (held := self._in_the_way(app, now, task_id)) is None:
+            holder = self._apps.get(app)
             self._apps[app] = {"task": task_id, "since": holder["since"] if holder and holder["task"] == task_id
                                else now, "last": now}
             if task_id in (queue := self._app_queue.get(app, [])):
                 queue.remove(task_id)
+            self.__dict__.get("_app_told", {}).pop(app, None)  # whoever was told has had its chance
             return None
         queue = self._app_queue.setdefault(app, [])
         if task_id not in queue:
             queue.append(task_id)
-        who = self.store.get_task(holder["task"])
-        busy = (f"{name} is in use for {Path(app[1]).name or 'this project'} by {who.bot} ({who.id}), for "
+        held_app, holder = held
+        who, me = self.store.get_task(holder["task"]), self.store.get_task(task_id)
+        by = (f"your own task {who.id}, which has that work: leave it to that task" if who.bot == me.bot
+              else f"{who.bot} ({who.id})")
+        busy = (f"{name} is in use for {Path(held_app[1]).name or 'a project'} by {by}, for "
                 f"{max(1, round((now - holder['since']) / 60))} min so far. It drives one running app, so one task "
-                "uses it at a time. Do what doesn't need it, or end your turn: crewbots tells you when it's free.")
+                "uses it at a time. Do what doesn't need it, or end your turn: crewbots tells you when it's free, so "
+                "there's no need to ask anyone to.")
         return {"jsonrpc": "2.0", "id": calls[0].get("id"),
                 "result": {"content": [{"type": "text", "text": busy}], "isError": True}}
+
+    def _in_the_way(self, app: tuple[str, str], now: float,
+                    task_id: str | None = None) -> tuple[tuple[str, str], dict[str, Any]] | None:
+        """Another task's hold on an app that `app`'s calls could drive: its project's, or any project's for a task in
+        no project's folder, which picks one with the server's own tools."""
+        name, folder = app
+        for held, holder in self._apps.items():
+            same = held[0] == name and (folder == held[1] or "" in (folder, held[1]))
+            if same and holder["task"] != task_id and self._holding(holder, now):
+                return held, holder
+        return None
 
     def _own_checkout(self, task_id: str) -> bool:
         """Whether the task works in a worktree of its own, or reviews one in place."""
@@ -95,19 +113,28 @@ class SharedApps:
     def _holding(self, holder: dict[str, Any], now: float) -> bool:
         return holder["task"] in self._runs and now - holder["last"] < APP_IDLE_S
 
+    def release_app(self, task_id: str) -> str:
+        """The `release_app` tool: the task lets go of the shared apps it holds before its turn ends."""
+        held = [f"{name} for {Path(folder).name or 'any project'}" for (name, folder), holder in self._apps.items()
+                if holder["task"] == task_id]
+        if not held:
+            return "You don't hold a shared app now, so there's nothing to let go of."
+        self.free_apps(ended=task_id)
+        return (f"Let go of {', '.join(held)}: the next task waiting for it is told now. A call of yours to it takes it "
+                "back only if no one else has it.")
+
     def free_apps(self, ended: str | None = None) -> None:
-        """Lets go of apps whose task's turn is over (`ended`, or found so) or has gone quiet on them, and tells the
-        next task in line. Run as turns end and on the scheduler's tick."""
+        """Lets go of apps whose task's turn is over or that it let go of (`ended`, or found so), or that it has gone
+        quiet on, and tells the next task in line for each that nothing holds now. Run as turns end and on the
+        scheduler's tick."""
         now = time.monotonic()
-        for app in {*self._apps, *self._app_queue}:
-            holder = self._apps.get(app)
-            if holder and (holder["task"] == ended or not self._holding(holder, now)):
+        for app, holder in list(self._apps.items()):
+            if holder["task"] == ended or not self._holding(holder, now):
                 del self._apps[app]
-                holder = None
-            queue = self._app_queue.get(app, [])
-            if holder or not queue:
+        told = self.__dict__.setdefault("_app_told", {})
+        for app, queue in self._app_queue.items():
+            if not queue or self._in_the_way(app, now):
                 continue
-            told = self.__dict__.setdefault("_app_told", {})
             if app in told and now - told[app] < WAKE_AGAIN_S:
                 continue  # the one told last may yet take it
             for task_id in list(queue):

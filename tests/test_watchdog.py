@@ -264,6 +264,30 @@ async def test_a_needs_me_item_alone_is_open_work_and_its_text_is_not_copied(sto
     await crew.runner.shutdown()
 
 
+async def test_a_room_mention_is_its_seats_to_answer_and_waits_while_the_seat_is_on_it(store, tmp_path):
+    crew = stalled_crew(store, tmp_path)
+    room = crew.runner.create_room("Engineering", ["eng-lead", "engineer"], lead="eng-lead")
+    seat = store.create_task("engineer", "Engineering (engineer)", kind="seat", room_id=room["id"], status=Status.IDLE)
+    chat = crew.runner.chat("engineer")
+    store.db.execute("update tasks set updated_at = '2020-01-01T00:00:00+00:00' where id in (?, ?)", (seat.id, chat.id))
+    mention = {"author": "eng-lead", "at": datetime.now(UTC).isoformat(), "id": 7}
+    working_state.room_mentions(crew.runner.crew.memory.root / "engineer" / "working-state" / "state.md", room,
+                                [mention], add=True)
+
+    assert crew.runner.stall_check(later(1)) == []  # just said: not overdue because the bot's chat has been quiet
+    crew.runner._runs[seat.id] = object()  # the seat is answering it
+    assert crew.runner.stall_check(later(20)) == []
+    del crew.runner._runs[seat.id]
+
+    assert crew.runner.stall_check(later(20)) == ["engineer"]
+    said = [m["text"] for m in store.room_messages(room["id"]) if m["author"] == "crewbots"]
+    assert said == [f"@engineer Still open for you, with nothing run for a while: the @mention here from eng-lead at "
+                    f"{working_state.timefmt.minute(mention['at'])}, which you haven't answered. Pick it up, or say "
+                    "what is blocking it."]
+    assert notices(store, chat.id) == []  # not in its chat with the user, which can't see the room
+    await crew.runner.shutdown()
+
+
 async def test_no_open_work_does_not_wake(store, tmp_path):
     crew = stalled_crew(store, tmp_path)
     store.create_task("eng-lead", "lead", status=Status.IDLE)
