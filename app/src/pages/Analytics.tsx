@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { Avatar, labelOf } from "../components/Avatar";
 import { Icon } from "../components/Icon";
-import { modelLabel } from "../components/ModelPicker";
+import { BACKEND_LABEL, modelLabel } from "../components/ModelPicker";
 import { PlanCard } from "../components/PlanCard";
 import { Page, Segmented } from "../components/ui";
 import { usePlans } from "../plans";
@@ -12,7 +12,7 @@ import "../styles/analytics.css";
 
 // Each plan keeps one color everywhere on the page (orange and aqua, adjacent slots of the validated palette); the
 // activity grid's magnitude is a separate one-hue blue ramp, so neither reads as one plan's. Both are set in styles.css.
-const PLAN_COLOR: Record<string, string> = { claude: "var(--plan-claude)", codex: "var(--plan-codex)" };
+const PLAN_COLOR: Record<string, string> = { claude: "var(--plan-claude)", codex: "var(--plan-codex)", antigravity: "#4285f4" };
 const RAMP = [1, 2, 3, 4, 5];
 const EFFORT_LABEL: Record<string, string> = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max", ultra: "Ultra", default: "Default" };
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -62,6 +62,7 @@ export function Analytics({ crew }: { crew: Crew }) {
         <div className="plan-grid">
           <PlanCard name="Claude" plan={plans?.claude} color={PLAN_COLOR.claude} />
           <PlanCard name="Codex" plan={plans?.codex} color={PLAN_COLOR.codex} />
+          <PlanCard name="Antigravity" plan={plans?.antigravity ?? undefined} color={PLAN_COLOR.antigravity} />
         </div>
       </section>
 
@@ -70,7 +71,7 @@ export function Analytics({ crew }: { crew: Crew }) {
         {data ? (
           <>
             <div className="stat-strip">
-              <Stat value={compact(data.totals.claude + data.totals.codex)} label="Tokens used" />
+              <Stat value={compact(Object.values(data.totals).reduce((sum, n) => sum + n, 0))} label="Tokens used" />
               <Stat value={data.peak ? compact(data.peak.tokens) : "–"} label={data.peak ? `Peak day, ${short(data.peak.date)}` : "Peak day"} />
               <Stat value={data.longest_turn ? duration(data.longest_turn.seconds) : "–"} label="Longest turn" title={data.longest_turn?.title} />
               <Stat value={plural(data.streak.longest, "day")} label="Longest streak" />
@@ -95,7 +96,7 @@ export function Analytics({ crew }: { crew: Crew }) {
           <div className="usage-columns">
             <section className="page-section">
               <h2>Top models</h2>
-              <Ranked rows={data.models.map((m) => ({ key: `${m.plan}-${m.model}`, label: modelLabel(crew, m.plan, m.model === "default" ? null : m.model, null), tag: m.plan === "codex" ? "Codex" : "Claude", color: PLAN_COLOR[m.plan], tokens: m.tokens, cached: share(m) }))} />
+              <Ranked rows={data.models.map((m) => ({ key: `${m.plan}-${m.model}`, label: modelLabel(crew, m.plan, m.model === "default" ? null : m.model, null), tag: BACKEND_LABEL[m.plan as keyof typeof BACKEND_LABEL] ?? m.plan, color: PLAN_COLOR[m.plan], tokens: m.tokens, cached: share(m) }))} />
             </section>
             <section className="page-section">
               <h2>By bot</h2>
@@ -136,7 +137,7 @@ export function Analytics({ crew }: { crew: Crew }) {
             <h2>Insights</h2>
             <div className="stat-strip insights">
               <Stat value={data.efforts[0] ? (EFFORT_LABEL[data.efforts[0].effort] ?? data.efforts[0].effort) : "–"} label={data.efforts[0] ? `Most used reasoning, ${Math.round((data.efforts[0].turns / Math.max(1, data.turns)) * 100)}% of turns` : "Most used reasoning"} />
-              <Stat value={data.turns ? compact((data.totals.claude + data.totals.codex) / data.turns) : "–"} label={`Tokens in an average turn, of ${data.turns.toLocaleString()}`} />
+              <Stat value={data.turns ? compact((Object.values(data.totals).reduce((sum, n) => sum + n, 0)) / data.turns) : "–"} label={`Tokens in an average turn, of ${data.turns.toLocaleString()}`} />
               <Stat value={share(data.cache) === null ? "–" : `${share(data.cache)}%`} label="Of input from the prompt cache" title="Cached input costs a fraction of fresh input, and doesn't count toward budgets." />
               <Stat
                 value={compact(data.cache.cached)}
@@ -168,14 +169,14 @@ type Day = { date: string; tokens: number; split?: string };
 
 /** The year's days, a column a week, shaded by how much each used. */
 function Activity({ data }: { data: UsageSummary }) {
-  const [plan, setPlan] = useState<"all" | "claude" | "codex">("all");
+  const [plan, setPlan] = useState<"all" | "claude" | "codex" | "antigravity">("all");
   const [hover, setHover] = useState<Day | null>(null);
   const days: Day[] = useMemo(
     () =>
       data.daily.map((d) => ({
         date: d.date,
-        tokens: plan === "all" ? d.claude + d.codex : d[plan],
-        split: plan === "all" && d.claude && d.codex ? `Claude ${compact(d.claude)} · Codex ${compact(d.codex)}` : undefined,
+        tokens: plan === "all" ? d.claude + d.codex + (d.antigravity ?? 0) : (d[plan] ?? 0),
+        split: plan === "all" ? `Claude ${compact(d.claude)} · Codex ${compact(d.codex)} · Antigravity ${compact(d.antigravity ?? 0)}` : undefined,
       })),
     [data, plan],
   );
@@ -197,7 +198,7 @@ function Activity({ data }: { data: UsageSummary }) {
       <div className="section-head">
         <h2>Token activity</h2>
         <span className="grow" />
-        <Segmented value={plan} options={[["all", "All"], ["claude", "Claude"], ["codex", "Codex"]]} onChange={setPlan} />
+        <Segmented value={plan} options={[["all", "All"], ["claude", "Claude"], ["codex", "Codex"], ["antigravity", "Antigravity"]]} onChange={setPlan} />
       </div>
       <div onMouseLeave={() => setHover(null)}>
         <Weeks days={days} cell={cell} max={18} />
@@ -270,17 +271,17 @@ function Weeks({ days, cell, max }: { days: Day[]; cell: (d: Day) => CellProps; 
 }
 
 function Split({ totals }: { totals: Record<string, number> }) {
-  const all = Math.max(1, (totals.claude ?? 0) + (totals.codex ?? 0));
+  const all = Math.max(1, Object.values(totals).reduce((sum, n) => sum + n, 0));
   return (
     <div className="split">
       <div className="split-bar">
-        {(["claude", "codex"] as const).map((p) => (totals[p] ? <span key={p} style={{ width: `${(totals[p] / all) * 100}%`, background: PLAN_COLOR[p] }} /> : null))}
+        {(["claude", "codex", "antigravity"] as const).map((p) => (totals[p] ? <span key={p} style={{ width: `${(totals[p] / all) * 100}%`, background: PLAN_COLOR[p] }} /> : null))}
       </div>
       <div className="split-legend">
-        {(["claude", "codex"] as const).map((p) => (
+        {(["claude", "codex", "antigravity"] as const).map((p) => (
           <span key={p} className="legend-item">
             <span className="key" style={{ background: PLAN_COLOR[p] }} />
-            {p === "claude" ? "Claude" : "Codex"} <strong>{compact(totals[p] ?? 0)}</strong>
+            {BACKEND_LABEL[p]} <strong>{compact(totals[p] ?? 0)}</strong>
             <span className="faint">{Math.round(((totals[p] ?? 0) / all) * 100)}%</span>
           </span>
         ))}

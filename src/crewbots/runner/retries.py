@@ -57,6 +57,10 @@ class Retries:
             if done is None:
                 return  # settled: finished, or failed for good
             task = self.store.get_task(task_id)
+            bot = self.bot_for(task.bot)
+            if bot and not getattr(self.backends[bot.backend], "automatic_turns", True):
+                self._failed(task_id, done.error, done.final_text or None, done.retry)
+                return
             if task.session_id and not fresh and SESSION_GONE.search(done.error or ""):
                 # Waiting won't bring it back: once, at once, a fresh session takes the message.
                 fresh, prompt = True, original

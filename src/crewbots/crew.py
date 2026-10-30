@@ -395,7 +395,7 @@ def parse_card(text: str, default_name: str, source: Path | str = "<card>") -> B
         mcp=_mcp(meta.get("mcp") if isinstance(meta.get("mcp"), dict) else {}, source),
         mcp_names=_mcp_names(meta.get("mcp"), source),
         can_delegate=bool(meta.get("can_delegate", False)),
-        proactive=bool(meta.get("proactive", True)),
+        proactive=bool(meta.get("proactive", True)) and backend != "antigravity",
         skills=_skill_names(meta.get("skills"), source),
         budget=_budget(meta.get("budget"), source),
         network=_network(meta.get("network", False), access, backend, source),
@@ -471,8 +471,9 @@ def _network(raw: Any, access: Access, backend: str, source: Path | str) -> bool
         return True
     if not isinstance(raw, list) or not all(isinstance(h, str) and h.strip() for h in raw):
         raise CrewError(f"{source}: network is true, or a list of hosts such as [pypi.org, \"*.npmjs.org\"]")
-    if backend.startswith("codex"):
-        raise CrewError(f"{source}: Codex's sandbox can't keep to a list of hosts; give this bot network: true, or run "
+    if backend.startswith("codex") or backend == "antigravity":
+        label = "Antigravity" if backend == "antigravity" else "Codex"
+        raise CrewError(f"{source}: {label}'s sandbox can't keep to a list of hosts; give this bot network: true, or run "
                         "it on Claude")
     return tuple(h.strip() for h in raw)
 

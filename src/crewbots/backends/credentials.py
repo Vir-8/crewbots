@@ -24,6 +24,7 @@ LOGINS = (
     ".pypirc", ".config/gh", ".config/hub", ".config/gcloud", ".cargo/credentials", ".cargo/credentials.toml",
     ".gem/credentials", ".terraform.d/credentials.tfrc.json", ".password-store", "Library/Keychains",
     ".codex/auth.json", ".codex/config.toml", ".claude/.credentials.json", ".claude.json",
+    ".gemini",
     "Library/Application Support/Claude/claude_desktop_config.json",
 )
 TOKENS = ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GIT_ASKPASS", "SSH_ASKPASS")
@@ -36,7 +37,7 @@ def private_paths() -> tuple[Path, ...]:
     crew = paths.crew()
     return (
         crew / "daemon.json", crew / "mcp.json", *(crew / f"crewbots.db{end}" for end in ("", "-wal", "-shm")),
-        paths.logs(), paths.root() / "browser", *(paths.home() / login for login in LOGINS),
+        paths.logs(), paths.root() / "browser", paths.root() / "antigravity", *(paths.home() / login for login in LOGINS),
     )
 
 

@@ -20,11 +20,13 @@ class PlanOut(BaseModel):
 class PlansOut(BaseModel):
     claude: PlanOut
     codex: PlanOut
+    antigravity: PlanOut | None = None
 
 class UsageDay(BaseModel):
     date: str
     claude: int
     codex: int
+    antigravity: int = 0
 
 class UsagePeak(BaseModel):
     date: str

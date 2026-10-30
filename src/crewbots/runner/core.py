@@ -214,6 +214,12 @@ class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Revie
         """A message to a task. Attachments are shown with it, and listed, with where they are, in what the bot gets.
         One from a teammate reaches the bot marked as a teammate's, so it isn't taken for the user's word."""
         task = self.store.get_task(task_id)
+        card = self.bot_for(task.bot)
+        if sender == "crewbots" and card and not getattr(self.backends[card.backend], "automatic_turns", True):
+            if _record_message:
+                self._message(task_id, sender, text, attachments)
+            self._held_notices.setdefault(task_id, []).append(text)
+            return task
         if task_id in self._cancelling:
             if sender == "crewbots" or sender.startswith("routine:"):
                 self._cancel_messages.setdefault(task_id, []).append(
@@ -317,7 +323,8 @@ class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Revie
         for turn in self.store.interrupted_turns():
             task = self.store.get_task(turn["task_id"])
             self.store.clear_pending(task.id)
-            if task.kind == "review" or task.bot not in self.crew.bots:
+            if (task.kind == "review" or task.bot not in self.crew.bots
+                    or not getattr(self.backends[self.crew.bots[task.bot].backend], "automatic_turns", True)):
                 continue  # a code review is restarted by the user, as it always was
             if turn["resumed"]:
                 self._record(task.id, kind="restarted", data={"again": True})

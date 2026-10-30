@@ -3,6 +3,8 @@ import type { Crew } from "../state";
 import type { Model } from "../types";
 
 const EFFORT_LABEL: Record<string, string> = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max", ultra: "Ultra" };
+export const backendFamily = (backend: string) => backend === "antigravity" ? "antigravity" : backend.startsWith("codex") ? "codex" : "claude";
+export const BACKEND_LABEL = { claude: "Claude", codex: "Codex", antigravity: "Antigravity" };
 
 /** The model a backend should use, and its reasoning effort, from what that CLI says it offers. Blank means the
  * CLI's own default, for either. */
@@ -15,7 +17,7 @@ export function ModelPicker(props: {
 }) {
   const { crew } = props;
   useEffect(() => crew.loadModels(), [crew.loadModels]);
-  const family = props.backend.startsWith("codex") ? "codex" : "claude";
+  const family = backendFamily(props.backend);
   const list = crew.models?.[family] ?? [];
   const chosen = list.find((m) => m.id === props.model) ?? list.find((m) => m.default && !props.model);
   const efforts = chosen?.efforts ?? [];
@@ -57,9 +59,9 @@ export function ModelPicker(props: {
 
 /** "Sonnet · High": a model and effort, in words. */
 export function modelLabel(crew: Crew, backend: string, model: string | null, effort: string | null): string {
-  const family = backend.startsWith("codex") ? "codex" : "claude";
+  const family = backendFamily(backend);
   const found = crew.models?.[family]?.find((m) => m.id === model) ?? (model ? null : crew.models?.[family]?.find((m) => m.default));
-  const name = found?.id === "default" ? defaultName([found]) || "Claude" : found?.label ?? model ?? (family === "codex" ? "Codex" : "Claude");
+  const name = found?.id === "default" ? defaultName([found]) || BACKEND_LABEL[family] : found?.label ?? model ?? BACKEND_LABEL[family];
   return effort ? `${name} · ${EFFORT_LABEL[effort] ?? effort}` : name;
 }
 

@@ -31,5 +31,8 @@ The "Your crew" menu at the bottom of the sidebar, or ⌘K. Landed has its own r
   The demo's revert succeeds without touching git; a real one needs a scratch daemon with a merged task.
 
 ## Gotchas
+- Antigravity in the bot editor uses the account-advertised model list. In the preview, select Antigravity and
+  check Gemini 3.8 Flash and its thinking levels; the proactive switch and custom context window are hidden.
+  Analytics includes Antigravity token totals but directs quota checks to Antigravity itself.
 - The demo has fixed analytics and plans. Shapes are worth checking; numbers aren't.
 - Settings that change the daemon (auto-merge, time zone) need a scratch daemon to check that they took effect.

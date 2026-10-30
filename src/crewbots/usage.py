@@ -12,13 +12,14 @@ from typing import Any
 from crewbots.store import Store
 
 REVIEWER = "PR reviewer"
+PLANS = ("claude", "codex", "antigravity")
 
 
 def summary(store: Store, bot_for, days: int = 371) -> dict[str, Any]:
     today = datetime.now().astimezone().date()
     first = today - timedelta(days=days - 1)
     since = datetime.combine(first, datetime.min.time()).astimezone().astimezone(UTC).isoformat(timespec="milliseconds")
-    by_day: dict[str, dict[str, int]] = defaultdict(lambda: {"claude": 0, "codex": 0})
+    by_day: dict[str, dict[str, int]] = defaultdict(lambda: dict.fromkeys(PLANS, 0))
     models: Counter[tuple[str, str]] = Counter()
     bots: Counter[str] = Counter()
     cache: dict[str, Counter[str]] = defaultdict(Counter)  # "all", "model:<plan>:<model>", "bot:<bot>" → input, cached, written
@@ -29,7 +30,7 @@ def summary(store: Store, bot_for, days: int = 371) -> dict[str, Any]:
         bot = bot_for(row["bot"])
         plan = row["plan"] or (bot.backend.split("-")[0] if bot else "claude")
         model = row["model"] or (bot.model if bot and bot.model else "default")
-        by_day[row["day"]][plan if plan in ("claude", "codex") else "claude"] += fresh
+        by_day[row["day"]][plan if plan in PLANS else "claude"] += fresh
         models[(plan, model)] += fresh
         who = REVIEWER if row["kind"] == "review" else row["bot"]
         bots[who] += fresh
@@ -39,18 +40,18 @@ def summary(store: Store, bot_for, days: int = 371) -> dict[str, Any]:
             cache[key]["written"] += int(row["written"] or 0)
         efforts[row["effort"] or (bot.effort if bot and bot.effort else "default")] += row["turns"]
         turns += row["turns"]
-    daily = [{"date": d.isoformat(), **by_day.get(d.isoformat(), {"claude": 0, "codex": 0})}
+    daily = [{"date": d.isoformat(), **by_day.get(d.isoformat(), dict.fromkeys(PLANS, 0))}
              for d in (first + timedelta(days=n) for n in range(days))]
-    totals = {"claude": sum(d["claude"] for d in daily), "codex": sum(d["codex"] for d in daily)}
-    peak = max(daily, key=lambda d: d["claude"] + d["codex"])
+    totals = {plan: sum(d[plan] for d in daily) for plan in PLANS}
+    peak = max(daily, key=lambda d: sum(d[p] for p in PLANS))
     longest = store.longest_turn(since)
-    active = [date.fromisoformat(d["date"]) for d in daily if d["claude"] + d["codex"] > 0]
+    active = [date.fromisoformat(d["date"]) for d in daily if sum(d[p] for p in PLANS) > 0]
     return {
         "days": days,
         "daily": daily,
         "totals": totals,
         "turns": turns,
-        "peak": {"date": peak["date"], "tokens": peak["claude"] + peak["codex"]} if active else None,
+        "peak": {"date": peak["date"], "tokens": sum(peak[p] for p in PLANS)} if active else None,
         "longest_turn": {"seconds": round(longest[1]), "task_id": longest[0],
                          "title": store.get_task(longest[0]).title} if longest else None,
         "streak": _streaks(active, today),

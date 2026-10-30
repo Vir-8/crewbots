@@ -41,6 +41,8 @@ class Capacity:
             self.plans = await self.source()
 
     def verdict(self, plan: str) -> Verdict:
+        if plan == "antigravity":
+            return Verdict(False, "Antigravity runs requested work only")
         runner = self.runner
         if runner.paused:
             return Verdict(False, "waiting while the crew is paused")
