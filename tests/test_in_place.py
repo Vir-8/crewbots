@@ -144,3 +144,63 @@ async def test_work_isnt_committed_onto_a_branch_the_folder_was_switched_to(game
         await crew.runner.propose_merge_off_loop(lead.id, work.id, "Add the player")
     assert worktree._git(repo, "rev-list", "--count", "HEAD") == "2"
     await crew.runner.shutdown()
+
+
+async def _staged_move(game, output, *, rename=True):
+    crew, store, repo, lead, work = game
+    (repo / "Assets" / "Old.cs").write_text("class Old {}\n")
+    worktree._git(repo, "add", "Assets/Old.cs")
+    worktree._git(repo, "commit", "-qm", "Add Old")
+    if rename:
+        worktree._git(repo, "mv", "Assets/Old.cs", "Assets/Moved.cs")
+    else:
+        worktree._git(repo, "rm", "-q", "Assets/Old.cs")
+        (repo / "Assets" / "Moved.cs").write_text("class Old {}\n")
+        worktree._git(repo, "add", "Assets/Moved.cs")
+    worktree._git(repo, "add", "Assets/Other.cs")
+    crew.runner.handoff(work.id, "Moved Old", output, "", "", ["ran it"])
+    review = crew.runner.delegate(lead.id, "reviewer", "review it", review_of=work.id)
+    await wait_until(crew.settled(review.id))
+    crew.runner.review(review.id, Verdict.PASS, "fine", [])
+    store.set_auto_merge(True)
+    return crew, repo, lead, work
+
+
+def _left(repo):
+    return [line.strip() for line in worktree._git(repo, "status", "--porcelain", "-uall").splitlines()]
+
+
+async def test_a_staged_rename_with_both_paths_is_committed_as_one_beside_someone_elses_staged_change(game):
+    crew, repo, lead, work = await _staged_move(game, ["Assets/Old.cs", "Assets/Moved.cs"])
+
+    await crew.runner.propose_merge_off_loop(lead.id, work.id, "Move Old")
+
+    renamed = worktree._git(repo, "show", "--name-status", "--format=", "HEAD").split()
+    assert renamed == ["R100", "Assets/Old.cs", "Assets/Moved.cs"]
+    assert "A  Assets/Other.cs" in _left(repo) and not [line for line in _left(repo) if "Old.cs" in line or "Moved.cs" in line]
+    await crew.runner.shutdown()
+
+
+@pytest.mark.parametrize("output, missing", [(["Assets/Moved.cs"], "Assets/Old.cs"), (["Assets/Old.cs"], "Assets/Moved.cs")])
+async def test_a_staged_rename_with_one_path_handed_back_is_refused_naming_the_other(game, output, missing):
+    crew, repo, lead, work = await _staged_move(game, output)
+    head = worktree._git(repo, "rev-parse", "HEAD")
+
+    with pytest.raises(MergeError, match=f"{missing} is the other side.*list both"):
+        await crew.runner.propose_merge_off_loop(lead.id, work.id, "Move Old")
+
+    assert worktree._git(repo, "rev-parse", "HEAD") == head
+    assert "A  Assets/Other.cs" in _left(repo)
+    await crew.runner.shutdown()
+
+
+async def test_someone_elses_staged_deletion_isnt_committed_with_an_identical_new_file(game):
+    crew, repo, lead, work = await _staged_move(game, ["Assets/Moved.cs"], rename=False)
+    head = worktree._git(repo, "rev-parse", "HEAD")
+
+    with pytest.raises(MergeError, match="Assets/Old.cs is the other side"):
+        await crew.runner.propose_merge_off_loop(lead.id, work.id, "Add Moved")
+
+    assert worktree._git(repo, "rev-parse", "HEAD") == head
+    assert "R  Assets/Old.cs -> Assets/Moved.cs" in _left(repo)
+    await crew.runner.shutdown()

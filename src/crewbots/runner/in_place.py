@@ -86,10 +86,26 @@ class InPlace:
         diff = worktree._git(repo, "diff", "HEAD", "--", *tracked, strip=False) if tracked else ""
         return diff + "".join(comments.added(repo / name, name) for name in new)
 
+    def _check_renames(self, repo: Path, files: list[str]) -> None:
+        """Refuse a staged rename with only one side handed back: git can't tell it from someone else's delete and add."""
+        listed = worktree._git(repo, "diff", "--cached", "-M", "--name-status", "-z", strip=False).split("\0")
+        entries = iter(listed)
+        for state in entries:
+            if state[:1] in ("R", "C"):
+                old, new = next(entries), next(entries)
+                if state[0] == "R" and (old in files) != (new in files):
+                    missing = new if old in files else old
+                    raise MergeError(f"{missing} is the other side of a staged rename of {old if missing == new else new}, "
+                                     f"but the Output doesn't list it, so nothing was committed: list both {old} and "
+                                     f"{new} in the handback's Output, then merge again")
+            elif state:
+                next(entries)
+
     def _commit_in_place(self, work: Task, repo: Path, message: str, *, forced: bool, automatic: bool) -> Task:
         files = self._in_place_files(work, repo)
         if not files:
             raise MergeError(self._nothing_to_commit(work, repo))
+        self._check_renames(repo, files)
         message = worktree.final_message(message)
         base = worktree._git(repo, "rev-parse", "HEAD")
         into = worktree._git(repo, "symbolic-ref", "--short", "HEAD")
@@ -97,7 +113,9 @@ class InPlace:
         if began and began.data.get("branch") != into:
             raise MergeError(f"{repo} is on {into} now, not {began.data.get('branch')} as when {work.id} began, so nothing "
                              "was committed: switch it back, then merge again")
-        worktree._git(repo, "add", "--all", "--", *files)
+        staged = set(worktree._git(repo, "ls-files", "-z", "--", *files, strip=False).split("\0"))
+        if present := [f for f in files if f in staged or (repo / f).exists()]:
+            worktree._git(repo, "add", "--all", "--", *present)
         worktree._git(repo, *worktree.NO_HOOKS, "commit", "-q", "--no-verify", "--cleanup=whitespace", "-m", message,
                       "--", *files)  # just these, whatever else is staged
         worktree.verify_message(repo, "HEAD", message)
