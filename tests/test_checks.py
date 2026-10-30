@@ -75,6 +75,22 @@ async def test_passing_checks_run_in_the_reviews_copy_and_the_reviewer_is_told(s
     [spec] = crew.specs_for("reviewer")
     assert "they all passed:\n- `python3 hello.py`: passed in" in spec.prompt
     assert crew.runner.review_state(work.id).approved
+    [rerun] = [e for e in store.events(work.id) if e.kind == "checks_rerun"]
+    assert rerun.data["version"] == 1
+    await crew.runner.shutdown()
+
+
+async def test_a_review_of_a_superseded_version_skips_the_newer_checks(store, tmp_path, plain_shell):
+    crew, lead, work = handed_back(store, tmp_path, ["python3 hello.py"])
+    review = crew.runner.delegate(lead.id, "reviewer", "review it", review_of=work.id)
+    # handed back again before the reviewer's first turn: its checks belong to a version this copy doesn't have
+    crew.runner.handoff(work.id, "Removed hello.py", [], "", "", ["ls → no hello.py"], ["test ! -f hello.py"])
+    store.update_task(work.id, turns=2)
+    await wait_until(crew.settled(review.id))
+
+    assert not plain_shell
+    [spec] = crew.specs_for("reviewer")
+    assert "crewbots reran" not in spec.prompt
     await crew.runner.shutdown()
 
 

@@ -48,6 +48,8 @@ class Checks:
         if review.turns or not self._in_review_copy(review):
             return prompt
         work = self.store.get_task(review.review_of)
+        if work.turns != review.review_version:
+            return prompt  # the work moved on since this copy was taken: its latest checks aren't this version's
         handoff = self.store.latest_handoff(work.id)
         if handoff is None or not handoff.checks:
             return prompt
