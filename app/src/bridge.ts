@@ -67,6 +67,8 @@ const tauriBridge = {
   },
 };
 
+export type Bridge = typeof tauriBridge;
+
 /** Inside the app, the real shell. In a plain browser, the design preview's made-up crew. */
 export const inTauri = "__TAURI_INTERNALS__" in window;
-export const bridge: typeof tauriBridge = inTauri ? tauriBridge : (previewBridge as unknown as typeof tauriBridge);
+export const bridge: Bridge = inTauri ? tauriBridge : previewBridge;

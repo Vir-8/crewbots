@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { derive, doing, mergeLoadedEvents, workingLine } from "./state";
+import { doing, workingLine } from "./activityText";
+import { derive, mergeLoadedEvents } from "./state";
 import type { StoredEvent, Task } from "./types";
 
 const at = new Date(Date.UTC(2026, 9, 27, 7)).toISOString();

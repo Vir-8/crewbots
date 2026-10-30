@@ -1,9 +1,9 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { api } from "../api";
 import type { Crew } from "../state";
-import { oneLine } from "../state";
+import { oneLine } from "../activityText";
 import type { PageOut } from "../api-types";
-import type { Profile as ProfileData, Room, RoomChange } from "../types";
+import type { Bot, Profile as ProfileData, Room, RoomChange } from "../types";
 import { ACTIVE } from "../types";
 import { Avatar, GroupAvatar, labelOf } from "./Avatar";
 import { ago } from "./bits";
@@ -11,7 +11,7 @@ import { Icon } from "./Icon";
 import { Switch } from "./ui";
 import "../styles/panels.css";
 
-const ACCESS: Record<string, string> = { read_only: "Reads only", workspace_write: "Writes in its task's folder", full: "Full access" };
+export const ACCESS: Record<Bot["access"], string> = { read_only: "Reads only", workspace_write: "Writes in its task's folder", full: "Full access" };
 const SHOWN = 6;
 
 /** A bot, beside your chat with it: what it's doing, its pages, what runs on its own, the work it has done, and how
@@ -142,7 +142,7 @@ export function Profile(props: { crew: Crew; bot: string; onOpen: (id: string) =
             </dd>
             <dt>Access</dt>
             <dd>
-              {ACCESS[bot.access] ?? bot.access}
+              {ACCESS[bot.access]}
               {bot.can_delegate ? " · delegates" : ""}
             </dd>
             <dt>Network</dt>
@@ -325,7 +325,7 @@ export function RoomProfile(props: { crew: Crew; room: Room; onOpen: (id: string
                   </button>
                 </span>
               ) : (
-                <button className="button small danger-text" onClick={() => setDeleting(true)}>
+                <button className="button small error-text" onClick={() => setDeleting(true)}>
                   Delete…
                 </button>
               )}

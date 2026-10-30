@@ -1,10 +1,12 @@
 // What the message boxes understand as you type: the app's own / commands, and @mentions. Kept apart from the
 // components so it can be tested on its own.
 
+export type CommandName = "new" | "group" | "remember" | "stop" | "pause" | "resume" | "status" | "usage";
+
 /** Commands run in the app itself, from the message box: nothing is sent to a bot. Each shows what it will do first
  * (a panel above the box), and runs only when you say so. `takes`: what it needs after its name. A box offers the
  * ones it can do, by name (`commandsFor`'s `can`). */
-export type Command = { name: string; icon: "chart" | "settings" | "handoff" | "users" | "check" | "pause" | "play" | "x"; description: string; takes?: string };
+export type Command = { name: CommandName; icon: "chart" | "settings" | "handoff" | "users" | "check" | "pause" | "play" | "x"; description: string; takes?: string };
 
 export const COMMANDS: Command[] = [
   { name: "new", icon: "handoff", description: "Start a thread for this bot, beside the chat", takes: "what it's for" },
@@ -19,7 +21,7 @@ export const COMMANDS: Command[] = [
 
 /** The commands offered for what's in the box: "/" and the start of a command's name; or, for one that takes
  * something, its whole name and what follows. */
-export function commandsFor(text: string, can: (name: string) => boolean): Command[] {
+export function commandsFor(text: string, can: (name: CommandName) => boolean): Command[] {
   const typed = /^\/(\S*)(?:\s+([\s\S]*))?$/.exec(text);
   if (!typed) return [];
   const [, name, rest] = typed;
@@ -33,16 +35,6 @@ export function argumentOf(text: string): string {
   return /^\/\S*\s+([\s\S]*)$/.exec(text)?.[1].trim() ?? "";
 }
 
-/** The name being typed after an @ at the end of the text, if one is. */
-export function mentionTyped(text: string): string | undefined {
-  return /(?:^|\s)@([\w-]*)$/.exec(text)?.[1];
-}
-
-/** That name, finished: `@na` becomes `@name `. */
-export function finishMention(text: string, name: string): string {
-  return text.replace(/@([\w-]*)$/, `@${name} `);
-}
-
 /** Keyboard selection shared by the command and mention menus. */
 export function pickerKey(key: string, shift: boolean, pick: number, length: number): number | "choose" | "close" | undefined {
   if (!length) return undefined;
@@ -52,8 +44,8 @@ export function pickerKey(key: string, shift: boolean, pick: number, length: num
   return undefined;
 }
 
-/** In a review comment: the @mention the caret is in, as where its @ is and what's typed after it. Not one inside
- * a word, an email address or `code`. */
+/** The @mention the caret is in, as where its @ is and what's typed after it. Not one inside a word, an email
+ * address or `code`. */
 export function mentionAt(text: string, caret: number): { start: number; query: string } | null {
   const typed = /(^|[^\w`@])@([\w-]*)$/.exec(text.slice(0, caret));
   return typed ? { start: caret - typed[2].length - 1, query: typed[2] } : null;

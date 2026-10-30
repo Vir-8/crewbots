@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Crew } from "../state";
-import { describeCall } from "../state";
+import { describeCall } from "../activityText";
 import type { Attachment, StoredEvent, Task } from "../types";
 import { ACTIVE } from "../types";
 import { Files } from "./Attachments";
@@ -11,6 +11,7 @@ import { labelOf } from "./Avatar";
 import { fullDate, Markdown, stamp } from "./bits";
 import { Marked } from "./Find";
 import { Icon } from "./Icon";
+import type { Review } from "./cardEvents";
 
 export function Brief({ from, text, at }: { from: string; text: string; at: string }) {
   const long = text.length > 280;
@@ -34,7 +35,7 @@ export function Brief({ from, text, at }: { from: string; text: string; at: stri
   );
 }
 
-export function VerdictBlock({ data }: { data: Record<string, any> }) {
+export function VerdictBlock({ data }: { data: Review }) {
   const pass = data.verdict === "pass";
   return (
     <div className={`verdict ${pass ? "pass" : "fail"}`}>
@@ -46,9 +47,9 @@ export function VerdictBlock({ data }: { data: Record<string, any> }) {
         <span className="faint">version {data.version}</span>
       </div>
       <div className="verdict-text"><Marked text={data.summary} /></div>
-      {data.findings?.length > 0 && (
+      {data.findings.length > 0 && (
         <ul className="findings">
-          {data.findings.map((f: any, i: number) => (
+          {data.findings.map((f, i) => (
             <li key={i}>
               <code>{f.location}</code> {f.problem}
               {f.scenario && <div className="faint">When {f.scenario}</div>}

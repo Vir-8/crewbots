@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { api, bridge } from "../api";
 import type { Crew } from "../state";
-import { oneLine } from "../state";
+import { oneLine } from "../activityText";
 import type { ReviewState, Task } from "../types";
 import { ACTIVE } from "../types";
 import { crewCommands } from "./CommandPreview";

@@ -6,7 +6,7 @@ import { ago, StatusPill } from "../components/bits";
 import { Icon } from "../components/Icon";
 import { Page } from "../components/ui";
 import type { Crew } from "../state";
-import { oneLine } from "../state";
+import { oneLine } from "../activityText";
 import type { Task } from "../types";
 import "../styles/activity.css";
 

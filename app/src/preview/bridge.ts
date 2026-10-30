@@ -2,6 +2,7 @@
 // the UI can be designed and checked in an ordinary browser.
 
 import { API_SCHEMA, API_VERSION } from "../api-types";
+import type { Bridge } from "../bridge";
 import type { ConnectionStatus, Live, StoredEvent, Task } from "../types";
 import * as demo from "./demo";
 import { landedRequest } from "./demo/landed";
@@ -389,7 +390,7 @@ export const previewBridge = {
   },
   onResync: (_callback: () => void) => () => undefined,
   onMenu: (_callback: (item: string) => void) => () => undefined, // a browser has no app menu: ⌘K has the same
-};
+} satisfies Bridge;
 
 /** In a browser, dictation uses its own speech recognition where it has one (Chrome does). */
 function browserDictation() {

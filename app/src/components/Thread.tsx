@@ -1,12 +1,12 @@
 import { Fragment, type ReactNode, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Crew } from "../state";
-import { workingLine } from "../state";
+import { workingLine } from "../activityText";
 import type { Task } from "../types";
 import { ACTIVE } from "../types";
 import { Files } from "./Attachments";
 import { labelOf } from "./Avatar";
 import { Boundary } from "./Boundary";
-import { Markdown, MentionText, MessageMeta, PageLinkTo, TimeBreak, timeBreaks, useHoveredMessage } from "./bits";
+import { Markdown, MentionText, MessageMeta, PageLink, TimeBreak, tilde, timeBreaks, useHoveredMessage } from "./bits";
 import { Finding, Marked, count, useCurrentHit } from "./Find";
 import { Icon } from "./Icon";
 import { Offer } from "./Offer";
@@ -184,7 +184,7 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
         <div className="line">
           <Icon name="file" size={14} />
           <span>
-            {block.changed ? "Changed" : "Wrote"} <PageLinkTo page={block.page} />
+            {block.changed ? "Changed" : "Wrote"} <PageLink page={block.page} />
           </span>
         </div>
       );
@@ -233,22 +233,22 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
         <div className="handoff">
           <div className="handoff-head">Handed back</div>
           <div><Marked text={block.data.done} /></div>
-          {block.data.output?.length > 0 && (
+          {block.data.output.length > 0 && (
             <ul className="handoff-files">
-              {block.data.output.map((out: string) => (
+              {block.data.output.map((out) => (
                 <li key={out} title={out}>
-                  {out.replace(/^\/Users\/[^/]+/, "~")}
+                  {tilde(out)}
                 </li>
               ))}
             </ul>
           )}
           {block.data.open && <div className="handoff-open"><Marked text={`Open: ${block.data.open}`} /></div>}
-          {block.data.evidence?.length > 0 && (
+          {block.data.evidence?.length ? (
             <div className="handoff-evidence">
               <div>Evidence</div>
-              <ul>{block.data.evidence.map((e: string, i: number) => <li key={i}><Marked text={e} /></li>)}</ul>
+              <ul>{block.data.evidence.map((e, i) => <li key={i}><Marked text={e} /></li>)}</ul>
             </div>
-          )}
+          ) : null}
         </div>
       );
     case "verdict":

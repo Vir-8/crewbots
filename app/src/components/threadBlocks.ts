@@ -1,10 +1,11 @@
 // A conversation's events as people would tell them: what was said and decided, as blocks, with the mechanics
 // folded away (Thread draws them).
 
-import { limitText, oneLine } from "../state";
+import { limitText, oneLine } from "../activityText";
 import type { Attachment, StoredEvent, Task } from "../types";
 import { labelOf } from "./Avatar";
-import { tokens } from "./bits";
+import { tilde, tokens } from "./bits";
+import type { Handoff, Outcome, PushProposal, ReplaceProposal, Review } from "./cardEvents";
 import { shown } from "./Find";
 
 export type Choice = { label: string; description?: string };
@@ -24,10 +25,10 @@ export type Block =
   | { kind: "permission"; id: number; permission: number; bot: string; for?: string; taskId: string; ask: string; what: string; why: string; folder?: string; here: boolean; allowed?: boolean }
   | { kind: "ask"; id: number; taskId: string; question: string; choices?: Choice[]; multiple?: boolean; answer?: string; room?: string; closed?: boolean; questionId?: number }
   | { kind: "held"; id: number; taskId: string; reason: string }
-  | { kind: "handoff"; id: number; data: Record<string, any> }
-  | { kind: "verdict"; id: number; data: Record<string, any> }
-  | { kind: "push"; id: number; data: Record<string, any>; started?: boolean; result?: Record<string, any>; replaced?: boolean }
-  | { kind: "replace"; id: number; data: Record<string, any>; started?: boolean; result?: Record<string, any> };
+  | { kind: "handoff"; id: number; data: Handoff }
+  | { kind: "verdict"; id: number; data: Review }
+  | { kind: "push"; id: number; data: PushProposal; started?: boolean; result?: Outcome; replaced?: boolean }
+  | { kind: "replace"; id: number; data: ReplaceProposal; started?: boolean; result?: Outcome };
 
 // Crew tools that are shown as what they did (a card, a verdict, a question, a note kept, a page), not as steps.
 const SHOWN_ELSEWHERE = new Set(
@@ -54,15 +55,15 @@ export function said(block: Block): string {
     case "handoff":
       return [block.data.done, block.data.open ? `Open: ${block.data.open}` : ""].join("\n");
     case "verdict":
-      return block.data.summary ?? "";
+      return block.data.summary;
     case "push":
       return [block.data.project, block.data.summary, block.data.branch, block.data.upstream, block.data.push_url_display, ...(block.data.commits ?? []), block.result?.reason].filter(Boolean).join("\n");
     case "replace":
-      return [block.data.project, block.data.summary, block.data.target, block.data.branch, block.data.backup, ...(block.data.checks ?? []).map((c: any) => `${c.name} ${c.detail}`), block.result?.reason].filter(Boolean).join("\n");
+      return [block.data.project, block.data.summary, block.data.target, block.data.branch, block.data.backup, ...(block.data.checks ?? []).map((c) => `${c.name} ${c.detail}`), block.result?.reason].filter(Boolean).join("\n");
     case "page":
       return block.page;
     case "permission":
-      return [shown(block.what), shown(block.why), (block.folder ?? "").replace(/^\/Users\/[^/]+/, "~")].filter(Boolean).join("\n");
+      return [shown(block.what), shown(block.why), tilde(block.folder ?? "")].filter(Boolean).join("\n");
     case "activity":
       return block.items.map(said).filter(Boolean).join("\n");
     default:
@@ -228,11 +229,11 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
         break;
       case "handoff":
         flush();
-        out.push({ kind: "handoff", id: e.id, data: d });
+        out.push({ kind: "handoff", id: e.id, data: d as Handoff });
         break;
       case "review":
         flush();
-        out.push({ kind: "verdict", id: e.id, data: d });
+        out.push({ kind: "verdict", id: e.id, data: d as Review });
         break;
       case "worktree":
         out.push({ kind: "line", id: e.id, text: `Working on its own branch, ${d.branch}`, icon: "branch" });
@@ -243,11 +244,11 @@ export function build(events: StoredEvent[], children: Task[], tasks: Map<string
         break;
       case "push_proposed":
         flush();
-        out.push({ kind: "push", id: e.id, data: d, started: events.some((x) => x.kind === "push_started" && x.data.proposal === e.id), result: events.find((x) => x.kind === "push_result" && x.data.proposal === e.id)?.data, replaced: events.some((x) => x.kind === "push_replaced" && x.data.proposal === e.id) });
+        out.push({ kind: "push", id: e.id, data: d as PushProposal, started: events.some((x) => x.kind === "push_started" && x.data.proposal === e.id), result: events.find((x) => x.kind === "push_result" && x.data.proposal === e.id)?.data as Outcome | undefined, replaced: events.some((x) => x.kind === "push_replaced" && x.data.proposal === e.id) });
         break;
       case "replace_main_proposed":
         flush();
-        out.push({ kind: "replace", id: e.id, data: d, started: events.some((x) => x.kind === "replace_main_started" && x.data.proposal === e.id), result: events.find((x) => x.kind === "replace_main_result" && x.data.proposal === e.id)?.data });
+        out.push({ kind: "replace", id: e.id, data: d as ReplaceProposal, started: events.some((x) => x.kind === "replace_main_started" && x.data.proposal === e.id), result: events.find((x) => x.kind === "replace_main_result" && x.data.proposal === e.id)?.data as Outcome | undefined });
         break;
       case "dropped":
         flush();
