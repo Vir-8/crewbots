@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from crewbots import checkins, prompts, sources, timefmt
+from crewbots import checkins, paths, prompts, sources, timefmt
 from crewbots import crew as crew_module
 from crewbots import github as github_module
 from crewbots import routines as routines_module
@@ -163,7 +163,8 @@ class Scheduler:
         crew = self.runner.crew
         recent = self.store.list_tasks(limit=200)
         repos = sources.repos([b.workspace for b in crew.bots.values()] + [p.folder for p in crew.projects.values()]
-                              + [Path(t.repo) for t in recent if t.repo])
+                              + [Path(t.repo) for t in recent if t.repo],
+                              self.runner.worktree_root or paths.worktrees())
         folders = {f for bot in crew.bots if (c := checkins.load(crew.home, bot)) for f in c.watch if f.is_dir()}
         return self.sources.git(repos) + self.sources.folders(sorted(folders))
 

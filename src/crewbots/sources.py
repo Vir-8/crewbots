@@ -96,14 +96,15 @@ class Sources:
         return events
 
 
-def repos(folders: list[Path | None]) -> list[Path]:
-    """The git repositories among `folders`, each once, leaving out crewbots' own worktrees."""
+def repos(folders: list[Path | None], worktrees: Path) -> list[Path]:
+    """The git repositories among `folders`, each once, leaving out crewbots' own worktrees (under `worktrees`)."""
+    worktrees = worktrees.resolve()
     seen, out = set(), []
     for folder in folders:
         if folder is None:
             continue
         folder = Path(folder).expanduser()
-        if str(folder) in seen or "worktrees" in folder.parts or not worktree.is_repo(folder):
+        if str(folder) in seen or folder.resolve().is_relative_to(worktrees) or not worktree.is_repo(folder):
             continue
         seen.add(str(folder))
         out.append(folder)

@@ -184,3 +184,17 @@ async def test_the_scheduler_looks_at_the_bots_workspaces(store, tmp_path):
         assert [i["id"] for i in client.get("/intents", headers=auth).json()] == [intent["id"]]
         assert client.delete(f"/intents/{intent['id']}", headers=auth).json()["cancelled"] is True
         assert client.get("/intents", headers=auth).json() == []
+
+
+async def test_only_crewbots_own_worktrees_are_left_out(store, tmp_path):
+    mine = git_repo(tmp_path / "code" / "worktrees" / "app")  # the user's own worktree layout
+    ours = git_repo(tmp_path / "wts" / "acme-web" / "t1")  # under the runner's worktree root
+    crew = ScriptedCrew(store, tmp_path, bot("engineer", workspace=mine), bot("designer", workspace=ours))
+    scheduler = Scheduler(crew.runner, sources_every_s=0)
+    await scheduler.tick()
+    for repo in (mine, ours):
+        (repo / "a.py").write_text("a")
+        git(repo, "add", "-A")
+        git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "Add a")
+    await scheduler.tick()
+    assert [e["subject"] for e in store.crew_events()] == [str(mine)]
