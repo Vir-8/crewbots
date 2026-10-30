@@ -3,11 +3,13 @@
 // element until the pointer moves, scroll clamped by a layout in the middle of an update. Compiled and run by
 // `scripts/verify webkit`.
 //
-//   verify-webkit URL [--size 1400x860] [--wait SECONDS] [--setup FILE] [--click SELECTOR] [--js FILE]
+//   verify-webkit URL [--size 1400x860] [--wait SECONDS] [--timeout SECONDS] [--setup FILE] [--click SELECTOR] [--js FILE]
+//   verify-webkit --probe [SECONDS]
 //
 // --setup and --js are the bodies of async functions run in the page (top-level await works); --setup runs before the
 // click, --js after it, and what --js returns is printed. The window shows on screen while it runs, since WebKit doesn't
-// draw frames for a hidden one.
+// draw frames for a hidden one. It gives up with a message after --timeout seconds (30) plus --wait. --probe loads an empty
+// page with no window and exits 0 once WebKit has shown it, or 1 after SECONDS (5): whether WebKit can run here at all.
 import AppKit
 import WebKit
 
@@ -17,14 +19,17 @@ var args = CommandLine.arguments.dropFirst()
 while let arg = args.popFirst() {
     if arg.hasPrefix("--") { options[arg] = args.popFirst() ?? "" } else { given = URL(string: arg) }
 }
+if CommandLine.arguments.contains("--probe") { given = URL(string: "about:blank") }
 guard let given else {
-    FileHandle.standardError.write("usage: verify-webkit URL [--size WxH] [--wait S] [--setup FILE] [--click SELECTOR] [--js FILE]\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: verify-webkit URL [--size WxH] [--wait S] [--timeout S] [--setup FILE] [--click SELECTOR] [--js FILE]\n".data(using: .utf8)!)
     exit(2)
 }
 let url: URL = given
 let size = (options["--size"] ?? "1400x860").split(separator: "x").compactMap { Double($0) }
 let (width, height) = (size.count == 2 ? size[0] : 1400, size.count == 2 ? size[1] : 860)
 let wait = Double(options["--wait"] ?? "2") ?? 2
+let probe = CommandLine.arguments.contains("--probe")
+var waiting = "the page to load"
 
 func script(_ option: String) -> String? {
     guard let path = options[option] else { return nil }
@@ -43,14 +48,17 @@ final class Harness: NSObject, WKNavigationDelegate {
     let web = WKWebView(frame: NSRect(x: 0, y: 0, width: width, height: height))
 
     func start() {
-        window.contentView = web
         web.navigationDelegate = self
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        if !probe {
+            window.contentView = web
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
         web.load(URLRequest(url: url))
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if probe { exit(0) }
         DispatchQueue.main.asyncAfter(deadline: .now() + wait) { self.setup() }
     }
 
@@ -60,6 +68,7 @@ final class Harness: NSObject, WKNavigationDelegate {
     }
 
     func run(_ body: String, _ done: @escaping (Any?) -> Void) {
+        waiting = "the page's scripts"
         web.callAsyncJavaScript(body, arguments: [:], in: nil, in: .page) { result in
             switch result {
             case .success(let value): done(value)
@@ -117,5 +126,8 @@ let app = NSApplication.shared
 app.setActivationPolicy(.regular)
 let harness = Harness()
 harness.start()
-DispatchQueue.main.asyncAfter(deadline: .now() + 90) { fail("timed out after 90s") }
+let deadline = probe ? Double(options["--probe"] ?? "") ?? 5 : (Double(options["--timeout"] ?? "30") ?? 30) + wait
+DispatchQueue.main.asyncAfter(deadline: .now() + deadline) {
+    fail("timed out after \(Int(deadline))s waiting for \(waiting): WebKit's helper processes may not be able to start here (a sandbox?)")
+}
 app.run()

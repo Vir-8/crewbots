@@ -28,6 +28,16 @@ wait_for() {
   return 1
 }
 
+webkit_bin="$work/verify-webkit"
+
+# Compiles scripts/verify-webkit.swift when it's new or changed. A failed build removes the old binary and fails, so
+# an outdated one never runs.
+build_webkit() {
+  if [[ ! -x "$webkit_bin" || scripts/verify-webkit.swift -nt "$webkit_bin" ]]; then
+    swiftc -O scripts/verify-webkit.swift -o "$webkit_bin" -framework WebKit -framework AppKit || { rm -f "$webkit_bin"; return 1; }
+  fi
+}
+
 crewbots_cli() { if [[ -x .venv/bin/crewbots ]]; then .venv/bin/crewbots "$@"; else uv run --quiet crewbots "$@"; fi; }
 
 case "${1:-}" in
@@ -40,6 +50,15 @@ case "${1:-}" in
     if ! python3 -c 'import socket; socket.socket().bind(("127.0.0.1", 0))' 2>/dev/null; then
       echo "this shell can't listen on a local port (a sandbox?): preview and daemon can't run here; say so in your handoff"
       ok=false
+    fi
+    if command -v swiftc >/dev/null; then
+      if ! build_webkit; then
+        echo "WebKit can't be built here: swiftc failed (its output is above); say so in your handoff"
+        ok=false
+      elif ! "$webkit_bin" --probe 2>/dev/null; then
+        echo "WebKit can't run in this shell (a sandbox?): its helper processes don't start, so \`webkit\` would hang; say so in your handoff"
+        ok=false
+      fi
     fi
     $ok && echo "ok: preview, daemon and webkit can run here"
     ;;
@@ -82,11 +101,8 @@ case "${1:-}" in
     ;;
   webkit)
     shift
-    bin="$work/verify-webkit"
-    if [[ ! -x "$bin" || scripts/verify-webkit.swift -nt "$bin" ]]; then
-      swiftc -O scripts/verify-webkit.swift -o "$bin" -framework WebKit -framework AppKit
-    fi
-    exec "$bin" "$@"
+    build_webkit
+    exec "$webkit_bin" "$@"
     ;;
   *)
     sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
