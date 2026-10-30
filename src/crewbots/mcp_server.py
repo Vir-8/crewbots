@@ -2,36 +2,25 @@
 is Codex. The CLI starts one per session, over stdio.
 
 It holds nothing but a run token (CREWBOTS_TOKEN) and the daemon's address (CREWBOTS_URL). Every tool is a call to the
-daemon's /bot/ API, which decides what this task may do; this process only translates. Coordinators also get the
-tools for adding bots and proposing merges (CREWBOTS_DELEGATE=1), which the daemon refuses anyone else regardless.
+daemon's /bot/tools/{name}, which decides what this task may do; this process only translates. Coordinators also get
+the tools for adding bots and proposing merges (CREWBOTS_DELEGATE=1), which the daemon refuses anyone else regardless.
 """
 
-import contextlib
-import json
+import asyncio
 import os
 from typing import Any
 
 import httpx
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
-from mcp.types import ImageContent, TextContent
+from mcp.types import CallToolResult, ImageContent, TextContent
 
 from crewbots import webkit
-from crewbots.crew_tools import (
-    SPECS,
-    asked_text,
-    describe,
-    dropped_text,
-    merge_text,
-    offered,
-    recall_text,
-    remembered_text,
-    shared_text,
-    told_text,
-)
-from crewbots.tool_args import lines
+from crewbots.crew_tools import SPECS, describe, tools_for
 
 INSTRUCTIONS = "Tools for working in a crewbots crew: hand work back, escalate decisions, and (for coordinators) delegate."
+# Long enough for the first check, which builds the helper too
+WEBKIT_TIMEOUT = webkit.BUILD_TIMEOUT_S + webkit.MAX_WAIT_S + webkit.TIMEOUT_S + 30
 
 
 class CrewError(ToolError):
@@ -39,262 +28,190 @@ class CrewError(ToolError):
     only as "Error executing tool"."""
 
 
+def _call(client: httpx.Client, path: str, body: dict[str, Any], **options: Any) -> Any:
+    response = client.post(path, json=body, **options)
+    if response.status_code >= 400:
+        try:
+            detail = response.json().get("detail", response.text)
+        except ValueError:
+            detail = response.text
+        raise CrewError(f"crewbots refused this ({response.status_code}): {detail}")
+    return response.json()
+
+
+class _Daemon(MCPServer):
+    """Sends each tool call to the daemon with the arguments as the bot gave them, to be read there as Claude's are
+    (crewbots.tool_args): under the other names a bot reaches for, a list sent as one string, and with a note of any
+    it doesn't take. The tools registered on it only declare what Codex is shown."""
+
+    def __init__(self, client: httpx.Client):
+        super().__init__(name="crewbots", instructions=INSTRUCTIONS)
+        self.client = client
+
+    async def call_tool(self, name: str, arguments: dict[str, Any], context: Any = None) -> CallToolResult:
+        if name not in {tool.name for tool in await self.list_tools()}:
+            raise ToolError(f"Unknown tool: {name}")
+        options = {"timeout": WEBKIT_TIMEOUT} if name == "webkit_check" else {}
+        content = (await asyncio.to_thread(_call, self.client, f"/bot/tools/{name}", arguments, **options))["content"]
+        if isinstance(content, list):  # the browser's: text and images
+            return CallToolResult(content=[ImageContent(**item) if item["type"] == "image" else TextContent(**item)
+                                           for item in content])
+        # Also as the structured result that a `-> str` tool's output schema promises
+        return CallToolResult(content=[TextContent(type="text", text=content)], structured_content={"result": content})
+
+
 def build_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = False, kind: str | None = None,
                  reviewing: bool = False) -> MCPServer:
-    """The crew tools for one task, less those a task of its kind isn't offered (`crew_tools.offered`)."""
-    server = _crew_server(client, can_delegate, is_chief=is_chief)
-    for name in SPECS:
-        if not offered(name, kind, reviewing):
-            with contextlib.suppress(ToolError):  # one only coordinators have
-                server.remove_tool(name)
+    """The crew tools for one task: those `crew_tools.tools_for` gives it, as Claude's bots get them."""
+    server = _crew_server(client)
+    given = {tool.name for tool in tools_for(can_delegate, is_chief=is_chief, kind=kind, reviewing=reviewing)}
+    for name in SPECS.keys() - given:
+        server.remove_tool(name)
     return server
 
 
-def _crew_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = False) -> MCPServer:
-    server = MCPServer(name="crewbots", instructions=INSTRUCTIONS)
-
-    def call(method: str, path: str, body: dict[str, Any] | None = None, **options: Any) -> Any:
-        response = client.request(method, path, json=body, **options)
-        if response.status_code >= 400:
-            try:
-                detail = response.json().get("detail", response.text)
-            except ValueError:
-                detail = response.text
-            raise CrewError(f"crewbots refused this ({response.status_code}): {detail}")
-        return response.json()
-
-    def browser(action, args):
-        result = call("POST", f"/bot/browser/{action}", args)
-        return [ImageContent(**item) if item["type"] == "image" else TextContent(**item) for item in result["content"]]
+def _crew_server(client: httpx.Client) -> MCPServer:
+    server = _Daemon(client)
 
     @server.tool(description=describe("browser_open"))
-    def browser_open(url: str) -> list[TextContent | ImageContent]:
-        return browser("open", {"url": url})
+    def browser_open(url: str) -> list[TextContent | ImageContent]: ...
 
     @server.tool(description=describe("browser_screenshot"))
     def browser_screenshot(width: int = 1400, height: int = 860, theme: str = "light",
-                           full_page: bool = False) -> list[TextContent | ImageContent]:
-        return browser("screenshot", {"width": width, "height": height, "theme": theme, "full_page": full_page})
+                           full_page: bool = False) -> list[TextContent | ImageContent]: ...
 
     @server.tool(description=describe("browser_click"))
-    def browser_click(selector: str) -> list[TextContent | ImageContent]:
-        return browser("click", {"selector": selector})
+    def browser_click(selector: str) -> list[TextContent | ImageContent]: ...
 
     @server.tool(description=describe("browser_type"))
     def browser_type(selector: str | None = None, text: str | None = None,
-                     key: str | None = None) -> list[TextContent | ImageContent]:
-        return browser("type", {k: v for k, v in {"selector": selector, "text": text, "key": key}.items() if v is not None})
+                     key: str | None = None) -> list[TextContent | ImageContent]: ...
 
     @server.tool(description=describe("browser_evaluate"))
-    def browser_evaluate(expression: str) -> list[TextContent | ImageContent]:
-        return browser("evaluate", {"expression": expression})
+    def browser_evaluate(expression: str) -> list[TextContent | ImageContent]: ...
 
     @server.tool(description=describe("browser_console"))
-    def browser_console(clear: bool = False) -> list[TextContent | ImageContent]:
-        return browser("console", {"clear": clear})
+    def browser_console(clear: bool = False) -> list[TextContent | ImageContent]: ...
 
     @server.tool(description=describe("webkit_check"))
     def webkit_check(url: str, click: str | None = None, setup: str | None = None, js: str | None = None,
-                     wait: float | None = None, width: int | None = None, height: int | None = None) -> str:
-        args = {"url": url, "click": click, "setup": setup, "js": js, "wait": wait, "width": width, "height": height}
-        # Long enough for the first check, which builds the helper too
-        limit = webkit.BUILD_TIMEOUT_S + webkit.MAX_WAIT_S + webkit.TIMEOUT_S + 30
-        return call("POST", "/bot/webkit", {k: v for k, v in args.items() if v is not None}, timeout=limit)["text"]
+                     wait: float | None = None, width: int | None = None, height: int | None = None) -> str: ...
 
     @server.tool(description=describe("handoff"))
     def handoff(done: str, output: list[str] | str | None = None, open: str = "", needs: str = "",
-                evidence: list[str] | str | None = None, checks: list[str] | str | None = None) -> str:
-        call("POST", "/bot/handoff", {"done": done, "output": lines(output), "open": open, "needs": needs,
-                                      "evidence": lines(evidence), "checks": lines(checks)})
-        return "Handoff recorded. End your reply with a short summary."
+                evidence: list[str] | str | None = None, checks: list[str] | str | None = None) -> str: ...
 
     @server.tool(description=describe("escalate"))
-    def escalate(question: str, choices: list[dict[str, str]] | None = None, multiple: bool = False) -> str:
-        call("POST", "/bot/escalate", {"question": question, "choices": choices or [], "multiple": multiple})
-        return ("Asked: they see your question, with its choices if it has any, and can answer in their own "
-                "words. End your turn: the answer arrives as your next message.")
+    def escalate(question: str, choices: list[dict[str, str]] | None = None, multiple: bool = False) -> str: ...
 
     @server.tool(description=describe("ask_permission"))
     def ask_permission(what: str, why: str = "", kind: str = "action", folder: str | None = None,
-                       task_id: str | None = None) -> str:
-        call("POST", "/bot/ask_permission", {"what": what, "why": why, "kind": kind, "folder": folder,
-                                             "task_id": task_id})
-        return asked_text(task_id)
+                       task_id: str | None = None) -> str: ...
 
     @server.tool(description=describe("review"))
-    def review(verdict: str, summary: str, findings: list[dict[str, str]] | None = None) -> str:
-        call("POST", "/bot/review", {"verdict": verdict.lower(), "summary": summary, "findings": findings or []})
-        return "Verdict recorded. End your reply with a short summary."
+    def review(verdict: str, summary: str, findings: list[dict[str, str]] | None = None) -> str: ...
 
-    if can_delegate:
-        @server.tool(description=describe("next_check"))
-        def next_check(minutes: float, why: str) -> str:
-            at = call("POST", "/bot/next_check", {"minutes": minutes, "why": why})["at"]
-            return f"You'll look around again at {at[11:16]}, unless something comes up first."
+    @server.tool(description=describe("next_check"))
+    def next_check(minutes: float, why: str) -> str: ...
 
     @server.tool(description=describe("set_name"))
-    def set_name(name: str) -> str:
-        bot = call("POST", "/bot/set_name", {"name": name})
-        return f"You go by {bot['display_name']} now: the app shows it for you. Your handle, @{bot['name']}, stays."
+    def set_name(name: str) -> str: ...
 
     @server.tool(description=describe("write_page"))
-    def write_page(page: str, content: str) -> str:
-        written = call("POST", "/bot/write_page", {"page": page, "content": content})
-        return f"Wrote {written['page']} ({written['path']})."
+    def write_page(page: str, content: str) -> str: ...
 
     @server.tool(description=describe("edit_page"))
-    def edit_page(page: str, find: str, replace: str) -> str:
-        written = call("POST", "/bot/edit_page", {"page": page, "find": find, "replace": replace})
-        return f"Changed {written['page']}."
+    def edit_page(page: str, find: str, replace: str) -> str: ...
 
     @server.tool(description=describe("remember"))
-    def remember(title: str, body: str, shared: bool = False, mistake: str = "", check: str = "") -> str:
-        return remembered_text(call("POST", "/bot/remember", {"title": title, "body": body, "shared": shared,
-                                                               "mistake": mistake, "check": check}))
+    def remember(title: str, body: str, shared: bool = False, mistake: str = "", check: str = "") -> str: ...
 
     @server.tool(description=describe("forget"))
-    def forget(name: str, shared: bool = False) -> str:
-        note = call("POST", "/bot/forget", {"name": name, "shared": shared})
-        return f"Forgot: {note['title']}."
+    def forget(name: str, shared: bool = False) -> str: ...
 
     @server.tool(description=describe("recall"))
-    def recall(query: str) -> str:
-        return recall_text(call("POST", "/bot/recall", {"query": query}))
+    def recall(query: str) -> str: ...
 
     @server.tool(description=describe("propose_routine"))
     def propose_routine(name: str, description: str, goal: str, schedule: str | None = None, on: str | None = None,
-                        repo: str | None = None) -> str:
-        call("POST", "/bot/propose_routine", {"name": name, "description": description, "goal": goal,
-                                              "schedule": schedule, "on": on, "repo": repo})
-        return (f"Proposed the routine {name!r}. It's off until the user turns it on in the app (Routines), and its "
-                "first run is a test they watch: tell them it's waiting there.")
+                        repo: str | None = None) -> str: ...
 
     @server.tool(description=describe("remind_on"))
-    def remind_on(event: str, then: str, match: str = "") -> str:
-        intent = call("POST", "/bot/remind_on", {"event": event, "match": match, "then": then})
-        return f"Standing intent {intent['id']} set: on {intent['kind']} {intent['match']}".rstrip() + "."
+    def remind_on(event: str, then: str, match: str = "") -> str: ...
 
     @server.tool(description=describe("working_state"))
-    def working_state(section: str = "", action: str = "", text: str = "", entry_id: str = "", done: bool = False) -> str:
-        return call("POST", "/bot/working_state", {"section": section, "action": action, "text": text,
-                                                  "entry_id": entry_id, "done": done})["result"]
+    def working_state(section: str = "", action: str = "", text: str = "", entry_id: str = "",
+                      done: bool = False) -> str: ...
 
     @server.tool(description=describe("update_state"))
-    def update_state(state: str) -> str:
-        return f"Kept this task's state ({call('POST', '/bot/update_state', {'state': state})['path']})."
+    def update_state(state: str) -> str: ...
 
     @server.tool(description=describe("start_thread"))
-    def start_thread(title: str, goal: str, project: str | None = None) -> str:
-        thread = call("POST", "/bot/start_thread", {"title": title, "goal": goal, "project": project})
-        return f"Opened thread {thread['id']}: {thread['title']}. Its result comes back here when it's done."
+    def start_thread(title: str, goal: str, project: str | None = None) -> str: ...
 
     @server.tool(description=describe("post"))
-    def post(text: str, room: str | None = None) -> str:
-        message = call("POST", "/bot/post", {"text": text, "room": room})
-        return f"Posted in the group chat ({message['room_id']})."
+    def post(text: str, room: str | None = None) -> str: ...
 
     @server.tool(description=describe("open_unity_editor"))
-    def open_unity_editor() -> str:
-        return call("POST", "/bot/open_unity_editor", {})["result"]
+    def open_unity_editor() -> str: ...
 
     @server.tool(description=describe("release_app"))
-    def release_app() -> str:
-        return call("POST", "/bot/release_app", {})["result"]
+    def release_app() -> str: ...
 
     @server.tool(description=describe("share"))
-    def share(files: list[str], text: str = "", room: str | None = None) -> str:
-        return shared_text(call("POST", "/bot/share", {"files": files, "text": text, "room": room}))
+    def share(files: list[str], text: str = "", room: str | None = None) -> str: ...
 
     @server.tool(description=describe("open_group"))
-    def open_group(title: str, members: list[str], lead: str | None = None) -> str:
-        room = call("POST", "/bot/open_group", {"title": title, "members": members, "lead": lead})
-        return (f"Opened the group chat {room['title']!r} ({room['id']}) with {', '.join(room['members'])}, led by "
-                f"{room['lead']}. Say something there with post(text, room={room['id']!r}).")
+    def open_group(title: str, members: list[str], lead: str | None = None) -> str: ...
 
     @server.tool(description=describe("add_to_group"))
-    def add_to_group(bot: str, room: str | None = None) -> str:
-        found = call("POST", "/bot/add_to_group", {"bot": bot, "room": room})
-        return f"{bot} is in {found['title']!r} now: @mention them there to bring them in."
+    def add_to_group(bot: str, room: str | None = None) -> str: ...
 
     @server.tool(description=describe("ask"))
-    def ask(bot: str, question: str) -> str:
-        asked = call("POST", "/bot/ask", {"bot": bot, "question": question})
-        return f"Asked {asked['bot']} ({asked['id']}). End your turn: the answer arrives as your next message."
+    def ask(bot: str, question: str) -> str: ...
 
     @server.tool(description=describe("delegate"))
     def delegate(bot: str, goal: str, project: str | None = None, workspace: str | None = None,
-                 review_of: str | None = None) -> str:
-        task = call("POST", "/bot/delegate", {"bot": bot, "goal": goal, "project": project, "workspace": workspace,
-                                              "review_of": review_of})
-        return f"Delegated {task['id']} to {task['bot']}: {task['title']}"
+                 review_of: str | None = None) -> str: ...
 
     @server.tool(description=describe("tasks"))
-    def tasks() -> str:
-        return json.dumps(call("GET", "/bot/tasks"), indent=1)
+    def tasks() -> str: ...
 
     @server.tool(description=describe("message"))
-    def message(task_id: str, text: str) -> str:
-        result = call("POST", "/bot/message", {"task_id": task_id, "text": text})
-        return f"Sent to {result['id']} ({result['status']})."
+    def message(task_id: str, text: str) -> str: ...
 
     @server.tool(description=describe("stop_task"))
-    def stop_task(task_id: str) -> str:
-        task = call("POST", "/bot/stop_task", {"task_id": task_id})
-        return f"{task['id']} is {task['status']}."
-
-    if not can_delegate:  # merge proposals are a coordinator's
-        return server
+    def stop_task(task_id: str) -> str: ...
 
     @server.tool(description=describe("room_status"))
-    def room_status(room: str | None = None) -> str:
-        return json.dumps(call("POST", "/bot/room_status", {"room": room} if room else {}), indent=1)
+    def room_status(room: str | None = None) -> str: ...
 
     @server.tool(description=describe("sweep_worktrees"))
-    def sweep_worktrees(dry_run: bool = True) -> str:
-        return json.dumps(call("POST", "/bot/sweep_worktrees", {"dry_run": dry_run}), indent=1)
+    def sweep_worktrees(dry_run: bool = True) -> str: ...
 
-    if is_chief:
-        @server.tool(description=describe("add_bot"))
-        def add_bot(name: str, title: str, description: str, instructions: str, display_name: str | None = None,
-                    backend: str | None = None, model: str | None = None, effort: str | None = None,
-                    access: str | None = None, network: bool | None = None, can_delegate: bool = False,
-                    mcp: list[str] | None = None, skills: list[str] | None = None) -> str:
-            fields = {"name": name, "title": title, "description": description, "instructions": instructions,
-                      "display_name": display_name, "backend": backend, "model": model, "effort": effort, "access": access,
-                      "network": network, "can_delegate": can_delegate, "mcp": mcp, "skills": skills}
-            bot = call("POST", "/bot/add_bot", {k: v for k, v in fields.items() if v is not None})
-            return (f"Added {bot['label']} (@{bot['name']}), {bot['title']}, to the crew. It's in the roster now: "
-                    "@mention it in a group chat to bring it in.")
+    @server.tool(description=describe("add_bot"))
+    def add_bot(name: str, title: str, description: str, instructions: str, display_name: str | None = None,
+                backend: str | None = None, model: str | None = None, effort: str | None = None,
+                access: str | None = None, network: bool | None = None, can_delegate: bool = False,
+                mcp: list[str] | None = None, skills: list[str] | None = None) -> str: ...
 
-    if is_chief:
-        @server.tool(description=describe("tell_user"))
-        def tell_user(text: str, needs_you: bool = False) -> str:
-            return told_text(call("POST", "/bot/tell_user", {"text": text, "needs_you": needs_you}))
+    @server.tool(description=describe("tell_user"))
+    def tell_user(text: str, needs_you: bool = False) -> str: ...
 
-        @server.tool(description=describe("propose_push"))
-        def propose_push(project: str, summary: str) -> str:
-            result = call("POST", "/bot/propose_push", {"project": project, "summary": summary})
-            return result["message"]
+    @server.tool(description=describe("propose_push"))
+    def propose_push(project: str, summary: str) -> str: ...
 
-        @server.tool(description=describe("propose_replace_main"))
-        def propose_replace_main(project: str, branch: str, summary: str) -> str:
-            result = call("POST", "/bot/propose_replace_main", {"project": project, "branch": branch, "summary": summary})
-            return result["message"]
+    @server.tool(description=describe("propose_replace_main"))
+    def propose_replace_main(project: str, branch: str, summary: str) -> str: ...
 
     @server.tool(description=describe("propose_merge"))
-    def propose_merge(task_id: str, summary: str) -> str:
-        task = call("POST", "/bot/propose_merge", {"task_id": task_id, "summary": summary})
-        return merge_text(task_id, task["merge_state"], task["merged_commit"], task)
+    def propose_merge(task_id: str, summary: str) -> str: ...
 
     @server.tool(description=describe("drop_task"))
-    def drop_task(task_id: str, reason: str) -> str:
-        return dropped_text(call("POST", "/bot/drop_task", {"task_id": task_id, "reason": reason}))
+    def drop_task(task_id: str, reason: str) -> str: ...
 
     @server.tool(description=describe("withdraw_merge"))
-    def withdraw_merge(task_id: str, reason: str) -> str:
-        call("POST", "/bot/withdraw_merge", {"task_id": task_id, "reason": reason})
-        return f"Withdrew the merge proposal for {task_id}."
-
+    def withdraw_merge(task_id: str, reason: str) -> str: ...
 
     return server
 

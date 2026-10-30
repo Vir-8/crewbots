@@ -163,24 +163,24 @@ async def test_the_tool_through_crew_tools_the_bot_api_and_mcp(service, tmp_path
     app = create_app(runner, "admin", 8765)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8765/v1") as client:
         bot_token = {"Authorization": "Bearer run-token"}
-        assert (await client.post("/bot/webkit", json={"url": "http://localhost:5173/"})).status_code == 403
-        ok = await client.post("/bot/webkit", json={"url": "http://localhost:5173/"}, headers=bot_token)
-        assert ok.status_code == 200 and ok.json() == {"text": "crewbots"}
-        refused = await client.post("/bot/webkit", json={"url": "https://example.com/"}, headers=bot_token)
+        assert (await client.post("/bot/tools/webkit_check", json={"url": "http://localhost:5173/"})).status_code == 403
+        ok = await client.post("/bot/tools/webkit_check", json={"url": "http://localhost:5173/"}, headers=bot_token)
+        assert ok.status_code == 200 and ok.json() == {"content": "crewbots"}
+        refused = await client.post("/bot/tools/webkit_check", json={"url": "https://example.com/"}, headers=bot_token)
         assert refused.status_code == 422 and "Only local pages" in refused.json()["detail"]
 
     sent = []
 
     def daemon(request):
         sent.append((request.url.path, request.read(), request.extensions["timeout"]))
-        return httpx.Response(200, json={"text": "crewbots"})
+        return httpx.Response(200, json={"content": "crewbots"})
 
     with httpx.Client(transport=httpx.MockTransport(daemon), base_url="http://daemon/v1", timeout=60) as client:
         result = await build_server(client, False).call_tool("webkit_check", {"url": "http://127.0.0.1:5173/",
                                                                               "js": "return 1"})
     assert result.content[0].text == "crewbots"
     path, body, timeout = sent[0]
-    assert path == "/v1/bot/webkit" and body == b'{"url":"http://127.0.0.1:5173/","js":"return 1"}'
+    assert path == "/v1/bot/tools/webkit_check" and body == b'{"url":"http://127.0.0.1:5173/","js":"return 1"}'
     assert timeout["read"] > webkit.BUILD_TIMEOUT_S  # the first check builds the helper, past the client's 60s
     await runner.shutdown()
     store.close()

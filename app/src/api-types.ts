@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "1d59ba608f96";
+export const API_SCHEMA = "48fdba8857e7";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -15,11 +15,6 @@ export interface AgentLogOut {
   task_id: string | null;
   room_id: string | null;
   text: string;
-}
-
-export interface AskBody {
-  bot: string;
-  question: string;
 }
 
 export interface AttachmentCopy {
@@ -64,7 +59,7 @@ export interface BotOut {
   description: string;
   backend: string;
   model: string | null;
-  access: string;
+  access: "read_only" | "workspace_write" | "full";
   workspace: string | null;
   network: boolean | string[];
   mcp: string[];
@@ -167,30 +162,10 @@ export interface ChatMute {
   muted: boolean;
 }
 
-export interface ChatOut {
-  key: string;
-  kind: "direct" | "group";
-  title: string;
-  bot: string | null;
-  task_id: string | null;
-  room: RoomOut | null;
-  last: LastMessage | null;
-  unread: number;
-  muted?: boolean;
-  working: boolean;
-  updated_at: string;
-  pinned?: number | null;
-}
-
 export interface Checks {
   total: number;
   passed: number;
   failed: number;
-}
-
-export interface ChildMessage {
-  task_id: string;
-  text: string;
 }
 
 export interface ChildOut {
@@ -203,11 +178,6 @@ export interface ChildOut {
   handoff?: HandoffOut | null;
   result?: string | null;
   error?: string | null;
-}
-
-export interface Choice {
-  label: string;
-  description?: string | null;
 }
 
 /** Something in the app's window that failed, for the daemon's log: the app has no terminal of its own. */
@@ -248,17 +218,24 @@ export interface CursorOut {
   id: number;
 }
 
-export interface Delegation {
-  bot: string;
-  goal: string;
-  project?: string | null;
-  workspace?: string | null;
-  review_of?: string | null;
-}
-
 export interface DigestOut {
   bot: string;
   items: number;
+}
+
+export interface DirectChatOut {
+  key: string;
+  title: string;
+  last: LastMessage | null;
+  unread: number;
+  muted?: boolean;
+  working: boolean;
+  updated_at: string;
+  pinned?: number | null;
+  kind: "direct";
+  bot: string;
+  task_id: string;
+  room: null;
 }
 
 export interface DraftBody {
@@ -291,12 +268,6 @@ export interface EffortUse {
   turns: number;
 }
 
-export interface Escalation {
-  question: string;
-  choices?: Choice[];
-  multiple?: boolean;
-}
-
 export interface EventOut {
   id: number;
   task_id: string;
@@ -305,22 +276,10 @@ export interface EventOut {
   at: string;
 }
 
-export interface Finding {
-  location: string;
-  problem: string;
-  scenario?: string;
-  proof?: string;
-}
-
 export interface FindingOut {
   location?: string | null;
   problem?: string | null;
   scenario?: string | null;
-}
-
-export interface Forget {
-  name: string;
-  shared?: boolean;
 }
 
 export interface FoundFolderOut {
@@ -347,22 +306,23 @@ export interface FoundOut {
   memories: FoundMemoryOut[];
 }
 
-export interface GroupMember {
-  bot: string;
-  room?: string | null;
+export interface GroupChatOut {
+  key: string;
+  title: string;
+  last: LastMessage | null;
+  unread: number;
+  muted?: boolean;
+  working: boolean;
+  updated_at: string;
+  pinned?: number | null;
+  kind: "group";
+  bot: null;
+  task_id: null;
+  room: RoomOut;
 }
 
 export interface HTTPValidationError {
   detail?: ValidationError[];
-}
-
-export interface HandoffBody {
-  done: string;
-  output?: string[] | string;
-  open?: string;
-  needs?: string;
-  evidence?: string[] | string;
-  checks?: string[] | string;
 }
 
 export interface HandoffOut {
@@ -424,6 +384,8 @@ export interface IntentOut {
   last_fired_at: string | null;
   cancelled: boolean;
 }
+
+export type Kind = "chat" | "seat" | "thread" | "review" | "ask";
 
 /** Work that merged, with what it merged on: its handback's evidence and the verdicts of the version that merged. */
 export interface LandedItem {
@@ -544,11 +506,6 @@ export interface McpServerOut {
   bots: string[];
 }
 
-export interface MergeProposal {
-  task_id: string;
-  summary: string;
-}
-
 export interface MergeRequest {
   force?: boolean;
 }
@@ -557,13 +514,10 @@ export interface MergeSettings {
   auto_merge: boolean;
 }
 
+export type MergeState = "proposed" | "merging" | "merged" | "dropped";
+
 export interface MergeStatusOut {
   already_on: string | null;
-}
-
-export interface MergeWithdrawal {
-  task_id: string;
-  reason: string;
 }
 
 export interface Message {
@@ -594,10 +548,6 @@ export interface ModelsOut {
   claude: ModelOut[];
   codex: ModelOut[];
   antigravity?: ModelOut[];
-}
-
-export interface NameBody {
-  name: string;
 }
 
 export interface NewBot {
@@ -657,20 +607,9 @@ export interface NewThread {
   goal: string;
 }
 
-export interface NextCheck {
-  minutes: number;
-  why: string;
-}
-
 export interface NoteOut {
   title: string;
   path: string;
-}
-
-export interface OpenGroup {
-  title: string;
-  members: string[];
-  lead?: string | null;
 }
 
 export interface OutputOut {
@@ -684,12 +623,6 @@ export interface PageBody {
   text: string;
 }
 
-export interface PageEdit {
-  page: string;
-  find: string;
-  replace: string;
-}
-
 export interface PageOut {
   name: string;
   path: string;
@@ -697,21 +630,8 @@ export interface PageOut {
   text?: string | null;
 }
 
-export interface PageWrite {
-  page: string;
-  content: string;
-}
-
 export interface PermissionAnswer {
   allowed: boolean;
-}
-
-export interface PermissionAsk {
-  what: string;
-  why?: string;
-  kind?: "action" | "folder" | "network";
-  folder?: string | null;
-  task_id?: string | null;
 }
 
 export interface PermissionOut {
@@ -758,11 +678,6 @@ export interface PlansOut {
   antigravity?: PlanOut | null;
 }
 
-export interface PostBody {
-  text: string;
-  room?: string | null;
-}
-
 /** Something the crew raised on its own, and how it reached the user. */
 export interface ProactiveOut {
   id: number;
@@ -803,15 +718,6 @@ export interface ProjectsOut {
   projects: ProjectOut[];
   errors: Record<string, string>;
   started: boolean;
-}
-
-export interface ProposedRoutine {
-  name: string;
-  description: string;
-  goal: string;
-  schedule?: string | null;
-  on?: string | null;
-  repo?: string | null;
 }
 
 export interface PullFile {
@@ -871,10 +777,6 @@ export interface Reaction {
   reaction: "up" | "down";
 }
 
-export interface Recall {
-  query: string;
-}
-
 export interface RegistryAdd {
   server: string;
   version: string;
@@ -920,20 +822,6 @@ export interface ReleaseOut {
   kind?: string | null;
 }
 
-export interface Remember {
-  title: string;
-  body: string;
-  shared?: boolean;
-  mistake?: string;
-  check?: string;
-}
-
-export interface RemindOn {
-  event: string;
-  match?: string;
-  then: string;
-}
-
 export interface RepoFolder {
   folder: string | null;
 }
@@ -948,12 +836,6 @@ export interface RetryOut {
   attempt: number;
   of: number;
   wait_seconds: number;
-}
-
-export interface ReviewBody {
-  verdict: Verdict;
-  summary: string;
-  findings?: Finding[];
 }
 
 export interface ReviewEntryOut {
@@ -1090,12 +972,6 @@ export interface SessionRef {
   generation: number;
 }
 
-export interface ShareBody {
-  files: string[] | string;
-  text?: string;
-  room?: string | null;
-}
-
 export interface SkillOut {
   name: string;
   description: string;
@@ -1109,10 +985,6 @@ export interface StarterOut {
   name: string;
   description: string;
   when: string;
-}
-
-export interface StateBody {
-  state: string;
 }
 
 export type Status = "queued" | "running" | "idle" | "needs_input" | "failed" | "cancelled" | "interrupted" | "held";
@@ -1132,11 +1004,6 @@ export interface Submitted {
   url: string;
   state: string;
   comments: number;
-}
-
-export interface TaskDrop {
-  task_id: string;
-  reason: string;
 }
 
 export interface TaskOut {
@@ -1161,10 +1028,10 @@ export interface TaskOut {
   turns: number;
   review_of: string | null;
   review_version: number | null;
-  merge_state: "proposed" | "merging" | "merged" | "dropped" | null;
+  merge_state: MergeState | null;
   merged_commit: string | null;
   merged_tip: string | null;
-  kind: "chat" | "seat" | "thread" | "review" | "ask";
+  kind: Kind;
   room_id: string | null;
   pr: string | null;
   routine: string | null;
@@ -1189,21 +1056,6 @@ export interface TaskStatus {
   rollover_percent: number | null;
   turns: number;
   background?: string | null;
-}
-
-export interface TaskStop {
-  task_id: string;
-}
-
-export interface TellBody {
-  text: string;
-  needs_you?: boolean;
-}
-
-export interface ThreadBody {
-  title: string;
-  goal: string;
-  project?: string | null;
 }
 
 export interface TimezoneIn {
