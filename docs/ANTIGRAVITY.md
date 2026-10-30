@@ -30,8 +30,9 @@ Choose Antigravity in a bot's **Runs on** control, then select an offered model 
 ## Execution and permissions
 
 Each active task keeps an ACP session; follow-ups use that session, and `session/load` restores it after the process
-closes. Each requested turn is one `session/prompt`. Cancel sends `session/cancel`; a runtime that stalls or
-disconnects is closed. Quota errors are shown without retrying, refreshing accounts, or switching models.
+closes. Each requested turn is one `session/prompt`, with no time limit unless the bot sets one. Stopping a turn
+sends `session/cancel` and closes the runtime, so the next message reloads the session. Quota errors are shown
+without retrying, refreshing accounts, or switching models.
 
 The personal-account ACP runtime does not enable the enterprise terminal sandbox. Crewbots therefore disables its
 native tools and exposes workspace operations through `crewbots_workspace` MCP. Reads and edits follow the task's
@@ -41,7 +42,8 @@ Only the task's granted MCP servers and crew tools are passed to ACP. Permission
 Question options are never interpreted as tool approvals. Models use crewbots' existing escalation tools for questions.
 
 Crew tools still provide delegation, messages, memory, task handoff, browser tools and shared-app arbitration.
-The adapter preserves streamed tool calls, their results and inline tool images. Assistant text is assembled per turn.
+The adapter preserves streamed tool calls, their results and inline tool images. Assistant text is split into messages
+at each tool call, and the last message is the turn's reply.
 ACP's per-turn usage is recorded under Antigravity, adding cache reads back into total input and including thinking
 tokens in output. Context occupancy is separate from token usage; it is not a subscription-quota percentage.
 

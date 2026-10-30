@@ -6,10 +6,13 @@ import pytest
 from fakes import FakeBackend, bot, make_crew, wait_until
 from mcp.server.mcpserver.exceptions import ToolError
 
+from crewbots import paths
+from crewbots.backends import acp
 from crewbots.backends import antigravity_runtime as runtime
 from crewbots.backends.antigravity import WORKSPACE, Antigravity, AntigravitySession, mcp_config
 from crewbots.backends.antigravity_tools import Workspace
-from crewbots.backends.base import McpServer, RunSpec
+from crewbots.backends.base import Access, McpServer, RunSpec
+from crewbots.backends.policy import Policy
 from crewbots.events import Done, Text, ToolCall, ToolResult, Usage
 from crewbots.runner import Runner
 from crewbots.store import Status, Store
@@ -119,6 +122,40 @@ async def test_usage_is_per_turn_and_includes_cached_and_thinking_tokens(tmp_pat
         await opened.close()
 
 
+async def test_text_is_split_at_tool_calls_and_the_last_message_is_the_reply(tmp_path):
+    connection = Connection()
+    opened = session(tmp_path, connection)
+    for value in [{"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "Let me look."}},
+                  {"sessionUpdate": "tool_call", "toolCallId": "one", "status": "completed"},
+                  {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "All "}},
+                  {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "done."}}]:
+        await connection.updates.put(update(value))
+    try:
+        events = [e async for e in opened.turn("one task")]
+        assert [type(e) for e in events if isinstance(e, Text | ToolCall)] == [Text, ToolCall, Text]
+        assert [e.text for e in events if isinstance(e, Text)] == ["Let me look.", "All done."]
+        assert events[-1] == Done("All done.")
+    finally:
+        await opened.close()
+
+
+async def test_a_turn_has_no_deadline_unless_the_bot_sets_one(tmp_path):
+    connection = Connection()
+    timeouts = []
+
+    async def request(method, params, timeout=30):
+        timeouts.append(timeout)
+        return {"stopReason": "end_turn"}
+
+    connection.request = request
+    opened = session(tmp_path, connection)
+    try:
+        assert not [e async for e in opened.turn("one task")][-1].is_error
+        assert timeouts == [None]
+    finally:
+        await opened.close()
+
+
 async def test_missing_tool_result_is_unverified_even_when_turn_succeeds(tmp_path):
     connection = Connection()
     opened = session(tmp_path, connection)
@@ -142,8 +179,45 @@ async def test_timeout_cancels_without_retrying(tmp_path):
     opened = session(tmp_path, connection, timeout_s=0.01)
     events = [e async for e in opened.turn("one task")]
     assert events[-1].is_error and events[-1].retry is None
+    assert events[-1].error == "timed out after 0.01s"
     assert connection.closed
     assert connection.calls == [("session/cancel", {"sessionId": "test-session"})]
+
+
+class Pipe:
+    alive = True
+
+    def __init__(self):
+        self.inbox, self.sent = asyncio.Queue(), []
+
+    async def send(self, message):
+        self.sent.append(message)
+
+    async def read(self):
+        return await self.inbox.get()
+
+    async def stop(self):
+        await self.inbox.put(None)
+
+
+async def test_a_refusal_and_a_handler_bug_get_different_answers(tmp_path, caplog):
+    async def handler(method, params):
+        if method == "refuse":
+            raise ValueError("no")
+        return params["missing"]
+
+    pipe = Pipe()
+    connection = acp.Connection(pipe)
+    connection.handler = handler
+    try:
+        await pipe.inbox.put({"jsonrpc": "2.0", "id": 1, "method": "refuse"})
+        await pipe.inbox.put({"jsonrpc": "2.0", "id": 2, "method": "broken"})
+        await wait_until(lambda: len(pipe.sent) == 2)
+        codes = {answer["id"]: answer["error"]["code"] for answer in pipe.sent}
+        assert codes == {1: -32601, 2: -32603}
+        assert "broken" in caplog.text and "KeyError" in caplog.text
+    finally:
+        await connection.close()
 
 
 async def test_session_setup_disables_native_tools_and_keeps_requested_model(tmp_path):
@@ -172,7 +246,7 @@ def test_subscription_environment_drops_ambient_api_credentials(monkeypatch):
         monkeypatch.setenv(key, "do-not-use")
     env = runtime.environment()
     assert "do-not-use" not in env.values()
-    assert env["GEMINI_HOME"] == str(runtime.profile())
+    assert env["GEMINI_HOME"] == str(paths.antigravity())
     assert "ANTIGRAVITY_HARNESS_PATH" in env
 
 
@@ -200,17 +274,39 @@ def test_workspace_refuses_private_files_and_writes_outside_grants(tmp_path):
         workspace(tmp_path, "read_only").write("good.txt")
 
 
-@pytest.mark.skipif(__import__("sys").platform != "darwin", reason="macOS sandbox")
-async def test_commands_obey_write_read_and_network_boundaries(tmp_path):
+def test_a_moved_profile_stays_private_and_command_scratch_files_are_readable(tmp_path, monkeypatch):
+    profile = tmp_path / "signed-in"
+    monkeypatch.setenv("CREWBOTS_ANTIGRAVITY_HOME", str(profile))
+    (profile / "antigravity-acp").mkdir(parents=True)
+    (profile / "antigravity-acp" / "settings.json").write_text("{}")
     w = workspace(tmp_path)
-    secret = Path.home() / ".gemini" / "private"
-    secret.parent.mkdir(parents=True)
-    secret.write_text("PRIVATE_VALUE")
+    for path in (profile / "antigravity-acp" / "settings.json", w.temp / "tools.json"):
+        with pytest.raises(ToolError):
+            w.read(str(path))
+        with pytest.raises(ToolError):
+            w.write(str(path))
+    claude = Policy(Access.WORKSPACE_WRITE, tmp_path, set())
+    assert claude.check_read({"file_path": str(profile / "antigravity-acp" / "settings.json")})
+    shot = w.temp / "work" / "shot.png"
+    shot.parent.mkdir()
+    shot.write_bytes(b"png")
+    assert w.read(str(shot)) == shot.resolve()
+
+
+@pytest.mark.skipif(__import__("sys").platform != "darwin", reason="macOS sandbox")
+async def test_commands_obey_write_read_and_network_boundaries(tmp_path, monkeypatch):
+    monkeypatch.setenv("CREWBOTS_ANTIGRAVITY_HOME", str(tmp_path / "signed-in"))
+    w = workspace(tmp_path)
+    secrets = [Path.home() / ".gemini" / "private", tmp_path / "signed-in" / "token", w.temp / "tools.json"]
+    for secret in secrets:
+        secret.parent.mkdir(parents=True, exist_ok=True)
+        secret.write_text("PRIVATE_VALUE")
     assert "Exit code: 0" in await w.command("echo ok > allowed.txt")
     assert (w.cwd / "allowed.txt").read_text().strip() == "ok"
     assert "Exit code: 0" not in await w.command("echo bad > ../outside.txt")
     assert not (tmp_path / "outside.txt").exists()
-    assert "PRIVATE_VALUE" not in await w.command(f"cat {secret}")
+    for secret in secrets:
+        assert "PRIVATE_VALUE" not in await w.command(f"cat {secret}")
     assert "Exit code: 0" not in await workspace(tmp_path, "read_only").command("echo bad > blocked.txt")
     assert not (w.cwd / "blocked.txt").exists()
     server = await asyncio.start_server(lambda reader, writer: writer.close(), "127.0.0.1", 0)

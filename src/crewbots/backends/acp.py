@@ -1,10 +1,13 @@
 """The ACP stdio connection. The agent owns model requests and authentication."""
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from crewbots.backends.process import JsonlProcess
+
+log = logging.getLogger(__name__)
 
 
 class ACPError(RuntimeError):
@@ -44,8 +47,11 @@ class Connection:
             if self.handler is None:
                 raise ValueError("This client cannot handle that request")
             answer["result"] = await self.handler(message["method"], message.get("params") or {})
-        except Exception:
+        except ValueError:
             answer["error"] = {"code": -32601, "message": "Request not permitted by crewbots"}
+        except Exception:
+            log.exception("ACP request handler failed for %s", message["method"])
+            answer["error"] = {"code": -32603, "message": "crewbots could not handle the request"}
         try:
             await self.process.send(answer)
         except (BrokenPipeError, ConnectionResetError):

@@ -73,6 +73,7 @@ class AntigravitySession:
         self._context: float | None = None
         self._calls: dict[str, dict] = {}
         self._text: list[str] = []
+        self._last = ""
         connection.handler = self._permission
 
     @property
@@ -152,6 +153,7 @@ class AntigravitySession:
                         else call.get("title", "tool"))
                 events: list[Event] = []
                 if previous is None:
+                    events += self._flush()  # a tool call ends the message before it
                     events.append(ToolCall(id=key, name=name, input=call.get("rawInput") or {}))
                 if (call.get("status") in ("completed", "failed")
                         and (previous or {}).get("status") not in ("completed", "failed")):
@@ -167,14 +169,22 @@ class AntigravitySession:
                 return events
         return []
 
+    def _flush(self) -> list[Event]:
+        text = "".join(self._text)
+        self._text = []
+        if not text:
+            return []
+        self._last = text
+        return [Text(text=text)]
+
     async def turn(self, prompt: str) -> AsyncIterator[Event]:
         if not self._announced:
             self._announced = True
             yield SessionStarted(session_id=self.session_id or "")
-        self._text, self._calls = [], {}
+        self._text, self._last, self._calls = [], "", {}
         request = asyncio.create_task(self.connection.request("session/prompt", {
             "sessionId": self.session_id, "prompt": [{"type": "text", "text": prompt}]},
-            timeout=self.spec.timeout_s or 600))
+            timeout=self.spec.timeout_s))
         if self.spec.on_prompt_sent:
             self.spec.on_prompt_sent()
         try:
@@ -196,17 +206,17 @@ class AntigravitySession:
                 yield Usage(input_tokens=usage.get("inputTokens", 0) + cached, cached_input_tokens=cached,
                             output_tokens=usage.get("outputTokens", 0) + usage.get("thoughtTokens", 0),
                             cache_write_tokens=usage.get("cachedWriteTokens", 0))
-            text = "".join(self._text)
-            if text:
-                yield Text(text=text)
+            for event in self._flush():
+                yield event
             stop = result.get("stopReason")
             error = None if stop == "end_turn" else f"Antigravity stopped: {stop or 'unknown reason'}"
-            yield Done(final_text=text, is_error=bool(error), error=error)
+            yield Done(final_text=self._last, is_error=bool(error), error=error)
         except Exception as e:
             self._broken = True
             with contextlib.suppress(Exception):
                 await self.connection.notify("session/cancel", {"sessionId": self.session_id})
-            yield Done(final_text="".join(self._text), is_error=True, error=f"Antigravity: {e}")
+            error = f"timed out after {self.spec.timeout_s:g}s" if isinstance(e, TimeoutError) else f"Antigravity: {e}"
+            yield Done(final_text="".join(self._text) or self._last, is_error=True, error=error)
         finally:
             if not request.done():
                 self._broken = True
