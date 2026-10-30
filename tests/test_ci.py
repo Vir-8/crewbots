@@ -177,6 +177,26 @@ def test_workflow_triggers_and_unsupported_things(tmp_path):
             plan(text)
 
 
+def test_push_filters_pick_branches_the_way_github_does(tmp_path):
+    def runs(push, branch):
+        flow = tmp_path / ".github" / "workflows"
+        flow.mkdir(parents=True, exist_ok=True)
+        (flow / "a.yml").write_text(f"on:\n  push:\n    {push}\njobs:\n  j:\n    steps:\n      - run: x\n")
+        return bool(ci.plan_for(tmp_path, branch).steps)
+
+    assert not runs("tags: ['v*']", "main")  # a release workflow
+    assert not runs("tags-ignore: ['v*']", "main")
+    assert runs("branches: [main]\n    tags: ['v*']", "main")
+    assert runs("branches: ['*']", "main") and not runs("branches: ['*']", "feature/x")
+    assert runs("branches: ['**']", "feature/x")
+    assert runs("branches: ['release/**', '!release/**-alpha']", "release/2")
+    assert not runs("branches: ['release/**', '!release/**-alpha']", "release/2-alpha")
+    assert runs("branches: ['v[0-9]+.x']", "v12.x") and not runs("branches: [a.b]", "axb")
+    assert not runs("branches-ignore: ['dependabot/**']", "dependabot/npm/x")
+    with pytest.raises(NotAllowed):
+        runs("branches: ['[z-a]']", "main")
+
+
 def test_the_workflows_node_major_is_used(tmp_path, monkeypatch):
     fake = tmp_path / "node22" / "bin"
     fake.mkdir(parents=True)
