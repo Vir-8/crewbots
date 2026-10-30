@@ -9,7 +9,7 @@ from fakes import bot, make_crew
 from fastapi.testclient import TestClient
 
 from crewbots.api import create_app
-from crewbots.crew_tools import tools_for
+from crewbots.crew_tools import SPECS, tools_for
 from crewbots.events import Done
 from crewbots.mcp_server import build_server
 from crewbots.runner import MCP_SERVER_NAME, Runner
@@ -280,6 +280,12 @@ async def test_workers_delegate_but_only_coordinators_add_bots_and_propose_merge
     assert coordinator == worker | {"propose_merge", "withdraw_merge", "drop_task", "next_check", "room_status",
                                     "sweep_worktrees"}
     assert chief == coordinator | {"add_bot", "propose_push", "propose_replace_main", "tell_user"}
+
+
+async def test_codex_is_shown_the_fields_claude_is(crew_app):
+    client, _, _ = crew_app
+    for listed in await build_server(client, can_delegate=True, is_chief=True).list_tools():
+        assert set(listed.input_schema["properties"]) == set(SPECS[listed.name].schema["properties"]), listed.name
 
 
 async def test_each_task_is_offered_the_tools_for_what_it_is(crew_app):

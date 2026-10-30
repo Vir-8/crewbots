@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "8424bb73efde";
+export const API_SCHEMA = "34f3b17e690a";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -358,11 +358,11 @@ export interface HTTPValidationError {
 
 export interface HandoffBody {
   done: string;
-  output?: string[];
+  output?: string[] | string;
   open?: string;
   needs?: string;
-  evidence?: string[];
-  checks?: string[];
+  evidence?: string[] | string;
+  checks?: string[] | string;
 }
 
 export interface HandoffOut {
@@ -735,7 +735,7 @@ export interface PageOut {
 
 export interface PageWrite {
   page: string;
-  text: string;
+  content: string;
 }
 
 export interface PermissionAnswer {
@@ -1127,7 +1127,7 @@ export interface SessionRef {
 }
 
 export interface ShareBody {
-  files: string[];
+  files: string[] | string;
   text?: string;
   room?: string | null;
 }

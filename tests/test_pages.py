@@ -59,6 +59,11 @@ async def test_a_bot_keeps_its_scratchpad_and_has_it_in_view_in_its_next_session
     await tools.call("edit_page", {"page": "Scratchpad", "find": "capsule art", "replace": "store capsule art"})
     with pytest.raises(ToolRefused, match="not found"):
         await tools.call("edit_page", {"page": "Scratchpad", "find": "nothing like it", "replace": "x"})
+    with pytest.raises(ToolRefused, match="The closest line in it now: ## Waiting on you$"):  # its own edit was first
+        await tools.call("edit_page", {"page": "Scratchpad", "find": "## Waiting on Vir\n", "replace": "x"})
+    await tools.call("write_page", {"page": "Notes", "content": "- Rename fix in review\n- Ship it"})
+    await tools.call("edit_page", {"page": "Notes", "find": "- Rename fix in review\n", "replace": ""})
+    assert pages.read(paths.bot_folders() / "chief", "Notes") == "- Ship it\n"
 
     assert str(paths.bot_folders() / "chief" / "Scratchpad.md") in said
     instructions = crew.runner.crew.system_prompt(crew.runner.crew.bots["chief"])

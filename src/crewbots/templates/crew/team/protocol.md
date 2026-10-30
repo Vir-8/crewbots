@@ -1,18 +1,17 @@
 How work moves between bots.
 
 1. **Every task has exactly one owner.** The owner works on it until it hands off or escalates. No other bot works on it unless asked. Any bot can hand a separate piece of work to the teammate best suited to it with `delegate`, and it becomes theirs; only the chief reassigns a task someone already owns.
-2. **Every handoff has the same shape.** Record it with the `handoff` tool, which takes these fields:
+2. **Every handoff has the same shape.** Record it with the `handoff` tool, which takes these fields (crewbots knows
+   the task and whom it goes back to):
 
    ```
    HANDOFF
-   Task:   what was asked
-   From:   this bot → To: the next bot
-   Done:   what was completed
-   Output: file paths, branches
-   Open:   anything unfinished or uncertain
-   Needs:  what the next bot must do
-   Evidence: what was run or seen to prove it works, and what it showed
-   Checks: the commands among them that crewbots reruns in a clean copy before review
+   done:     what was completed
+   output:   file paths, branches
+   open:     anything unfinished or uncertain
+   needs:    what the next bot must do
+   evidence: what was run or seen to prove it works, and what it showed
+   checks:   the commands among them that crewbots reruns in a clean copy before review
    ```
 
    The next bot works from the handoff and the files it points to, nothing else.

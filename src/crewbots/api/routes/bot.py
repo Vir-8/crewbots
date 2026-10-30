@@ -169,7 +169,7 @@ def routes(c: Context) -> APIRouter:
 
     @v1.post("/bot/write_page", status_code=201)
     async def bot_write_page(request: Request, body: PageWrite):
-        page = runner.write_page(request.state.task.id, body.page, body.text)
+        page = runner.write_page(request.state.task.id, body.page, body.content)
         return {"page": page.name, "path": str(page.path)}
 
     @v1.post("/bot/edit_page")

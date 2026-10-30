@@ -236,6 +236,11 @@ def test_the_cli_gets_only_crewbots_tools_and_the_repos_settings(tmp_path, monke
     assert options.add_dirs == [str(tmp_path / "skills")]
 
 
+def test_a_bot_isnt_offered_monitor_whose_events_come_after_its_turn(tmp_path):
+    spec = RunSpec(prompt="", cwd=tmp_path, access=Access.WORKSPACE_WRITE)
+    assert ClaudeAgent(cli_path="/bin/claude").options(spec, ClaudeAgentSession(spec)).disallowed_tools == ["Monitor"]
+
+
 def test_an_explicit_context_window_becomes_autocompact(tmp_path):
     spec = RunSpec(prompt="", cwd=tmp_path, context_window=200_000)
 

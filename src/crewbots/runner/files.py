@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from crewbots import attachments, paths
+from crewbots.backends.claude_cli import SANDBOX_TEMP
 from crewbots.runner.common import NotAllowed
 from crewbots.store import Task
 
@@ -107,7 +108,7 @@ class Files:
     def _own_folders(self, task: Task) -> list[Path]:
         bot = self.crew.bots.get(task.bot)
         folders = [task.worktree_path, task.workspace, self.crew.folder_of(bot) if bot else None,
-                   self.crew.home / attachments.FOLDER, paths.temp()]
+                   self.crew.home / attachments.FOLDER, paths.temp(), SANDBOX_TEMP]  # temp folders: Codex's, Claude's
         return [Path(f).expanduser().resolve() for f in folders if f]
 
     def _kept_images(self, images: list[dict[str, Any]], read: str | None = None) -> list[dict[str, Any]]:

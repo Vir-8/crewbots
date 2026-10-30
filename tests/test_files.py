@@ -55,6 +55,16 @@ async def test_a_shared_file_is_a_copy_shown_under_the_bots_message(crew, store,
     assert [h["task_id"] for h in store.search("pass")] == [chat.id]  # found by what was said with it
 
 
+async def test_a_file_in_the_claude_sandboxs_temp_folder_is_the_bots_own(crew, tmp_path, monkeypatch):
+    temp = tmp_path.parent / f"{tmp_path.name}-claude"  # where Claude's sandbox points TMPDIR: verify-unity's shots
+    (temp / "lh-verify.aBWuyF").mkdir(parents=True)
+    (temp / "lh-verify.aBWuyF" / "door.png").write_bytes(PNG)
+    monkeypatch.setattr("crewbots.runner.files.SANDBOX_TEMP", temp)
+    said = await CrewTools(crew.runner, crew.runner.chat("artist").id, can_delegate=False).call(
+        "share", {"files": str(temp / "lh-verify.aBWuyF" / "door.png")})
+    assert said.startswith("Shared door.png with the user")
+
+
 async def test_only_files_in_the_bots_own_folders(crew, store, tmp_path, studio):
     (tmp_path / "secrets.txt").write_text("not for sharing")
     (studio / "link.txt").symlink_to(tmp_path / "secrets.txt")

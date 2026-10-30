@@ -22,7 +22,6 @@ from crewbots.crew_tools import (
     asked_text,
     describe,
     dropped_text,
-    lines,
     merge_text,
     offered,
     recall_text,
@@ -30,6 +29,7 @@ from crewbots.crew_tools import (
     shared_text,
     told_text,
 )
+from crewbots.tool_args import lines
 
 INSTRUCTIONS = "Tools for working in a crewbots crew: hand work back, escalate decisions, and (for coordinators) delegate."
 
@@ -139,7 +139,7 @@ def _crew_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = F
 
     @server.tool(description=describe("write_page"))
     def write_page(page: str, content: str) -> str:
-        written = call("POST", "/bot/write_page", {"page": page, "text": content})
+        written = call("POST", "/bot/write_page", {"page": page, "content": content})
         return f"Wrote {written['page']} ({written['path']})."
 
     @server.tool(description=describe("edit_page"))

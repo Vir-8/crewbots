@@ -7,6 +7,7 @@ waits on the user. It's in the bot's instructions in every session, so the bot a
 the user makes reaches it in its next turn. Other pages are listed there by name and read when a task needs them.
 """
 
+import difflib
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -62,8 +63,13 @@ def edit(folder: Path, name: str, find: str, replace: str) -> Page:
     text = read(folder, name)
     count = text.count(find) if find else 0
     if count != 1:
+        # Often the page changed since the bot last saw it, by an edit of its own earlier in the turn: the line as it
+        # is now lets it try again rather than write the page whole.
+        first = find.strip().splitlines()[0] if count == 0 and find.strip() else ""
+        near = difflib.get_close_matches(first, text.splitlines(), n=1) if first else []
+        hint = f". The closest line in it now: {near[0]}" if near else ""
         raise PageError(f"{'not found' if count == 0 else f'found {count} times'} in {name}: give text that's in it "
-                        "exactly once, or write the page whole")
+                        f"exactly once, or write the page whole{hint}")
     return write(folder, name, text.replace(find, replace, 1))
 
 

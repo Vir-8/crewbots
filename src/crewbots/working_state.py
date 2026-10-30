@@ -217,6 +217,12 @@ def room_mentions(path: Path, room: dict, messages: list[dict], *, add: bool = F
         return pruned
 
 
+def section_of(path: Path, entry_id: str) -> str:
+    """The section an entry is in, by its id, which is unique across them: "" if none has it."""
+    return next((section for section, entries in _sections(path).items() if section in EDITABLE and any(
+        (m := ENTRY.match(line)) and m[2] == entry_id for line in entries)), "") if entry_id else ""
+
+
 def edit(path: Path, section: str, action: str, text: str = "", entry_id: str = "", done: bool = False,
          *, automatic: bool = False) -> tuple[str, bool]:
     if section not in EDITABLE:

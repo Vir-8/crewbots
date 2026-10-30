@@ -9,17 +9,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from crewbots import prompts
+from crewbots import prompts, tool_args
 
 if TYPE_CHECKING:
     from crewbots.runner import Runner
-
-
-def lines(given: Any) -> list[str]:
-    """A list a bot gave, or the string it gave in its place, as items: one per line, without a leading "- "."""
-    if isinstance(given, str):
-        return [line.strip().removeprefix("- ").strip() for line in given.splitlines() if line.strip()]
-    return [str(item) for item in given or [] if str(item).strip()]
 
 
 def merge_text(task_id: str, state: str | None, commit: str | None, details: dict[str, Any]) -> str:
@@ -57,8 +50,12 @@ class ToolDef:
 
 @dataclass(frozen=True)
 class Spec:
-    schema: dict[str, Any]  # JSON schema of the arguments
+    args: type[tool_args.Args]  # what it takes
     coordinator_only: bool = False
+
+    @property
+    def schema(self) -> dict[str, Any]:  # JSON schema of the arguments
+        return tool_args.schema(self.args)
 
 
 def _object(properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
@@ -66,76 +63,53 @@ def _object(properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
 
 
 STRING = {"type": "string"}
-STRINGS = {"type": "array", "items": {"type": "string"}}
-LINES = {"anyOf": [STRINGS, STRING]}  # a list, or a string of a line each: with one item, a bot often sends it bare
-CHOICES = {"type": "array", "items": {"type": "object", "properties": {"label": STRING, "description": STRING},
-                                      "required": ["label"]}}
 
 # What each tool takes, and whether only coordinators get it. What it's for, which the bot reads, is a prompt:
 # prompts/tools/<name>.md, which a crew can replace (crewbots.prompts).
 SPECS: dict[str, Spec] = {
-    "browser_open": Spec(_object({"url": STRING}, ["url"])),
-    "browser_screenshot": Spec(_object({"width": {"type": "integer"}, "height": {"type": "integer"},
-        "theme": {"type": "string", "enum": ["light", "dark"]}, "full_page": {"type": "boolean"}}, [])),
-    "browser_click": Spec(_object({"selector": STRING}, ["selector"])),
-    "browser_type": Spec(_object({"selector": STRING, "text": STRING, "key": STRING}, [])),
-    "browser_evaluate": Spec(_object({"expression": STRING}, ["expression"])),
-    "browser_console": Spec(_object({"clear": {"type": "boolean"}}, [])),
-    "webkit_check": Spec(_object({"url": STRING, "click": STRING, "setup": STRING, "js": STRING, "wait": {"type": "number"},
-                                  "width": {"type": "integer"}, "height": {"type": "integer"}}, ["url"])),
-    "handoff": Spec(_object({"done": STRING, "output": LINES, "open": STRING, "needs": STRING, "evidence": LINES,
-                             "checks": STRINGS}, ["done"])),
-    "escalate": Spec(_object({"question": STRING, "choices": CHOICES, "multiple": {"type": "boolean"}}, ["question"])),
-    "ask_permission": Spec(_object({"what": STRING, "why": STRING, "kind": {"type": "string", "enum": [
-        "action", "folder", "network"]}, "folder": STRING, "task_id": STRING}, ["what"])),
-    "review": Spec(_object({
-        "verdict": {"type": "string", "enum": ["pass", "fail"]},
-        "summary": STRING,
-        "findings": {"type": "array", "items": _object(
-            {"location": STRING, "problem": STRING, "scenario": STRING, "proof": STRING}, ["location", "problem"])},
-    }, ["verdict", "summary"])),
-    "remember": Spec(_object({"title": STRING, "body": STRING, "shared": {"type": "boolean"}, "mistake": STRING,
-                              "check": STRING}, ["title", "body"])),
-    "write_page": Spec(_object({"page": STRING, "content": STRING}, ["page", "content"])),
-    "edit_page": Spec(_object({"page": STRING, "find": STRING, "replace": STRING}, ["page", "find", "replace"])),
-    "forget": Spec(_object({"name": STRING, "shared": {"type": "boolean"}}, ["name"])),
-    "recall": Spec(_object({"query": STRING}, ["query"])),
-    "working_state": Spec(_object({"section": STRING, "action": STRING, "text": STRING, "entry_id": STRING,
-                                    "done": {"type": "boolean"}}, [])),
-    "update_state": Spec(_object({"state": STRING}, ["state"])),
-    "set_name": Spec(_object({"name": STRING}, ["name"])),
-    "remind_on": Spec(_object({"event": STRING, "match": STRING, "then": STRING}, ["event", "then"])),
-    "propose_routine": Spec(_object({"name": STRING, "description": STRING, "goal": STRING, "schedule": STRING,
-                                     "on": STRING, "repo": STRING}, ["name", "description", "goal"])),
-    "start_thread": Spec(_object({"title": STRING, "goal": STRING, "project": STRING}, ["title", "goal"])),
-    "post": Spec(_object({"text": STRING, "room": STRING}, ["text"])),
-    "tell_user": Spec(_object({"text": STRING, "needs_you": {"type": "boolean"}}, ["text"])),
-    "share": Spec(_object({"files": STRINGS, "text": STRING, "room": STRING}, ["files"])),
-    "ask": Spec(_object({"bot": STRING, "question": STRING}, ["bot", "question"])),
-    "open_group": Spec(_object({"title": STRING, "members": STRINGS, "lead": STRING}, ["title", "members"])),
-    "add_to_group": Spec(_object({"bot": STRING, "room": STRING}, ["bot"])),
-    "add_bot": Spec(_object(
-        {"name": STRING, "title": STRING, "description": STRING, "instructions": STRING, "display_name": STRING,
-         "backend": {"type": "string", "enum": ["claude", "codex"]}, "model": STRING, "effort": STRING,
-         "access": {"type": "string", "enum": ["read_only", "workspace_write"]},
-         "network": {"type": "boolean"}, "can_delegate": {"type": "boolean"}, "mcp": STRINGS, "skills": STRINGS},
-        ["name", "title", "description", "instructions"]), coordinator_only=True),
-    "delegate": Spec(_object({"bot": STRING, "goal": STRING, "project": STRING, "workspace": STRING,
-                              "review_of": STRING}, ["bot", "goal"])),
-    "tasks": Spec(_object({}, [])),
-    "room_status": Spec(_object({"room": STRING}, []), coordinator_only=True),
-    "message": Spec(_object({"task_id": STRING, "text": STRING}, ["task_id", "text"])),
-    "stop_task": Spec(_object({"task_id": STRING}, ["task_id"])),
-    "propose_push": Spec(_object({"project": STRING, "summary": STRING}, ["project", "summary"]), coordinator_only=True),
-    "propose_replace_main": Spec(_object({"project": STRING, "branch": STRING, "summary": STRING},
-                                         ["project", "branch", "summary"]), coordinator_only=True),
-    "propose_merge": Spec(_object({"task_id": STRING, "summary": STRING}, ["task_id", "summary"]), coordinator_only=True),
-    "withdraw_merge": Spec(_object({"task_id": STRING, "reason": STRING}, ["task_id", "reason"]), coordinator_only=True),
-    "sweep_worktrees": Spec(_object({"dry_run": {"type": "boolean"}}, []), coordinator_only=True),
-    "drop_task": Spec(_object({"task_id": STRING, "reason": STRING}, ["task_id", "reason"]), coordinator_only=True),
-    "next_check": Spec(_object({"minutes": {"type": "number"}, "why": STRING}, ["minutes", "why"]), coordinator_only=True),
-    "open_unity_editor": Spec(_object({}, [])),
-    "release_app": Spec(_object({}, [])),
+    "browser_open": Spec(tool_args.BrowserOpen),
+    "browser_screenshot": Spec(tool_args.BrowserScreenshot),
+    "browser_click": Spec(tool_args.BrowserClick),
+    "browser_type": Spec(tool_args.BrowserType),
+    "browser_evaluate": Spec(tool_args.BrowserEvaluate),
+    "browser_console": Spec(tool_args.BrowserConsole),
+    "webkit_check": Spec(tool_args.WebKitCheck),
+    "handoff": Spec(tool_args.HandoffBody),
+    "escalate": Spec(tool_args.Escalation),
+    "ask_permission": Spec(tool_args.PermissionAsk),
+    "review": Spec(tool_args.ReviewBody),
+    "remember": Spec(tool_args.Remember),
+    "write_page": Spec(tool_args.PageWrite),
+    "edit_page": Spec(tool_args.PageEdit),
+    "forget": Spec(tool_args.Forget),
+    "recall": Spec(tool_args.Recall),
+    "working_state": Spec(tool_args.WorkingStateEdit),
+    "update_state": Spec(tool_args.StateBody),
+    "set_name": Spec(tool_args.NameBody),
+    "remind_on": Spec(tool_args.RemindOn),
+    "propose_routine": Spec(tool_args.ProposedRoutine),
+    "start_thread": Spec(tool_args.ThreadBody),
+    "post": Spec(tool_args.PostBody),
+    "tell_user": Spec(tool_args.TellBody),
+    "share": Spec(tool_args.ShareBody),
+    "ask": Spec(tool_args.AskBody),
+    "open_group": Spec(tool_args.OpenGroup),
+    "add_to_group": Spec(tool_args.GroupMember),
+    "add_bot": Spec(tool_args.AddBot, coordinator_only=True),
+    "delegate": Spec(tool_args.Delegation),
+    "tasks": Spec(tool_args.NoArgs),
+    "room_status": Spec(tool_args.RoomStatus, coordinator_only=True),
+    "message": Spec(tool_args.ChildMessage),
+    "stop_task": Spec(tool_args.TaskStop),
+    "propose_push": Spec(tool_args.PushProposal, coordinator_only=True),
+    "propose_replace_main": Spec(tool_args.MainReplacement, coordinator_only=True),
+    "propose_merge": Spec(tool_args.MergeProposal, coordinator_only=True),
+    "withdraw_merge": Spec(tool_args.MergeWithdrawal, coordinator_only=True),
+    "sweep_worktrees": Spec(tool_args.WorktreeSweep, coordinator_only=True),
+    "drop_task": Spec(tool_args.TaskDrop, coordinator_only=True),
+    "next_check": Spec(tool_args.NextCheck, coordinator_only=True),
+    "open_unity_editor": Spec(tool_args.NoArgs),
+    "release_app": Spec(tool_args.NoArgs),
 }
 
 
@@ -202,8 +176,26 @@ class CrewTools:
         return tools_for(self.runner.is_coordinator(task.bot), self.runner.crew.home,
                          is_chief=self.runner.is_chief(task.bot), **where)
 
-    async def call(self, name: str, args: dict[str, Any]) -> str | list[dict[str, Any]]:
+    async def call(self, name: str, given: dict[str, Any]) -> str | list[dict[str, Any]]:
         """Runs one tool and returns its result for the bot; raises ToolRefused with the reason it can't."""
+        tool = SPECS.get(name)
+        bot = self.runner.store.get_task(self.task_id).bot
+        if (tool is None or (tool.coordinator_only and
+                             not (self.can_delegate and self.runner.is_coordinator(bot))) or
+                (name in CHIEF_ONLY and not (self.can_delegate and self.runner.is_chief(bot)))):
+            if name in {"propose_push", "propose_replace_main"}:
+                raise ToolRefused(f"Only the chief can use {name}")
+            raise ToolRefused(f"{name} is not one of this bot's crew tools")
+        try:
+            args, unknown = tool_args.read(name, tool.args, given)
+        except tool_args.ArgsError as e:
+            raise ToolRefused(str(e)) from None
+        result = await self._run(name, args)
+        if unknown and isinstance(result, str):  # said, so it isn't taken as done when what it meant was dropped
+            result += "\n\n" + tool_args.left_out(name, tool.args, unknown)
+        return result
+
+    async def _run(self, name: str, args: dict[str, Any]) -> str | list[dict[str, Any]]:
         from crewbots.attachments import AttachmentError
         from crewbots.browser_cdp import BrowserError
         from crewbots.browser_tools import browser_call, webkit_call
@@ -214,17 +206,6 @@ class CrewTools:
         from crewbots.store import Verdict
         from crewbots.webkit import WebKitError
 
-        tool = SPECS.get(name)
-        bot = self.runner.store.get_task(self.task_id).bot
-        if (tool is None or (tool.coordinator_only and
-                             not (self.can_delegate and self.runner.is_coordinator(bot))) or
-                (name in CHIEF_ONLY and not (self.can_delegate and self.runner.is_chief(bot)))):
-            if name in {"propose_push", "propose_replace_main"}:
-                raise ToolRefused(f"Only the chief can use {name}")
-            raise ToolRefused(f"{name} is not one of this bot's crew tools")
-        missing = [k for k in tool.schema["required"] if args.get(k) in (None, "")]
-        if missing:
-            raise ToolRefused(f"{name} needs {', '.join(missing)}")
         r, me = self.runner, self.task_id
         try:
             if name.startswith("browser_"):
@@ -233,8 +214,8 @@ class CrewTools:
                 return await webkit_call(r, me, args)
             match name:
                 case "handoff":
-                    r.handoff(me, args["done"], lines(args.get("output")), args.get("open") or "",
-                              args.get("needs") or "", lines(args.get("evidence")), lines(args.get("checks")))
+                    r.handoff(me, args["done"], args.get("output", []), args.get("open") or "",
+                              args.get("needs") or "", args.get("evidence", []), args.get("checks", []))
                     wrong = r.wrong_branch(r.store.get_task(me))
                     return "Handoff recorded. End your reply with a short summary." + (f"\n\n{wrong}" if wrong else "")
                 case "escalate":
@@ -298,20 +279,23 @@ class CrewTools:
                 case "drop_task":
                     return dropped_text(await r.drop(args["task_id"], args["reason"], by_task=me))
                 case "working_state":
-                    from crewbots.working_state import _sections, edit, read
+                    from crewbots.working_state import _sections, edit, read, section_of
                     task = r.store.get_task(me)
                     path = r.crew.memory.root / task.bot / "working-state" / "state.md"
-                    if (args.get("action") or "list") == "list":  # a look: what's there, with each entry's id
+                    action, entry_id = args.get("action", "list"), args.get("entry_id", "")
+                    if action == "list":  # a look: what's there, with each entry's id
                         if section := args.get("section"):
                             return "\n".join(_sections(path).get(section, [])) or f"Nothing in {section}."
                         return read(path)
-                    if not args.get("section"):
-                        raise ToolRefused("say which section to change")
-                    entry_id, pruned = edit(path, args["section"], args["action"],
-                                            args.get("text", ""), args.get("entry_id", ""), bool(args.get("done")))
-                    if args["section"] == "Needs me" and args["action"] == "add" and not args.get("done"):
+                    if not (section := args.get("section") or section_of(path, entry_id)):
+                        raise ToolRefused(f"no entry {entry_id!r} in your working state" if entry_id
+                                          else "say which section to change")
+                    entry_id, pruned = edit(path, section, action, args.get("text", ""), entry_id,
+                                            bool(args.get("done")))
+                    if section == "Needs me" and action == "add" and not args.get("done"):
                         r.need_added(me, pruned)
-                    return (f"Working state entry {entry_id} updated."
+                    made = {"add": "added", "replace": "replaced", "remove": "removed"}[action]
+                    return (f"Working state entry {entry_id} {made}."
                             + (" State entries were trimmed; tidy up your state." if pruned else ""))
                 case "remember":
                     mistake = str(args.get("mistake") or "")
@@ -373,8 +357,7 @@ class CrewTools:
                 case "tell_user":
                     return told_text(r.tell_user(me, args["text"], bool(args.get("needs_you"))))
                 case "share":
-                    files = [args["files"]] if isinstance(args["files"], str) else [str(f) for f in args["files"]]
-                    return shared_text(await r.share(me, files, args.get("text") or "", args.get("room") or None))
+                    return shared_text(await r.share(me, args["files"], args.get("text") or "", args.get("room") or None))
         except NotAllowed as e:  # logged with what bots do to each other, as the API logs it
             self.runner.store.log_agent("refused", self.runner.store.get_task(self.task_id).bot, task_id=self.task_id,
                                         text=f"{name}: {e}")

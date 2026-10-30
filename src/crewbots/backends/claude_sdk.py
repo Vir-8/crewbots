@@ -122,6 +122,9 @@ class ClaudeAgent:
             tools=[*READ_ONLY_TOOLS.split(","), *(["Bash"] if sandbox else []),
                    *(EDIT_TOOLS.split(",") if spec.write_dirs else []), *(sorted(WEB_TOOLS) if spec.network else [])]
             if spec.access is Access.READ_ONLY else None,
+            # Its events come after the turn is over, as a background command's would (policy.IN_THE_FOREGROUND), and
+            # nothing wakes a crew bot for them
+            disallowed_tools=["Monitor"],
             permission_mode="bypassPermissions" if full else "default",
             can_use_tool=None if full else session.policy,
             settings=json.dumps(extra) if (extra := settings(

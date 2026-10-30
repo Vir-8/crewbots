@@ -26,6 +26,7 @@ SANDBOX = {"enabled": True, "autoAllowBashIfSandboxed": False, "allowUnsandboxed
 # A read-only bot's shell, so it can look things up itself (git diff, a log): the same sandbox, writing nowhere but its
 # temp folder (`settings` denies the folders it works in), and running no servers.
 READ_SANDBOX = {"enabled": True, "autoAllowBashIfSandboxed": False, "allowUnsandboxedCommands": False}
+SANDBOX_TEMP = Path(f"/tmp/claude-{os.getuid()}")  # the sandbox's TMPDIR, where a bot's screenshots and backups go
 
 
 def shell(access: Access, write_dirs: Sequence[Path] = ()) -> dict[str, Any] | None:
