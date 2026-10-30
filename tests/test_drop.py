@@ -22,10 +22,8 @@ def store(tmp_path):
 
 
 def crew_of(store, tmp_path):
-    crew = ScriptedCrew(store, tmp_path, bot("chief", can_delegate=True), bot("eng-lead", can_delegate=True),
+    return ScriptedCrew(store, tmp_path, bot("chief", can_delegate=True), bot("eng-lead", can_delegate=True),
                         bot("engineer", access=Access.WORKSPACE_WRITE))
-    store.set_stall_minutes(15)
-    return crew
 
 
 def finished_work(store, tmp_path, owner="eng-lead", status=Status.IDLE, merge_state=None):

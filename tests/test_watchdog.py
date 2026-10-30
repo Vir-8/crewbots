@@ -110,10 +110,8 @@ async def test_a_failure_does_not_wait_for_running_siblings(store, tmp_path):
 
 
 def stalled_crew(store, tmp_path):
-    crew = ScriptedCrew(store, tmp_path, bot("chief", can_delegate=True), bot("eng-lead", can_delegate=True),
+    return ScriptedCrew(store, tmp_path, bot("chief", can_delegate=True), bot("eng-lead", can_delegate=True),
                         bot("engineer", access=Access.WORKSPACE_WRITE))
-    store.set_stall_minutes(15)
-    return crew
 
 
 def unmerged_work(store, crew, owner="eng-lead", handoff=True):
@@ -396,7 +394,6 @@ async def test_each_reminder_names_the_next_step(store, tmp_path):
 async def test_work_handed_out_in_a_group_chat_is_chased_there(store, tmp_path):
     crew = ScriptedCrew(store, tmp_path, bot("chief", can_delegate=True), bot("eng-lead", can_delegate=True),
                         bot("engineer"))
-    store.set_stall_minutes(15)
     room = crew.runner.create_room("Engineering", ["chief", "eng-lead", "engineer"], lead="eng-lead")
     seat = store.create_task("eng-lead", "Engineering (eng-lead)", kind="seat", room_id=room["id"], status=Status.IDLE)
     work = store.create_task("engineer", "build", parent_id=seat.id, created_by="eng-lead", status=Status.IDLE)

@@ -164,13 +164,6 @@ class Events:
         return [StoredEvent(id=r["id"], task_id=r["task_id"], kind=r["kind"], data=json.loads(r["data"]), at=r["at"])
                 for r in reversed(rows)]
 
-    def events_after(self, task_id: str, kinds: tuple[str, ...], at: str, limit: int) -> list[StoredEvent]:
-        """A task's last `limit` events of these kinds after the time `at`, oldest first."""
-        rows = self.db.execute(f"select * from events where task_id = ? and kind in ({','.join('?' * len(kinds))}) "
-                               "and at > ? order by id desc limit ?", (task_id, *kinds, at, limit)).fetchall()
-        return [StoredEvent(id=r["id"], task_id=r["task_id"], kind=r["kind"], data=json.loads(r["data"]), at=r["at"])
-                for r in reversed(rows)]
-
     def events(self, task_id: str | None = None, after: int = 0, limit: int = 1000) -> list[StoredEvent]:
         if task_id:
             sql, args = "select * from events where task_id = ? and id > ? order by id limit ?", (task_id, after, limit)

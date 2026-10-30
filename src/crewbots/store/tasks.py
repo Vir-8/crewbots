@@ -70,10 +70,6 @@ class Tasks:
             "order by recent.updated_at desc, recent.id desc limit 20)) order by t.created_at, t.id", (bot, bot)).fetchall()
         return [_task(r) for r in rows]
 
-    def last_activity(self, bot: str) -> str | None:
-        """When any task of the bot's last changed."""
-        return self.db.execute("select max(updated_at) from tasks where bot = ?", (bot,)).fetchone()[0]
-
     def has_pending_permission(self, task_id: str) -> bool:
         """Whether the task asked the user for a permission that is still unanswered."""
         return bool(self.db.execute(
@@ -208,7 +204,7 @@ class Tasks:
         )
 
     def mark_interrupted(self) -> list[str]:
-        """On startup: anything still marked running or queued was cut off when the daemon last stopped."""
+        """On startup: anything still marked running, queued or held was cut off when the daemon last stopped."""
         rows = self.db.execute("select id from tasks where status in (?, ?, ?)",
                                (Status.RUNNING, Status.QUEUED, Status.HELD)).fetchall()
         for row in rows:

@@ -62,7 +62,6 @@ class Step:
 class Plan:
     steps: list[Step] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
-    node: str = ""  # the node-version the workflow asks for
 
 
 def _on_push(trigger: Any, branch: str) -> bool:
@@ -139,7 +138,6 @@ def _plan_workflow(path: Path, branch: str, plan: Plan) -> None:
                     python = str(args["python-version"])
                 elif action == "actions/setup-node" and args.get("node-version"):
                     node = _major(args["node-version"], f"{job_id}: {uses}")
-                    plan.node = node
                 if action not in SETUP_ACTIONS:
                     raise CIFailed(f"can't reproduce CI step {job_id}: {label} locally (uses {uses})")
                 plan.skipped.append(f"{job_id}: {uses}")

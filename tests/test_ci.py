@@ -167,8 +167,9 @@ def test_workflow_triggers_and_unsupported_things(tmp_path):
     assert plan("on: pull_request\njobs:\n  j:\n    steps:\n      - run: echo hi\n").steps == []
     assert plan("on:\n  push:\n    branches: [release/*]\njobs:\n  j:\n    steps:\n      - run: x\n").steps == []
     assert plan("on:\n  push:\n    branches-ignore: [main]\njobs:\n  j:\n    steps:\n      - run: x\n").steps == []
-    node = "on: push\njobs:\n  j:\n    steps:\n      - uses: actions/setup-node@v7\n        with:\n          node-version: 22\n"
-    assert plan(node).steps == [] and plan(node).node == "22"
+    node = ("on: push\njobs:\n  j:\n    steps:\n      - uses: actions/setup-node@v7\n        with:\n          node-version: 22\n"
+            "      - run: npm test\n")
+    assert plan(node).skipped == ["j: actions/setup-node@v7"] and plan(node).steps[0].node == "22"
     for text in ("on: push\njobs:\n  j:\n    strategy:\n      matrix:\n        v: [1]\n    steps:\n      - run: x\n",
                  "on: push\njobs:\n  j:\n    steps:\n      - run: echo ${{ github.sha }}\n",
                  "on: push\njobs:\n  j:\n    steps:\n      - run: x\n        shell: pwsh\n"):

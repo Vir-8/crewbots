@@ -1,4 +1,5 @@
-"""The user's attention: what the crew raises on its own (a check-in's news, so far) reaches them at one of three levels.
+"""The user's attention: what the crew raises on its own (a check-in's news, or what a bot tells the user from a group
+chat or a thread) reaches them at one of three levels.
 
 - **FYI** waits for the morning digest, which the chief sends at DIGEST_HOUR: what came up in the last day.
 - **Question** goes to its bot's chat at a natural break: when none of the user's work is running and they haven't
@@ -18,7 +19,6 @@ from crewbots.memory import MemoryError
 if TYPE_CHECKING:
     from crewbots.runner import Runner
 
-LEVELS = ("fyi", "question", "needs_you")
 BY_URGENCY = {"low": "fyi", "normal": "question", "high": "needs_you"}
 DAILY_INTERRUPTIONS = 3  # "needs you" at once, across the crew, a day
 QUIET_HOURS = (22, 8)  # no interruptions from 22:00 to 08:00
