@@ -37,6 +37,10 @@ class Editors:
     def _waiting_for_editor(self, task_id: str) -> bool:
         return task_id in self._editor_opening
 
+    def _waiting_its_turn(self, task_id: str) -> bool:
+        """Whether the task waits for an Editor, or for room to open one, or for a shared app: each wakes it."""
+        return task_id in self._editor_opening or task_id in self._editor_waits or self._waiting_for_app(task_id)
+
     def open_unity_editor(self, task_id: str) -> str:
         task = self.store.get_task(task_id)
         folder = self._unity_folder(task)
@@ -79,10 +83,11 @@ class Editors:
                 task = self.store.get_task(folder.name)
             except KeyError:
                 continue
-            if not (opened := self.store.last_event(task.id, ("unity_editor",))):
+            if not (last := self.store.last_event(task.id, ("unity_editor",))) or "connected" in last.data:
                 continue
+            # Before crewbots recorded "connected", only its message to the task said so.
             told = any(e.kind == "message" and e.data.get("from") == "crewbots" and "Unity is open on your worktree"
-                       in e.data.get("text", "") for e in self.store.events(task.id, after=opened.id))
+                       in e.data.get("text", "") for e in self.store.events(task.id, after=last.id))
             if not told and (url := self._unity_mcp_url(task)):
                 self._watch_editor(task.id, folder, url)
 
@@ -104,6 +109,7 @@ class Editors:
                 if await unity.connected(url, folder.name):
                     self.send(task_id, f"Unity is open on your worktree and connected: set_active_instance to its "
                               f"{folder.name}@… id from mcpforunity://instances, and go on.", sender="crewbots")
+                    self._record(task_id, kind="unity_editor", data={"connected": str(folder)})
                     return
             except Exception as e:  # the server's down or restarting: look again
                 log.debug("Couldn't ask the Unity MCP about %s: %s", folder, e)
@@ -112,8 +118,7 @@ class Editors:
 
     def _unity_folder(self, task: Task) -> Path:
         folder = Path(task.worktree_path or task.workspace or "")
-        root = (self.worktree_root or paths.worktrees()).resolve()
-        if not (task.worktree_path or task.workspace) or not folder.resolve().is_relative_to(root):
+        if not (task.worktree_path or task.workspace) or not self._in_own_worktree(folder):
             raise NotAllowed("crewbots opens Unity only on a worktree of the task's own; in the project's folder itself, "
                              "use the Editor the user has open")
         if not is_unity(folder):
@@ -126,9 +131,12 @@ class Editors:
 
     def _crew_editors(self) -> dict[Path, int]:
         """The Editors open on this crew's worktrees, by folder: one on any other folder isn't its to count or close."""
-        root = (self.worktree_root or paths.worktrees()).resolve()
         return {folder: pid for folder, pid in unity.editors().items()
-                if folder.is_relative_to(root) and self.store.tasks_in(str(folder))}
+                if self._in_own_worktree(folder) and self.store.tasks_in(str(folder))}
+
+    def _in_own_worktree(self, folder: str | Path) -> bool:
+        """Whether `folder` is in one of this crew's worktrees. Both sides are resolved: on a Mac /tmp is /private/tmp."""
+        return Path(folder).resolve().is_relative_to((self.worktree_root or paths.worktrees()).resolve())
 
     def _editor_in_use(self, folder: Path) -> bool:
         """Whether the work in `folder` or a review of it is running, or was in the last EDITOR_IDLE_S."""

@@ -23,7 +23,7 @@ from crewbots.attention import TOLD
 from crewbots.backends import Backend
 from crewbots.crew import NO_REPLY, Bot, is_no_reply
 from crewbots.events import Compacted, Done, Event, Usage
-from crewbots.runner.common import OpenSession, _iso, _plan, _usage_data
+from crewbots.runner.common import OpenSession, _iso, _usage_data, plan
 from crewbots.store import Status, Task
 
 MIN_KEPT = 500  # tokens: a compaction that leaves fewer kept nothing worth carrying on from
@@ -64,12 +64,12 @@ class Sessions:
                     self._context_seen[task_id] = percent
         return {
             "task_id": task.id, "bot": task.bot, "backend": bot.backend if bot else None,
-            "plan": _plan(bot.backend) if bot else None, "model": bot.model if bot else None,
+            "plan": plan(bot.backend) if bot else None, "model": bot.model if bot else None,
             "effort": bot.effort if bot else None, "session_id": task.session_id, "open": opened is not None,
             "context_percent": round(percent, 1) if percent is not None else None,
             "context_window": self._window(task, bot) if bot and task.kind != "review" else None,
             "rollover_percent": self.rollover_percent, "turns": task.turns,
-            "background": self.capacity.verdict(_plan(bot.backend)).reason if bot else None,
+            "background": self.capacity.verdict(plan(bot.backend)).reason if bot else None,
         }
 
     def _window(self, task: Task, bot: Bot) -> int | None:
@@ -173,13 +173,11 @@ class Sessions:
         return opened
 
     def _refresh_working_state(self, bot: str) -> None:
-        try:
-            self._sync_working_state(bot)
-        except Exception:
-            logging.getLogger(__name__).exception("Could not sync working state for %s", bot)
+        self._sync_working_state(bot)
 
     def _sync_working_state(self, bot: str) -> bool:
-        """Refresh metadata without letting a failed state write stop the turn."""
+        """Write the bot's open questions and its work elsewhere into its working state. A failure is logged and
+        returns False rather than raising, so it never stops a turn."""
         try:
             db = self.store.db
             pending = list(self._escalated)
@@ -220,7 +218,7 @@ class Sessions:
                          + (" · question open" if r["id"] in question_tasks else "")
                          + (f" · {' '.join(r['title'].split())}" if r["kind"] not in ("chat", "seat") else "")
                          for r in rows]
-            working_state.sync(self.crew.memory.root / bot / "working-state" / "state.md", questions, elsewhere)
+            working_state.sync(working_state.path(self.crew.memory.root, bot), questions, elsewhere)
             return True
         except Exception:
             logging.getLogger(__name__).exception("Could not sync working state for %s", bot)
@@ -239,11 +237,7 @@ class Sessions:
         one last heard (`_said_elsewhere`)."""
         if task.kind == "review":  # its own instructions, none of the crew's
             return prompt, None
-        try:
-            synced = self._sync_working_state(bot.name)
-        except Exception:
-            logging.getLogger(__name__).exception("Could not sync working state for %s", bot.name)
-            synced = False
+        synced = self._sync_working_state(bot.name)
         try:
             living = self.crew.living_parts(bot)
         except Exception:
@@ -305,7 +299,7 @@ class Sessions:
                      for m in self.store.room_messages_by(seat.room_id, task.bot, floor, SAID_ITEMS)]
         if task.kind == "chat":  # what it told the user here from elsewhere, which this conversation didn't see
             said += [(i["at"], f"to the user in this chat, from {i['source'].removeprefix(TOLD)}", i["text"])
-                     for i in self.store.told_since(task.bot, floor, SAID_ITEMS)]
+                     for i in self.store.raised_from(task.bot, TOLD, floor, SAID_ITEMS)]
         if not said:
             return "", since
         said = sorted(said)[-SAID_ITEMS:]

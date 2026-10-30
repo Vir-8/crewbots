@@ -190,7 +190,7 @@ class Crew:
         parts["lately"] = ("Lately", "\n\n".join(f"## {whose}\n\n{text}" for whose, text in logs if text) or "No recent logs.")
         try:
             parts["working-state"] = ("Working state", working_state.prompt_data(
-                working_state.read(memory.root / bot.name / "working-state" / "state.md")))
+                working_state.read(working_state.path(memory.root, bot.name))))
         except Exception:
             logging.getLogger(__name__).exception("Could not read working state for %s", bot.name)
         parts["scratchpad"] = ("Your scratchpad", pages_module.for_instructions(self.pages_of(bot)))
@@ -209,7 +209,7 @@ class Crew:
             f"# The crew\n\n{living['crew'][1]}",
             "# Projects\n\nThe user's projects, each a folder of theirs. Work on one runs in its folder: name the project "
             "when you open a thread for it or delegate it. Your chat isn't any one project's; it runs in your own "
-            f"folder, {_home_relative(self.folder_of(bot))}.\n\n{living['projects'][1]}",
+            f"folder, {paths.shown(self.folder_of(bot))}.\n\n{living['projects'][1]}",
             prompts.text("crew-tools", self.home) + "\n\n" + prompts.text("delegation", self.home)
             + ("\n\n" + prompts.text("coordinating", self.home) if coordinator else "")
             + ("\n\n" + prompts.text("chief-push", self.home) if chief else ""),
@@ -228,7 +228,7 @@ class Crew:
         if "working-state" in living:
             parts.append(f"# Working state\n\n{living['working-state'][1]}")
         parts.append(prompts.text("memory-guide", self.home) + f"\n\n{living['notes'][1]}")
-        parts.append(prompts.text("scratchpad-guide", self.home, folder=_home_relative(self.pages_of(bot)))
+        parts.append(prompts.text("scratchpad-guide", self.home, folder=paths.shown(self.pages_of(bot)))
                      + f"\n\n## Scratchpad\n\n{living['scratchpad'][1]}")
         parts.append("# This task\n\n" + (
             setting if setting else
@@ -249,10 +249,6 @@ class Crew:
 
 class CrewError(ValueError):
     pass
-
-
-def _home_relative(path: Path) -> str:
-    return str(path).replace(str(Path.home()), "~", 1) if path.is_relative_to(Path.home()) else str(path)
 
 
 def load(home: Path) -> Crew:
@@ -346,7 +342,7 @@ def load_global_skills(folder: Path) -> dict[str, Skill]:
         name = str(meta.get("name") or path.parent.name)
         if meta.get("description") and name not in skills:
             skills[name] = Skill(name=name, description=" ".join(str(meta["description"]).split()), path=path,
-                                 source=str(folder).replace(str(Path.home()), "~"),
+                                 source=paths.shown(folder),
                                  synced=path.relative_to(folder).parts[0] == "synced")
     return skills
 

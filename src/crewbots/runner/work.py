@@ -1,16 +1,13 @@
 """What a bot does with its work: hands it back, asks a question, proposes it for merging, and keeps notes."""
 
-import asyncio
 import logging
-import os
 import re
-import tempfile
 from datetime import datetime
 from html import escape
 from pathlib import Path
 from typing import Any
 
-from crewbots import cards, comments, pages, prompts, timefmt, worktree
+from crewbots import cards, comments, pages, prompts, timefmt, working_state, worktree
 from crewbots.crew import NO_REPLY
 from crewbots.memory import CREW_SCOPE, MemoryError, Note
 from crewbots.pages import Page
@@ -38,11 +35,6 @@ log = logging.getLogger(__name__)
 class Work(Landed, Closing, MergeStatus, SharedApps, Editors, InPlace):
     """The part of Runner that takes a bot's handoffs, questions, merge proposals and notes."""
 
-    def _check_worktree_sweep(self, task_id: str | None = None) -> None:
-        if not self._worktree_sweep_done.is_set():
-            raise NotAllowed("Worktree maintenance is running; try again when it finishes.")
-        self.check_not_merging(task_id)  # the task's own merge, for withdraw and drop
-
     def changes(self, task_id: str) -> str | None:
         """The task's diff against where its worktree started, or None if it has no worktree."""
         task = self.store.get_task(task_id)
@@ -56,18 +48,6 @@ class Work(Landed, Closing, MergeStatus, SharedApps, Editors, InPlace):
         if not wt.path.exists():
             return worktree._git(wt.repo, "diff", wt.base, wt.branch, strip=False)
         return worktree.changes(wt)
-
-    def _merged_tip(self, task: Task) -> str:
-        if task.merged_tip:
-            return task.merged_tip
-        # Older merge records have no tip. A merge commit's second parent is the original task tip.
-        return worktree._git(Path(task.repo), "rev-parse", "--verify", f"{task.merged_commit}^2")
-
-    def _restore_worktree(self, task: Task) -> None:
-        wt = worktree.Worktree(Path(task.repo), Path(task.worktree_path), task.branch, task.base)
-        if not wt.path.exists():
-            tip = self._merged_tip(task) if task.merge_state == "merged" else None
-            worktree.restore(wt, tip=tip)
 
     def _setting(self, task: Task) -> str | None:
         if task.kind == "chat":
@@ -90,16 +70,12 @@ class Work(Landed, Closing, MergeStatus, SharedApps, Editors, InPlace):
         return None
 
     def _clear_room_need(self, task_id: str) -> None:
-        import logging
-
-        from crewbots import working_state
-
-        chief = self.coordinator()
+        chief = self.chief_bot()
         if chief:
             try:
-                working_state.clear_need(self.crew.memory.root / chief.name / "working-state" / "state.md", task_id)
+                working_state.clear_need(working_state.path(self.crew.memory.root, chief.name), task_id)
             except Exception:
-                logging.getLogger(__name__).exception("Could not clear a resolved room escalation")
+                log.exception("Could not clear a resolved room escalation")
 
     def _close_questions(self, task_id: str) -> None:
         asked = self.store.last_event(task_id, ("escalation", "permission"))
@@ -254,15 +230,11 @@ class Work(Landed, Closing, MergeStatus, SharedApps, Editors, InPlace):
         except ValueError as e:
             raise NotAllowed(str(e)) from None
         work = self._own_child(parent_id, task_id)
-        repo = None if work.worktree_path else self._in_place_repo(work)
-        if not work.worktree_path and repo is None:
-            raise NotAllowed(f"{task_id} has no worktree, and changed no git folder in place, so there's nothing to merge")
+        repo, refused = self._mergeable(work)
+        if refused:
+            raise NotAllowed(refused)
         if repo and not self._in_place_files(work, repo):
             raise NotAllowed(self._nothing_to_commit(work, repo))
-        if work.merge_state == "merged":
-            raise NotAllowed(f"{task_id} is already merged")
-        if work.merge_state == "merging":
-            raise NotAllowed(f"{task_id} has a merge awaiting recovery")
         if wrong := self.wrong_branch(work):
             raise NotAllowed(f"{task_id} cannot be proposed: {wrong}")
         state = self.review_state(task_id)
@@ -287,13 +259,9 @@ class Work(Landed, Closing, MergeStatus, SharedApps, Editors, InPlace):
         worktree. Refuses work that is still running or not approved (unless forced); a conflict changes nothing."""
         self._check_worktree_sweep()
         work = self.store.get_task(task_id)
-        in_place = None if work.worktree_path else self._in_place_repo(work)
-        if not work.worktree_path and in_place is None:
-            raise MergeError(f"{task_id} has no worktree")
-        if work.merge_state == "merged":
-            raise MergeError(f"{task_id} is already merged ({work.merged_commit})")
-        if work.merge_state == "merging":
-            raise MergeError(f"{task_id} has a merge awaiting recovery")
+        in_place, refused = self._mergeable(work)
+        if refused:
+            raise MergeError(refused)
         if work.active or task_id in self._runs:
             raise MergeError(f"{task_id} is still working")
         state = self.review_state(task_id)
@@ -326,139 +294,17 @@ class Work(Landed, Closing, MergeStatus, SharedApps, Editors, InPlace):
         self._cleanup_after_action(task)
         return task
 
-    def _cleanup_after_action(self, task: Task) -> None:
-        try:
-            result = self._cleanup_worktree(task)
-            if result["status"] != "removed":
-                log.warning("Worktree cleanup for %s: %s", task.id, result.get("reason"))
-        except Exception:
-            log.exception("Could not clean up worktree for %s", task.id)
-
-    def _cleanup_worktree(self, task: Task, *, sweep: bool = False, dry_run: bool = False) -> dict[str, str]:
-        result = {"task_id": task.id, "path": task.worktree_path or "", "branch": task.branch or ""}
-        busy = {Status.QUEUED, Status.RUNNING, Status.NEEDS_INPUT, Status.HELD, Status.INTERRUPTED}
-        if (task.status in busy or task.id in self._runs or task.merge_state == "proposed" or any(
-                r.status in busy or r.id in self._runs for r in self.store.reviewers_of(task.id))):
-            return result | {"status": "kept", "reason": "task or reviewer is active, or proposal is open"}
-        if not all((task.repo, task.worktree_path, task.branch, task.base)):
-            return result | {"status": "kept", "reason": "incomplete worktree metadata"}
-        wt = worktree.Worktree(Path(task.repo), Path(task.worktree_path), task.branch, task.base)
-        original_head = None
-        saved_head = None
-        index_path = None
-        index_before = None
-        removing = False
-        try:
-            if not wt.path.is_dir():
-                return result | {"status": "kept", "reason": "worktree path is missing"}
-            if wt.repo.resolve() == wt.path.resolve():
-                return result | {"status": "kept", "reason": "path is the main checkout"}
-            if not dry_run:
-                self.close_editor(wt.path)  # a Unity Editor on it would write there as it goes
-            try:
-                head = worktree._git(wt.path, "symbolic-ref", "--short", "HEAD")
-            except worktree.GitError:
-                head = None
-            if head != wt.branch:  # the work was done on a branch of its own naming; the branch is kept either way
-                into = self.foreign_head_removable(task, wt, head)
-                if dry_run:
-                    return result | {"status": "would_remove", "branch_status": "kept",
-                                     "reason": f"on {head}, whose work is already on {into}; branch kept"}
-                worktree.remove(wt)
-                self._removed_worktrees.add(task.id)
-                log.info("Removed worktree for %s; its branch %s is kept", task.id, head)
-                return result | {"status": "removed", "branch_status": "kept"}
-            untracked = worktree._git(wt.path, "ls-files", "--others", "--exclude-standard", "-z", strip=False)
-            staged = worktree._git(wt.path, "ls-files", "--stage", "-z", strip=False)
-            gitlinks = [entry.split("\t", 1)[1] for entry in staged.split("\0")
-                        if entry.startswith("160000 ") and "\t" in entry]
-            if any((wt.path / name / ".git").exists() for name in [*untracked.split("\0"), *gitlinks] if name):
-                raise worktree.GitError("worktree contains an untracked nested repository; leaving it in place")
-            if dry_run:
-                notes = []
-                # --no-optional-locks is GIT_OPTIONAL_LOCKS=0: a dry run must not rewrite the index.
-                if worktree._git(wt.path, "--no-optional-locks", "status", "--porcelain", "--ignore-submodules=none"):
-                    notes.append("uncommitted changes would be saved to the branch first")
-                ahead = worktree._git(wt.repo, "rev-list", "--count", f"{wt.base}..{wt.branch}")
-                if ahead != "0" and task.merge_state != "merged":
-                    notes.append(f"{ahead} unmerged commit(s) stay on the branch")
-                later = "0"
-                if task.merge_state == "merged" and task.merged_tip:
-                    later = worktree._git(wt.repo, "rev-list", "--count", f"{task.merged_tip}..{wt.branch}")
-                    if later != "0":
-                        notes.append(f"merged, {later} later commit(s) kept on the branch")
-                if not notes:
-                    notes.append("merged and clean" if task.merge_state == "merged" else "clean, nothing unmerged")
-                return result | {"status": "would_remove", "branch_status": "kept", "reason": "; ".join(notes)}
-            if task.merge_state == "merged" and not sweep:
-                if not task.merged_commit:
-                    raise worktree.GitError("merged task has no recorded merge commit")
-            else:
-                original_head = worktree._git(wt.path, "rev-parse", "HEAD")
-                index_path = Path(worktree._git(wt.path, "rev-parse", "--git-path", "index"))
-                if not index_path.is_absolute():
-                    index_path = wt.path / index_path
-                index_before = index_path.read_bytes() if index_path.exists() else None
-                saved_head = worktree.commit(wt, f"Uncommitted work from {task.id}, saved on removal")
-            if worktree._git(wt.path, "status", "--porcelain", "--ignore-submodules=none"):
-                raise worktree.GitError("worktree still has changes; leaving it in place")
-            branch_tip = worktree._git(wt.repo, "rev-parse", f"refs/heads/{wt.branch}")
-            if worktree._git(wt.path, "rev-parse", "HEAD") != branch_tip or (saved_head and saved_head != branch_tip):
-                raise worktree.GitError("task branch changed while saving; leaving the worktree in place")
-            delete_branch = task.merge_state == "merged" and not sweep
-            if delete_branch:
-                worktree.branch_merged(wt.repo, branch_tip, task.merged_tip, task.merged_commit)
-            removing = True
-            deleted = worktree.remove(wt, delete_branch=delete_branch, branch_tip=branch_tip)
-        except (worktree.GitError, OSError) as e:
-            # Once removal was attempted it may have partially removed files. Keep the saved commit so that
-            # tracked and non-ignored untracked work remains recoverable from the branch.
-            if not removing and index_path is not None and wt.path.is_dir():
-                try:
-                    if saved_head:
-                        worktree._git(wt.path, "update-ref", f"refs/heads/{wt.branch}", original_head, saved_head)
-                    index_path = Path(worktree._git(wt.path, "rev-parse", "--git-path", "index"))
-                    if not index_path.is_absolute():
-                        index_path = wt.path / index_path
-                    if index_before is None:
-                        index_path.unlink(missing_ok=True)
-                    else:
-                        with tempfile.NamedTemporaryFile(dir=index_path.parent, delete=False) as temp:
-                            temp.write(index_before)
-                            temporary = temp.name
-                        os.replace(temporary, index_path)
-                except (worktree.GitError, OSError):
-                    log.exception("Could not roll back the worktree save for %s", task.id)
-            log.exception("Could not clean up worktree for %s", task.id)
-            return result | {"status": "kept" if wt.path.exists() else "error", "reason": str(e)}
-        self._removed_worktrees.add(task.id)
-        self._record(task.id, kind="worktree_dropped", data={"path": result["path"]})
-        log.info("Removed worktree for %s; branch %s", task.id, "deleted" if deleted else "kept")
-        return result | {"status": "removed", "branch_status": "deleted" if deleted else "kept"}
-
-    def sweep_worktrees(self, dry_run: bool = False) -> dict[str, list[dict[str, str]]]:
-        rows = self.store.db.execute("select id from tasks where worktree_path is not null order by id").fetchall()
-        results = [self._cleanup_worktree(self.store.get_task(row[0]), sweep=True, dry_run=dry_run) for row in rows]
-        gone = "would_remove" if dry_run else "removed"
-        report = {gone: [r for r in results if r["status"] == gone],
-                  "kept": [r for r in results if r["status"] != gone]}
-        log.info("Worktree sweep%s: %s", " (dry run)" if dry_run else "", report)
-        return report
-
-    async def run_worktree_sweep(self, dry_run: bool = False) -> dict[str, list[dict[str, str]]]:
-        """The sweep off the event loop; a real one holds new work back until it finishes, even if the caller leaves."""
-        self._check_worktree_sweep()
-        if dry_run:
-            return await asyncio.to_thread(self.sweep_worktrees, True)
-        self._worktree_sweep_done.clear()
-        operation = asyncio.create_task(asyncio.to_thread(self.sweep_worktrees))
-        operation.add_done_callback(lambda _: self._worktree_sweep_done.set())
-        return await asyncio.shield(operation)
-
-    async def bot_worktree_sweep(self, task_id: str, dry_run: bool = True) -> dict[str, list[dict[str, str]]]:
-        if not self.is_coordinator(self.store.get_task(task_id).bot):
-            raise NotAllowed("only coordinators can sweep worktrees")
-        return await self.run_worktree_sweep(dry_run)
+    def _mergeable(self, work: Task) -> tuple[Path | None, str | None]:
+        """The git folder `work` changed in place (None for work in a worktree of its own), and why neither a proposal
+        nor a merge of it can go ahead, or None."""
+        repo = self._in_place_repo(work)
+        if not work.worktree_path and repo is None:
+            return None, f"{work.id} has no worktree, and changed no git folder in place, so there's nothing to merge"
+        if work.merge_state == "merged":
+            return repo, f"{work.id} is already merged ({work.merged_commit})"
+        if work.merge_state == "merging":
+            return repo, f"{work.id} has a merge awaiting recovery"
+        return repo, None
 
     def _turns_over(self, task: Task) -> None:
         """A task's turns are over for now: a thread's end is news for the crew, and a folder its own handoff dropped
@@ -504,10 +350,7 @@ class Work(Landed, Closing, MergeStatus, SharedApps, Editors, InPlace):
 
     def _check_seat_answer(self, task: Task, question_id: int | None) -> None:
         asked = self.store.last_event(task.id, ("escalation",))
-        resolved = asked and self.store.db.execute(
-            "select 1 from events where task_id = ? and id > ? and "
-            "(kind = 'questions_closed' or (kind = 'message' and json_extract(data, '$.from') = 'user')) limit 1",
-            (task.id, asked.id)).fetchone()
+        resolved = asked and self.store.answered_since(task.id, asked.id)
         room_exists = task.room_id and self.store.db.execute("select 1 from rooms where id = ?", (task.room_id,)).fetchone()
         if question_id is None and (not asked or resolved) and room_exists:
             return
@@ -535,11 +378,7 @@ class Work(Landed, Closing, MergeStatus, SharedApps, Editors, InPlace):
         if task.status in (Status.FAILED, Status.CANCELLED):
             return False, False
         event = self.store.last_event(task.id, ("escalation",))
-        resolved = event and self.store.db.execute(
-            "select 1 from events where task_id = ? and id > ? and "
-            "(kind = 'questions_closed' or (kind = 'message' and json_extract(data, '$.from') = 'user')) limit 1",
-            (task.id, event.id)).fetchone()
-        if not event or resolved:
+        if not event or self.store.answered_since(task.id, event.id):
             return False, False
         question = " ".join(event.data.get("question", "").split())[:160]
         choices = {str(c.get("label", "")) for c in event.data.get("choices", []) if isinstance(c, dict)}
@@ -557,10 +396,8 @@ class Work(Landed, Closing, MergeStatus, SharedApps, Editors, InPlace):
             where = "chat" if task.kind in ("seat", "chat") else "thread"
             answer = f"answered in {where} on {datetime.now().astimezone().date()} (task {task.id})"
         try:
-            from crewbots.working_state import edit
-
-            edit(self.crew.memory.root / task.bot / "working-state" / "state.md", "Decisions", "add",
-                 f"{timefmt.minute(event.at)[:10]} {task.id}: {question} — {answer}", automatic=True)
+            working_state.edit(working_state.path(self.crew.memory.root, task.bot), "Decisions", "add",
+                               f"{timefmt.minute(event.at)[:10]} {task.id}: {question} — {answer}", automatic=True)
         except (MemoryError, OSError) as e:
             self._record(task.id, kind="notice", data={"message": f"Could not record decision: {e}"})
         return True, nudge
@@ -573,20 +410,20 @@ class Work(Landed, Closing, MergeStatus, SharedApps, Editors, InPlace):
         if task_id in self._cancelling or task.status is Status.CANCELLED:
             raise NotAllowed("This task is cancelled or being cancelled.")
         offered = _choices(choices)
+        any_of = " (any of them)" if multiple else ""
+        listed = "".join(f"\n- {c['label']}" + (f": {c['description']}" if "description" in c else "") for c in offered)
+        listing = f"\n\nChoices{any_of}:{listed}" if offered else ""
         if task.kind == "seat" and task.room_id:
             try:
                 room = self._room_to_post(task, task.room_id)
             except NotAllowed:
                 room = None
             self._close_questions(task_id)
-            chief = self.coordinator()
+            chief = self.chief_bot()
             recipient = (chief.name if chief and chief.name in room["members"] else room["lead"]) if room else None
             if room and not (chief and task.bot == chief.name) and task.bot != recipient:
-                listed = "".join(f"\n- {c['label']}" + (f": {c['description']}" if "description" in c else "")
-                                 for c in offered)
-                self.post(room["id"], task.bot, f"@{recipient} {question}"
-                          + (f"\n\nChoices{' (any of them)' if multiple else ''}:{listed}" if offered else "")
-                          + f"\n\nPlease reply to @{task.bot} in this room.",
+                self.post(room["id"], task.bot, f"@{recipient} {question}{listing}"
+                          f"\n\nPlease reply to @{task.bot} in this room.",
                           depth=-1, recipients=[recipient])
                 return
         self._escalated.add(task_id)
@@ -600,17 +437,15 @@ class Work(Landed, Closing, MergeStatus, SharedApps, Editors, InPlace):
         self._refresh_working_state(task.bot)
         if task.parent_id:
             parent = self.store.get_task(task.parent_id)
-            chief = self.coordinator()
+            chief = self.chief_bot()
             if task.kind != "seat" and parent.kind == "seat" and parent.room_id and chief and parent.bot == chief.name:
                 self._chief_room_item(self.store.room(parent.room_id), task.bot, "escalated", f"task {task.id}")
-            listed = "".join(f"\n- {c['label']}" + (f": {c['description']}" if "description" in c else "") for c in offered)
             if task.kind != "seat":
-                self._say_in_room(task, task.bot, parent.bot, f"{task_id} needs an answer: {question}"
-                                  + (f"\n\nChoices{' (any of them)' if multiple else ''}:{listed}" if offered else ""))
+                self._say_in_room(task, task.bot, parent.bot, f"{task_id} needs an answer: {question}{listing}")
             self.store.update_task(task_id, reported=True)
             self.send(task.parent_id, sender="crewbots", text=(
                 f"{task.bot} escalated on task {task_id} ({task.title}):\n\n{question}\n\n"
-                + (f"Its choices{' (any of them)' if multiple else ''}:{listed}\n\n" if offered else "")
+                + (f"Its choices{any_of}:{listed}\n\n" if offered else "")
                 + f"Answer with message(task_id={task_id!r}, text=...), or escalate it to the user if the decision "
                 "is theirs."))
 

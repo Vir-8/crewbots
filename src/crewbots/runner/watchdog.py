@@ -87,7 +87,7 @@ class Watchdog:
             state["woke"] = now.isoformat()
             return True
         state["raised"] = True
-        chief = self.coordinator()
+        chief = self.chief_bot()
         if chief is None or chief.name == name:
             return False  # the chief has no one above it to raise this with
         text = f"@{name} went quiet with open work after {WAKES} reminders: " + "; ".join(work)
@@ -95,7 +95,7 @@ class Watchdog:
             self.post(room["id"], "crewbots", f"@{chief.name} {text}", recipients=[chief.name])
             return True
         try:
-            working_state.edit(self.crew.memory.root / chief.name / "working-state" / "state.md", "Needs me", "add", text)
+            working_state.edit(working_state.path(self.crew.memory.root, chief.name), "Needs me", "add", text)
         except Exception:  # state full or unavailable: the chief still hears of it in its next notice
             log.exception("could not add the stall item for %s to the chief's state", name)
         self._crew_event("stall raised", ids(work), name)
@@ -105,9 +105,8 @@ class Watchdog:
         """What is open for the bot, by the session that owes the action: lines of ids and counts, a key that changes
         when the work does, and when that work last changed, by that session's task id."""
         groups: dict[str, tuple[Task, list[str], list[str], list[str]]] = {}
-        queued = {*self._editor_waits, *self._editor_opening, *(t for q in self._app_queue.values() for t in q)}
         for t in self.store.stopped_without_handback(name):  # each its own: the thread that stopped is woken
-            if t.id in queued:
+            if self._waiting_its_turn(t.id):
                 continue  # waiting its turn for a shared app or an Editor, which wakes it
             asker = self.store.get_task(t.parent_id).bot
             step = (f"{t.id}: your turn ended without handing back what {asker} asked. Hand it back with handoff if it's "
@@ -128,7 +127,7 @@ class Watchdog:
         needs = []
         for entry_id, line in self._own_needs(name):
             added = working_state.added_at(entry_id)
-            mention = working_state._room_need(line)
+            mention = working_state.room_need(line)
             if mention and (seat := self.store.seat_of(mention[1], name)):  # its seat answers it, where it can read it
                 _, work, key, touched = groups.setdefault(seat.id, (seat, [], [], []))
                 work.append(_unanswered(line, int(mention[3])))
@@ -172,8 +171,7 @@ class Watchdog:
 
     def _own_needs(self, name: str) -> list[tuple[str, str]]:
         """The bot's open Needs-me items: each one's id and line."""
-        path = self.crew.memory.root / name / "working-state" / "state.md"
-        lines = working_state._sections(path)["Needs me"]
+        lines = working_state.parse(working_state.path(self.crew.memory.root, name))["Needs me"]
         return [(m[2], line) for line in lines if (m := working_state.ENTRY.match(line)) and m[1] == " "]
 
     def _room_held(self, task: Task) -> bool:

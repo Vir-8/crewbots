@@ -14,7 +14,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-from crewbots import paths
 from crewbots.backends import McpServer
 from crewbots.crew import Bot
 from crewbots.runner.common import NotAllowed
@@ -35,6 +34,9 @@ class SharedApps:
     @property
     def _app_queue(self) -> dict[tuple[str, str], list[str]]:
         return self.__dict__.setdefault("_app_waiting", {})
+
+    def _waiting_for_app(self, task_id: str) -> bool:
+        return any(task_id in queue for queue in self._app_queue.values())
 
     def _app_of(self, task_id: str, name: str) -> tuple[str, str]:
         """The app a task's calls to `name` drive: the one open on the folder it works in."""
@@ -107,8 +109,7 @@ class SharedApps:
         """Whether the task works in a worktree of its own, or reviews one in place."""
         task = self.store.get_task(task_id)
         folder = task.worktree_path or task.workspace
-        root = (self.worktree_root or paths.worktrees()).resolve()
-        return bool(folder) and Path(folder).resolve().is_relative_to(root)
+        return bool(folder) and self._in_own_worktree(folder)
 
     def _holding(self, holder: dict[str, Any], now: float) -> bool:
         return holder["task"] in self._runs and now - holder["last"] < APP_IDLE_S

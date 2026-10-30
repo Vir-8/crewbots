@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from crewbots import attachments as attachments_module
-from crewbots import prompts
+from crewbots import prompts, working_state
 from crewbots.attention import Attention
 from crewbots.backends import BACKENDS, Backend, McpServer, RunSpec
 from crewbots.browser import Browser
@@ -54,13 +54,24 @@ from crewbots.reviews import review_prompt, reviewer_bot
 from crewbots.runner.checkins import Checkins
 from crewbots.runner.checkouts import Checkouts
 from crewbots.runner.chief_events import ChiefEvents
-from crewbots.runner.common import MCP_COMMAND, MCP_SERVER_NAME, Bus, NotAllowed, OpenSession, UnknownBot, _duration, _usage_data
+from crewbots.runner.cleanup import Cleanup
+from crewbots.runner.common import (
+    MCP_COMMAND,
+    MCP_SERVER_NAME,
+    Bus,
+    NotAllowed,
+    OpenSession,
+    UnknownBot,
+    _duration,
+    _usage_data,
+    effective_network,
+)
 from crewbots.runner.delegation import MAX_CHILDREN, MAX_DEPTH, MAX_OUT, Delegation
 from crewbots.runner.dreams import Dreams
 from crewbots.runner.files import Files
 from crewbots.runner.holds import Holds
 from crewbots.runner.permissions import Permissions
-from crewbots.runner.retries import Retries
+from crewbots.runner.retries import Attempt, Retries
 from crewbots.runner.reviews import Reviewing
 from crewbots.runner.rooms import Rooms
 from crewbots.runner.sessions import Sessions
@@ -83,7 +94,7 @@ STALL_S = 1200.0  # no event at all from a turn for this long: it's stuck, so it
 
 
 class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams, Checkins, Wakes,
-             Welcome, Permissions, Watchdog):
+             Welcome, Permissions, Watchdog, Cleanup):
     """Runs the crew's tasks. Each base class is one part of it, kept in its own runner module."""
     def __init__(
         self,
@@ -126,7 +137,7 @@ class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Revie
         self.bus = Bus()
         self._slots = asyncio.Semaphore(max_parallel)
         self._runs: dict[str, asyncio.Task[None]] = {}
-        self._attempts: dict[str, dict[str, Any]] = {}
+        self._attempts: dict[str, Attempt] = {}
         self._cancelling: set[str] = set()
         self._held_notices: dict[str, list[str]] = {}  # state notices for a stopped chat, until the user writes next
         self._cancel_messages: dict[str, list[tuple[str, str, list[dict[str, Any]] | None, bool, bool]]] = {}
@@ -442,7 +453,8 @@ class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Revie
         async with self._turn_slot(task_id):
             if (task := self.store.get_task(task_id)).worktree_path or task.review_of:
                 await self._worktree_sweep_done.wait()
-            self._attempts.get(task_id, {}).update(state="running")
+            attempt = self._attempts[task_id]
+            attempt.state = "running"
             task = self._set(task_id, status=Status.RUNNING, error=None)
             self.store.pending_started(task_id)
             try:
@@ -478,8 +490,7 @@ class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Revie
                     stream = self._steerable(task_id, open_session, open_session.session.turn(prompt))
                 else:
                     stream = backend.run(self._spec(task, bot, cwd, token, prompt, backend))
-                if task_id in self._attempts:
-                    self._attempts[task_id]["last_activity"] = time.monotonic()
+                attempt.last_activity = time.monotonic()
                 async with aclosing(stream) as stream:
                     while True:
                         try:
@@ -489,14 +500,12 @@ class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Revie
                             break
                         except TimeoutError:
                             stalled = True
-                            if task_id in self._attempts:
-                                self._attempts[task_id]["state"] = "stalled"
+                            attempt.state = "stalled"
                             done = Done(final_text="", is_error=True, retry="transient",
                                         error=f"nothing came back from {bot.backend} for {_duration(self.stall_s)}")
                             self._record(task_id, done)
                             break
-                        if task_id in self._attempts:
-                            self._attempts[task_id]["last_activity"] = time.monotonic()
+                        attempt.last_activity = time.monotonic()
                         if (task.kind == "seat" and not isinstance(event, (SessionStarted, Notice, RateLimit))
                                 and not (isinstance(event, Done) and event.is_error)):
                             self._room_prompt_sent(task_id)
@@ -615,14 +624,14 @@ class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Revie
                                                             self.crew.pages_of(bot))
                                                  if d.is_dir()]], timeout_s=bot.timeout_s,
             write_dirs=[Path(g["folder"]) for g in grants if g["kind"] == "folder"],
-            network=True if any(g["kind"] == "network" for g in grants) else bot.network,
+            network=effective_network(bot, grants),
             effort=bot.effort, context_window=self._window(task, bot),
         )
 
     def _state_denials(self, bot: str) -> list[Path]:
         root = self.crew.memory.root
         names = set(self.crew.bots) | {p.name for p in root.glob("*") if p.is_dir() and not p.name.startswith(".")}
-        return [root / ".git", *[root / name / "working-state" for name in sorted(names) if name != bot]]
+        return [root / ".git", *[working_state.path(root, name).parent for name in sorted(names) if name != bot]]
 
     def _stay_awake(self) -> None:
         """Holds a power assertion while any task is running, and only then: work in progress shouldn't stall

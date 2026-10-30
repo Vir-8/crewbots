@@ -27,7 +27,12 @@ ENTRY = re.compile(r"^- \[([ x])\] `([a-f0-9]+)` (.*)$")
 ROOM_NEED = re.compile(r" · room mention (r_[a-f0-9]+) · last (\d+) · count (\d+)$")
 
 
-def _room_need(line: str):
+def path(root: Path, bot: str) -> Path:
+    """The bot's working-state file, under the memory root."""
+    return root / bot / "working-state" / "state.md"
+
+
+def room_need(line: str):
     entry = ENTRY.match(line)
     return ROOM_NEED.search(line) if entry and len(entry[2]) == 25 and entry[2].startswith("a") else None
 
@@ -55,7 +60,7 @@ def render(sections: dict[str, list[str]]) -> str:
     return "\n\n".join(f"## {s}\n" + "\n".join(sections[s]) for s in SECTIONS).strip()
 
 
-def _sections(path: Path) -> dict[str, list[str]]:
+def parse(path: Path) -> dict[str, list[str]]:
     sections = {s: [] for s in SECTIONS}
     current = None
     for line in read(path).splitlines():
@@ -132,7 +137,7 @@ def _fit(sections: dict[str, list[str]], *, keep_generated: bool = False) -> boo
     """Generated lines give way to owned entries; never delete an active owned entry."""
     pruned = False
     while len(render(sections)) > LIMIT:
-        if oldest := next((line for line in sections["Needs me"] if _room_need(line)), None):
+        if oldest := next((line for line in sections["Needs me"] if room_need(line)), None):
             sections["Needs me"].remove(oldest)
             pruned = True
         elif _prune(sections):
@@ -159,7 +164,7 @@ def _fit(sections: dict[str, list[str]], *, keep_generated: bool = False) -> boo
 def sync(path: Path, questions: list[str], elsewhere: list[str]) -> None:
     """Refresh the store-owned sections without losing concurrent entry edits."""
     with _lock(path):
-        sections = _sections(path)
+        sections = parse(path)
         # Newest unanswered questions first; trim only complete lines and leave the user's entries their own space.
         newest: list[str] = []
         for line in reversed(questions):
@@ -184,7 +189,7 @@ def clear_need(path: Path, task_id: str) -> None:
     if not path.exists():
         return
     with _lock(path):
-        sections = _sections(path)
+        sections = parse(path)
         sections["Needs me"] = [line for line in sections["Needs me"] if not line.endswith(f" · task {task_id}")]
         _write(path, render(sections))
 
@@ -192,10 +197,10 @@ def clear_need(path: Path, task_id: str) -> None:
 def room_mentions(path: Path, room: dict, messages: list[dict], *, add: bool = False, through: int | None = None) -> bool:
     """Update one bounded room entry; never evict a user-owned or unrelated entry."""
     with _lock(path):
-        sections = _sections(path)
+        sections = parse(path)
         entries = sections["Needs me"]
-        index = next((i for i, line in enumerate(entries) if (m := _room_need(line)) and m[1] == room["id"]), None)
-        old = _room_need(entries[index]) if index is not None else None
+        index = next((i for i, line in enumerate(entries) if (m := room_need(line)) and m[1] == room["id"]), None)
+        old = room_need(entries[index]) if index is not None else None
         if through is not None and old and int(old[2]) > through:
             return False
         count = len(messages) + (int(old[3]) if add and old else 0)
@@ -209,7 +214,7 @@ def room_mentions(path: Path, room: dict, messages: list[dict], *, add: bool = F
             author = " ".join(message["author"].split())[:32]
             entries.append(f"- [ ] `{entry_id}` {title} ({room['id']}) · {timefmt.minute(message['at'])} · {author}"
                            f" · room mention {room['id']} · last {message['id']} · count {count}")
-            automatic = [line for line in entries if _room_need(line)]
+            automatic = [line for line in entries if room_need(line)]
             while automatic and (len(automatic) > AUTO_LIMIT or len(render(sections)) > LIMIT):
                 entries.remove(automatic.pop(0))
                 pruned = True
@@ -219,7 +224,7 @@ def room_mentions(path: Path, room: dict, messages: list[dict], *, add: bool = F
 
 def section_of(path: Path, entry_id: str) -> str:
     """The section an entry is in, by its id, which is unique across them: "" if none has it."""
-    return next((section for section, entries in _sections(path).items() if section in EDITABLE and any(
+    return next((section for section, entries in parse(path).items() if section in EDITABLE and any(
         (m := ENTRY.match(line)) and m[2] == entry_id for line in entries)), "") if entry_id else ""
 
 
@@ -233,7 +238,7 @@ def edit(path: Path, section: str, action: str, text: str = "", entry_id: str = 
     if action != "remove" and not text:
         raise MemoryError("an entry needs text")
     with _lock(path):
-        sections = _sections(path)
+        sections = parse(path)
         sections["Elsewhere"] = [line for line in sections["Elsewhere"] if not line.startswith("- State was trimmed;")]
         entries = sections[section]
         if action == "add":
@@ -254,7 +259,7 @@ def edit(path: Path, section: str, action: str, text: str = "", entry_id: str = 
         if section == "Decisions":
             pruned = _auto_budget(sections)
         if section == "Needs me":
-            manual = [line for line in entries if not _room_need(line)]
+            manual = [line for line in entries if not room_need(line)]
             while len(manual) > AUTO_LIMIT:
                 entries.remove(manual.pop(0))
                 pruned = True

@@ -19,12 +19,14 @@ from crewbots.projects import Project, is_unity
 from crewbots.runner.common import NotAllowed, UnknownBot, _clip
 from crewbots.runner.reviews import MAX_REVIEW_ROUNDS, _review_findings, _round_status
 from crewbots.runner.room_talk import RoomTalk
-from crewbots.store import Handoff, Review, Status, Task, Verdict
+from crewbots.store import UNFINISHED, Handoff, Review, Status, Task, Verdict
 
 # A concurrency cap: finished threads don't consume resources, so no lifetime limit is needed.
 MAX_CHILDREN = 12  # unfinished children of one task
 MAX_DEPTH = 3  # delegations in a row: chief → engineer → helper → one more, and no further
 MAX_OUT = 4  # tasks one bot has delegated that aren't finished yet, across all its work
+
+log = logging.getLogger(__name__)
 
 
 class Delegation(RoomTalk):
@@ -114,7 +116,7 @@ class Delegation(RoomTalk):
             wt = worktree.Worktree(Path(work.repo), Path(work.worktree_path), work.branch, work.base or "")
             return str(worktree.copy_for_review(wt, at))
         except (worktree.GitError, OSError):
-            logging.getLogger(__name__).exception("Could not copy %s for its review; it's reviewed in place", work.id)
+            log.exception("Could not copy %s for its review; it's reviewed in place", work.id)
             return None
 
     def _checks_root(self) -> Path:
@@ -191,7 +193,7 @@ class Delegation(RoomTalk):
             raise NotAllowed(f"no task {task_id}") from None
         if not child.parent_id or self.store.get_task(child.parent_id).bot != parent.bot:
             raise NotAllowed(f"task {task_id} was not delegated by this bot")
-        if child.status not in {Status.QUEUED, Status.RUNNING, Status.HELD, Status.NEEDS_INPUT}:
+        if child.status not in UNFINISHED:
             if self.store.unfinished_children(child.parent_id) >= self.max_children:
                 raise NotAllowed(f"stop condition: this task already has {self.max_children} unfinished child tasks.")
             if child.bot != parent.bot and child.created_by == parent.bot:

@@ -41,7 +41,6 @@ class ToolDef:
     name: str
     description: str
     schema: dict[str, Any]  # JSON schema of the arguments
-    coordinator_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -142,7 +141,7 @@ def describe(name: str, home: Path | None = None) -> str:
 
 def tools_for(can_delegate: bool, home: Path | None = None, *, is_chief: bool = False, kind: str | None = None,
               reviewing: bool = False) -> list[ToolDef]:
-    return [ToolDef(name, describe(name, home), spec.schema, spec.coordinator_only) for name, spec in SPECS.items()
+    return [ToolDef(name, describe(name, home), spec.schema) for name, spec in SPECS.items()
             if (can_delegate or not spec.coordinator_only) and (name not in CHIEF_ONLY or is_chief)
             and offered(name, kind, reviewing)]
 
@@ -210,31 +209,24 @@ class CrewTools:
                 return await webkit_call(r, me, args)
             match name:
                 case "handoff":
-                    r.handoff(me, args["done"], args.get("output", []), args.get("open") or "",
-                              args.get("needs") or "", args.get("evidence", []), args.get("checks", []))
+                    r.handoff(me, args["done"], args["output"], args["open"], args["needs"], args["evidence"],
+                              args["checks"])
                     wrong = r.wrong_branch(r.store.get_task(me))
                     return "Handoff recorded. End your reply with a short summary." + (f"\n\n{wrong}" if wrong else "")
                 case "escalate":
-                    r.escalate(me, args["question"], args.get("choices"), bool(args.get("multiple")))
+                    r.escalate(me, args["question"], args["choices"], args["multiple"])
                     return ("Asked: they see your question, with its choices if it has any, and can answer in their own "
                             "words. End your turn: the answer arrives as your next message.")
                 case "ask_permission":
-                    r.ask_permission(me, args["what"], args.get("why") or "", args.get("kind") or "action",
-                                     args.get("folder"), args.get("task_id") or None)
-                    return asked_text(args.get("task_id"))
+                    r.ask_permission(me, args["what"], args["why"], args["kind"], args["folder"], args["task_id"] or None)
+                    return asked_text(args["task_id"])
                 case "review":
-                    try:
-                        verdict = Verdict(str(args["verdict"]).lower())
-                    except ValueError:
-                        raise ToolRefused("verdict must be pass or fail") from None
-                    findings = [{k: str(f.get(k, "")) for k in ("location", "problem", "scenario", "proof")}
-                                for f in args.get("findings") or [] if isinstance(f, dict)]
-                    r.review(me, verdict, args["summary"], findings)
+                    r.review(me, Verdict(args["verdict"]), args["summary"], args["findings"])
                     return "Verdict recorded. End your reply with a short summary."
                 case "delegate":
-                    child = r.delegate(me, args["bot"], args["goal"], project=args.get("project") or None,
-                                       workspace=args.get("workspace") or None,
-                                       review_of=args.get("review_of") or None)
+                    child = r.delegate(me, args["bot"], args["goal"], project=args["project"] or None,
+                                       workspace=args["workspace"] or None, review_of=args["review_of"] or None)
+                    # The app finds the child's card by its id in this reply, and in start_thread's and ask's.
                     return f"Delegated {child.id} to {child.bot}: {child.title}"
                 case "tasks":
                     import json
@@ -243,11 +235,11 @@ class CrewTools:
                 case "room_status":
                     import json
 
-                    return json.dumps(r.room_status(me, args.get("room") or None), indent=1)
+                    return json.dumps(r.room_status(me, args["room"] or None), indent=1)
                 case "sweep_worktrees":
                     import json
 
-                    return json.dumps(await r.bot_worktree_sweep(me, args.get("dry_run", True)), indent=1)
+                    return json.dumps(await r.bot_worktree_sweep(me, args["dry_run"]), indent=1)
                 case "message":
                     task = r.message_child(me, args["task_id"], args["text"])
                     return f"Sent to {task.id} ({task.status})."
@@ -273,29 +265,26 @@ class CrewTools:
                 case "drop_task":
                     return dropped_text(await r.drop(args["task_id"], args["reason"], by_task=me))
                 case "working_state":
-                    from crewbots.working_state import _sections, edit, read, section_of
-                    task = r.store.get_task(me)
-                    path = r.crew.memory.root / task.bot / "working-state" / "state.md"
-                    action, entry_id = args.get("action", "list"), args.get("entry_id", "")
+                    from crewbots import working_state
+                    path = working_state.path(r.crew.memory.root, r.store.get_task(me).bot)
+                    action, entry_id = args["action"], args["entry_id"]
                     if action == "list":  # a look: what's there, with each entry's id
-                        if section := args.get("section"):
-                            return "\n".join(_sections(path).get(section, [])) or f"Nothing in {section}."
-                        return read(path)
-                    if not (section := args.get("section") or section_of(path, entry_id)):
+                        if section := args["section"]:
+                            return "\n".join(working_state.parse(path).get(section, [])) or f"Nothing in {section}."
+                        return working_state.read(path)
+                    if not (section := args["section"] or working_state.section_of(path, entry_id)):
                         raise ToolRefused(f"no entry {entry_id!r} in your working state" if entry_id
                                           else "say which section to change")
-                    entry_id, pruned = edit(path, section, action, args.get("text", ""), entry_id,
-                                            bool(args.get("done")))
-                    if section == "Needs me" and action == "add" and not args.get("done"):
+                    entry_id, pruned = working_state.edit(path, section, action, args["text"], entry_id, args["done"])
+                    if section == "Needs me" and action == "add" and not args["done"]:
                         r.need_added(me, pruned)
                     made = {"add": "added", "replace": "replaced", "remove": "removed"}[action]
                     return (f"Working state entry {entry_id} {made}."
                             + (" State entries were trimmed; tidy up your state." if pruned else ""))
                 case "remember":
-                    mistake = str(args.get("mistake") or "")
-                    earlier = r.corrections_of(r.store.get_task(me).bot) if mistake.strip() else None
-                    note = r.remember(me, args["title"], args["body"], shared=bool(args.get("shared")),
-                                      mistake=mistake, check=str(args.get("check") or ""))
+                    earlier = r.corrections_of(r.store.get_task(me).bot) if args["mistake"].strip() else None
+                    note = r.remember(me, args["title"], args["body"], shared=args["shared"], mistake=args["mistake"],
+                                      check=args["check"])
                     return remembered_text({"title": note.title, "path": str(note.path), "earlier": earlier})
                 case "open_unity_editor":
                     return r.open_unity_editor(me)
@@ -311,7 +300,7 @@ class CrewTools:
                     page = r.write_page(me, args["page"], args["replace"], find=args["find"])
                     return f"Changed {page.name}."
                 case "forget":
-                    note = r.forget(me, args["name"], shared=bool(args.get("shared")))
+                    note = r.forget(me, args["name"], shared=args["shared"])
                     return f"Forgot: {note.title}."
                 case "recall":
                     return recall_text(r.recall(me, args["query"]))
@@ -321,37 +310,40 @@ class CrewTools:
                     bot = r.set_name(me, args["name"])
                     return f"You go by {bot.label} now: the app shows it for you. Your handle, @{bot.name}, stays."
                 case "propose_routine":
-                    r.propose_routine(me, args["name"], args["description"], args["goal"], args.get("schedule") or None,
-                                      args.get("on") or None, args.get("repo") or None)
+                    r.propose_routine(me, args["name"], args["description"], args["goal"], args["schedule"] or None,
+                                      args["on"] or None, args["repo"] or None)
                     return (f"Proposed the routine {args['name']!r}. It's off until the user turns it on in the app "
                             "(Routines), and its first run is a test they watch: tell them it's waiting there.")
                 case "remind_on":
-                    intent = r.remind_on(me, args["event"], args.get("match") or "", args["then"])
+                    intent = r.remind_on(me, args["event"], args["match"], args["then"])
                     return f"Standing intent {intent['id']} set: on {intent['kind']} {intent['match']}".rstrip() + "."
                 case "add_bot":
-                    added = r.add_bot(me, args)
+                    try:
+                        added = r.add_bot(me, args)
+                    except (KeyError, ValueError) as e:  # a missing field, or an access that isn't one
+                        raise ToolRefused(f"add_bot: {e}") from None
                     return (f"Added {added.label} (@{added.name}), {added.title}, to the crew. It's in the roster now: "
                             "@mention it in a group chat to bring it in.")
                 case "start_thread":
-                    thread = r.start_thread(me, args["title"], args["goal"], args.get("project") or None)
+                    thread = r.start_thread(me, args["title"], args["goal"], args["project"] or None)
                     return f"Opened thread {thread.id}: {thread.title}. Its result comes back here when it's done."
                 case "ask":
                     asked = r.ask(me, args["bot"], args["question"])
                     return f"Asked {asked.bot} ({asked.id}). End your turn: the answer arrives as your next message."
                 case "open_group":
-                    room = r.open_group(me, args["title"], list(args["members"]), args.get("lead") or None)
+                    room = r.open_group(me, args["title"], args["members"], args["lead"] or None)
                     return (f"Opened the group chat {room['title']!r} ({room['id']}) with {', '.join(room['members'])}, "
                             f"led by {room['lead']}. Say something there with post(text, room={room['id']!r}).")
                 case "add_to_group":
-                    room = r.add_to_group(me, args["bot"], args.get("room") or None)
+                    room = r.add_to_group(me, args["bot"], args["room"] or None)
                     return f"{args['bot']} is in {room['title']!r} now: @mention them there to bring them in."
                 case "post":
-                    message = r.post_from(me, args["text"], args.get("room") or None)
+                    message = r.post_from(me, args["text"], args["room"] or None)
                     return f"Posted in the group chat ({message['room_id']})."
                 case "tell_user":
-                    return told_text(r.tell_user(me, args["text"], bool(args.get("needs_you"))))
+                    return told_text(r.tell_user(me, args["text"], args["needs_you"]))
                 case "share":
-                    return shared_text(await r.share(me, args["files"], args.get("text") or "", args.get("room") or None))
+                    return shared_text(await r.share(me, args["files"], args["text"], args["room"] or None))
         except NotAllowed as e:  # logged with what bots do to each other, as the API logs it
             self.runner.store.log_agent("refused", self.runner.store.get_task(self.task_id).bot, task_id=self.task_id,
                                         text=f"{name}: {e}")

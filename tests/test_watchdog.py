@@ -128,8 +128,7 @@ def later(minutes):
 
 
 def needs_me(crew, bot_name):
-    path = crew.runner.crew.memory.root / bot_name / "working-state" / "state.md"
-    return working_state._sections(path)["Needs me"]
+    return working_state.parse(working_state.path(crew.runner.crew.memory.root, bot_name))["Needs me"]
 
 
 async def test_open_work_wakes_twice_then_goes_to_the_chief_once_raised(store, tmp_path):
@@ -171,6 +170,12 @@ async def test_a_bot_that_stopped_without_handing_back_is_woken_itself(store, tm
     work = store.create_task("engineer", "fix the merge", parent_id=parent.id, created_by="eng-lead", status=Status.IDLE)
     store.append_event(work.id, kind="message", data={"from": "eng-lead", "text": "fix it"})  # in place: no branch
     assert crew.runner._next_step(store.get_task(work.id)) is None  # not the lead's to chase: nothing came back yet
+    crew.runner._app_queue[("UnityMCP", "/game")] = [work.id]  # its turn for the Editor wakes it
+    crew.runner._editor_waits.append(work.id)  # and so does room to open one
+    assert crew.runner.stall_check(later(20)) == []
+    crew.runner._app_queue.clear()
+    assert crew.runner.stall_check(later(20)) == []
+    crew.runner._editor_waits.clear()
 
     assert crew.runner.stall_check(later(20)) == ["engineer"]
     await wait_until(lambda: any("ended without handing back what eng-lead asked" in m for m in notices(store, work.id)))
@@ -179,9 +184,6 @@ async def test_a_bot_that_stopped_without_handing_back_is_woken_itself(store, tm
     store.append_event(work.id, kind="handoff", data={})  # once it hands back, it's no longer stopped
     assert store.stopped_without_handback("engineer") == []
     store.append_event(work.id, kind="message", data={"from": "eng-lead", "text": "and the tests"})
-    crew.runner._app_queue[("UnityMCP", "/game")] = [work.id]  # its turn for the Editor wakes it
-    assert "engineer" not in crew.runner.stall_check(later(60))
-    crew.runner._app_queue.clear()
     store.create_task("helper", "look it up", parent_id=work.id, created_by="engineer", status=Status.RUNNING)
     assert store.stopped_without_handback("engineer") == []  # waiting on work it handed out
     await crew.runner.shutdown()

@@ -9,6 +9,7 @@ from typing import Any
 from crewbots import attachments as attachments_module
 from crewbots import prompts, room_files, timefmt, working_state
 from crewbots.crew import is_no_reply
+from crewbots.memory import MemoryError
 from crewbots.runner.common import NotAllowed, UnknownBot, _iso
 from crewbots.store import Status, Task
 
@@ -52,21 +53,17 @@ class Rooms:
             seats = self.store.seats_in(room["id"])
             entries = []
             for seat in seats[:50]:
-                row = self.store.db.execute(
-                    "select json_extract(data, '$.error') from events where task_id = ? and kind = 'done'"
-                    " and json_extract(data, '$.is_error') = 1 and json_extract(data, '$.error') is not null"
-                    " and json_extract(data, '$.error') != '' and id > coalesce((select max(id) from events"
-                    " where task_id = ? and kind = 'done' and json_extract(data, '$.is_error') = 0), 0)"
-                    " order by id desc limit 1", (seat.id, seat.id)).fetchone()  # none once a later turn succeeded
-                error = seat.error or (row[0] if row else None)
-                attempt = dict(self._attempts.get(seat.id, {}))
-                last_activity = attempt.pop("last_activity", None)
-                if last_activity is not None and time.monotonic() - last_activity >= self.stall_s:
-                    attempt["state"] = "stalled"
+                error = seat.error or self.store.last_error(seat.id)
+                shown = None
+                if attempt := self._attempts.get(seat.id):
+                    quiet = attempt.last_activity is not None and time.monotonic() - attempt.last_activity >= self.stall_s
+                    shown = {"attempt": attempt.attempt, "of": attempt.of, "state": "stalled" if quiet else attempt.state}
+                    if attempt.state == "backoff":
+                        shown["wait_seconds"] = attempt.wait_seconds
                 entries.append({"task_id": seat.id, "bot": seat.bot, "status": seat.status.value,
                                 "updated_at": timefmt.minute(seat.updated_at),
                                 "error": _safe_error(error) if error else None,
-                                "attempt": attempt or None})
+                                "attempt": shown})
             result.append({"room_id": room["id"], "title": room["title"][:200], "seats": entries,
                            "seats_truncated": len(seats) > 50})
         return {"rooms": result, "rooms_truncated": len(rooms) > 50}
@@ -77,7 +74,7 @@ class Rooms:
             if room["crew"]:
                 return room
         bots = list(self.crew.bots.values())
-        chief = self.coordinator()
+        chief = self.chief_bot()
         if chief is None:
             raise NotAllowed("the configured chief is missing; restore it or change the crew's chief setting")
         lead = chief.name
@@ -269,7 +266,7 @@ class Rooms:
         return room
 
     def _room_mention(self, bot: str, room: dict[str, Any], message: dict[str, Any]) -> None:
-        path = self.crew.memory.root / bot / "working-state" / "state.md"
+        path = working_state.path(self.crew.memory.root, bot)
         try:
             if working_state.room_mentions(path, room, [message], add=True):  # the seat answers the mention itself
                 self._state_notice(bot, "State changed: 1 item needs you; older room mentions were trimmed.", wake=False)
@@ -293,13 +290,12 @@ class Rooms:
         task = self.store.get_task(task_id)
         if self.chat(task.bot).id == task_id:
             return  # the writer is the main chat
-        self._state_notice(task.bot, "State changed: 1 item needs you; older entries were trimmed." if trimmed
-                           else "State changed: 1 item needs you.")
+        self._state_notice(task.bot, _needs_you(trimmed))
 
     def _clear_room_mentions(self, bot: str, room_id: str, through: int | None = None) -> None:
         try:
-            working_state.room_mentions(self.crew.memory.root / bot / "working-state" / "state.md",
-                                        {"id": room_id, "title": ""}, [], through=through)
+            working_state.room_mentions(working_state.path(self.crew.memory.root, bot), {"id": room_id, "title": ""}, [],
+                                        through=through)
         except Exception:
             logging.getLogger(__name__).exception("Could not clear room mentions for %s", bot)
 
@@ -334,22 +330,17 @@ class Rooms:
 
     def _chief_room_item(self, room: dict[str, Any], author: str, kind: str, source: str) -> None:
         """Wake the main chat with metadata, keeping the room's conversation in the room."""
-        from crewbots.memory import MemoryError
-        from crewbots.working_state import edit
-
-        chief = self.coordinator()
+        chief = self.chief_bot()
         if chief is None:
             return
         try:
-            _, trimmed = edit(self.crew.memory.root / chief.name / "working-state" / "state.md", "Needs me", "add",
-                              f"{room['title']} ({room['id']}): @{author} {kind} · {source}")
-            notice = ("State changed: 1 item needs you; older entries were trimmed." if trimmed
-                      else "State changed: 1 item needs you.")
+            _, trimmed = working_state.edit(working_state.path(self.crew.memory.root, chief.name), "Needs me", "add",
+                                            f"{room['title']} ({room['id']}): @{author} {kind} · {source}")
         except (MemoryError, OSError):
             notice = f"State full or unavailable: @{author} needs you in room {room['id']} ({source}); tidy state."
             self._state_notice(chief.name, notice, warn=True)
             return
-        self._state_notice(chief.name, notice)
+        self._state_notice(chief.name, _needs_you(trimmed))
 
     def post_from(self, task_id: str, text: str, room_id: str | None = None,
                   attachments: list[dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -480,6 +471,10 @@ def _catch_up(said: list[str]) -> str:
     left = len(said) - len(kept)
     return "\n\n".join(([f"({left} earlier messages you haven't seen are left out.)"] if left else [])
                        + kept[::-1])
+
+
+def _needs_you(trimmed: bool) -> str:
+    return "State changed: 1 item needs you; older entries were trimmed." if trimmed else "State changed: 1 item needs you."
 
 
 def _mentionable(text: str) -> str:
