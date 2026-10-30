@@ -38,6 +38,31 @@
   font-size: 13.5px;
 }
 
+/* Something the crew couldn't read, and why */
+.crew-problem {
+  display: flex;
+  gap: 9px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  background: color-mix(in srgb, var(--red) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--red) 25%, transparent);
+}
+
+.crew-problem > .icon {
+  color: var(--red);
+  margin-top: 2px;
+  flex: none;
+}
+
+.crew-problem-why {
+  color: var(--soft);
+  font-family: var(--mono);
+  font-size: 12px;
+  margin-top: 3px;
+  word-break: break-word;
+}
+
 .page-section {
   display: flex;
   flex-direction: column;
@@ -239,10 +264,6 @@
 
 .switch:disabled {
   opacity: 0.4;
-}
-
-.danger-text {
-  color: var(--red);
 }
 
 /* A routine a bot proposed: off until it's turned on */

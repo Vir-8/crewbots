@@ -68,10 +68,18 @@ export function workingLine(event: StoredEvent | undefined): string {
 export function limitText(limit: { plan: string; window: string; status: string; used_percent?: number | null; resets_at?: number | null }): string {
   const plan = limit.plan.charAt(0).toUpperCase() + limit.plan.slice(1);
   const window = WINDOWS[limit.window] ?? limit.window.replace(/_/g, " ");
-  const resets = limit.resets_at ? `, resets ${new Date(limit.resets_at * 1000).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}` : "";
-  if (limit.status === "limited") return `${plan} plan: the ${window} limit is reached${resets}`;
+  const when = limit.resets_at ? `, resets ${resets(limit.resets_at)}` : "";
+  if (limit.status === "limited") return `${plan} plan: the ${window} limit is reached${when}`;
   const used = limit.used_percent != null ? `${Math.round(limit.used_percent)}% of` : "close to";
-  return `${plan} plan: ${used} the ${window} limit used${resets}`;
+  return `${plan} plan: ${used} the ${window} limit used${when}`;
+}
+
+/** When a limit resets, from now: "at 5:40 pm", "tomorrow at 9:00 am", "Wed, 28 Oct at 11:30 pm". */
+export function resets(unix: number): string {
+  const d = new Date(unix * 1000);
+  const days = Math.round((new Date(d.toDateString()).getTime() - new Date(new Date().toDateString()).getTime()) / 86_400_000);
+  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return days === 0 ? `at ${time}` : days === 1 ? `tomorrow at ${time}` : `${d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} at ${time}`;
 }
 
 const WINDOWS: Record<string, string> = {

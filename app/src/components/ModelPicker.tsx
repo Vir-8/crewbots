@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import type { Crew } from "../state";
 import type { Model } from "../types";
 
-const EFFORT_LABEL: Record<string, string> = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max", ultra: "Ultra" };
+export const EFFORT_LABEL: Record<string, string> = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max", ultra: "Ultra", default: "Default" };
 export const backendFamily = (backend: string) => backend === "antigravity" ? "antigravity" : backend.startsWith("codex") ? "codex" : "claude";
 export const BACKEND_LABEL = { claude: "Claude", codex: "Codex", antigravity: "Antigravity" };
 

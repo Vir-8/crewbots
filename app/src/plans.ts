@@ -46,11 +46,3 @@ export function usePlans(): { plans: Plans | null; asking: boolean; refresh: () 
   }, []);
   return { plans: kept, asking: asking !== null, refresh: () => askPlans(true) };
 }
-
-/** When a limit resets, from now: "at 5:40 pm", "tomorrow at 9:00 am", "Wed, 28 Oct at 11:30 pm". */
-export function resets(unix: number): string {
-  const d = new Date(unix * 1000);
-  const days = Math.round((new Date(d.toDateString()).getTime() - new Date(new Date().toDateString()).getTime()) / 86_400_000);
-  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  return days === 0 ? `at ${time}` : days === 1 ? `tomorrow at ${time}` : `${d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} at ${time}`;
-}

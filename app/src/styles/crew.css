@@ -1,29 +1,5 @@
 /* The crew page and the bot editor. */
 
-.crew-problem {
-  display: flex;
-  gap: 9px;
-  padding: 11px 14px;
-  border-radius: 10px;
-  font-size: 13px;
-  background: color-mix(in srgb, var(--red) 9%, transparent);
-  border: 1px solid color-mix(in srgb, var(--red) 25%, transparent);
-}
-
-.crew-problem > .icon {
-  color: var(--red);
-  margin-top: 2px;
-  flex: none;
-}
-
-.crew-problem-why {
-  color: var(--soft);
-  font-family: var(--mono);
-  font-size: 12px;
-  margin-top: 3px;
-  word-break: break-word;
-}
-
 .bot-facts {
   display: grid;
   grid-template-columns: 76px minmax(0, 1fr);
@@ -43,28 +19,6 @@
   flex-direction: column;
   gap: 4px;
   word-break: break-word;
-}
-
-.meter {
-  display: block;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--line);
-  overflow: hidden;
-}
-
-.meter > span {
-  display: block;
-  height: 100%;
-  background: var(--blue);
-}
-
-.meter.warning > span {
-  background: var(--amber);
-}
-
-.meter.limited > span {
-  background: var(--red);
 }
 
 /* Crew */

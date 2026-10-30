@@ -6,6 +6,8 @@ from pydantic import BaseModel
 
 from crewbots.api.schemas.tasks import TaskOut
 
+Access = Literal["read_only", "workspace_write", "full"]
+
 
 class BotOut(BaseModel):
     name: str
@@ -13,7 +15,7 @@ class BotOut(BaseModel):
     description: str
     backend: str
     model: str | None
-    access: str
+    access: Access
     workspace: str | None
     network: bool | list[str]  # its shell commands: none, any host, or these hosts
     mcp: list[str]  # the MCP servers its role card grants, besides crewbots' own
@@ -53,7 +55,7 @@ class CardBody(BaseModel):
     model: str | None = None
     effort: str | None = None
     context_window: int | Literal["auto"] | None = None  # tokens, or the model's whole window; blank: the default
-    access: Literal["read_only", "workspace_write", "full"] | None = None
+    access: Access | None = None
     network: bool | list[str] | None = None
     avatar: Avatar | None = None
     budget: Budget | None = None

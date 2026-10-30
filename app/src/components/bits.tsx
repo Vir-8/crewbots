@@ -88,8 +88,17 @@ function Linked({ text, onSelect, everyone = false }: { text: string; onSelect: 
   return <>{parts}</>;
 }
 
+/** 1500 → "1.5K", 200000 → "200K", 1000000 → "1M", 1200000000 → "1.2bn". */
 export function tokens(n: number): string {
-  return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n);
+  if (n >= 1e9) return `${+(n / 1e9).toFixed(1)}bn`;
+  if (n >= 1e6) return `${+(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${+(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)}K`;
+  return String(Math.round(n));
+}
+
+/** /Users/you/code → ~/code. */
+export function tilde(path: string): string {
+  return path.replace(/^\/Users\/[^/]+/, "~");
 }
 
 export function ago(iso: string, short = false): string {
@@ -185,28 +194,34 @@ export function useHoveredMessage() {
 /** Under a message: when it was sent (the whole date on hover) and a button that copies what it says. Shown while the
  * pointer is on the message (`useHoveredMessage`). */
 export function MessageMeta({ at, text }: { at?: string; text?: string }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, copy] = useCopy();
   if (!at) return null;
-  const copy = () =>
-    toClipboard(text ?? "").then(
-      () => {
-        setCopied(true);
-        window.setTimeout(() => setCopied(false), 1500);
-      },
-      () => undefined,
-    );
   return (
     <div className="message-meta">
       <time dateTime={at} title={fullDate(at)}>
         {stamp(at)}
       </time>
       {text && (
-        <button className="icon-button" onClick={() => void copy()} title={copied ? "Copied" : "Copy"} aria-label="Copy">
+        <button className="icon-button" onClick={() => copy(text)} title={copied ? "Copied" : "Copy"} aria-label="Copy">
           <Icon name={copied ? "check" : "copy"} size={13} />
         </button>
       )}
     </div>
   );
+}
+
+/** Whether something was just copied, for a moment after, and what copies it. */
+function useCopy(): [boolean, (text: string) => void] {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const copy = (text: string) =>
+    void toClipboard(text).then(() => {
+      setCopied(true);
+      window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(() => setCopied(false), 1500);
+    }, () => undefined);
+  return [copied, copy];
 }
 
 /** Puts text on the clipboard, the older way where the page may not write to it directly. */
@@ -226,18 +241,11 @@ async function toClipboard(text: string) {
 }
 
 export function CodeBlock({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  const timer = useRef<number | undefined>(undefined);
-  useEffect(() => () => window.clearTimeout(timer.current), []);
-  const copy = () => toClipboard(text).then(() => {
-    setCopied(true);
-    window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setCopied(false), 1500);
-  }, () => undefined);
+  const [copied, copy] = useCopy();
   return (
     <div className="code-block">
       <div className="code-block-bar">
-        <button type="button" className="button small code-copy" onClick={() => void copy()} aria-label={copied ? "Copied" : "Copy code"}>
+        <button type="button" className="button small code-copy" onClick={() => copy(text)} aria-label={copied ? "Copied" : "Copy code"}>
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
@@ -340,26 +348,24 @@ function list(lines: string[], start: number, inline: (s: string) => ReactNode, 
 /** Opens one of a bot's pages from a [[link]] in what it wrote: whatever shows the text knows whose pages they are. */
 export const PageOpener = createContext<((page: string) => void) | null>(null);
 
-/** A [[Page]] link (or [[Page|what it says]]), as in Obsidian: it opens the page where something can. */
-function PageLink({ raw }: { raw: string }) {
+/** A link to one of a bot's pages: it opens the page where something can. */
+export function PageLink({ page, label = page }: { page: string; label?: string }) {
   const open = useContext(PageOpener);
-  const [target, label] = raw.slice(2, -2).split("|");
-  const page = target.split("#")[0].trim();
-  const text = (label ?? target).trim();
   return open ? (
     <a className="page-link" onClick={() => open(page)} title={`Open ${page}`}>
-      <Marked text={text} />
+      <Marked text={label} />
     </a>
   ) : (
     <span className="page-link off">
-      <Marked text={text} />
+      <Marked text={label} />
     </span>
   );
 }
 
-/** A link to one of a bot's pages, by its name. */
-export function PageLinkTo({ page }: { page: string }) {
-  return <PageLink raw={`[[${page}]]`} />;
+/** A [[Page]] link (or [[Page#Heading|what it says]]), as in Obsidian: the page it opens and the words it shows. */
+function wikiLink(raw: string): { page: string; label: string } {
+  const [target, label] = raw.slice(2, -2).split("|");
+  return { page: target.split("#")[0].trim(), label: (label ?? target).trim() };
 }
 
 function Inline({ text, onSelect, everyone = false }: { text: string; onSelect: (id: string) => void; everyone?: boolean }) {
@@ -373,7 +379,7 @@ function Inline({ text, onSelect, everyone = false }: { text: string; onSelect: 
       token.startsWith("`") ? (
         <code key={`c${match.index}`}><Marked text={token.slice(1, -1)} /></code>
       ) : token.startsWith("[[") ? (
-        <PageLink key={`p${match.index}`} raw={token} />
+        <PageLink key={`p${match.index}`} {...wikiLink(token)} />
       ) : (
         <strong key={`b${match.index}`}>
           <Linked text={token.slice(2, -2)} onSelect={onSelect} everyone={everyone} />

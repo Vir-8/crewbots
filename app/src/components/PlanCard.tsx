@@ -1,4 +1,4 @@
-import { resets } from "../plans";
+import { resets } from "../activityText";
 import type { Plans } from "../types";
 
 /** One plan's limits: how much of each is left, and when it resets, with whatever else its CLI says about it. */

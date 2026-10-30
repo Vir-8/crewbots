@@ -20,6 +20,19 @@ export function Page(props: { title: string; actions?: ReactNode; children: Reac
   );
 }
 
+/** Something that went wrong, and the error behind it. */
+export function Problem({ what, why }: { what: string; why: string }) {
+  return (
+    <div className="crew-problem">
+      <Icon name="alert" size={14} />
+      <div>
+        <div>{what}</div>
+        <div className="crew-problem-why">{why}</div>
+      </div>
+    </div>
+  );
+}
+
 /** Editing happens in a sheet over the page's right side, so the list stays in view. */
 export function Sheet(props: { title: string; onClose: () => void; children: ReactNode; footer: ReactNode }) {
   return (

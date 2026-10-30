@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { Avatar, labelOf } from "../components/Avatar";
+import { tokens } from "../components/bits";
 import { Icon } from "../components/Icon";
-import { BACKEND_LABEL, modelLabel } from "../components/ModelPicker";
+import { BACKEND_LABEL, EFFORT_LABEL, modelLabel } from "../components/ModelPicker";
 import { PlanCard } from "../components/PlanCard";
 import { Page, Segmented } from "../components/ui";
 import { usePlans } from "../plans";
@@ -14,7 +15,6 @@ import "../styles/analytics.css";
 // activity grid's magnitude is a separate one-hue blue ramp, so neither reads as one plan's. Both are set in styles.css.
 const PLAN_COLOR: Record<string, string> = { claude: "var(--plan-claude)", codex: "var(--plan-codex)", antigravity: "#4285f4" };
 const RAMP = [1, 2, 3, 4, 5];
-const EFFORT_LABEL: Record<string, string> = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max", ultra: "Ultra", default: "Default" };
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const DAYS = 365;
@@ -47,6 +47,7 @@ export function Analytics({ crew }: { crew: Crew }) {
     api.budgets().then(setBudgets, () => {});
     crew.loadModels();
   }, []);
+  const limited = budgets.filter((b): b is Budget & { tokens: number } => !!b.tokens);
 
   return (
     <Page
@@ -71,8 +72,8 @@ export function Analytics({ crew }: { crew: Crew }) {
         {data ? (
           <>
             <div className="stat-strip">
-              <Stat value={compact(Object.values(data.totals).reduce((sum, n) => sum + n, 0))} label="Tokens used" />
-              <Stat value={data.peak ? compact(data.peak.tokens) : "–"} label={data.peak ? `Peak day, ${short(data.peak.date)}` : "Peak day"} />
+              <Stat value={tokens(Object.values(data.totals).reduce((sum, n) => sum + n, 0))} label="Tokens used" />
+              <Stat value={data.peak ? tokens(data.peak.tokens) : "–"} label={data.peak ? `Peak day, ${short(data.peak.date)}` : "Peak day"} />
               <Stat value={data.longest_turn ? duration(data.longest_turn.seconds) : "–"} label="Longest turn" title={data.longest_turn?.title} />
               <Stat value={plural(data.streak.longest, "day")} label="Longest streak" />
               <Stat value={plural(data.streak.current, "day")} label="Current streak" />
@@ -86,7 +87,7 @@ export function Analytics({ crew }: { crew: Crew }) {
 
       {data && (
         <>
-          <Activity data={data} />
+          <Heat data={data} />
 
           <section className="page-section">
             <h2>Claude and Codex</h2>
@@ -104,30 +105,28 @@ export function Analytics({ crew }: { crew: Crew }) {
             </section>
           </div>
 
-          {budgets.some((b) => b.tokens) && (
+          {limited.length > 0 && (
             <section className="page-section">
               <h2>Budgets</h2>
               <div className="list">
-                {budgets
-                  .filter((b) => b.tokens)
-                  .map((b) => {
-                    const share = b.used / b.tokens!;
-                    return (
-                      <div key={b.bot} className="list-row budget-row">
-                        <Avatar name={b.bot} size={20} />
-                        <span className="list-text">
-                          <span className="list-title">{labelOf(b.bot)}</span>
-                          <span className="faint small">
-                            {compact(b.used)} of {compact(b.tokens!)} this {b.per}
-                            {b.held.length > 0 && ` · ${b.held.length} held`}
-                          </span>
+                {limited.map((b) => {
+                  const fill = b.used / b.tokens;
+                  return (
+                    <div key={b.bot} className="list-row budget-row">
+                      <Avatar name={b.bot} size={20} />
+                      <span className="list-text">
+                        <span className="list-title">{labelOf(b.bot)}</span>
+                        <span className="faint small">
+                          {tokens(b.used)} of {tokens(b.tokens)} this {b.per}
+                          {b.held.length > 0 && ` · ${b.held.length} held`}
                         </span>
-                        <span className={`meter ${share >= 1 ? "limited" : share >= 0.8 ? "warning" : ""}`}>
-                          <span style={{ width: `${Math.min(100, share * 100)}%` }} />
-                        </span>
-                      </div>
-                    );
-                  })}
+                      </span>
+                      <span className={`meter ${fill >= 1 ? "limited" : fill >= 0.8 ? "warning" : ""}`}>
+                        <span style={{ width: `${Math.min(100, fill * 100)}%` }} />
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
               <p className="faint small">Set a bot's budget on its role card. Over it, the bot's new turns wait until you release them.</p>
             </section>
@@ -137,11 +136,11 @@ export function Analytics({ crew }: { crew: Crew }) {
             <h2>Insights</h2>
             <div className="stat-strip insights">
               <Stat value={data.efforts[0] ? (EFFORT_LABEL[data.efforts[0].effort] ?? data.efforts[0].effort) : "–"} label={data.efforts[0] ? `Most used reasoning, ${Math.round((data.efforts[0].turns / Math.max(1, data.turns)) * 100)}% of turns` : "Most used reasoning"} />
-              <Stat value={data.turns ? compact((Object.values(data.totals).reduce((sum, n) => sum + n, 0)) / data.turns) : "–"} label={`Tokens in an average turn, of ${data.turns.toLocaleString()}`} />
+              <Stat value={data.turns ? tokens((Object.values(data.totals).reduce((sum, n) => sum + n, 0)) / data.turns) : "–"} label={`Tokens in an average turn, of ${data.turns.toLocaleString()}`} />
               <Stat value={share(data.cache) === null ? "–" : `${share(data.cache)}%`} label="Of input from the prompt cache" title="Cached input costs a fraction of fresh input, and doesn't count toward budgets." />
               <Stat
-                value={compact(data.cache.cached)}
-                label={data.cache.written ? `Tokens read from the cache, ${compact(data.cache.written)} written to it` : "Tokens read from the cache"}
+                value={tokens(data.cache.cached)}
+                label={data.cache.written ? `Tokens read from the cache, ${tokens(data.cache.written)} written to it` : "Tokens read from the cache"}
                 title="Written is Claude's count of what it stored to read back cheaply later. A good start to the prompt is written once and read many times."
               />
               <Stat value={data.counts.threads.toLocaleString()} label="Threads opened" />
@@ -168,7 +167,7 @@ function Stat({ value, label, title }: { value: string; label: string; title?: s
 type Day = { date: string; tokens: number; split?: string };
 
 /** The year's days, a column a week, shaded by how much each used. */
-function Activity({ data }: { data: UsageSummary }) {
+function Heat({ data }: { data: UsageSummary }) {
   const [plan, setPlan] = useState<"all" | "claude" | "codex" | "antigravity">("all");
   const [hover, setHover] = useState<Day | null>(null);
   const days: Day[] = useMemo(
@@ -176,7 +175,7 @@ function Activity({ data }: { data: UsageSummary }) {
       data.daily.map((d) => ({
         date: d.date,
         tokens: plan === "all" ? d.claude + d.codex + (d.antigravity ?? 0) : (d[plan] ?? 0),
-        split: plan === "all" ? `Claude ${compact(d.claude)} · Codex ${compact(d.codex)} · Antigravity ${compact(d.antigravity ?? 0)}` : undefined,
+        split: plan === "all" ? `Claude ${tokens(d.claude)} · Codex ${tokens(d.codex)} · Antigravity ${tokens(d.antigravity ?? 0)}` : undefined,
       })),
     [data, plan],
   );
@@ -201,7 +200,7 @@ function Activity({ data }: { data: UsageSummary }) {
         <Segmented value={plan} options={[["all", "All"], ["claude", "Claude"], ["codex", "Codex"], ["antigravity", "Antigravity"]]} onChange={setPlan} />
       </div>
       <div onMouseLeave={() => setHover(null)}>
-        <Weeks days={days} cell={cell} max={18} />
+        <Weeks days={days} cell={cell} />
       </div>
       <div className="heat-foot">
         <span className="faint small">
@@ -223,8 +222,8 @@ function Activity({ data }: { data: UsageSummary }) {
 
 type CellProps = { className: string; "aria-label": string; onMouseEnter: () => void };
 
-/** A column a week, sized to fill the width up to `max` a square. */
-function Weeks({ days, cell, max }: { days: Day[]; cell: (d: Day) => CellProps; max: number }) {
+/** A column a week, sized to fill the width up to 18px a square. */
+function Weeks({ days, cell }: { days: Day[]; cell: (d: Day) => CellProps }) {
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   useLayoutEffect(() => {
@@ -239,7 +238,8 @@ function Weeks({ days, cell, max }: { days: Day[]; cell: (d: Day) => CellProps; 
   const slots: (Day | null)[] = [...Array(dateOf(days[0].date).getDay()).fill(null), ...days];
   const weeks: (Day | null)[][] = [];
   for (let i = 0; i < slots.length; i += 7) weeks.push(slots.slice(i, i + 7));
-  const gap = max > 20 ? 4 : 3;
+  const max = 18;
+  const gap = 3;
   const labels = 30;
   const size = width ? Math.max(8, Math.min(max, Math.floor((width - labels - (weeks.length - 1) * gap) / weeks.length))) : max;
   const starts = weeks.map((w, i) => {
@@ -281,7 +281,7 @@ function Split({ totals }: { totals: Record<string, number> }) {
         {(["claude", "codex", "antigravity"] as const).map((p) => (
           <span key={p} className="legend-item">
             <span className="key" style={{ background: PLAN_COLOR[p] }} />
-            {BACKEND_LABEL[p]} <strong>{compact(totals[p] ?? 0)}</strong>
+            {BACKEND_LABEL[p]} <strong>{tokens(totals[p] ?? 0)}</strong>
             <span className="faint">{Math.round(((totals[p] ?? 0) / all) * 100)}%</span>
           </span>
         ))}
@@ -311,7 +311,7 @@ function Ranked({ rows }: { rows: { key: string; label: string; tokens: number; 
             {r.tag && <span className="faint small">{r.tag}</span>}
             {r.cached != null && <span className="faint small" title="Of its input, how much came from the prompt cache">· {r.cached}% cached</span>}
           </span>
-          <span className="num">{compact(r.tokens)}</span>
+          <span className="num">{tokens(r.tokens)}</span>
           <span className="ranked-bar">
             <span style={{ width: `${(r.tokens / top) * 100}%`, background: r.color }} />
           </span>
@@ -328,13 +328,6 @@ function share(use: { input: number; cached: number }): number | null {
 
 function dateOf(day: string): Date {
   return new Date(`${day}T12:00:00`);
-}
-
-function compact(n: number): string {
-  if (n >= 1e9) return `${+(n / 1e9).toFixed(1)}bn`;
-  if (n >= 1e6) return `${+(n / 1e6).toFixed(1)}M`;
-  if (n >= 1e3) return `${+(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)}K`;
-  return String(Math.round(n));
 }
 
 function plural(n: number, word: string): string {
