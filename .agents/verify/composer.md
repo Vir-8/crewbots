@@ -18,8 +18,9 @@ At the bottom of every chat, group chat and thread panel.
 - To type as a person does, set the value with the native setter and fire `input`, a key at a time:
   `Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(area, text);
   area.dispatchEvent(new Event('input', { bubbles: true }))`, then wait two animation frames.
-- The bottom gap is `thread.getBoundingClientRect().bottom - lastBlock.getBoundingClientRect().bottom`. It should stay
-  the same while you type.
+- The bottom gap is `thread.getBoundingClientRect().bottom - lastBlock.getBoundingClientRect().bottom`, with
+  `thread = .main .thread` and `lastBlock = thread.lastElementChild`. It should stay the same while you type: in the
+  preview it stays 0 as the box goes 26px → 47 → 91 → 156 → 240px (offsetHeight, one to ten lines) and stops at 240.
 
 ## Gotchas
 - **Check scrolling and sizing in WebKit too** (`scripts/verify webkit`). On 2026-10-29 a box measured by setting it to

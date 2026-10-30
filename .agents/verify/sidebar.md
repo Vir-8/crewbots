@@ -11,7 +11,10 @@
   - Pause the crew.
 - **Code review** (`.side-row.nav-row`).
 - **The rail:** collapse with `button[title="Collapse the sidebar"]` (`.side-toggle`, fixed beside the window's
-  buttons); drag the edge (separator "Resize the sidebar") to resize. Dragging it narrow collapses it.
+  buttons); drag the edge (separator "Resize the sidebar") to resize. Dragging it narrow collapses it. Collapsed, `.app` gets the class `side-hidden`, the toggle's title
+  becomes "Expand the sidebar" and the separator's label "Open the sidebar". With the separator focused, ArrowLeft
+  with Shift narrows it to the 200px minimum and a double-click restores 264px (a synthetic pointer drag doesn't move
+  it: use keys here, or WebKit with real events).
 
 ## How to get to it
 Always on the left.

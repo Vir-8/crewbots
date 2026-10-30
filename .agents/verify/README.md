@@ -21,11 +21,15 @@ Start only what the change needs, always in the background through `scripts/veri
 - **WebKit:** the real app is a WKWebView, and some bugs exist only there (hover kept on a moved element, scroll
   clamped mid-update). `scripts/verify webkit URL --click SELECTOR --js FILE` opens the page in WebKit, clicks with real
   mouse events, runs your script, and prints what it returns as JSON. It opens a window on screen for a few seconds.
+  **It can't run in a sandbox like a bot's** (no write to `~/Library/Caches`, no Launch Services): it hangs with
+  nothing on stdout while `doctor` still says ok. Treat that as unreachable and say so; the user or lead runs it
+  outside the sandbox.
 
 ## Doctor
 
 Run `scripts/verify doctor` first. It says what's missing (tools, `app/node_modules`) and whether this shell can
-listen on a local port. If it can't, as in some sandboxes, say so in your handoff rather than skipping the check
+listen on a local port. It doesn't check that WebKit can start (see Launch). In a fresh worktree run
+`(cd app && npm ci --prefer-offline)` once, which works in a bot's sandbox. If it can't, as in some sandboxes, say so in your handoff rather than skipping the check
 quietly. Before driving the preview, check it shows the demo crew: `browser_open(url)`, then a screenshot shows Roger's
 chat with the sidebar on the left.
 
@@ -76,7 +80,7 @@ One file per feature. Each file has four sections:
 
 Handles are given as CSS selectors, titles or visible text, as checked against the design preview.
 
-Last walked: never (`maintain-verification` sets this to the date and commit of each full pass).
+Last walked: 2026-10-30 at 868dcde16a2d (`maintain-verification` sets this to the date and commit of each full pass).
 
 - [chat.md](chat.md): a bot's chat with the user: messages, folded working, cards, the header.
 - [group-chats.md](group-chats.md): group chats: posting, mentions, who answers, the group's panel.

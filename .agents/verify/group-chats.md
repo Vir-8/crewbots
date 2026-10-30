@@ -22,8 +22,10 @@
 
 ## Driving it with scripts/verify
 - Open a group by its sidebar row, as in chat.md.
-- The panel toggle is `.main header [title="About this group"]`. The panel's buttons have titles: "Rename the group",
-  "Mute notifications", "Archive", "Delete…", and "Chat with <bot>".
+- The panel toggle is `.main header .icon-button[title="About this group"]`: the bare title matches two elements
+  (ChatView.tsx:134 and :151). The panel is `.panel.profile`; the toggle's `aria-pressed` is "true" once it's open.
+- Inside it only "Rename the group" and "Chat with <bot>" are titles (Profile.tsx:214, :248). Mute is a switch with
+  `aria-label` "Mute notifications" (:312); Archive and "Delete…" are text buttons (:319, :333).
 - The message box's placeholder is "Message <group title>".
 - Who answers, and room reports, are the daemon's job: check them on a scratch daemon (daemon.md) with
   `POST /rooms/{id}/messages`, then read the room's messages.

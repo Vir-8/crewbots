@@ -21,8 +21,12 @@
 Work cards sit in the chat where the work was started. Click one to open its thread in the panel.
 
 ## Driving it with scripts/verify
-- The cards are `.main .work`, with the title in `.work-title`, the status in `.work-status`, and review chips in
-  `.review-chip`. Click a card to open the panel: `.panel`, whose header holds the bot and the task's title.
+- The cards are `.main .work`, with the title in `.work-title`, the status in `.work-status` (also "Waiting to continue", "Asks your permission"), and review chips in
+  `.review-chip` (they show only on a card with reviews). Click a card to open the panel: `.panel`, whose header holds
+  the bot and the task's title, and a `button[title="Close"]`. The tab strip (`.panel nav button`) shows only when
+  there's more than Activity: Changes needs a worktree, and Review needs a review round. A card with neither has no
+  strip at all. Demo: "Inspect a long browser review in the thread panel" (Roger's chat) has all three; "Add truncate(s, n)…" has none.
+  After Close, `.panel.profile` comes back if the profile was open before, otherwise there's no `.panel`.
 - Push cards are `.push-card`. A replaced one has the class `replaced` and no Push button.
 - Thread lines come from `app/src/components/threadBlocks.ts` (`build`). For a new kind of event, a unit test there is
   quicker than the preview, and a demo event in `app/src/preview/demo/` shows it.

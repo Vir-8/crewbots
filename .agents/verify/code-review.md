@@ -10,6 +10,8 @@
 
 ## Driving it with scripts/verify
 - The preview has demo pull requests. `?bigdiff=300` gives a 300-file diff, and `?alreadyon` shows "Already on main".
+- Open it with the "Code review" row, pick a pull request, then the "Changes" tab: with `?bigdiff=300` the diff has
+  about 300 file headers (`[class*=file]`) rendered. ⌘F opens `input[placeholder="Find in the changes"]`.
 
 ## Gotchas
 - Code review is frozen: a change here needs the user's go-ahead first, and must keep its behaviour exactly.
