@@ -18,9 +18,10 @@ import yaml
 
 from crewbots import crew, paths
 from crewbots import service as svc
+from crewbots.store import Status
 
 STALE_AFTER = timedelta(days=14)  # a finished task's worktree left this long is probably forgotten
-FINISHED = {"cancelled", "failed", "interrupted"}
+FINISHED = {Status.CANCELLED, Status.FAILED, Status.INTERRUPTED}
 
 
 @dataclass(frozen=True)
@@ -99,17 +100,17 @@ def _codex() -> list[Finding]:
 def _daemon(home: Path) -> list[Finding]:
     try:
         info = json.loads((home / "daemon.json").read_text())
-    except (OSError, ValueError):
+        url, headers = info["url"], {"Authorization": f"Bearer {info['token']}"}
+    except (OSError, ValueError, TypeError, KeyError):
         return [Finding(False, "Daemon: not running", "crewbots serve, or crewbots service install to run it at login")]
-    headers = {"Authorization": f"Bearer {info['token']}"}
     try:
-        version = httpx.get(f"{info['url']}/v1/version", headers=headers, timeout=3).raise_for_status().json()
-        crew = httpx.get(f"{info['url']}/v1/crew", headers=headers, timeout=3).raise_for_status().json()
+        version = httpx.get(f"{url}/v1/version", headers=headers, timeout=3).raise_for_status().json()
+        state = httpx.get(f"{url}/v1/crew", headers=headers, timeout=3).raise_for_status().json()
     except (httpx.HTTPError, ValueError, KeyError):
         return [Finding(False, f"Daemon: pid {info.get('pid')} isn't answering",
                         f"its log: {paths.logs() / 'daemon.log'}; crewbots service start")]
-    doing = (f"{crew['turns_running']} turn(s) running" if crew.get("turns_running") else "idle") + (
-        f", {crew['held']} held" if crew.get("held") else "") + (", paused" if crew.get("paused") else "")
+    doing = (f"{state['turns_running']} turn(s) running" if state.get("turns_running") else "idle") + (
+        f", {state['held']} held" if state.get("held") else "") + (", paused" if state.get("paused") else "")
     line = f"Daemon: pid {info['pid']}, from {version.get('build') or 'an installed copy'} (API v{version['api']}); {doing}"
     if version.get("source_changed"):
         return [Finding(None, line + "; its checkout has moved on since it started",

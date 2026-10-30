@@ -54,6 +54,13 @@ def test_a_damaged_database_is_reported(tmp_path, signed_in):
     assert db.ok is False and "back up" in db.hint
 
 
+@pytest.mark.parametrize("text", ['{"pid": 1}', "[]", "not json"])
+def test_a_malformed_daemon_file_reads_as_not_running(tmp_path, text):
+    (tmp_path / "daemon.json").write_text(text)
+
+    assert lines(doctor._daemon(tmp_path)) == ["Daemon: not running"]
+
+
 def test_missing_chief_is_reported(tmp_path):
     home = tmp_path / "crew"
     home.mkdir()

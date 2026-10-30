@@ -65,7 +65,7 @@ def changes(wt: Worktree) -> str:
     return _git(wt.path, "diff", "--cached", wt.base, strip=False)
 
 
-def final_message(message: str) -> str:
+def canonical_message(message: str) -> str:
     """The text to commit: `message` without AI attribution trailers (GitError if one would remain) and as Git's
     stripspace leaves it. Commit exactly this, and `verify_message` it afterwards."""
     try:
@@ -87,7 +87,7 @@ def verify_message(repo: Path, commit: str, message: str) -> None:
 
 def commit(wt: Worktree, message: str) -> str | None:
     """Commits whatever is uncommitted. Returns the new commit, or None if there was nothing to commit."""
-    message = final_message(message)
+    message = canonical_message(message)
     _git(wt.path, "add", "--all")
     if not _git(wt.path, "status", "--porcelain"):
         return None
@@ -113,7 +113,7 @@ def merge(wt: Worktree, message: str, *, tip: str | None = None, tested: tuple[s
         raise GitError(f"the checkout switched from {tested[0]} to {into} while CI ran, so nothing was merged; propose again")
     if tested and _git(wt.repo, "rev-parse", "--verify", f"refs/heads/{into}") != tested[1]:
         raise Moved(f"{into} moved while CI ran")
-    message = final_message(message)  # the squashed commits' own messages are not carried over, only this one
+    message = canonical_message(message)  # the squashed commits' own messages are not carried over, only this one
     try:
         _git(wt.repo, "merge", "--squash", tip or wt.branch)
         committed = bool(subprocess.run([paths.git(), "diff", "--cached", "--quiet"], cwd=wt.repo).returncode)
@@ -130,10 +130,7 @@ def merge(wt: Worktree, message: str, *, tip: str | None = None, tested: tuple[s
 def branch_merged(repo: Path, branch_tip: str, merged_tip: str | None, merged_commit: str) -> None:
     """Raises GitError unless the branch holds nothing beyond what was merged. A squash commit does not have the
     branch in its history, so the recorded tip is what counts; records without one come from merge commits."""
-    if merged_tip:
-        _git(repo, "merge-base", "--is-ancestor", branch_tip, merged_tip)
-    else:
-        _git(repo, "merge-base", "--is-ancestor", branch_tip, merged_commit)
+    _git(repo, "merge-base", "--is-ancestor", branch_tip, merged_tip or merged_commit)
 
 
 def git_read(cwd: Path, *args: str, env: dict[str, str] | None = None) -> str:
@@ -148,7 +145,7 @@ def already_in(repo: Path, target: str, tip: str, base: str) -> bool:
         git_read(repo, "merge-base", "--is-ancestor", tip, target)
         return True
     except GitError as e:
-        if "exit code 1" not in str(e):
+        if e.code != 1:
             raise
     with tempfile.TemporaryDirectory(prefix="crewbots-merge-tree-") as scratch:
         objects = git_read(repo, "rev-parse", "--path-format=absolute", "--git-path", "objects")
@@ -233,12 +230,15 @@ def _git(cwd: Path, *args: str, strip: bool = True, env: dict[str, str] | None =
         detail = "\n".join(part for part in (result.stdout.strip(), result.stderr.strip()) if part)
         status = (f"terminated by signal {-result.returncode}" if result.returncode < 0
                   else f"exit code {result.returncode}")
-        raise GitError(f"git {' '.join(args)} failed ({status})" + (f": {detail}" if detail else ""))
+        raise GitError(f"git {' '.join(args)} failed ({status})" + (f": {detail}" if detail else ""),
+                       code=result.returncode)
     return result.stdout.strip() if strip else result.stdout
 
 
 class GitError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, code: int | None = None):
+        super().__init__(message)
+        self.code = code  # git's exit code, when the error is a failed git call
 
 
 class Moved(GitError):

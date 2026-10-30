@@ -262,7 +262,8 @@ def _attempt(runner: Any, proposal_id: int, data: dict[str, Any]) -> dict[str, A
                 raise NotAllowed("The remote changed; make a new proposal.") from None
             raise
         try:
-            # Moved from what it was, never made; a newer git (2.56) moves it in the push itself, and makes it too.
+            # Update the tracking ref only if it existed before, never create one. Git 2.56+ already moves (and
+            # creates) it during the push.
             if tracking_old is not None and _ref(project.folder, data["tracking"]) != data["head"]:
                 _git(project.folder, "-c", "core.hooksPath=/dev/null", "update-ref", data["tracking"],
                      data["head"], tracking_old)

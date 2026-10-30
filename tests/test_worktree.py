@@ -74,3 +74,12 @@ def test_git_failure_without_output_reports_status(tmp_path, monkeypatch, return
 
     with pytest.raises(worktree.GitError, match=status):
         worktree._git(tmp_path, "merge", "branch")
+
+
+def test_already_in_raises_for_a_commit_that_isnt_there(repo):
+    head = worktree._git(repo, "rev-parse", "HEAD")
+
+    assert worktree.already_in(repo, head, head, head)
+    with pytest.raises(worktree.GitError) as raised:
+        worktree.already_in(repo, head, "0" * 40, head)
+    assert raised.value.code == 128
