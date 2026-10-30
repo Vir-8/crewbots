@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from helpers import collect, fake_command, kinds, lines, write_fixture
+from helpers import collect, fake_command, kinds, lines
 
 from crewbots import paths
 from crewbots.backends import Access, ClaudeCLI, McpServer, RunSpec
@@ -123,24 +123,11 @@ def test_an_explicit_context_window_becomes_autocompact(tmp_path):
     assert "--autocompact" not in ClaudeCLI().argv(RunSpec(prompt="x", cwd=tmp_path))
 
 
-async def test_a_bot_never_uses_claude_codes_auto_memory(tmp_path, monkeypatch):
+def test_a_bot_never_uses_auto_memory_and_gets_the_api_key_only_when_chosen(tmp_path, monkeypatch):
     # Auto memory would keep a folder per bot working folder in ~/.claude/projects, beside the user's own memory.
-    record = tmp_path / "record.json"
-    monkeypatch.setenv("FAKE_RECORD", str(record))
-    monkeypatch.setenv("FAKE_RECORD_ENV", "CLAUDE_CODE_DISABLE_AUTO_MEMORY")
     monkeypatch.delenv("CLAUDE_CODE_DISABLE_AUTO_MEMORY", raising=False)
-
-    await collect(ClaudeCLI(command=fake_command("claude_read.jsonl")).run(RunSpec(prompt="x", cwd=tmp_path)))
-
-    assert json.loads(record.read_text())["env"] == {"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
-
-
-async def test_an_explicit_api_key_choice_is_respected(tmp_path, monkeypatch):
-    record = tmp_path / "record.json"
-    monkeypatch.setenv("FAKE_RECORD", str(record))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-wanted")
-    fixture = write_fixture(tmp_path, [{"type": "result", "subtype": "success", "result": "ok", "usage": {}}])
+    spec = RunSpec(prompt="x", cwd=tmp_path)
 
-    await collect(ClaudeCLI(command=fake_command(fixture), use_api_key=True).run(RunSpec(prompt="x", cwd=tmp_path)))
-
-    assert "ANTHROPIC_API_KEY" in json.loads(record.read_text())["env_keys"]
+    assert ClaudeCLI().env(spec)["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] == "1"
+    assert ClaudeCLI(use_api_key=True).env(spec)["ANTHROPIC_API_KEY"] == "sk-wanted"

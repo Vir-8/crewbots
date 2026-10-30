@@ -17,6 +17,7 @@ from claude_agent_sdk import (
     UserMessage,
 )
 from fakes import ScriptedCrew, bot, wait_until
+from mcp import Client
 
 from crewbots import paths
 from crewbots.backends import Access, ClaudeAgent, McpServer, RunSpec
@@ -247,6 +248,17 @@ def test_an_explicit_context_window_becomes_autocompact(tmp_path):
     assert ClaudeAgent(cli_path="/bin/claude").options(spec, ClaudeAgentSession(spec)).extra_args == {"autocompact": "200000"}
 
 
+def test_a_bot_never_uses_auto_memory_and_gets_the_api_key_only_when_chosen(tmp_path, monkeypatch):
+    monkeypatch.delenv("CLAUDE_CODE_DISABLE_AUTO_MEMORY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-wanted")
+    spec = RunSpec(prompt="", cwd=tmp_path)
+    hidden = ClaudeAgent().options(spec, ClaudeAgentSession(spec)).env
+    chosen = ClaudeAgent(use_api_key=True).options(spec, ClaudeAgentSession(spec)).env
+
+    assert hidden["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] == chosen["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] == "1"
+    assert hidden["ANTHROPIC_API_KEY"] == "" and "ANTHROPIC_API_KEY" not in chosen  # so Claude Code inherits it
+
+
 def test_full_access_skips_the_policy(tmp_path):
     spec = RunSpec(prompt="", cwd=tmp_path, access=Access.FULL)
 
@@ -428,11 +440,15 @@ async def test_workers_cant_reach_coordinator_tools(store, tmp_path):
     assert (await tools.call("escalate", {"question": "Which?"})).endswith("the answer arrives as your next message.")
 
 
-def test_the_crew_server_holds_exactly_the_bots_tools(store, tmp_path):
+async def test_the_crew_server_holds_the_bots_tools_and_tells_claude_of_a_refusal(store, tmp_path):
     crew = ScriptedCrew(store, tmp_path, bot("engineer"))
-    server = crew_server(CrewTools(crew.runner, store.create_task("engineer", "x").id, can_delegate=False))
+    tools = CrewTools(crew.runner, store.create_task("engineer", "x").id, can_delegate=False)
 
-    assert server["type"] == "sdk" and server["name"] == "crewbots"
+    async with Client(crew_server(tools)["instance"]) as client:
+        assert {t.name for t in (await client.list_tools()).tools} == {d.name for d in tools.definitions()}
+        refused = await client.call_tool("delegate", {"bot": "ghost", "goal": "x"})
+
+    assert refused.is_error and refused.content[0].text.startswith("crewbots refused this: no bot named 'ghost'")
 
 
 def test_reasoning_effort_goes_to_claude_when_it_takes_it(worktree):
@@ -444,25 +460,9 @@ def test_reasoning_effort_goes_to_claude_when_it_takes_it(worktree):
     assert effort("ultra") is None  # a Codex-only level: Claude's own default instead
 
 
-def test_policy_keeps_other_bots_working_state_private(tmp_path):
-    from crewbots.backends.policy import Policy
-
-    root = tmp_path / "memory"
-    own = root / "worker" / "working-state" / "state.md"
-    other = root / "chief" / "working-state" / "state.md"
-    policy = Policy(Access.WORKSPACE_WRITE, tmp_path / "work", set(), deny_read=[other.parent])
-    assert policy.check_tool("Read", {"file_path": str(own)}) is None
-    assert policy.check_tool("Read", {"file_path": str(other)}) is not None
-    assert policy.check_tool("Grep", {"path": str(root), "pattern": "anything"}) is not None
-    assert policy.check_tool("Glob", {"pattern": str(root / "*" / "state.md")}) is not None
-    full_policy = Policy(Access.FULL, tmp_path / "work", set(), deny_read=[other.parent])
-    assert full_policy.check_tool("Read", {"file_path": str(other)}) is not None
-
-
 def test_private_state_paths_are_carried_to_backends(store, tmp_path):
     from crewbots.backends.claude_cli import settings
     from crewbots.backends.codex_cli import sandbox_overrides
-    from crewbots.backends.policy import Policy
 
     crew = ScriptedCrew(store, tmp_path, bot("worker"), bot("chief"))
     task = crew.runner.chat("worker")
@@ -472,23 +472,6 @@ def test_private_state_paths_are_carried_to_backends(store, tmp_path):
     assert chief_state.parent in spec.deny_read and own_state.parent not in spec.deny_read
     assert str(chief_state.parent) in str(settings(spec.access, spec.write_dirs, spec.deny_read))
     assert str(chief_state.parent) in str(sandbox_overrides(spec))
-    policy = Policy(spec.access, spec.cwd, set(), deny_read=spec.deny_read)
-    assert policy.check_tool("Read", {"file_path": str(chief_state)}) is not None
-    assert policy.check_tool("Read", {"file_path": str(own_state)}) is None
-
-
-def test_other_bot_temporary_state_files_are_denied(tmp_path):
-    from crewbots.backends.policy import Policy
-
-    other = tmp_path / "memory" / "chief" / "working-state"
-    other.mkdir(parents=True)
-    temporary = other / ".state-abandoned"
-    temporary.write_text("secret")
-    own = tmp_path / "memory" / "worker" / "working-state" / ".state-own"
-    policy = Policy(Access.WORKSPACE_WRITE, tmp_path, set(), deny_read=[other])
-    assert policy.check_tool("Read", {"file_path": str(temporary)}) is not None
-    assert policy.check_tool("Glob", {"path": str(other), "pattern": ".state-*"}) is not None
-    assert policy.check_tool("Read", {"file_path": str(own)}) is None
 
 
 # Steering: a message sent into a turn under way

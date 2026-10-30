@@ -89,6 +89,21 @@ async def test_prompt_dispatch_follows_turn_start_not_session_announcement(tmp_p
     await turn.aclose()
 
 
+async def test_context_is_measured_against_the_bots_window_not_the_models(tmp_path):
+    usage = {"method": "thread/tokenUsage/updated",
+             "params": {"tokenUsage": {"last": {"inputTokens": 100_000}, "modelContextWindow": 872_000}}}
+
+    async def percent(context_window):
+        session = CodexSession(FakeAppServer([usage, COMPLETED]), RunSpec(prompt="", cwd=tmp_path, context_window=context_window))
+        session.session_id = "th"
+        assert await session.context_percent() is None  # nothing measured before a turn
+        await run_turn(session)
+        return await session.context_percent()
+
+    assert await percent(200_000) == 50.0
+    assert round(await percent(None), 1) == 11.5  # with no window of its own, the model's 872K
+
+
 @pytest.fixture
 def folder(tmp_path):
     path = tmp_path / "worktree"

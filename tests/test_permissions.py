@@ -168,6 +168,21 @@ def test_a_granted_folder_is_writable_and_nowhere_else(tmp_path):
     assert settings(Access.READ_ONLY, [reports])["permissions"]["allow"] == [f"Edit(/{reports})", f"Edit(/{reports}/**)"]
 
 
+def test_other_bots_working_state_stays_private_even_with_full_access(tmp_path):
+    root = tmp_path / "memory"
+    own = root / "worker" / "working-state" / "state.md"
+    other = root / "chief" / "working-state"
+    policy = Policy(Access.WORKSPACE_WRITE, tmp_path / "work", set(), deny_read=[other])
+
+    assert policy.check_tool("Read", {"file_path": str(own)}) is None
+    assert policy.check_tool("Read", {"file_path": str(other / "state.md")}) is not None
+    assert policy.check_tool("Glob", {"path": str(other), "pattern": ".state-*"}) is not None
+    assert policy.check_tool("Grep", {"path": str(root), "pattern": "anything"}) is not None
+    assert policy.check_tool("Glob", {"pattern": str(root / "*" / "state.md")}) is not None
+    full = Policy(Access.FULL, tmp_path / "work", set(), deny_read=[other])
+    assert full.check_tool("Read", {"file_path": str(other / "state.md")}) is not None
+
+
 def test_a_bot_asks_through_the_api_and_only_the_user_answers(crew_app):
     client, backend, store = crew_app
     task_id, token = start(client, backend, "chief")
