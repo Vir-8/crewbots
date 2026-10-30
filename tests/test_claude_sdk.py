@@ -359,6 +359,40 @@ async def test_a_timeout_interrupts_the_turn_instead_of_killing_the_session():
     assert session.alive and not client.disconnected
 
 
+class DeafClient(FakeClient):
+    async def interrupt(self):
+        self.interrupted += 1  # and the turn goes on: a hung tool, a stuck CLI
+
+
+async def test_a_timeout_the_interrupt_cant_end_drops_the_session(monkeypatch):
+    import crewbots.backends.claude_sdk as sdk
+
+    monkeypatch.setattr(sdk, "INTERRUPT_GRACE_S", 0.1)
+    client = DeafClient([AssistantMessage(content=[TextBlock(text="working")], model="m"), result("never")], slow=True)
+    session = session_with(client, timeout_s=0.1)
+
+    events = await asyncio.wait_for(collect(session.turn("long job")), 2)
+
+    assert client.interrupted == 1
+    assert events[-1] == Done(final_text="working", is_error=True, error="timed out after 0.1s")
+    assert not session.alive and client.disconnected
+
+
+async def test_closing_a_run_early_stops_its_turn_before_the_session_closes(monkeypatch):
+    client = FakeClient([AssistantMessage(content=[TextBlock(text="step 1")], model="m"), result("stopped")], slow=True)
+
+    async def open_session(self, spec):
+        return session_with(client)
+
+    monkeypatch.setattr(ClaudeAgent, "open", open_session)
+    stream = ClaudeAgent(cli_path="claude").run(RunSpec(prompt="long job", cwd=Path(".")))
+
+    assert await anext(stream) == Text(text="step 1")
+    await stream.aclose()
+
+    assert client.interrupted == 1 and client.disconnected
+
+
 async def test_abandoning_a_turn_interrupts_it_and_keeps_the_session():
     client = FakeClient([AssistantMessage(content=[TextBlock(text="step 1")], model="m"), result("stopped")], slow=True)
     session = session_with(client)

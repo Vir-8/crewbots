@@ -45,6 +45,7 @@ from crewbots.backends.claude_cli import (
     _images,
     _stringify,
     compacted,
+    make_sandbox_temp,
     rate_limit,
     settings,
     shell,
@@ -84,8 +85,9 @@ class ClaudeAgent:
         """One turn on its own: a session opened for it and closed after."""
         session = await self.open(spec)
         try:
-            async for event in session.turn(spec.prompt):
-                yield event
+            async with contextlib.aclosing(session.turn(spec.prompt)) as turn:
+                async for event in turn:
+                    yield event
         finally:
             await session.close()
 
@@ -99,10 +101,9 @@ class ClaudeAgent:
             env["ANTHROPIC_API_KEY"] = ""
         # Claude Code's OS sandbox for shell commands: writes confined to the working folder (a read-only bot's to its
         # temp folder alone), and no opting out. Every command still goes through can_use_tool (the policy), since
-        # auto-allowing is off. The sandbox points TMPDIR at /tmp/claude, which it doesn't create; without it, tools
-        # needing a temp folder fail.
+        # auto-allowing is off.
         if sandbox := shell(spec.access, spec.write_dirs):
-            Path("/tmp/claude").mkdir(exist_ok=True)
+            make_sandbox_temp()
             env |= without_credentials() | (package_caches() if spec.access is Access.WORKSPACE_WRITE else {})
         return ClaudeAgentOptions(
             cli_path=self.cli_path,
@@ -232,8 +233,13 @@ class ClaudeAgentSession:
                         settled = True
                         yield held
                         return
+                    if timed_out:  # nor did the interrupt end it: give up on the session
+                        settled = self._broken = True
+                        yield Done(final_text=mapper.final_text, is_error=True,
+                                   error=f"timed out after {self.timeout_s:g}s")
+                        return
                     timed_out = True
-                    deadline = None
+                    deadline = loop.time() + INTERRUPT_GRACE_S
                     await self._interrupt()
                     continue
                 if message is _END:
