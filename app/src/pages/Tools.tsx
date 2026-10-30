@@ -337,7 +337,7 @@ function Custom({ taken, onAdded }: { taken: Set<string>; onAdded: () => void })
       <Segmented value={kind} options={[["stdio", "A program to start"], ["http", "A URL"]]} onChange={setKind} />
       {kind === "stdio" ? (
         <>
-          <Field label="Command" hint="The program and its arguments, as you'd type them.">
+          <Field label="Command" hint="The program and its arguments, separated by spaces. Quotes aren't read, so an argument can't hold a space.">
             <input className="mono" value={command} onChange={(e) => setCommand(e.target.value)} placeholder="uvx blender-mcp" />
           </Field>
           <Field label="Environment (optional)" hint="One KEY=value a line.">

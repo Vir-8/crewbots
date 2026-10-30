@@ -159,9 +159,8 @@ function parse(cron: string): { when: When; time: string; day: number } {
   return { when: cron ? "custom" : "weekdays", time, day: 1 };
 }
 
-function cronOf(when: When, time: string, day: number, custom: string): string {
+function cronOf(when: Exclude<When, "custom">, time: string, day: number): string {
   const [h, m] = time.split(":").map(Number);
-  if (when === "custom") return custom;
   return `${m || 0} ${h || 0} * * ${when === "daily" ? "*" : when === "weekdays" ? "1-5" : day}`;
 }
 
@@ -172,14 +171,19 @@ function RoutineEditor({ crew, name, onClose }: { crew: Crew; name: string | nul
   );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [custom, setCustom] = useState(false); // its own choice: a simple cron under Custom stays there rather than snapping to Daily
   useEffect(() => {
-    if (!creating) api.routineFile(name!).then((r) => setDraft({ ...r, enabled: r.enabled ?? true }), (e) => setError(String(e)));
+    if (!creating) api.routineFile(name!).then((r) => {
+      setDraft({ ...r, enabled: r.enabled ?? true });
+      setCustom(parse(r.schedule ?? "").when === "custom");
+    }, (e) => setError(String(e)));
   }, [name]);
   if (!draft) return <Sheet title="Edit routine" onClose={onClose} footer={null}>{error ? <p className="error-text">{error}</p> : <p className="faint">Loading…</p>}</Sheet>;
 
   const set = (fields: Partial<RoutineFile & { name: string }>) => setDraft((d) => (d ? { ...d, ...fields } : d));
   const kind = draft.on ? "trigger" : "schedule";
   const sched = parse(draft.schedule ?? "");
+  const when = custom ? "custom" : sched.when;
 
   const save = async () => {
     setSaving(true);
@@ -252,22 +256,32 @@ function RoutineEditor({ crew, name, onClose }: { crew: Crew; name: string | nul
         <Segmented
           value={kind}
           options={[["schedule", "On a schedule"], ["trigger", "When GitHub has something"]]}
-          onChange={(k) => set(k === "trigger" ? { on: "github.review_requested", schedule: "" } : { on: "", schedule: "0 9 * * 1-5" })}
+          onChange={(k) => {
+            setCustom(false);
+            set(k === "trigger" ? { on: "github.review_requested", schedule: "" } : { on: "", schedule: "0 9 * * 1-5" });
+          }}
         />
       </Field>
       {kind === "schedule" ? (
         <div className="field-row">
           <Field label="Repeats">
-            <select value={sched.when} onChange={(e) => set({ schedule: cronOf(e.target.value as When, sched.time, sched.day, draft.schedule ?? "0 9 * * *") })}>
+            <select
+              value={when}
+              onChange={(e) => {
+                const chosen = e.target.value as When;
+                setCustom(chosen === "custom");
+                if (chosen !== "custom") set({ schedule: cronOf(chosen, sched.time, sched.day) });
+              }}
+            >
               <option value="daily">Every day</option>
               <option value="weekdays">Weekdays</option>
               <option value="weekly">Once a week</option>
               <option value="custom">Custom (cron)</option>
             </select>
           </Field>
-          {sched.when === "weekly" && (
+          {when === "weekly" && (
             <Field label="On">
-              <select value={sched.day} onChange={(e) => set({ schedule: cronOf("weekly", sched.time, Number(e.target.value), "") })}>
+              <select value={sched.day} onChange={(e) => set({ schedule: cronOf("weekly", sched.time, Number(e.target.value)) })}>
                 {DAYS.map((d, i) => (
                   <option key={d} value={i}>
                     {d}
@@ -276,13 +290,13 @@ function RoutineEditor({ crew, name, onClose }: { crew: Crew; name: string | nul
               </select>
             </Field>
           )}
-          {sched.when === "custom" ? (
+          {when === "custom" ? (
             <Field label="Cron" hint="minute hour day month weekday, in your time zone">
               <input className="mono" value={draft.schedule ?? ""} onChange={(e) => set({ schedule: e.target.value })} />
             </Field>
           ) : (
             <Field label="At">
-              <input type="time" value={sched.time} onChange={(e) => set({ schedule: cronOf(sched.when, e.target.value, sched.day, "") })} />
+              <input type="time" value={sched.time} onChange={(e) => set({ schedule: cronOf(when, e.target.value, sched.day) })} />
             </Field>
           )}
         </div>
@@ -303,7 +317,7 @@ function RoutineEditor({ crew, name, onClose }: { crew: Crew; name: string | nul
             </Field>
           </div>
           <Field label="Workspace" hint="Your checkout of the repo, so the bot can read the code around the change.">
-            <span className="budget-row">
+            <span className="workspace-field">
               <input value={draft.workspace ?? ""} onChange={(e) => set({ workspace: e.target.value })} placeholder="~/code/name" />
               <button className="button small" type="button" onClick={async () => { const p = await bridge.pickFolder(); if (p) set({ workspace: p }); }}>
                 <Icon name="folder" size={13} />

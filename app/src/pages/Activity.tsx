@@ -23,11 +23,11 @@ export function Activity({ crew, onOpen }: { crew: Crew; onOpen: (id: string) =>
   const mergedIds = useMemo(() => all.flatMap((chain) => chain.steps.map((s) => s.task)).filter((t) => t.merge_state === "merged").map((t) => t.id).sort().join(","), [all]);
   const [automatic, setAutomatic] = useState<Set<string>>(new Set());
   useEffect(() => {
+    if (!mergedIds) return;
     let current = true;
-    const ids = mergedIds ? mergedIds.split(",") : [];
-    Promise.all(ids.map(async (id) => ({ id, events: await api.events(id).catch(() => []) }))).then((items) => {
-      if (current) setAutomatic(new Set(items.filter(({ events }) => events.some((e) => e.kind === "merged" && e.data.automatic)).map(({ id }) => id)));
-    }).catch(() => {});
+    api.landed().then((landed) => {
+      if (current) setAutomatic(new Set(landed.items.filter((item) => item.automatic).map((item) => item.task.id)));
+    }, () => {});
     return () => { current = false; };
   }, [mergedIds]);
   const where = (task: Task | undefined) => {

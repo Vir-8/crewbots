@@ -209,7 +209,7 @@ export function BotEditor({ crew, name, onClose }: { crew: Crew; name: string | 
         <Segmented
           value={backendFamily(draft.backend ?? "claude")}
           options={[["claude", "Claude"], ["codex", "Codex"], ["antigravity", "Antigravity"]]}
-          onChange={(backend) => set({ backend, model: null, effort: null, ...(backend === "antigravity" ? { proactive: false, network: draft.network === true, access: draft.access === "full" ? "workspace_write" : draft.access } : {}) })}
+          onChange={(backend) => set({ backend, model: null, effort: null, ...(backend !== "claude" ? { network: draft.network === true } : {}), ...(backend === "antigravity" ? { proactive: false, access: draft.access === "full" ? "workspace_write" : draft.access } : {}) })}
         />
       </Field>
       {draft.backend === "antigravity" && <p className="faint small">Uses your Antigravity subscription through Google's ACP runtime. Set up once with <code>crewbots antigravity install</code> and <code>crewbots antigravity login</code>. Requested work only; no automatic retries or background turns.</p>}

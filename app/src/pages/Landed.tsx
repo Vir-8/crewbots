@@ -15,11 +15,16 @@ import "../styles/landed.css";
 export function Landed({ crew, onOpen }: { crew: Crew; onOpen: (id: string) => void }) {
   const [landed, setLanded] = useState<LandedOut | null>(null);
   const [error, setError] = useState("");
-  const [seenAt] = useState(() => crew.crewState?.landed ?? 0); // what was new when the page opened stays marked
-  const load = useCallback(() => api.landed().then(setLanded, (e) => setError(String(e).replace(/^Error: /, ""))), []);
+  // When the user last looked, from the first load, so what was new when the page opened stays marked
+  const [since, setSince] = useState<string | null>();
+  const load = useCallback(() => api.landed().then((out) => {
+    setLanded(out);
+    setSince((s) => (s === undefined ? out.seen_at : s));
+  }, (e) => setError(String(e).replace(/^Error: /, ""))), []);
   const merges = [...crew.tasks.values()].filter((t) => t.merge_state === "merged").length;
   useEffect(() => { load(); }, [load, merges]);
-  useEffect(() => { api.landedSeen().catch(() => undefined); }, []);
+  const opened = since !== undefined;
+  useEffect(() => { if (opened) api.landedSeen().catch(() => undefined); }, [opened]);
 
   return (
     <Page title="Landed">
@@ -27,7 +32,7 @@ export function Landed({ crew, onOpen }: { crew: Crew; onOpen: (id: string) => v
       {error && <p className="push-error">{error}</p>}
       <div className="list">
         {landed?.items.length === 0 && <p className="list-empty faint">Nothing has merged yet.</p>}
-        {landed?.items.map((item, i) => <LandedRow key={item.task.id} item={item} isNew={i < seenAt} onOpen={onOpen} onChange={load} />)}
+        {landed?.items.map((item) => <LandedRow key={item.task.id} item={item} isNew={!since || item.merged_at > since} onOpen={onOpen} onChange={load} />)}
       </div>
     </Page>
   );
