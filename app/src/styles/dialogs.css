@@ -207,6 +207,10 @@
   color: var(--soft);
 }
 
+.updates-text.error-text {
+  color: var(--red);
+}
+
 .updates-working {
   display: flex;
   align-items: center;

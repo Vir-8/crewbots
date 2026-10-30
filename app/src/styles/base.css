@@ -78,6 +78,7 @@ select {
   color: var(--faint);
 }
 
+/* A tone, next to a block's own class (a line, a pill, a banner); a plain error line is .error-text. */
 .bad {
   color: var(--red);
 }
@@ -502,4 +503,87 @@ body.resizing iframe {
 
 .error-text {
   color: var(--red);
+}
+
+/* Shared controls: a task's state as a word with its dot ("working", "done", "waiting"), a meter, a segmented
+ * choice, a tag and a form's buttons. */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--raised);
+  color: var(--soft);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.pill.bad {
+  color: var(--red);
+}
+
+.meter {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.meter > span {
+  display: block;
+  height: 100%;
+  background: var(--blue);
+}
+
+.meter.warning > span {
+  background: var(--amber);
+}
+
+.meter.limited > span {
+  background: var(--red);
+}
+
+.segmented {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--raised);
+  margin-bottom: 4px;
+}
+
+.segmented button {
+  flex: 1;
+  height: 28px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--soft);
+  text-align: center;
+}
+
+.segmented button.on {
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 22%);
+}
+
+.tag {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--soft);
+  background: var(--raised);
+  border-radius: 6px;
+  padding: 1px 7px;
+  margin-left: 6px;
+  vertical-align: 1px;
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }

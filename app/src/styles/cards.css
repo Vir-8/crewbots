@@ -34,80 +34,94 @@
   background: var(--bg);
 }
 
-.ask {
-  padding: 14px 16px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--amber) 9%, transparent);
-  border: 1px solid color-mix(in srgb, var(--amber) 28%, transparent);
-}
-
-/* Permission cards share the ask shell; keep the quieter treatment specific to questions. */
-.ask:not(.permission) {
+/* A question waiting on you, a Push or Replace-main card, and a question asked of a teammate share one quiet box. */
+.ask,
+.ask-card {
   width: 85%;
   align-self: flex-start;
   padding: 10px 12px;
-  background: var(--raised);
+  border-radius: 12px;
   border: 1px solid var(--line);
+  background: var(--raised);
   overflow-wrap: anywhere;
 }
 
 .ask-head {
   display: flex;
   align-items: center;
-  gap: 7px;
-  font-size: 12.5px;
+  gap: 6px;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--amber);
+  color: var(--soft);
   margin-bottom: 4px;
 }
 
-.ask.answered {
+.ask-head .icon {
+  color: var(--amber);
+}
+
+/* Answered, the icon takes the head's colour */
+.ask.answered .ask-head .icon {
+  color: inherit;
+}
+
+/* A permission ask stands out: amber, across the thread */
+.ask.permission {
+  width: auto;
+  align-self: auto;
+  padding: 14px 16px;
+  background: color-mix(in srgb, var(--amber) 9%, transparent);
+  border-color: color-mix(in srgb, var(--amber) 28%, transparent);
+  overflow-wrap: normal;
+}
+
+.ask.permission .ask-head {
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--amber);
+}
+
+.ask.permission.answered {
   background: var(--raised);
   border-color: transparent;
 }
 
-.ask.answered .ask-head {
+.ask.permission.answered .ask-head {
   color: var(--faint);
-}
-
-.ask:not(.permission) .ask-head {
-  gap: 6px;
-  font-size: 12px;
-  color: var(--soft);
-}
-
-.ask:not(.permission) .ask-head .icon {
-  color: var(--amber);
-}
-
-.ask.answered:not(.permission) {
-  border-color: var(--line);
-}
-
-.ask.answered:not(.permission) .ask-head .icon {
-  color: var(--soft);
 }
 
 .ask-text {
   font-size: 14px;
 }
 
-.ask .md > :first-child {
+.ask .md > :first-child,
+.ask-card .md > :first-child {
   margin-top: 0;
 }
 
 .ask .md p,
 .ask .md ul,
-.ask .md ol {
+.ask .md ol,
+.ask-card .md p,
+.ask-card .md ul,
+.ask-card .md ol {
   margin-bottom: 6px;
 }
 
-.ask .md pre,
-.ask .md code {
+.ask .md code,
+.ask .md .code-block,
+.ask-card .md code,
+.ask-card .md .code-block {
   background: var(--bg);
 }
 
+.ask .md > :last-child,
+.ask-card .md > :last-child {
+  margin-bottom: 0;
+}
+
 .ask .md pre {
+  background: var(--bg);
   border: 1px solid var(--line);
   margin: 6px 0;
   padding: 8px 10px;
@@ -115,7 +129,6 @@
 }
 
 .ask .md .code-block {
-  background: var(--bg);
   border: 1px solid var(--line);
 }
 
@@ -124,10 +137,6 @@
   padding-top: 4px;
   border: 0;
   background: transparent;
-}
-
-.ask .md > :last-child {
-  margin-bottom: 0;
 }
 
 /* A question's choices: one a row, picked with a click (or ticked, when several may be), and Other. */
@@ -392,16 +401,9 @@
 
 /* A question asked of a teammate, and its answer: quieter than work, since nothing is being built */
 .ask-card {
-  width: 85%;
-  align-self: flex-start;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  background: var(--raised);
   cursor: pointer;
   font-size: 14px;
   line-height: 1.4;
-  overflow-wrap: anywhere;
 }
 
 .ask-card.pending {
@@ -453,11 +455,6 @@
 .ask-card-markdown.overflowing {
   mask-image: linear-gradient(to bottom, black 70%, transparent);
 }
-
-.ask-card .md > :first-child { margin-top: 0; }
-.ask-card .md p, .ask-card .md ul, .ask-card .md ol { margin-bottom: 6px; }
-.ask-card .md > :last-child { margin-bottom: 0; }
-.ask-card .md code, .ask-card .md .code-block { background: var(--bg); }
 
 .work-head {
   display: flex;

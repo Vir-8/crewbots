@@ -36,23 +36,6 @@
   text-align: right;
 }
 
-/* A task's state, as a word with its dot: "working", "done", "waiting" */
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 9px;
-  border-radius: 999px;
-  background: var(--raised);
-  color: var(--soft);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.pill.bad {
-  color: var(--red);
-}
-
 .activity-pairs {
   display: flex;
   flex-wrap: wrap;

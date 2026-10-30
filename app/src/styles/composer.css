@@ -261,3 +261,7 @@
   line-height: 1.45;
   color: var(--soft);
 }
+
+.command-preview-text.error-text {
+  color: var(--red);
+}

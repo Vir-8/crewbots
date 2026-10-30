@@ -66,11 +66,11 @@ export function UpdatesDialog({ onClose, restarting = false }: { onClose: () => 
         )}
         {stopped && !update?.note && !restarting && !busy && (
           <>
-            <p className="updates-text bad">The last update stopped at {release?.step?.toLowerCase()}.</p>
+            <p className="updates-text error-text">The last update stopped at {release?.step?.toLowerCase()}.</p>
             {release?.log && <pre className="update-log">{release.log}</pre>}
           </>
         )}
-        {error && <p className="updates-text bad">{error}</p>}
+        {error && <p className="updates-text error-text">{error}</p>}
         <div className="dialog-actions">
           <button className="button" onClick={onClose}>
             {action ? "Later" : busy ? "Close" : "OK"}

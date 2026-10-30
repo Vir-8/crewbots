@@ -70,31 +70,6 @@
   color: var(--text);
 }
 
-.segmented {
-  display: flex;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 10px;
-  background: var(--raised);
-  margin-bottom: 4px;
-}
-
-.segmented button {
-  flex: 1;
-  height: 28px;
-  border-radius: 8px;
-  font-size: 12.5px;
-  font-weight: 550;
-  color: var(--soft);
-  text-align: center;
-}
-
-.segmented button.on {
-  background: var(--bg);
-  color: var(--text);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 22%);
-}
-
 .panel-body {
   position: relative; /* for the find bar */
   flex: 1;
