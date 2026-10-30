@@ -1,5 +1,5 @@
-"""Work done in a project's folder itself is committed there once approved: just the files it handed back, with their
-Unity .meta files, on the folder's branch, leaving the rest of what's in progress there uncommitted."""
+"""Work done in a project's folder itself is committed there once approved: just the files it handed back, in a Unity
+project with their .meta files, on the folder's branch, leaving the rest of what's in progress there uncommitted."""
 
 import dataclasses
 import subprocess
@@ -22,28 +22,43 @@ def store(tmp_path):
     s.close()
 
 
-@pytest.fixture
-def game(store, tmp_path):
-    repo = git_repo(tmp_path / "game")
-    (repo / "ProjectSettings").mkdir()
-    (repo / "ProjectSettings" / "ProjectVersion.txt").write_text("m_EditorVersion: 6000.3.12f1\n")
-    worktree._git(repo, "add", "-A")
-    worktree._git(repo, "commit", "-qm", "A Unity project")
+def write(folder, *paths, text="x"):
+    for path in paths:
+        (folder / path).parent.mkdir(parents=True, exist_ok=True)
+        (folder / path).write_text(text)
+
+
+def unity(folder):
+    write(folder, "ProjectSettings/ProjectVersion.txt", text="m_EditorVersion: 6000.3.12f1\n")
+
+
+def in_place_work(store, tmp_path, repo, folder, isolation=None):
+    """The project in `folder` of `repo`, and an engineer's work in it under a lead."""
     crew = ScriptedCrew(store, tmp_path / "crew", bot("chief", can_delegate=True),
                         bot("engineer", access=Access.WORKSPACE_WRITE), bot("reviewer"))
-    project = Project("game", repo, "A game", tmp_path / "game.md")  # a Unity project: worked in its folder itself
+    project = Project("game", folder, "A game", tmp_path / "game.md", isolation)
     crew.runner.reload(dataclasses.replace(crew.runner.crew, projects={"game": project}))
     lead = store.create_task("chief", "lead", status=Status.IDLE)
     work = store.create_task("engineer", "add the player and a bat", parent_id=lead.id, created_by="chief",
-                             workspace=str(repo), status=Status.IDLE)
+                             workspace=str(folder), status=Status.IDLE)
     store.update_task(work.id, turns=1)
-    write = lambda path, text="x": ((repo / path).parent.mkdir(parents=True, exist_ok=True),  # noqa: E731
-                                    (repo / path).write_text(text))
-    for path in ("Assets/Player.cs", "Assets/Player.cs.meta", "Assets/Enemies/Bat.cs", "Assets/Enemies/Bat.cs.meta",
-                 "Assets/Enemies.meta", "Assets/Other.cs"):  # Other.cs: another engineer's, in progress
-        write(path)
-    write("README.md", "the user's own edit\n")
-    yield crew, store, repo, lead, store.get_task(work.id)
+    return crew, store, repo, lead, store.get_task(work.id)
+
+
+def head_files(repo):
+    return worktree._git(repo, "show", "--name-only", "--format=", "HEAD").split()
+
+
+@pytest.fixture
+def game(store, tmp_path):
+    repo = git_repo(tmp_path / "game")
+    unity(repo)  # a Unity project: worked in its folder itself
+    worktree._git(repo, "add", "-A")
+    worktree._git(repo, "commit", "-qm", "A Unity project")
+    write(repo, "Assets/Player.cs", "Assets/Player.cs.meta", "Assets/Enemies/Bat.cs", "Assets/Enemies/Bat.cs.meta",
+          "Assets/Enemies.meta", "Assets/Other.cs")  # Other.cs: another engineer's, in progress
+    write(repo, "README.md", text="the user's own edit\n")
+    yield in_place_work(store, tmp_path, repo, repo)
 
 
 async def test_approved_work_is_committed_with_just_its_files(game):
@@ -239,4 +254,39 @@ async def test_a_lock_taken_after_the_commit_still_records_the_merge_and_says_ho
     (repo / ".git" / "index.lock").unlink()
     subprocess.run(command, shell=True, cwd=repo, check=True)
     assert "space name" not in real(repo, "status", "--porcelain", "Assets/Player.cs", "Assets/space name.cs")
+    await crew.runner.shutdown()
+
+
+async def test_a_unity_project_in_a_subfolder_commits_its_own_paths_with_their_meta_files(store, tmp_path):
+    repo = git_repo(tmp_path / "studio")
+    folder = repo / "game"
+    unity(folder)
+    write(repo, "Assets/Player.cs", text="the top's own\n")  # named like the work's file, at the repository's top
+    worktree._git(repo, "add", "-A")
+    worktree._git(repo, "commit", "-qm", "A Unity project in a subfolder")
+    write(repo, "Assets/Player.cs", text="the user's own edit\n")
+    write(folder, "Assets/Player.cs", "Assets/Player.cs.meta", "Assets/Enemies/Bat.cs", "Assets/Enemies/Bat.cs.meta",
+          "Assets/Enemies.meta")
+    game = in_place_work(store, tmp_path, repo, folder)
+    # one path relative to the project's folder, one as `git status` prints it, relative to the repository's top
+    crew, repo, lead, work = await _handed_back(game, ["Assets/Player.cs", "game/Assets/Enemies/Bat.cs"])
+
+    await crew.runner.propose_merge_off_loop(lead.id, work.id, "Add the player and a bat")
+
+    assert head_files(repo) == ["game/Assets/Enemies.meta", "game/Assets/Enemies/Bat.cs", "game/Assets/Enemies/Bat.cs.meta",
+                                "game/Assets/Player.cs", "game/Assets/Player.cs.meta"]
+    assert _left(repo) == ["M Assets/Player.cs"]
+    await crew.runner.shutdown()
+
+
+async def test_meta_files_beside_handed_back_files_arent_committed_outside_unity(store, tmp_path):
+    repo = git_repo(tmp_path / "web")
+    write(repo, "src/app.py", "src/app.py.meta", "src.meta")  # the .meta files: another tool's, not the work's
+    game = in_place_work(store, tmp_path, repo, repo, "in_place")
+    crew, repo, lead, work = await _handed_back(game, ["src/app.py"])
+
+    await crew.runner.propose_merge_off_loop(lead.id, work.id, "Add the app")
+
+    assert head_files(repo) == ["src/app.py"]
+    assert _left(repo) == ["?? src.meta", "?? src/app.py.meta"]
     await crew.runner.shutdown()

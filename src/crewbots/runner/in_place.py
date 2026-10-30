@@ -1,15 +1,16 @@
 """Work done in a project's folder itself (projects.py `in_place`) is committed there once it's approved, where a
 worktree's work would be merged: the lead proposes it with `propose_merge` as usual, and crewbots commits just the files
-the work handed back as its output, with their Unity .meta files and those of new folders they're in, on whatever
-branch the folder is on, which must still be the one it was on when the work began. Other work in progress there, the
-user's or another engineer's, stays uncommitted. The commit shows on the Landed page as a merge does, and the chief
-proposes the push. Like a merge, it runs under merge_status.MERGE_LOCK, which its caller holds."""
+the work handed back as its output (in a Unity project, with their .meta files and those of the folders they're in),
+on whatever branch the folder is on, which must still be the one it was on when the work began. Other work in progress
+there, the user's or another engineer's, stays uncommitted. The commit shows on the Landed page as a merge does, and the
+chief proposes the push. Like a merge, it runs under merge_status.MERGE_LOCK, which its caller holds."""
 
 import shlex
 from pathlib import Path
 
 from crewbots import comments, worktree
 from crewbots.backends import Access
+from crewbots.projects import is_unity
 from crewbots.runner.common import MergeError
 from crewbots.store import Task
 
@@ -28,8 +29,8 @@ class InPlace:
         return Path(worktree._git(folder, "rev-parse", "--show-toplevel"))
 
     def _in_place_files(self, task: Task, repo: Path, output: list[str] | None = None) -> list[str]:
-        """The changed files among those the task handed back as its output (paths in the repository, or files and
-        folders in it), with their .meta files and those of the folders they're in."""
+        """The changed files among those the task handed back as its output (files and folders in its project), as
+        paths in the repository, and in a Unity project their .meta files and those of the folders they're in."""
         return sorted({path for state, path in self._output_status(task, repo, output) if state != "!!"})
 
     def _ignored_output(self, task: Task, repo: Path) -> list[str]:
@@ -50,15 +51,20 @@ class InPlace:
         if output is None:
             handoff = self.store.latest_handoff(task.id)
             output = handoff.output if handoff else []
+        repo, folder = repo.resolve(), Path(task.workspace).expanduser().resolve()
+        unity = is_unity(folder)
         specs: list[str] = []
         for item in output:
-            path = Path(item.strip()).expanduser()
             try:
-                rel = (path if path.is_absolute() else repo / path).resolve().relative_to(repo.resolve())
+                rel = _located(repo, folder, item).relative_to(repo)
             except (ValueError, OSError):
                 continue  # not a path in the repository: a branch, a link, a folder elsewhere
-            if rel.parts:
-                specs += [str(rel), f"{rel}.meta", *(f"{p}.meta" for p in rel.parents if p.parts)]
+            if not rel.parts:
+                continue
+            specs.append(str(rel))
+            if unity:  # an asset's .meta file goes with it, and so do those of the folders it's in
+                specs += [f"{p}.meta" for p in (rel, *rel.parents)
+                          if (repo / p).is_relative_to(folder) and repo / p != folder]
         if not specs:
             return []
         listed = worktree._git(repo, "status", "--porcelain=v1", "-z", "-uall", "--ignored", "--", *specs, strip=False)
@@ -107,7 +113,7 @@ class InPlace:
         if not files:
             raise MergeError(self._nothing_to_commit(work, repo))
         self._check_renames(repo, files)
-        message = worktree.final_message(message)
+        message = worktree.canonical_message(message)
         base = worktree._git(repo, "rev-parse", "HEAD")
         into = worktree._git(repo, "symbolic-ref", "--short", "HEAD")
         began = self.store.last_event(work.id, ("in_place",))
@@ -147,3 +153,23 @@ class InPlace:
                              f"run {shlex.join(['git', 'reset', '-q', '--', *files])} once the lock clears")
         self._record(work.id, kind="merged", data=data)
         return task
+
+
+def _located(repo: Path, folder: Path, item: str) -> Path:
+    """Where a path the work handed back is: relative to its project's folder, unless only the reading relative to
+    the repository's top finds something (as `git status` and `git diff` print paths)."""
+    path = Path(item.strip()).expanduser()
+    if path.is_absolute():
+        return path.resolve()
+    here, top = (folder / path).resolve(), (repo / path).resolve()
+    if here == top or here.exists() or not (top.exists() or _known(repo, top)) or _known(repo, here):
+        return here
+    return top
+
+
+def _known(repo: Path, path: Path) -> bool:
+    """Whether git knows `path` from the last commit or the index, as a deleted file is."""
+    try:
+        return bool(worktree.git_read(repo, "ls-files", "--with-tree=HEAD", "--", str(path)))
+    except worktree.GitError:  # no commit yet, or a path outside the repository
+        return False

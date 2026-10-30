@@ -350,8 +350,9 @@ Each step leaves the system working.
   repository's history but writes out every tracked file (a 24 GB Unity project: 3.4 GB, without its 7.6 GB `Library/`).
   Unity work isn't copied for review, whichever way it runs: its checks run in an Editor, not a copy. In-place work
   is committed rather than merged (`runner/in_place.py`): `propose_merge` and the merge commit only the files its
-  handoff lists as output, with their .meta files and new folders' (`git status -uall -- <specs>`, then `git commit
-  -- <files>`), so others' work in the folder stays uncommitted; the `merged` event carries the files, and the
+  handoff lists as output, read relative to the project's folder, and in a Unity project their .meta files and their
+  folders' (`git status -uall -- <specs>`, then `git commit -- <files>`), so others' work in the folder stays
+  uncommitted; the `merged` event carries the files, and the
   Landed page and the chief's push card follow as for a merge. Its reviewers are told which files are its own.
 - **Unity Editors for worktrees** (`unity.py`, `runner/editors.py`). `open_unity_editor` starts
   `<Hub>/Editor/<m_EditorVersion>/Unity.app` with `open -n -g … --args -projectPath <worktree>` after `defaults write
@@ -607,7 +608,7 @@ Checked on Claude Code 2.1.310 and codex-cli 0.164.0 (26 October 2026), before b
   credentials does.
 - Codex can approve one host at a time only through its experimental `network_proxy` feature, which is off by
   default. Worth revisiting once it's stable, for host lists on Codex too.
-- Claude Code's sandbox points `TMPDIR` at `/tmp/claude` without creating it, so tools that need a temp folder fail until crewbots creates it.
+- Claude Code's sandbox points `TMPDIR` at `/tmp/claude-<uid>`. Tools that need a temp folder fail while it's missing, so crewbots makes it before a sandboxed run.
 
 ## Still open
 

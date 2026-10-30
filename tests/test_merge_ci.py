@@ -43,6 +43,23 @@ def test_a_passing_run_merges_the_squash_on_top_of_main(work, tmp_path):  # noqa
     assert merged.merge_state == "merged" and git(repo, "rev-parse", "main") == merged.merged_commit
 
 
+def test_a_project_in_a_subfolder_gates_the_merge_with_its_commands_run_there(work, tmp_path):  # noqa: F811
+    runner, store, repo, task, wt = work
+    (repo / "app").mkdir()
+    (repo / "app" / "marker.txt").write_text("x")
+    git(repo, "add", "app")
+    git(repo, *IDENT, "commit", "-qm", "app")
+    store.update_task(task.id, workspace=str(repo / "app"))  # the thread was started in the project's folder
+    ran_in = tmp_path / "ran-in"
+    runner.crew.projects["app"] = Project("app", repo / "app", "", tmp_path / "app.md", ci=("false",))
+    with pytest.raises(MergeError, match="at step 'false'"):
+        runner.merge(task.id, force=True)
+    runner.crew.projects["app"] = Project("app", repo / "app", "", tmp_path / "app.md",
+                                          ci=(f"test -f marker.txt && pwd > {ran_in}",))
+    assert runner.merge(task.id, force=True).merge_state == "merged"
+    assert ran_in.read_text().strip().endswith("/checkout/app")
+
+
 def test_workflow_steps_gate_the_merge(work, tmp_path):  # noqa: F811
     runner, store, repo, task, wt = work
     (repo / ".github" / "workflows").mkdir(parents=True)

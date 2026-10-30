@@ -121,7 +121,7 @@ The agents run on the official **Claude Code** and **Codex** CLIs, so they use t
     review feedback in the code): the cause gets fixed, or what's unfinished goes in the handoff's `open`. A comment
     stating an outside constraint with its issue link stays. The standards say the rest, for the reviewer.
   - Work done in a project's folder itself is proposed like any other: once approved, crewbots commits just the files
-    it handed back as its output (with their Unity .meta files) on the folder's branch, leaving everything else in
+    it handed back as its output (in a Unity project, with their .meta files) on the folder's branch, leaving everything else in
     progress there uncommitted. It shows on the Landed page, and the chief proposes the push as usual. Revert there
     leaves other uncommitted work alone, and refuses, changing nothing, only when it would touch a file with
     uncommitted changes.
@@ -327,10 +327,11 @@ The app works like a messaging app:
 
 Every bot has a daemon-owned headless Google Chrome browser, started on first use. `browser_open(url)` opens
 an HTTP(S) page; `browser_screenshot(width=1400, height=860, theme="light", full_page=false)` returns a PNG the
-model can see and saves it as `browser-<theme>-<id>.png` in the task's folder. Use `theme="dark"` to emulate
-`prefers-color-scheme: dark`. `browser_click(selector)` clicks a CSS selector, `browser_type(selector, text, key)`
-types or presses a named key, `browser_evaluate(expression)` inspects the page with JavaScript, and
-`browser_console(clear=false)` reads recent messages and errors. Open a page before using the other tools.
+model can see and saves it as `browser-<theme>-<id>.png` in the crew's `attachments/browser/<task>/`, outside the
+work's checkout. Use `theme="dark"` to emulate `prefers-color-scheme: dark`. `browser_click(selector)` clicks a CSS
+selector, `browser_type(selector, text, key)` types or presses a named key, `browser_evaluate(expression)` inspects
+the page with JavaScript, and `browser_console(clear=false)` reads recent messages and errors. Open a page before using
+the other tools.
 
 Chrome runs outside the bot's CLI sandbox with a separate disposable profile under `~/.crewbots/browser/`.
 Each task has its own context and cookies. A context closes when its turn finishes, is cancelled, or has had no

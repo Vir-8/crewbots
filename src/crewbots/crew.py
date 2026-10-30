@@ -17,8 +17,8 @@ from typing import Any
 
 import yaml
 
+from crewbots import frontmatter, paths, prompts, working_state
 from crewbots import pages as pages_module
-from crewbots import paths, prompts, working_state
 from crewbots import projects as projects_module
 from crewbots.backends import BACKENDS, Access, McpServer
 from crewbots.memory import CREW_SCOPE, Memory
@@ -128,6 +128,11 @@ class Crew:
             known = ", ".join(sorted(self.projects)) or "none yet: the user adds them in the app"
             raise CrewError(f"no project named {name!r}; the projects are {known}")
         return self.projects[name]
+
+    def project_at(self, folder: Path) -> Project | None:
+        """The project whose folder this is, if any."""
+        folder = folder.expanduser().resolve()
+        return next((p for p in self.projects.values() if p.folder.resolve() == folder), None)
 
     @property
     def skills_dir(self) -> Path:
@@ -421,10 +426,9 @@ def init(home: Path) -> Path:
 def _frontmatter(text: str, source: Path | str) -> tuple[dict[str, Any], str]:
     if not text.startswith("---"):
         raise CrewError(f"{source}: a role card starts with --- frontmatter")
-    try:
-        _, meta_text, body = text.split("---", 2)
-    except ValueError:
-        raise CrewError(f"{source}: the frontmatter has no closing ---") from None
+    if (parts := frontmatter.split(text)) is None:
+        raise CrewError(f"{source}: the frontmatter has no closing ---")
+    meta_text, body = parts
     meta = yaml.safe_load(meta_text) or {}
     if not isinstance(meta, dict):
         raise CrewError(f"{source}: frontmatter must be a mapping")

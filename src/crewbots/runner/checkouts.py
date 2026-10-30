@@ -31,8 +31,8 @@ class Checkouts:
             return workspace
         if not bot.worktree or not worktree.is_repo(workspace):
             return self._in_place(workspace)
-        matching = [p for p in self.crew.projects.values() if workspace.resolve() == p.folder.resolve()]
-        if matching and matching[0].isolation == "in_place":  # beside the user and other bots, on its current branch
+        project = self.crew.project_at(workspace)
+        if project and project.isolation == "in_place":  # beside the user and other bots, on its current branch
             if not self.store.last_event(task.id, ("in_place",)):  # what its work is committed onto (runner/in_place.py)
                 self._record(task.id, kind="in_place", data={"branch": worktree._git(workspace, "branch", "--show-current")})
             return self._in_place(workspace)

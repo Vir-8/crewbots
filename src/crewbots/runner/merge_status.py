@@ -37,26 +37,26 @@ class MergeStatus:
         except worktree.GitError:
             return None
 
-    def ci_gate(self, task: Task, into: str, tip: str | None = None, *, commit: str | None = None) -> tuple[str, str]:
-        """Run the repo's CI steps on what a merge would land on `into`: `commit` if given (already the squash
-        result), else the squash of `tip` on top of `into`, built with merge-tree so no ref or file moves. Returns
-        (branch, commit of it) that was tested. Raises MergeError naming the failing step, or if the result can't be
-        built (a conflict included): CI is never skipped. A repo with no CI steps passes. Blocking, like the merge."""
+    def ci_gate(self, task: Task, into: str, tip: str) -> tuple[str, str]:
+        """Run the repo's CI steps on what a merge would land on `into`: the squash of `tip` on top of `into`, built
+        with merge-tree so no ref or file moves. Returns (branch, commit of it) that was tested. Raises MergeError
+        naming the failing step, or if the result can't be built (a conflict included): CI is never skipped. A repo
+        with no CI steps passes. Blocking, like the merge."""
         repo = Path(task.repo)
         target = f"refs/heads/{into}"
         try:
             tested = worktree._git(repo, "rev-parse", "--verify", target)
-            if commit is None:
-                tree = worktree.git_read(repo, "merge-tree", "--write-tree", target, tip).split("\n", 1)[0].strip()
-                commit = worktree._git(repo, "-c", "user.name=crewbots", "-c", "user.email=crewbots@localhost",
-                                       "commit-tree", tree, "-p", target, "-m", "merge check")
+            tree = worktree.git_read(repo, "merge-tree", "--write-tree", target, tip).split("\n", 1)[0].strip()
+            commit = worktree._git(repo, "-c", "user.name=crewbots", "-c", "user.email=crewbots@localhost",
+                                   "commit-tree", tree, "-p", target, "-m", "merge check")
         except worktree.GitError as e:
             if "CONFLICT" in str(e):  # no result to check: refuse, with the conflict as the reason
                 raise MergeError(f"merging {task.branch} into {into} failed, and nothing was changed: {e}") from None
             raise MergeError(f"could not build the merged result to run CI on, so nothing was merged: {e}") from None
-        project = next((p for p in self.crew.projects.values() if p.folder.resolve() == repo.resolve()), None)
+        project = self.crew.project_at(Path(task.workspace or repo))  # its folder may be a subfolder of the repository
+        within = project.folder.resolve().relative_to(repo.resolve()) if project else Path()
         try:
-            ci.check(repo, commit, into, project.ci if project else ())
+            ci.check(repo, commit, into, project.ci if project else (), directory=str(within))
         except ci.CIFailed as e:
             raise MergeError(f"CI did not pass on the merged result, so nothing was merged: {e}") from None
         return into, tested

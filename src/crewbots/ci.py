@@ -1,8 +1,9 @@
 """The repo's CI steps, run locally on the exact commit before a Push or Replace card is made.
 
 Commands come from `.github/workflows/*.yml`. Supported, and nothing else:
-- jobs triggered on `push` (`on: push`, a list, or a map; `branches:` and `branches-ignore:` are matched as globs
-  against the branch), run in file order and then job order. `needs:` is not used for ordering.
+- jobs triggered on `push` (`on: push`, a list, or a map), run in file order and then job order. `needs:` is not
+  used for ordering. `branches:` and `branches-ignore:` are matched as GitHub matches them (`*` stops at `/`, `**`
+  doesn't, a later `!pattern` excludes); a push trigger with only `tags:` or `tags-ignore:` never runs for a branch.
 - steps with `run:`, in a `bash -e` shell, with `working-directory` (step, or the job's `defaults.run`) and literal
   `env` (workflow, job, step). `CI=true` is set, and HOME is a fresh empty folder (uv and npm keep the real caches).
 - `actions/setup-python` with a `python-version` sets UV_PYTHON, so uv uses that Python. `actions/setup-node`'s
@@ -13,13 +14,13 @@ Commands come from `.github/workflows/*.yml`. Supported, and nothing else:
   astral-sh/setup-uv, actions/cache, actions/upload-artifact. Any other `uses:` step, and any step or job with an
   `if:` other than `always()` or `success()`, makes the check fail ("can't reproduce CI step"): a run never passes
   having skipped a real check. A matrix, `${{ }}` expressions or a `shell` other than bash fail it too.
-With no workflow job for the branch, a project's own `ci:` list of commands is run. With neither there's nothing to
-run, and the card says so: a project needn't have CI (a Unity game's tests need its open Editor).
+With no workflow job for the branch, a project's own `ci:` list of commands is run, from the project's folder. With
+neither there's nothing to run, and the card says so: a project needn't have CI (a Unity game's tests need its open
+Editor).
 
 The commit is checked out into a shared clone under the daemon's temp folder, so the user's folder is never touched.
 """
 
-import fnmatch
 import glob
 import logging
 import os
@@ -73,10 +74,29 @@ def _on_push(trigger: Any, branch: str) -> bool:
         return False
     push = trigger["push"] or {}
     if "branches" in push:
-        return any(fnmatch.fnmatchcase(branch, str(p)) for p in push["branches"] or [])
+        return _matches(branch, push["branches"])
     if "branches-ignore" in push:
-        return not any(fnmatch.fnmatchcase(branch, str(p)) for p in push["branches-ignore"] or [])
-    return True
+        return not _matches(branch, push["branches-ignore"])
+    return "tags" not in push and "tags-ignore" not in push
+
+
+def _matches(branch: str, patterns: Any) -> bool:
+    """Whether GitHub's branch filter matches: the last pattern that matches decides, and a `!` one excludes."""
+    matched = False
+    for pattern in patterns or []:
+        pattern = str(pattern)
+        try:
+            if re.fullmatch(_glob(pattern.removeprefix("!")), branch):
+                matched = not pattern.startswith("!")
+        except re.error:
+            raise CIFailed(f"branch filter {pattern!r} can't be read") from None
+    return matched
+
+
+def _glob(pattern: str) -> str:
+    """A GitHub filter glob as a regex. `?`, `+` and `[...]` mean what they mean in a regex."""
+    parts = re.split(r"(\*\*|\*|\[[^]]*]|(?<=.)[?+])", pattern)
+    return "".join({"**": ".*", "*": "[^/]*"}.get(p, p) if i % 2 else re.escape(p) for i, p in enumerate(parts))
 
 
 def _always(condition: Any) -> bool:
@@ -143,14 +163,14 @@ def _plan_workflow(path: Path, branch: str, plan: Plan) -> None:
                 plan.skipped.append(f"{job_id}: {uses}")
 
 
-def plan_for(checkout: Path, branch: str, project_commands: tuple[str, ...] = ()) -> Plan:
+def plan_for(checkout: Path, branch: str, project_commands: tuple[str, ...] = (), directory: str = "") -> Plan:
     plan = Plan()
     workflows = sorted((checkout / ".github" / "workflows").glob("*.y*ml"))
     for path in workflows:
         _plan_workflow(path, branch, plan)
     if not plan.steps:
         plan.skipped = []
-        plan.steps = [Step(c.strip().splitlines()[0], c) for c in project_commands]
+        plan.steps = [Step(c.strip().splitlines()[0], c, directory) for c in project_commands]
     return plan
 
 
@@ -220,14 +240,14 @@ def _run_step(step: Step, checkout: Path, timeout: int, base_env: dict[str, str]
 
 
 def check(folder: Path, sha: str, branch: str, project_commands: tuple[str, ...] = (),
-          timeout: int = STEP_TIMEOUT) -> dict[str, Any]:
-    """Run the CI steps on `sha` in a clean checkout. Returns what to record on the card, or raises CIFailed with the
-    failing step and the end of its output. A repo with no CI steps for the branch passes with status "none": there was
-    nothing to run. Blocking: call it off the event loop."""
+          timeout: int = STEP_TIMEOUT, *, directory: str = "") -> dict[str, Any]:
+    """Run the CI steps on `sha` in a clean checkout, a project's own commands from its `directory` in it. Returns
+    what to record on the card, or raises CIFailed with the failing step and the end of its output. A repo with no CI
+    steps for the branch passes with status "none": there was nothing to run. Blocking: call it off the event loop."""
     paths.temp().mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="ci-", dir=paths.temp()))
     try:
-        result = _run(folder, sha, branch, project_commands, timeout, work)
+        result = _run(folder, sha, branch, project_commands, directory, timeout, work)
     except CIFailed as e:
         leftover = _remove(work)
         raise CIFailed(f"{e}\n{leftover}" if leftover else str(e)) from None
@@ -249,7 +269,7 @@ def _remove(work: Path) -> str:
     return ""
 
 
-def _run(folder: Path, sha: str, branch: str, project_commands: tuple[str, ...], timeout: int,
+def _run(folder: Path, sha: str, branch: str, project_commands: tuple[str, ...], directory: str, timeout: int,
          work: Path) -> dict[str, Any]:
     checkout = work / "checkout"
     try:
@@ -258,7 +278,7 @@ def _run(folder: Path, sha: str, branch: str, project_commands: tuple[str, ...],
             subprocess.run(["git", *args], check=True, capture_output=True, text=True, timeout=300)
     except (subprocess.SubprocessError, OSError) as e:
         raise CIFailed(f"CI could not check out {sha[:12]}: {getattr(e, 'stderr', None) or e}") from None
-    plan = plan_for(checkout, branch, project_commands)
+    plan = plan_for(checkout, branch, project_commands, directory)
     if not plan.steps:
         return {"status": "none", "sha": sha, "steps": [], "skipped": [], "node": [],
                 "note": "No CI configured, so nothing was run"}
