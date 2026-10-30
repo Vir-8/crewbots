@@ -21,6 +21,6 @@ Approvals, escalation and stop conditions.
 
 ## Stop conditions
 
-- From the third review round, work goes back only while its findings narrow to a small, clear fix. A review cycle stops after five rounds, and the user gets the best version and the open objections. crewbots counts the rounds and refuses a sixth.
+- A review round is one reviewed version of the work. From the third, work goes back only while its findings narrow to a small, clear fix. A review cycle stops after five rounds, and the user gets the best version and the open objections. crewbots counts the rounds and refuses a sixth.
 - A task blocked after two attempts escalates. There is no third attempt.
 - Only the chief reassigns a task.

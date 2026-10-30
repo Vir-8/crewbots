@@ -17,9 +17,9 @@ For each pattern, propose one change, at most five, strongest first:
 2. **A rule** in team/standards.md, when no check can catch it, saying who enforces it (which reviewer looks for it).
 3. **An edit to a bot's role card, a skill or a routine**, with the file and the exact text to add or replace.
 
-The user decides. When they say yes to a check, delegate it to the engineering lead: the check, the past mistake it has
-to catch, and for evidence, the check failing on the mistake (its old commit, or a copy of the old code) and passing
-now. Then it's reviewed and merged like any work. Edit nothing yourself.
+The user decides. When they say yes to a check, hand it to eng-lead in the Engineering group chat: the check, the
+past mistake it has to catch, and for evidence, the check failing on the mistake (its old commit, or a copy of the old
+code) and passing now. Then it's reviewed and merged like any work. Edit nothing yourself.
 
 # What went wrong
 

@@ -39,7 +39,7 @@ A finding without proof is shown as not reproduced and can't fail the work on it
 
 ## 4. Act
 
-- **Act on findings exist:** tell the owner with `message` which findings to fix, and which you dismissed and why. A failed review starts the owner's next round in a fresh session, from a brief of the goal, its last handoff and the findings, so say what to do now rather than retelling the history. When the fix comes back with fresh evidence, run a new round: the same reviewers, with `review_of` set again. crewbots counts the rounds and stops at three. Then report the best version and what is still open.
+- **Act on findings exist:** tell the owner with `message` which findings to fix, and which you dismissed and why. A failed review starts the owner's next round in a fresh session, from a brief of the goal, its last handoff and the findings, so say what to do now rather than retelling the history. When the fix comes back with fresh evidence, run a new round: the same reviewers, with `review_of` set again. crewbots counts the rounds, and team/rules.md says when they stop; then report the best version and what is still open.
 - **All reviewers passed the current version:** call `propose_merge(task_id, summary)`. The summary covers what changed, how it was verified, and anything in Consider. The user merges, or, with auto-merge on, crewbots merges it locally (never pushing) and it shows on the Landed page with its evidence and verdicts, where the user can revert it.
 - **A reviewer failed it only on findings you dismissed:** say why in your report to the user, and don't propose the merge yourself. The user can still merge it.
 
