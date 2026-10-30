@@ -1,7 +1,7 @@
 // The demo crew's answers for the pages and lists the bridge serves: chats, code review's inbox and drafts, usage and
 // plans, tools, routines and the crew's state.
 
-import type { ConnectionStatus } from "../types";
+import type { ConnectionStatus, McpServerInfo } from "../types";
 import * as demo from "./demo";
 
 export const status: ConnectionStatus = { state: "connected", home: "design preview", ownsDaemon: false };
@@ -108,7 +108,7 @@ export const reviewDrafts: { id: number; path: string; line: number; side: strin
   { id: 1, path: "server/reports.py", line: 64, side: "RIGHT", body: "`filename` is fixed, so two exports in a row overwrite each other in the browser's downloads. Put the date in it.", author: "reviewer:claude:sonnet:high", task_id: null, commit_sha: "abc", created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
 ];
 
-export const mcpServers = [
+export const mcpServers: McpServerInfo[] = [
   { name: "blender", transport: "stdio", command: "uv", args: ["--directory", "~/blender_mcp/mcp", "run", "blender-mcp"], url: null, env_keys: ["BLENDER_MCP_PORT"], header_keys: [], bots: ["engineer"] },
   { name: "davinci-resolve", transport: "stdio", command: "/bin/sh", args: ["start-resolve-mcp.sh"], url: null, env_keys: ["RESOLVE_SCRIPT_API"], header_keys: [], bots: [] },
 ];
@@ -137,7 +137,7 @@ export function routines() {
   const base = { workspace: null, repo: null, on: null, budget: null, enabled: true, last_run_at: null, last_task_id: null, skipped_at: null };
   return {
     routines: [
-      { ...base, name: "standup", description: "A short summary each weekday morning of what the crew did, and what needs you.", bot: "chief", when: "0 9 * * 1-5", schedule: "0 9 * * 1-5", path: "routines/standup.md", next_run_at: at(1, 9), last_run_at: at(0, 9), last_task_id: "t_stand00001", budget: 200_000 },
+      { ...base, name: "standup", description: "A short summary each weekday morning of what the crew did, and what needs you.", bot: "chief", when: "0 9 * * 1-5", schedule: "0 9 * * 1-5", path: "routines/standup.md", next_run_at: at(1, 9), last_run_at: at(0, 9), last_task_id: "t_stand00001" },
       { ...base, name: "retro", description: "A Friday look back at the week.", bot: "chief", when: "0 16 * * 5", schedule: "0 16 * * 5", path: "routines/retro.md", next_run_at: at(4, 16) },
       { ...base, name: "dependency-check", description: "Looks for outdated or vulnerable dependencies every Monday.", bot: "engineer", when: "0 10 * * 1", schedule: "0 10 * * 1", path: "routines/dependency-check.md", next_run_at: null, enabled: false, proposed_by: "engineer" },
       { ...base, name: "review-requests", description: "Drafts a review when someone asks you to review a pull request.", bot: "reviewer", when: "on github.review_requested in acme/web", schedule: null, on: "github.review_requested", repo: "acme/web", path: "routines/review-requests.md", next_run_at: null },

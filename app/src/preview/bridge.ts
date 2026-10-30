@@ -6,7 +6,9 @@ import type { ConnectionStatus, Live, StoredEvent, Task } from "../types";
 import * as demo from "./demo";
 import { landedRequest } from "./demo/landed";
 import { projectRequest } from "./demo/projects";
-import { chats, crewState, mcpServers, pins, plans, previewFiles, previewModels, setPins, reviewDrafts, reviewInbox, routines, skills, status, usageSummary } from "./fixtures";
+import { settingsRequest } from "./demo/settings";
+import { toolsRequest } from "./demo/tools";
+import { chats, crewState, pins, plans, previewFiles, previewModels, setPins, reviewDrafts, reviewInbox, skills, status, usageSummary } from "./fixtures";
 
 type Listener<T> = (payload: T) => void;
 const liveListeners = new Set<Listener<Live>>();
@@ -90,6 +92,10 @@ async function request(method: string, path: string, body?: any) {
   if (projectsAnswer) return projectsAnswer;
   const landedAnswer = landedRequest(method, url.pathname, parts, allEvents, { publish, say });
   if (landedAnswer) return landedAnswer;
+  const settingsAnswer = settingsRequest(method, url.pathname, parts, body);
+  if (settingsAnswer) return settingsAnswer;
+  const toolsAnswer = await toolsRequest(method, url.pathname, parts, body, (name) => request("POST", `/routines/${name}/run`));
+  if (toolsAnswer) return toolsAnswer;
   if (method === "GET" && url.pathname === "/chats") return ok(chats());
   if (url.pathname === "/pins") {
     if (method === "PUT") {
@@ -178,24 +184,10 @@ async function request(method: string, path: string, body?: any) {
     const b = demo.bots.find((x) => x.name === task.bot)!;
     return ok({ task_id: task.id, bot: task.bot, backend: b.backend, plan: b.backend.split("-")[0], model: b.model, effort: b.effort, session_id: task.session_id ?? "019a2c3e-7f1d-7c4a-9e21-5b8d0c6f4a12", open: true, context_percent: 38.4, context_window: b.context_window, rollover_percent: 70, turns: task.turns ?? 12, background: "running, 64% left in the 5 hours window" });
   }
-  if (method === "GET" && url.pathname === "/mcp/servers") return ok(mcpServers);
   if (method === "GET" && url.pathname === "/skills") return ok(skills);
-  if (method === "GET" && url.pathname === "/mcp/installed") {
-    return ok([
-      { id: "a", source: "Claude Code", name: "blender", transport: "stdio", command: "uv", args: ["--directory", "~/blender_mcp/mcp", "run", "blender-mcp"], url: null, env_keys: ["BLENDER_MCP_PORT"], header_keys: [], in_crew: true },
-      { id: "b", source: "Claude Code · Sky Islands", name: "UnityMCP", transport: "http", command: null, args: [], url: "http://127.0.0.1:8080/mcp", env_keys: [], header_keys: [], in_crew: false },
-      { id: "c", source: "Codex", name: "gimp", transport: "stdio", command: "run-gimp-mcp.sh", args: [], url: null, env_keys: [], header_keys: [], in_crew: false },
-    ]);
-  }
-  if (method === "GET" && url.pathname === "/mcp/registry") {
-    return ok([{ name: "io.github.someone/figma-mcp", title: "Figma", description: "Read Figma files, frames and components.", version: "1.4.0", website: "https://github.com/someone/figma-mcp", options: [{ id: "package:0", label: "npm · figma-mcp 1.4.0", fields: [{ kind: "env", key: "FIGMA_TOKEN", description: "A personal access token", required: true, secret: true, default: null }] }, { id: "remote:0", label: "Remote · https://mcp.figma.example/mcp", fields: [] }] }]);
-  }
-  if (method === "POST" && parts[0] === "mcp" && parts[3] === "check") return ok({ ok: true, tools: ["get_scene_info", "create_object", "modify_object", "render", "execute_blender_code"], error: null });
-  if (method === "GET" && url.pathname === "/routines") return ok(routines());
   if (method === "GET" && url.pathname === "/usage/summary") return ok(usageSummary(Number(url.searchParams.get("days") ?? 365)));
   if (method === "GET" && url.pathname === "/plans") return ok(plans);
   if (method === "GET" && url.pathname === "/reviews/inbox") return ok(reviewInbox);
-  if (method === "GET" && url.pathname === "/reviews/repos") return ok({ "acme/web": "~/code/acme-web" });
   if (url.pathname === "/reviews/reviewers") return ok(method === "PUT" ? body : [{ backend: "claude", model: "sonnet", effort: "high" }, { backend: "codex", model: null, effort: "high" }]);
   if (method === "GET" && url.pathname === "/models") return ok(previewModels);
   if (method === "POST" && url.pathname === "/attachments") {
@@ -241,11 +233,8 @@ async function request(method: string, path: string, body?: any) {
     const b = demo.bots.find((x) => x.name === parts[1])!;
     return ok({ ...b, context_window: b.context_window ?? "auto", budget: null, instructions: `## Mission\n\nBe the ${b.title.toLowerCase()} of the crew.\n\n## Owns\n\n- What its role card says\n` });
   }
-  if (method === "PUT" || (method === "POST" && (url.pathname === "/bots" || url.pathname === "/routines"))) return ok({});
-  if (method === "GET" && parts[0] === "routines" && parts[2] === "file") {
-    const r = routines().routines.find((x) => x.name === parts[1])!;
-    return ok({ ...r, goal: "Write the standup for what the crew did since {{since}}.\n\n{{activity}}" });
-  }
+  // Nothing reads what saving a card or making a bot or routine answers.
+  if ((method === "PUT" && parts[0] === "bots" && parts[2] === "card") || (method === "POST" && (url.pathname === "/bots" || url.pathname === "/routines"))) return ok({});
   if (method === "GET" && url.pathname === "/budgets") {
     return ok(demo.bots.map((b) => ({ bot: b.name, tokens: b.name === "engineer" ? 2_000_000 : null, per: "week", used: b.name === "engineer" ? 1_460_000 : 310_000, held: b.name === "chief" ? ["t_docs000001"] : [] })));
   }
