@@ -76,10 +76,8 @@ class Permissions:
         asked = self.store.answer_permission(permission_id, allowed)
         task = self.store.get_task(asked["task_id"])
         self._refresh_working_state(task.bot)
-        shown = [row[0] for row in self.store.db.execute(
-            "select distinct task_id from events where kind = 'permission' and json_extract(data, '$.permission') = ?",
-            (permission_id,))]
-        for where in shown or self._shown_in(task):  # where it was asked: the chief's chat, for a teammate's
+        # where it was asked: the chief's chat, for a teammate's
+        for where in self.store.permission_shown_in(permission_id) or self._shown_in(task):
             self._record(where, kind="permission_answer", data={"permission": permission_id, "allowed": allowed})
         if task.status is not Status.CANCELLED:
             self.send(task.id, sender="crewbots", text=prompts.text(

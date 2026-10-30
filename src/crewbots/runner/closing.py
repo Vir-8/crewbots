@@ -1,4 +1,5 @@
-"""Closing work without merging it: a merge proposal withdrawn, a task dropped on purpose, a task's folder removed."""
+"""Closing work without merging it: a merge proposal withdrawn, a task dropped on purpose, a task's folder removed (by
+cleanup.py)."""
 
 from crewbots.runner.common import NotAllowed
 from crewbots.store import Status, Task

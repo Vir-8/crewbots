@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from crewbots.events import Event
-from crewbots.store.records import StoredEvent, Task, _now, _task
+from crewbots.store.records import StoredEvent, Task, _event, _now, _task
 from crewbots.store.tasks import TREE
 
 AGENT_LOG_CHARS = 4000  # of each entry's text: a goal, a question, a message or a post
@@ -111,15 +111,35 @@ class Events:
         row = self.db.execute(
             f"select * from events where task_id = ? and kind in ({','.join('?' * len(kinds))}) order by id desc limit 1",
             (task_id, *kinds)).fetchone()
-        if row is None:
-            return None
-        return StoredEvent(id=row["id"], task_id=row["task_id"], kind=row["kind"], data=json.loads(row["data"]),
-                           at=row["at"])
+        return _event(row) if row else None
 
     def count_events_after(self, task_id: str, after: int, kinds: tuple[str, ...]) -> int:
         return self.db.execute(
             f"select count(*) from events where task_id = ? and id > ? and kind in ({','.join('?' * len(kinds))})",
             (task_id, after, *kinds)).fetchone()[0]
+
+    def answered_since(self, task_id: str, event_id: int) -> bool:
+        """Whether a task's questions were closed, or the user wrote to it, after this event."""
+        return self.db.execute(
+            "select 1 from events where task_id = ? and id > ? and "
+            "(kind = 'questions_closed' or (kind = 'message' and json_extract(data, '$.from') = 'user')) limit 1",
+            (task_id, event_id)).fetchone() is not None
+
+    def last_error(self, task_id: str) -> str | None:
+        """The error of a task's last failed turn, or None once a later turn succeeded."""
+        row = self.db.execute(
+            "select json_extract(data, '$.error') from events where task_id = ? and kind = 'done'"
+            " and json_extract(data, '$.is_error') = 1 and json_extract(data, '$.error') is not null"
+            " and json_extract(data, '$.error') != '' and id > coalesce((select max(id) from events"
+            " where task_id = ? and kind = 'done' and json_extract(data, '$.is_error') = 0), 0)"
+            " order by id desc limit 1", (task_id, task_id)).fetchone()
+        return row[0] if row else None
+
+    def permission_shown_in(self, permission_id: int) -> list[str]:
+        """The tasks a permission request was shown in."""
+        rows = self.db.execute("select distinct task_id from events where kind = 'permission'"
+                               " and json_extract(data, '$.permission') = ?", (permission_id,))
+        return [row[0] for row in rows]
 
     def events_since(self, since: str, kinds: tuple[str, ...], task_ids: list[str] | None) -> list[StoredEvent]:
         """Events of these kinds since `since`, in these tasks, or in every task when `task_ids` is None."""
@@ -129,17 +149,13 @@ class Events:
         rows = self.db.execute(
             f"select * from events where at >= ? and kind in ({','.join('?' * len(kinds))}){within} order by id",
             (since, *kinds, *(task_ids or ()))).fetchall()
-        return [StoredEvent(id=r["id"], task_id=r["task_id"], kind=r["kind"], data=json.loads(r["data"]), at=r["at"])
-                for r in rows]
+        return [_event(r) for r in rows]
 
     def recent_events(self, limit: int = 200, kinds: tuple[str, ...] | None = None) -> list[StoredEvent]:
         """The newest events across the crew, oldest first."""
         where = f" where kind in ({','.join('?' * len(kinds))})" if kinds else ""
         rows = self.db.execute(f"select * from events{where} order by id desc limit ?", (*(kinds or ()), limit)).fetchall()
-        return [
-            StoredEvent(id=r["id"], task_id=r["task_id"], kind=r["kind"], data=json.loads(r["data"]), at=r["at"])
-            for r in reversed(rows)
-        ]
+        return [_event(r) for r in reversed(rows)]
 
     def latest_event_id(self) -> int:
         return self.db.execute("select coalesce(max(id), 0) from events").fetchone()[0]
@@ -161,15 +177,11 @@ class Events:
         """A task's last `limit` events of these kinds, oldest first."""
         rows = self.db.execute(f"select * from events where task_id = ? and kind in ({','.join('?' * len(kinds))}) "
                                "order by id desc limit ?", (task_id, *kinds, limit)).fetchall()
-        return [StoredEvent(id=r["id"], task_id=r["task_id"], kind=r["kind"], data=json.loads(r["data"]), at=r["at"])
-                for r in reversed(rows)]
+        return [_event(r) for r in reversed(rows)]
 
     def events(self, task_id: str | None = None, after: int = 0, limit: int = 1000) -> list[StoredEvent]:
         if task_id:
             sql, args = "select * from events where task_id = ? and id > ? order by id limit ?", (task_id, after, limit)
         else:
             sql, args = "select * from events where id > ? order by id limit ?", (after, limit)
-        return [
-            StoredEvent(id=r["id"], task_id=r["task_id"], kind=r["kind"], data=json.loads(r["data"]), at=r["at"])
-            for r in self.db.execute(sql, args).fetchall()
-        ]
+        return [_event(r) for r in self.db.execute(sql, args).fetchall()]
