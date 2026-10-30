@@ -1,46 +1,5 @@
 /* The crew page and the bot editor. */
 
-/* The crew page */
-
-.crew-link {
-  margin: 0 -10px 6px;
-  color: var(--soft);
-}
-
-.crew-link .icon {
-  color: var(--faint);
-}
-
-.crew-link .crew-link-alert {
-  color: var(--red);
-}
-
-.crew-page {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-.crew-col {
-  max-width: 820px;
-  margin: 0 auto;
-  padding: 8px 24px 48px;
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-}
-
-.crew-col h2 {
-  font-size: 15px;
-  font-weight: 600;
-  margin: 0 0 4px;
-}
-
-.crew-hint {
-  font-size: 13px;
-  margin: 0 0 12px;
-}
-
 .crew-problem {
   display: flex;
   gap: 9px;
@@ -65,43 +24,6 @@
   word-break: break-word;
 }
 
-.bot-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 10px;
-}
-
-.bot-card {
-  padding: 13px 15px;
-  border-radius: 12px;
-  background: var(--raised);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.bot-card-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-}
-
-.bot-card-name {
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.bot-card-edit {
-  margin-left: auto;
-  color: var(--faint);
-}
-
-.bot-card-desc {
-  font-size: 13px;
-  color: var(--soft);
-}
-
 .bot-facts {
   display: grid;
   grid-template-columns: 76px minmax(0, 1fr);
@@ -121,10 +43,6 @@
   flex-direction: column;
   gap: 4px;
   word-break: break-word;
-}
-
-.held-link {
-  font-size: 12px;
 }
 
 .meter {
@@ -147,53 +65,6 @@
 
 .meter.limited > span {
   background: var(--red);
-}
-
-
-.routine-card,
-.starter-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 0;
-  border-top: 1px solid var(--line-soft);
-}
-
-.routine-card.off .crew-row-name {
-  color: var(--faint);
-}
-
-.crew-row-text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 13px;
-}
-
-.crew-row-name {
-  font-weight: 550;
-}
-
-.routine-when {
-  font-size: 12.5px;
-  color: var(--soft);
-}
-
-.routine-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex: none;
-}
-
-.starters {
-  margin-top: 18px;
-}
-
-.starters .side-label {
-  padding: 0 0 4px;
 }
 
 /* Crew */

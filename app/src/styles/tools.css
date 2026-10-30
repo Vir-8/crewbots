@@ -1,16 +1,5 @@
 /* Tools: the crew's MCP servers and skills. */
 
-/* Tools: the crew's MCP servers and skills */
-
-.mcp-row {
-  gap: 12px;
-}
-
-.mcp-row .list-text {
-  min-width: 0;
-  flex: 1;
-}
-
 .ellipsis {
   overflow: hidden;
   white-space: nowrap;
@@ -45,16 +34,11 @@
 }
 
 .skill-row {
-  text-align: left;
   width: 100%;
 }
 
 .skill-row.unused .list-title {
   color: var(--soft);
-}
-
-.skill-row .list-text {
-  min-width: 0;
 }
 
 .add-server-body {
@@ -87,13 +71,7 @@
 
 .registry-head {
   width: 100%;
-  text-align: left;
   gap: 10px;
-}
-
-.registry-head .list-text {
-  min-width: 0;
-  flex: 1;
 }
 
 .registry-form {

@@ -3,6 +3,7 @@
 /* The composer */
 
 .composer {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -60,29 +61,6 @@
   opacity: 1;
 }
 
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 8px;
-  font-size: 12.5px;
-  color: var(--soft);
-  border: 1px solid var(--line);
-  cursor: pointer;
-}
-
-.chip:hover {
-  color: var(--text);
-  background: var(--hover);
-}
-
-.chip.select select {
-  color: var(--text);
-  font-weight: 550;
-}
-
 /* The message box's round buttons, all one size: attach and dictate outlined, send filled. */
 .composer-bar .attach,
 .mic,
@@ -109,40 +87,7 @@
   opacity: 0.25;
 }
 
-/* A new goal */
-
-.new-goal {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.new-goal-body {
-  flex: 1;
-  width: 100%;
-  max-width: 700px;
-  margin: 0 auto;
-  padding: 0 24px 12vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 8px;
-}
-
-.new-goal-body h1 {
-  font-size: 26px;
-  letter-spacing: -0.02em;
-}
-
-.new-goal-body p {
-  margin: 0 0 18px;
-}
-
 /* The composer's extras */
-
-.composer {
-  position: relative;
-}
 
 .mentions {
   position: absolute;

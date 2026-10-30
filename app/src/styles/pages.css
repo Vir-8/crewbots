@@ -1,6 +1,4 @@
-/* Pages (Crew, Routines, Analytics, Tools, Settings): their frame, lists and form fields. */
-
-/* Pages: Crew, Routines, Usage, Settings */
+/* The full pages (Crew, Routines, Settings and the rest): their frame, lists and form fields. */
 
 .page-head {
   height: 56px;
@@ -58,10 +56,6 @@
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.small {
-  font-size: 12.5px;
 }
 
 .list {

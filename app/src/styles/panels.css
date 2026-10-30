@@ -136,7 +136,6 @@
 }
 
 .diff-name .mono {
-  font-family: var(--mono);
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
@@ -222,6 +221,7 @@
 
 .rounds {
   display: flex;
+  align-items: center;
   gap: 5px;
   margin-top: 10px;
 }
@@ -235,10 +235,6 @@
 
 .round.used {
   background: var(--soft);
-}
-
-.rounds {
-  align-items: center;
 }
 
 .rounds-label {
@@ -260,10 +256,6 @@
 }
 
 /* A bot's profile */
-
-.panel.profile {
-  position: relative;
-}
 
 .profile-close {
   position: absolute;
@@ -434,12 +426,6 @@
   align-items: center;
   gap: 8px;
   margin-top: 10px;
-}
-
-.room-actions .button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
 }
 
 .room-delete {

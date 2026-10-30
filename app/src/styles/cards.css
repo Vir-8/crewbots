@@ -404,11 +404,6 @@
   overflow-wrap: anywhere;
 }
 
-.ask-card:hover {
-  border-color: var(--line);
-  background: var(--raised);
-}
-
 .ask-card.pending {
   cursor: default;
 }

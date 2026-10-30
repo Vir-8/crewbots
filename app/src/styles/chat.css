@@ -172,11 +172,6 @@
   opacity: 1;
 }
 
-.step-name {
-  flex: none;
-  color: var(--text);
-}
-
 .step-arg {
   overflow: hidden;
   white-space: nowrap;
@@ -488,13 +483,6 @@ button.chat-head-who:hover {
 
 .thread-col.chat > .work {
   max-width: 520px;
-}
-
-.room-empty {
-  text-align: center;
-  font-size: 13px;
-  margin: 24px auto;
-  max-width: 420px;
 }
 
 .room-group {

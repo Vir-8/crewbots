@@ -226,44 +226,6 @@ select {
   min-height: 0;
 }
 
-.topbar {
-  height: 48px;
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 0 20px;
-  position: relative;
-  user-select: none;
-}
-
-.topbar-title {
-  font-size: 13px;
-  font-weight: 550;
-  color: var(--soft);
-  max-width: 60%;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.topbar-working {
-  position: absolute;
-  right: 16px;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12.5px;
-  color: var(--soft);
-  padding: 4px 10px;
-  border-radius: 20px;
-}
-
-.topbar-working:hover {
-  background: var(--raised);
-}
-
 .dock {
   padding: 0 24px 20px;
 }
@@ -488,26 +450,11 @@ body.resizing iframe {
 /* With the sidebar collapsed to its rail, a header's left end sits under the sidebar button. */
 .app.side-hidden .review-list-head,
 .app.side-hidden .chat-head,
-.app.side-hidden .page-head,
-.app.side-hidden .topbar {
+.app.side-hidden .page-head {
   padding-left: 48px;
 }
 
-/* Used all over: cards, status dots, softer, smaller and monospace text, padding, and errors. */
-
-.card {
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-}
-
-.card-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  margin-bottom: 4px;
-}
+/* Used all over: status dots, softer, smaller and monospace text, padding, and errors. */
 
 .dot {
   width: 6px;
@@ -535,18 +482,18 @@ body.resizing iframe {
   background: var(--red);
 }
 
-.muted,
-.soft {
+.muted {
   color: var(--soft);
-}
-
-.small {
-  font-size: 12.5px;
 }
 
 .mono {
   font-family: var(--mono);
   font-size: 12px;
+}
+
+/* After .mono, so small mono text takes this size. */
+.small {
+  font-size: 12.5px;
 }
 
 .pad {
