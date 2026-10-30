@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 from crewbots.api.context import Context
 from crewbots.browser_cdp import BrowserError
 from crewbots.runner import UnknownBot
+from crewbots.runner.common import effective_network
 from crewbots.store import Status
 
 
@@ -36,8 +37,7 @@ def routes(c: Context) -> APIRouter:
                 bot = c.runner.bot_for(task.bot)
             except (KeyError, UnknownBot):
                 return False, False
-            network = True if any(g["kind"] == "network" for g in c.store.grants(task_id)) else bot.network
-            return task.status == Status.RUNNING, network
+            return task.status == Status.RUNNING, effective_network(bot, c.store.grants(task_id))
         return current
 
     async def call(operation):

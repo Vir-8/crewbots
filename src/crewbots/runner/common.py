@@ -78,13 +78,19 @@ class Bus:
             self._subscribers.discard(queue)
 
 
+def effective_network(bot: Bot, grants: list[dict[str, Any]]) -> bool | tuple[str, ...]:
+    """A task's network: open once the user allows it any, else its bot's own setting. The browser closes a tab whose
+    network changed, so every caller has to agree on this."""
+    return any(g["kind"] == "network" for g in grants) or bot.network
+
+
 def _usage_data(usage: Usage, bot: Bot) -> dict[str, Any]:
     """A turn's usage, with the plan, model and effort that spent it."""
     data = {k: v for k, v in asdict(usage).items() if k != "kind"}
-    return data | {"plan": _plan(bot.backend), "model": bot.model or "default", "effort": bot.effort}
+    return data | {"plan": plan(bot.backend), "model": bot.model or "default", "effort": bot.effort}
 
 
-def _plan(backend: str) -> str:
+def plan(backend: str) -> str:
     """The subscription a backend runs on: both Claude backends share Claude's limits, both Codex ones Codex's."""
     return backend.split("-")[0]
 
