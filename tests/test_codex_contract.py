@@ -15,6 +15,7 @@ import pytest
 
 from crewbots import paths
 from crewbots.backends import Access, RunSpec
+from crewbots.backends.base import temp_env
 from crewbots.backends.codex_cli import sandbox_overrides
 
 pytestmark = pytest.mark.skipif(shutil.which("codex") is None, reason="needs Codex installed")
@@ -120,9 +121,10 @@ def test_a_reading_bot_writes_in_its_own_temp_folder_and_nowhere_else(tmp_path, 
 
     def run(*command: str | Path) -> subprocess.CompletedProcess:
         return subprocess.run(["codex", "sandbox", *overrides, "--", *map(str, command)], cwd=work, capture_output=True,
-                              text=True, timeout=60, env={**os.environ, "TMPDIR": str(temp)})
+                              text=True, timeout=60, env={**os.environ, **temp_env(temp)})
 
     assert run("sh", "-c", "mktemp -d").returncode == 0  # a backup of saves, or a screenshot to share, goes here
+    assert run("/bin/zsh", "-c", "cat <<EOF\nwritten\nEOF").stdout == "written\n"
     assert run("touch", work / "made").returncode != 0 and not (work / "made").exists()
 
 

@@ -128,6 +128,12 @@ def session_temp_dir() -> Path:
     return Path(tempfile.mkdtemp(prefix="session-", dir=paths.temp()))
 
 
+def temp_env(temp: Path) -> dict[str, str]:
+    """The environment that sends scratch files to `temp`. zsh writes a here-document under $TMPPREFIX, /tmp/zsh
+    unless set, rather than $TMPDIR, and a sandbox that shuts /tmp would fail every `cat <<EOF`."""
+    return {"TMPDIR": str(temp), "TMPPREFIX": str(temp / "zsh")}
+
+
 def package_caches() -> dict[str, str]:
     """Where a writing bot's package managers keep what they download, as environment variables: folders of crewbots'
     own that its sandbox may write in, since the user's (~/.cache/uv, ~/.npm) are outside it. The crew's bots share

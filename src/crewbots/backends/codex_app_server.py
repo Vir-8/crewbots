@@ -22,7 +22,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from crewbots.backends.base import Access, RunSpec, codex_retry, package_caches, session_temp_dir
+from crewbots.backends.base import Access, RunSpec, codex_retry, package_caches, session_temp_dir, temp_env
 from crewbots.backends.codex_cli import network_overrides, sandbox_overrides
 from crewbots.backends.credentials import without_credentials
 from crewbots.backends.policy import NO_NETWORK, STAY_IN_SANDBOX, Policy
@@ -88,7 +88,7 @@ class CodexSession:
             # In place of /tmp and $TMPDIR (sandbox_overrides): a reading bot needs somewhere to write scratch files
             # too, such as a backup of saves before it plays a game, or a screenshot to share.
             temp = session_temp_dir()
-            env["TMPDIR"] = str(temp)
+            env |= temp_env(temp)
             overrides += sandbox_overrides(spec, temp)
         if spec.access is Access.WORKSPACE_WRITE:
             env |= without_credentials() | package_caches()

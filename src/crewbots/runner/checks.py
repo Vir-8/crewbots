@@ -16,7 +16,7 @@ from typing import Any
 
 from crewbots import paths
 from crewbots.backends import Access, RunSpec
-from crewbots.backends.base import package_caches
+from crewbots.backends.base import package_caches, temp_env
 from crewbots.backends.codex_cli import PROFILE, sandbox_overrides
 from crewbots.backends.credentials import without_credentials
 from crewbots.events import Notice
@@ -81,7 +81,7 @@ class Checks:
         network = bool(bot and bot.network is True)
         paths.temp().mkdir(parents=True, exist_ok=True)
         temp = Path(tempfile.mkdtemp(prefix="checks-", dir=paths.temp()))
-        env = dict(os.environ) | without_credentials() | package_caches() | {"TMPDIR": str(temp), "CI": "true"}
+        env = dict(os.environ) | without_credentials() | package_caches() | temp_env(temp) | {"CI": "true"}
         results: list[dict[str, Any]] = []
         try:
             for command in commands:
