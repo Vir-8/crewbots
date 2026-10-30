@@ -414,6 +414,7 @@ class Browser(BrowserControl):
                 params["clip"] = {**size, "scale": 1}
             shot = await self.cdp.call("Page.captureScreenshot", params, tab.session)
             # A generated name and O_EXCL/O_NOFOLLOW prevent a workspace symlink from redirecting daemon writes.
+            folder.mkdir(parents=True, exist_ok=True)
             path = folder / f"browser-{theme}-{uuid4().hex}.png"
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
             with os.fdopen(fd, "wb") as output:

@@ -324,7 +324,9 @@ async def test_proxy_close_aborts_backpressured_upstream():
 async def test_tools_api_auth_logging_and_mcp_images(browser, tmp_path):
     service, fake = browser
     store = Store(tmp_path / "crew.db")
-    runner = Runner(store, make_crew(tmp_path, bot("engineer", workspace=tmp_path)), {"fake": FakeBackend()})
+    work = tmp_path / "work"
+    work.mkdir()
+    runner = Runner(store, make_crew(tmp_path, bot("engineer", workspace=work)), {"fake": FakeBackend()})
     runner.browser = service
     task = store.create_task("engineer", "browser")
     runner._tokens["run-token"] = task.id
@@ -342,6 +344,10 @@ async def test_tools_api_auth_logging_and_mcp_images(browser, tmp_path):
                                    headers={"Authorization": "Bearer run-token"})).status_code == 422
     content = await tools.call("browser_screenshot", {})
     assert content[1]["type"] == "image"
+    # Kept in the crew's attachments, where a commit of the work can't take it into the repo, and still shareable.
+    shot = Path(content[0]["text"])
+    assert shot.parent == tmp_path / "attachments" / "browser" / task.id and not any(work.iterdir())
+    assert (await runner.share(task.id, [str(shot)]))["files"][0]["name"] == shot.name
     # The stdio MCP wrapper returns actual image blocks, not a JSON string containing an image.
     transport = httpx.MockTransport(lambda request: httpx.Response(200, json={"content": content}))
     with httpx.Client(transport=transport, base_url="http://daemon/v1") as client:

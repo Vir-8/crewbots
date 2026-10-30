@@ -1,1 +1,1 @@
-See this task’s browser as a PNG image, also saved in the task folder. Defaults to a 1400×860 viewport and light theme; theme can be dark (prefers-color-scheme). full_page captures the entire page. Use the returned path in your handoff.
+See this task’s browser as a PNG image, also saved in the crew’s attachments. Defaults to a 1400×860 viewport and light theme; theme can be dark (prefers-color-scheme). full_page captures the entire page. Use the returned path in your handoff.
