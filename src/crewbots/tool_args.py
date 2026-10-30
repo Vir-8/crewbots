@@ -37,40 +37,44 @@ class Args(BaseModel):
     may_be_empty: ClassVar[frozenset[str]] = frozenset()  # required, but an empty string is a value
 
 
+class Forwarded(Args):
+    """Arguments passed on with only what the bot gave, so what they're passed to applies its own defaults."""
+
+
 class NoArgs(Args):
     pass
 
 
-class BrowserOpen(Args):
+class BrowserOpen(Forwarded):
     url: str
 
 
-class BrowserScreenshot(Args):
+class BrowserScreenshot(Forwarded):
     width: int | None = None
     height: int | None = None
     theme: Literal["light", "dark"] | None = None
     full_page: bool | None = None
 
 
-class BrowserClick(Args):
+class BrowserClick(Forwarded):
     selector: str
 
 
-class BrowserType(Args):
+class BrowserType(Forwarded):
     selector: str | None = None
     text: str | None = None
     key: str | None = None
 
 
-class BrowserEvaluate(Args):
+class BrowserEvaluate(Forwarded):
     expression: str = also("expression", "script")
 
 
-class BrowserConsole(Args):
+class BrowserConsole(Forwarded):
     clear: bool | None = None
 
 
-class WebKitCheck(Args):
+class WebKitCheck(Forwarded):
     url: str
     click: str | None = None
     setup: str | None = None
@@ -224,7 +228,7 @@ class GroupMember(Args):
     room: str | None = None  # the group chat the bot is talking in, if left out
 
 
-class AddBot(Args):
+class AddBot(Forwarded):
     name: str
     title: str
     description: str
@@ -302,10 +306,10 @@ class ArgsError(ValueError):
 
 
 def read(name: str, model: type[Args], given: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
-    """What a bot sent the tool `name`, as its arguments by field name (only those it gave, in JSON's types), and the
-    names it sent that the tool doesn't take."""
+    """What a bot sent the tool `name`, as its arguments by field name with the defaults of those it left out (for a
+    `Forwarded` tool, only those it gave), in JSON's types; and the names it sent that the tool doesn't take."""
     try:
-        args = model.model_validate(given).model_dump(mode="json", exclude_unset=True)
+        args = model.model_validate(given).model_dump(mode="json", exclude_unset=issubclass(model, Forwarded))
     except ValidationError as e:
         raise ArgsError(_said(name, e)) from None
     if empty := [key for key, field in model.model_fields.items()

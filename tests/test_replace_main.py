@@ -307,9 +307,9 @@ def test_a_bot_cannot_press_the_button_or_propose_unless_chief(setup):
     for token in ("chief-token", "eng-token"):
         assert client.post(f"/replace-main-proposals/{proposal}/replace",
                            headers={"Authorization": f"Bearer {token}"}).status_code == 403
-    assert client.post("/bot/propose_replace_main", headers={"Authorization": "Bearer eng-token"},
-                       json={"project": "demo", "branch": BRANCH, "summary": "x"}).status_code == 403
-    assert client.post("/bot/propose_replace_main", headers={"Authorization": "Bearer chief-token"},
+    assert client.post("/bot/tools/propose_replace_main", headers={"Authorization": "Bearer eng-token"},
+                       json={"project": "demo", "branch": BRANCH, "summary": "x"}).status_code == 422
+    assert client.post("/bot/tools/propose_replace_main", headers={"Authorization": "Bearer chief-token"},
                        json={"project": "demo", "branch": BRANCH, "summary": "x"}).status_code == 200
     assert git(repo, "rev-parse", "main") != git(repo, "rev-parse", BRANCH)
     with pytest.raises(NotAllowed):

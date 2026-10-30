@@ -1,10 +1,10 @@
 """Tasks: what they are, their events, status and children, and the messages sent to them."""
 
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel
 
-from crewbots.store import Status, Verdict
+from crewbots.store import Kind, MergeState, Status, Verdict
 
 
 class RetryOut(BaseModel):
@@ -37,10 +37,10 @@ class TaskOut(BaseModel):
     turns: int
     review_of: str | None
     review_version: int | None
-    merge_state: Literal["proposed", "merging", "merged", "dropped"] | None
+    merge_state: MergeState | None
     merged_commit: str | None
     merged_tip: str | None
-    kind: Literal["chat", "seat", "thread", "review", "ask"]
+    kind: Kind
     room_id: str | None
     pr: str | None  # a code review's pull request, owner/name#number
     routine: str | None
@@ -149,6 +149,14 @@ class ChildOut(BaseModel):
 class CursorOut(BaseModel):
     id: int
 
+class SearchHit(BaseModel):
+    task_id: str
+    kind: str
+    at: str
+    snippet: str
+    bot: str
+    title: str
+
 class ChangesOut(BaseModel):
     diff: str | None
 
@@ -164,6 +172,9 @@ class Message(BaseModel):
 
 class MergeRequest(BaseModel):
     force: bool = False
+
+class WithdrawalReason(BaseModel):
+    reason: str
 
 class PermissionAnswer(BaseModel):
     allowed: bool

@@ -36,6 +36,7 @@ class FakeCDP:
         self.intercept_url = None
         self.fail_requests = set()
         self.gone_sessions = set()  # dropped by Chrome without an event
+        self.on_navigate = None
 
     async def event(self, method, params, session=None):
         await self.socket.send(json.dumps({"method": method, "params": params, "sessionId": session}))
@@ -76,6 +77,8 @@ class FakeCDP:
                 self.waiting_sessions.discard(request["sessionId"])
             elif method == "Page.navigate":
                 self.url = params["url"]
+                if self.on_navigate:
+                    self.on_navigate()
                 request_id = f"fetch-{request['id']}"
                 self.navigations[request_id] = request
                 await self.event("Fetch.requestPaused", {
@@ -336,11 +339,11 @@ async def test_tools_api_auth_logging_and_mcp_images(browser, tmp_path):
     assert store.agent_log()[0]["kind"] == "refused"
     app = create_app(runner, "admin", 8765)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://127.0.0.1:8765/v1") as client:
-        assert (await client.post("/bot/browser/open", json={"url": "http://localhost"})).status_code == 403
-        response = await client.post("/bot/browser/open", json={"url": "http://localhost"},
+        assert (await client.post("/bot/tools/browser_open", json={"url": "http://localhost"})).status_code == 403
+        response = await client.post("/bot/tools/browser_open", json={"url": "http://localhost"},
                                      headers={"Authorization": "Bearer run-token"})
         assert response.status_code == 200 and "Preview" in response.json()["content"][0]["text"]
-        assert (await client.post("/bot/browser/upload", json={},
+        assert (await client.post("/bot/tools/browser_upload", json={},
                                    headers={"Authorization": "Bearer run-token"})).status_code == 422
     content = await tools.call("browser_screenshot", {})
     assert content[1]["type"] == "image"
@@ -482,9 +485,26 @@ async def test_blocked_intercepted_navigation_finishes_with_an_error(browser, tm
             await service.action("a", tmp_path, False, "open", {"url": "http://localhost:5173"})
     assert set(fake.navigations) <= fake.decided
     tab = service.sessions["a"]
-    assert tab.proxy.address in str(caught.value) and '"listening"' in str(caught.value)
+    assert str(caught.value) == "net::ERR_BLOCKED_BY_CLIENT"  # the proxy log stays in diagnostics()
     assert tab.proxy.password not in str(caught.value)
     # Page.navigate may fail before Chrome acknowledges Fetch.failRequest on the other command.
+    async with asyncio.timeout(1):
+        while service.cdp.paused:
+            await asyncio.sleep(0.01)
+
+
+async def test_failed_open_names_what_the_proxy_refused_during_that_load(browser, tmp_path):
+    service, fake = browser
+    await service.action("a", tmp_path, False, "open", {"url": "http://localhost:5173"})
+    proxy = service.sessions["a"].proxy
+    proxy.note("blocked", url="https://earlier.example/")
+    fake.intercept_url = "https://external.example/redirect"
+    fake.on_navigate = lambda: proxy.note("error", url="http://localhost:5173", error="ConnectionRefusedError: refused")
+    async with asyncio.timeout(1):
+        with pytest.raises(BrowserError) as caught:
+            await service.action("a", tmp_path, False, "open", {"url": "http://localhost:5173"})
+    assert str(caught.value) == ("net::ERR_BLOCKED_BY_CLIENT; the proxy couldn't reach http://localhost:5173: "
+                                 "ConnectionRefusedError: refused")
     async with asyncio.timeout(1):
         while service.cdp.paused:
             await asyncio.sleep(0.01)

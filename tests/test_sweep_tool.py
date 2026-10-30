@@ -22,8 +22,8 @@ def test_bot_route_refuses_a_non_coordinator(crew_app):
     client, backend, _ = crew_app
     _, chief_token = start(client, backend, "chief")
     _, worker_token = start(client, backend, "engineer")
-    assert client.post("/bot/sweep_worktrees", json={}, headers=as_bot(worker_token)).status_code == 403
-    assert client.post("/bot/sweep_worktrees", json={}, headers=as_bot(chief_token)).status_code == 200
+    assert client.post("/bot/tools/sweep_worktrees", json={}, headers=as_bot(worker_token)).status_code == 422
+    assert client.post("/bot/tools/sweep_worktrees", json={}, headers=as_bot(chief_token)).status_code == 200
 
 
 async def test_dry_run_changes_nothing_and_a_real_run_removes_only_what_is_safe(setup):

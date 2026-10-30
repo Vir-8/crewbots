@@ -109,10 +109,11 @@ def test_codex_bots_share_through_the_bot_api(crew_app, tmp_path):
     (tmp_path / "chart.svg").write_text("<svg xmlns='http://www.w3.org/2000/svg'/>")
     task_id, token = start(client, backend, "engineer")
     store.update_task(task_id, workspace=str(tmp_path))
-    shared = client.post("/bot/share", json={"files": ["chart.svg"]}, headers=as_bot(token))
-    assert shared.status_code == 201 and shared.json()["files"][0]["mime"] == "image/svg+xml"
-    assert client.post("/bot/share", json={"files": ["nope.svg"]}, headers=as_bot(token)).status_code == 422
-    assert client.post("/bot/share", json={"files": ["/etc/hosts"]}, headers=as_bot(token)).status_code == 403
+    shared = client.post("/bot/tools/share", json={"files": ["chart.svg"]}, headers=as_bot(token))
+    assert shared.status_code == 200 and shared.json()["content"].startswith("Shared chart.svg with the user")
+    assert [a["mime"] for e in store.events(task_id) for a in e.data.get("attachments", [])] == ["image/svg+xml"]
+    for refused in ("nope.svg", "/etc/hosts"):
+        assert client.post("/bot/tools/share", json={"files": [refused]}, headers=as_bot(token)).status_code == 422
 
 
 async def test_the_chat_list_names_files_shared_without_words(crew, store, tmp_path, studio):

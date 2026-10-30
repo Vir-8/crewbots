@@ -111,6 +111,16 @@ def test_stale_card_refuses_new_commit(setup):
     assert git(remote, "rev-parse", "refs/heads/main") == before
 
 
+def test_a_card_from_before_a_snapshot_field_reads_as_changed(setup):
+    runner, client, _, remote, _ = setup
+    proposal = propose(runner, runner.chat("chief").id, "demo", "Add one")
+    runner.store.db.execute("update events set data = json_remove(data, '$.tracking') where id = ?", (proposal,))
+    before = git(remote, "rev-parse", "refs/heads/main")
+    result = press(client, proposal)
+    assert not result["ok"] and "changed since this card was made" in result["reason"]
+    assert git(remote, "rev-parse", "refs/heads/main") == before
+
+
 def test_a_commit_with_an_ai_trailer_is_not_pushed(setup):
     runner, client, repo, remote, _ = setup
     (repo / "two.txt").write_text("two")
@@ -138,10 +148,10 @@ def test_chief_hears_why_a_proposal_cannot_be_made(setup):
     runner, client, repo, _, _ = setup
     git(repo, "branch", "--unset-upstream")
     runner._tokens["chief-token"] = runner.chat("chief").id
-    response = client.post("/bot/propose_push", headers={"Authorization": "Bearer chief-token"},
+    response = client.post("/bot/tools/propose_push", headers={"Authorization": "Bearer chief-token"},
                            json={"project": "demo", "summary": "Ready"})
     assert response.status_code == 200
-    assert "upstream" in response.json()["message"].lower()
+    assert "upstream" in response.json()["content"].lower()
 
 
 def test_non_fast_forward_reports_reason(setup, tmp_path):
@@ -182,9 +192,11 @@ def test_bot_api_proposes_but_bot_token_cannot_push(setup):
     runner._tokens["chief-token"] = chief.id
     headers = {"Authorization": "Bearer chief-token"}
     before = git(remote, "rev-parse", "refs/heads/main")
-    response = client.post("/bot/propose_push", headers=headers, json={"project": "demo", "summary": "Ready"})
+    response = client.post("/bot/tools/propose_push", headers=headers, json={"project": "demo", "summary": "Ready"})
     assert response.status_code == 200
-    assert client.post(f"/push-proposals/{response.json()['id']}/push", headers=headers).status_code == 403
+    proposal = runner.store.last_event(chief.id, ("push_proposed",)).id
+    assert f"Push proposal {proposal} is waiting" in response.json()["content"]
+    assert client.post(f"/push-proposals/{proposal}/push", headers=headers).status_code == 403
     assert git(remote, "rev-parse", "refs/heads/main") == before
 
 

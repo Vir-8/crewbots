@@ -57,12 +57,20 @@ def test_a_list_sent_as_a_string_is_read_a_line_each():
 
 
 def test_the_names_bots_reach_for_are_read_as_the_field():
-    assert read("working_state", {"action": "remove", "id": "18e3"}) == ({"action": "remove", "entry_id": "18e3"}, [])
-    assert read("share", {"path": "a.png"})[0] == {"files": ["a.png"]}
+    args, unknown = read("working_state", {"action": "remove", "id": "18e3"})
+    assert (args["action"], args["entry_id"], unknown) == ("remove", "18e3", [])
+    assert read("share", {"path": "a.png"})[0]["files"] == ["a.png"]
     assert read("browser_evaluate", {"script": "1+1"})[0] == {"expression": "1+1"}
     assert read("edit_page", {"page": "P", "old": "a", "new": "b"})[0] == {"page": "P", "find": "a", "replace": "b"}
     assert read("write_page", {"page": "P", "text": "Hi"})[0] == {"page": "P", "content": "Hi"}
-    assert read("working_state", {"action": ""})[0] == {"action": "list"}  # what Codex's MCP server sends for none
+    assert read("working_state", {"action": ""})[0]["action"] == "list"  # what Codex's MCP server sends for none
+
+
+def test_a_tool_reads_its_defaults_but_a_forwarded_one_only_what_was_sent():
+    assert read("sweep_worktrees", {})[0] == {"dry_run": True}
+    assert read("handoff", {"done": "x"})[0] == {"done": "x", "output": [], "open": "", "needs": "", "evidence": [],
+                                                 "checks": []}
+    assert read("browser_screenshot", {"width": 800})[0] == {"width": 800}  # the browser's own defaults for the rest
 
 
 def test_what_a_tool_cant_take_is_said_for_the_bot():
@@ -74,8 +82,8 @@ def test_what_a_tool_cant_take_is_said_for_the_bot():
         read("working_state", {"action": "tidy"})
     assert read(*SENT[5])[0]["replace"] == ""  # replaced with nothing: taken out
     assert read("review", {"verdict": "PASS", "summary": "ok"})[0]["verdict"] == "pass"
-    assert read("escalate", {"question": "Which?", "choices": ["A", {"label": "B"}]})[0]["choices"] == [
-        {"label": "A"}, {"label": "B"}]
+    assert [c["label"] for c in read("escalate", {"question": "Which?", "choices": ["A", {"label": "B"}]})[0]["choices"]
+            ] == ["A", "B"]
     assert read("handoff", {"done": "x", "task": "Fix it", "to": "eng-lead"})[1] == ["task", "to"]
 
 
