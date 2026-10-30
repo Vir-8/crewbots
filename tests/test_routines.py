@@ -248,6 +248,11 @@ def test_routines_over_the_api(crew, tmp_path):
         assert "standup" not in starters and "retro" in starters  # standup.md is already there
         assert client.post("/routines/starters/retro", headers=auth).json()["schedule"] == "0 16 * * 5"
 
+        assert "verification" not in starters  # it's for eng-lead, who isn't in this crew
+        refused = client.post("/routines/starters/verification", headers=auth)
+        assert refused.status_code == 422 and "no bot named 'eng-lead'" in refused.json()["detail"]
+        assert not (tmp_path / "routines" / "verification.md").exists()
+
 
 async def test_the_activity_a_routine_reads(crew, store, tmp_path):
     since = datetime.now().astimezone() - timedelta(minutes=1)

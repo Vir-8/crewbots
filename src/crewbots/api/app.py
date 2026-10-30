@@ -37,6 +37,7 @@ from crewbots.api.routes import (
 )
 from crewbots.attachments import AttachmentError
 from crewbots.memory import MemoryError
+from crewbots.pages import PageError
 from crewbots.reviews import Reviews, ReviewTools
 from crewbots.routines import RoutineError
 from crewbots.runner import MergeError, NotAllowed, Runner, UnknownBot
@@ -98,6 +99,10 @@ def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: 
 
     @app.exception_handler(AttachmentError)
     async def attachment_error(request: Request, e: AttachmentError):
+        return JSONResponse({"detail": str(e)}, status_code=422)
+
+    @app.exception_handler(PageError)
+    async def page_error(request: Request, e: PageError):
         return JSONResponse({"detail": str(e)}, status_code=422)
 
     @app.exception_handler(RoutineError)

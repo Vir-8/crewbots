@@ -59,6 +59,10 @@ async def test_a_bot_proposes_a_routine_that_stays_off_until_the_user_turns_it_o
         [routine] = client.get("/routines", headers=auth).json()["routines"]
         assert routine["enabled"] and routine["proposed_by"] is None
         assert client.post("/routines/ghost/confirm", headers=auth).status_code == 404
+        (tmp_path / "routines" / "orphan.md").write_text(  # proposed by a bot since taken off the crew
+            "---\nbot: designer\nschedule: '0 9 * * *'\nproposed_by: designer\nenabled: false\n---\nx")
+        orphan = client.post("/routines/orphan/confirm", headers=auth)
+        assert orphan.status_code == 422 and "no bot named 'designer'" in orphan.json()["detail"]
     await wait_until(lambda: not crew.runner.running())
 
 

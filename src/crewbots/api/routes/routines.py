@@ -9,6 +9,7 @@ from crewbots import cards
 from crewbots import routines as routines_module
 from crewbots.api.context import Context
 from crewbots.api.schemas import NewRoutine, RoutineBody, RoutineFileOut, RoutineOut, RoutinesOut, TaskOut
+from crewbots.routines import RoutineError
 
 
 def routes(c: Context) -> APIRouter:
@@ -22,8 +23,8 @@ def routes(c: Context) -> APIRouter:
         have = {r.name for r in scheduler.routines} | {Path(f).stem for f in scheduler.errors}
         starters = []
         for name, text in sorted(routines_module.starters().items()):
-            if name not in have:
-                starter = routines_module.parse(text, name, Path(name))
+            starter = routines_module.parse(text, name, Path(name))
+            if name not in have and starter.bot in runner.crew.bots:
                 starters.append({"name": name, "description": starter.description, "when": starter.when})
         return {"routines": [_routine_out(v) for v in scheduler.views()], "errors": scheduler.errors,
                 "github_error": scheduler.github_error, "crew_error": scheduler.crew_error, "starters": starters}
@@ -73,9 +74,13 @@ def routes(c: Context) -> APIRouter:
     @v1.post("/routines/starters/{name}", status_code=201, response_model=RoutineOut)
     async def add_starter(name: str):
         """Copies a starter routine into the crew's routines/ folder."""
-        routines_module.add_starter(runner.crew.home, name)
+        path = routines_module.add_starter(runner.crew.home, name)
         scheduler.load()
-        return _routine_out(next(v for v in scheduler.views() if v.routine.name == name))
+        view = next((v for v in scheduler.views() if v.routine.name == name), None)
+        if view is None:  # its bot isn't in this crew: leave no broken file behind
+            path.unlink()
+            raise RoutineError(scheduler.errors.get(path.name, f"the {name} starter didn't load"))
+        return _routine_out(view)
 
     @v1.post("/routines/{name}/confirm", response_model=TaskOut | None)
     async def confirm_routine(name: str):
@@ -85,7 +90,9 @@ def routes(c: Context) -> APIRouter:
         except KeyError:
             raise HTTPException(404, f"no routine named {name}") from None
         scheduler.load()
-        routine = next(r for r in scheduler.routines if r.name == name)
+        routine = next((r for r in scheduler.routines if r.name == name), None)
+        if routine is None:
+            raise RoutineError(scheduler.errors.get(f"{name}.md", f"{name} didn't load"))
         return scheduler.run_now(name).to_json() if routine.schedule else None
 
     @v1.post("/routines/{name}/run", status_code=201, response_model=TaskOut)

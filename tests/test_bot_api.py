@@ -189,6 +189,9 @@ async def test_a_refusal_reaches_the_bot_as_a_tool_error_it_can_read(crew_app):
 
     with pytest.raises(Exception, match="no bot named 'ghost'"):
         await server.call_tool("delegate", {"bot": "ghost", "goal": "x"})
+    await server.call_tool("write_page", {"page": "Scratchpad", "content": "- The plan"})
+    with pytest.raises(Exception, match="not found in Scratchpad"):
+        await server.call_tool("edit_page", {"page": "Scratchpad", "find": "no such line", "replace": "x"})
 
 
 async def test_workers_delegate_but_only_coordinators_add_bots_and_propose_merges(crew_app):

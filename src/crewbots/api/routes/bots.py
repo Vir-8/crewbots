@@ -10,7 +10,6 @@ from crewbots import cards, mcp_catalog, pages
 from crewbots import models as models_module
 from crewbots.api.context import Context
 from crewbots.api.schemas import BotOut, CardBody, CardOut, ModelsOut, NewBot, PageBody, PageOut, ProfileOut
-from crewbots.pages import PageError
 
 
 def routes(c: Context) -> APIRouter:
@@ -57,10 +56,7 @@ def routes(c: Context) -> APIRouter:
     @v1.put("/bots/{bot}/pages/{name:path}", response_model=PageOut)
     async def put_bot_page(bot: str, name: str, body: PageBody):
         """The user writes one of a bot's pages: it sees the change in its next turn."""
-        try:
-            page = pages.write(pages_folder(bot), name, body.text)
-        except PageError as e:
-            raise HTTPException(422, str(e)) from None
+        page = pages.write(pages_folder(bot), name, body.text)
         runner.bus.publish({"type": "page", "bot": bot, "page": page.name})
         return _page_out(page, text=True)
 
