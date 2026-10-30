@@ -32,7 +32,7 @@ class ChiefEvents:
     def _crew_event(self, kind: str, task_id: str, bot: str) -> None:
         """Keeps something for the next notice. The chief's own tasks are left out, and routine news of work it handed
         out, which reports to it already."""
-        chief = self.coordinator()
+        chief = self.chief_bot()
         if chief is None or bot == chief.name:
             return
         if kind not in NEEDS_CHIEF and self._handed_out_by(task_id) == chief.name:
@@ -63,7 +63,7 @@ class ChiefEvents:
         cleared, and the time kept, only once the notice is in. True if sent."""
         now = now or datetime.now(UTC)
         events = self.store.chief_events()
-        chief = self.coordinator()
+        chief = self.chief_bot()
         if not events or chief is None:
             return False
         chat = self.chat(chief.name)
@@ -119,7 +119,7 @@ class ChiefEvents:
     def review(self, task_id: str, verdict: Verdict, summary: str, findings: list[dict[str, str]]):
         review = super().review(task_id, verdict, summary, findings)
         task = self.store.get_task(task_id)
-        self._crew_event(f"review {verdict}", task.review_of or task_id, task.bot)
+        self._crew_event(f"review {verdict}", task.review_of, task.bot)
         if verdict is Verdict.FAIL and self.review_state(task.review_of).out_of_rounds:
             self._crew_event("review limit", task.review_of, self.store.get_task(task.review_of).bot)
         return review

@@ -4,6 +4,7 @@ import json
 import pytest
 from fakes import FakeBackend, as_bot, bot, make_crew, start, wait_until
 
+from crewbots.backends.base import BackendBase
 from crewbots.crew_tools import CrewTools, ToolRefused
 from crewbots.events import Done
 from crewbots.runner import Runner
@@ -63,14 +64,18 @@ async def test_live_retry_state_and_cleanup(setup):
     seat = store.create_task("worker", "seat", kind="seat", room_id=room["id"])
     runner.backends["fake"] = FakeBackend(reply=lambda _: [Done(final_text="", is_error=True,
                                                                  error="overloaded", retry="transient")])
+    chief = runner.chat("chief").id
+
+    def attempt():
+        return runner.room_status(chief)["rooms"][0]["seats"][0]["attempt"]
+
     work = asyncio.create_task(runner._tries(seat.id, "test"))
-    await wait_until(lambda: runner._attempts.get(seat.id, {}).get("state") == "backoff")
-    entry = runner.room_status(runner.chat("chief").id)["rooms"][0]["seats"][0]
-    assert entry["attempt"] == {"attempt": 2, "of": 4, "state": "backoff", "wait_seconds": 60}
+    await wait_until(lambda: (attempt() or {}).get("state") == "backoff")
+    assert attempt() == {"attempt": 2, "of": 4, "state": "backoff", "wait_seconds": 60}
     work.cancel()
     with pytest.raises(asyncio.CancelledError):
         await work
-    assert seat.id not in runner._attempts
+    assert attempt() is None
 
 
 async def test_running_and_stalled_attempt(setup):
@@ -78,19 +83,22 @@ async def test_running_and_stalled_attempt(setup):
     room = runner.create_room("Engineering", ["chief", "worker"])
     seat = store.create_task("worker", "seat", kind="seat", room_id=room["id"])
 
-    class QuietBackend:
+    class QuietBackend(BackendBase):
         async def run(self, spec):
             await asyncio.Event().wait()
             yield Done(final_text="")
 
     runner.backends["fake"] = QuietBackend()
-    work = asyncio.create_task(runner._tries(seat.id, "test"))
-    await wait_until(lambda: runner._attempts.get(seat.id, {}).get("state") == "running")
     chief = runner.chat("chief").id
-    attempt = runner.room_status(chief)["rooms"][0]["seats"][0]["attempt"]
-    assert attempt == {"attempt": 1, "of": 4, "state": "running"}
+
+    def attempt():
+        return runner.room_status(chief)["rooms"][0]["seats"][0]["attempt"]
+
+    work = asyncio.create_task(runner._tries(seat.id, "test"))
+    await wait_until(lambda: (attempt() or {}).get("state") == "running")
+    assert attempt() == {"attempt": 1, "of": 4, "state": "running"}
     runner.stall_s = 0
-    assert runner.room_status(chief)["rooms"][0]["seats"][0]["attempt"]["state"] == "stalled"
+    assert attempt()["state"] == "stalled"
     work.cancel()
     with pytest.raises(asyncio.CancelledError):
         await work
@@ -102,7 +110,8 @@ def test_bot_route_refuses_non_coordinator_and_nonmember(crew_app):
     _, worker_token = start(client, backend, "engineer")
     own = store.create_room("Engineering", "chief", ["chief", "engineer"])
     other = store.create_room("Private", "engineer", ["engineer"])
-    assert client.post("/bot/room_status", json={}, headers=as_bot(worker_token)).status_code == 403
-    assert client.post("/bot/room_status", json={"room": other["id"]}, headers=as_bot(chief_token)).status_code == 403
-    result = client.post("/bot/room_status", json={"room": own["id"]}, headers=as_bot(chief_token))
-    assert result.status_code == 200 and result.json()["rooms"][0]["room_id"] == own["id"]
+    assert client.post("/bot/tools/room_status", json={}, headers=as_bot(worker_token)).status_code == 422
+    assert client.post("/bot/tools/room_status", json={"room": other["id"]},
+                       headers=as_bot(chief_token)).status_code == 422
+    result = client.post("/bot/tools/room_status", json={"room": own["id"]}, headers=as_bot(chief_token))
+    assert result.status_code == 200 and json.loads(result.json()["content"])["rooms"][0]["room_id"] == own["id"]

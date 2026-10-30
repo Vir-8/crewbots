@@ -11,7 +11,7 @@ from typing import Any
 
 from crewbots import timefmt
 from crewbots.events import RateLimit
-from crewbots.runner.common import _iso, _plan
+from crewbots.runner.common import _iso, plan
 from crewbots.store import Status, Task
 
 BUDGET_REPORT_WINDOW = timedelta(days=7)  # what `budgets` reports for a bot without a budget
@@ -93,11 +93,7 @@ class Holds:
 
     def hold_reason(self, task: Task) -> str | None:
         """Why the task's next turn has to wait, or None if it can go ahead."""
-        root = self.store.work_of(task.id)
-        bot = self.bot_for(task.bot)
-        if root.id in self._released or bot is None:
-            return None
-        return self.budget_reason(bot.name, task)
+        return self.budget_reason(task.bot, task)
 
     def budget_reason(self, name: str, within: Task) -> str | None:
         """Why bot `name` can't take a turn now in the work `within` belongs to: its budget, the work's, or its plan's
@@ -116,12 +112,12 @@ class Holds:
             if used >= root.budget:
                 return (f"this run of the routine {root.routine!r} has used {used:,} of its {root.budget:,} tokens. "
                         "Release it to let the run finish.")
-        plan = _plan(bot.backend)
-        for limit in self.limits.get(plan, {}).values():
+        on = plan(bot.backend)
+        for limit in self.limits.get(on, {}).values():
             if limit.status == "limited" and limit.resets_at and limit.resets_at > time.time():
                 resets = datetime.fromtimestamp(limit.resets_at, timefmt.zone()).strftime("%a %H:%M")
                 window = LIMIT_WINDOWS.get(limit.window, limit.window.replace("_", " "))
-                return f"the {plan.title()} plan's {window} limit is reached; it resets {resets}."
+                return f"the {on.title()} plan's {window} limit is reached; it resets {resets}."
         return None
 
     async def _within_budget(self, task_id: str) -> None:

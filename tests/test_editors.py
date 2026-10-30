@@ -152,6 +152,22 @@ async def test_waiting_for_its_editor_isnt_reported_as_finished_and_the_wait_sur
     said["connected"] = True
     await wait_until(lambda: told(store, task.id))
     assert not crew.runner._waiting_for_editor(task.id)
+    crew.runner.resume_editor_watches()  # a restart once it was told doesn't watch, or tell it, again
+    assert not crew.runner._waiting_for_editor(task.id)
+    await crew.runner.shutdown()
+
+
+async def test_an_editor_told_before_connections_were_recorded_isnt_watched_again(store, unity_crew):
+    crew, work, open_now, said, repo = unity_crew
+    task = work()
+    crew.runner.open_unity_editor(task.id)
+    for watch in list(crew.runner._editor_watches):
+        watch.cancel()
+    await wait_until(lambda: not crew.runner._editor_watches)
+    store.append_event(task.id, kind="message", data={"from": "crewbots", "text": "Unity is open on your worktree and "
+                                                      "connected: set_active_instance to its id, and go on."})
+    crew.runner.resume_editor_watches()
+    assert not crew.runner._editor_watches
     await crew.runner.shutdown()
 
 

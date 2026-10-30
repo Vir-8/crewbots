@@ -12,10 +12,9 @@ from crewbots.attention import BY_URGENCY
 from crewbots.backends import Access, RunSpec
 from crewbots.checkins import Item
 from crewbots.events import Done, Usage
-from crewbots.runner.common import NotAllowed, UnknownBot, _plan, _usage_data
+from crewbots.runner.common import NotAllowed, UnknownBot, _usage_data, plan
 from crewbots.store import Status, Task
 
-URGENCIES = ("low", "normal", "high")
 DAILY_STARTS = 3  # threads a bot may start on its own in a day
 
 
@@ -49,7 +48,7 @@ class Checkins:
         today = self.store.started_on_own(bot, chat.id, midnight.astimezone(UTC).isoformat())
         reason = ("its card says not to (proactive: false)" if not card.proactive else
                   f"it already started {today} today, the most a day" if today >= DAILY_STARTS else
-                  None if (verdict := self.capacity.verdict(_plan(card.backend))).go else verdict.reason)
+                  None if (verdict := self.capacity.verdict(plan(card.backend))).go else verdict.reason)
         if reason:
             self._record(chat.id, kind="notice", data={"message": f"Didn't start {start.get('title')!r} on its own: {reason}"})
             return None
@@ -85,7 +84,7 @@ class Checkins:
                                                role=bot.description),
                     mcp_servers={}, timeout_s=bot.timeout_s,  # on its own: nothing outside crewbots (runner/core.py)
                     network=bot.network, proactive=True, deny_read=self._state_denials(bot.name))
-                report = await self._checkin_run(task, spec)
+                report = _report(await self._json_run(task, spec, "the check-in") or {})
             for item in items:
                 self.store.routine_ran(f"checkin:{task.bot}:{item.id}", now.isoformat(timespec="seconds"), task.id)
             self.store.routine_ran(f"checkin:{task.bot}", now.isoformat(timespec="seconds"), task.id)
@@ -102,7 +101,10 @@ class Checkins:
         finally:
             self._runs.pop(task.id, None)
 
-    async def _checkin_run(self, task: Task, spec: RunSpec) -> dict[str, Any]:
+    async def _json_run(self, task: Task, spec: RunSpec, what: str) -> Any:
+        """Runs `spec` on the task's bot, outside any session, counting what it spends against the task. Returns the
+        JSON object its reply holds, or None if it holds none; ValueError if that can't be read. Raises, naming the
+        run as `what`, when it fails or ends without a result."""
         bot = self.crew.bots[task.bot]
         done: Done | None = None
         async for event in self.backends[bot.backend].run(spec):
@@ -112,10 +114,14 @@ class Checkins:
             elif isinstance(event, Done):
                 done = event
         if done is None or done.is_error:
-            raise RuntimeError((done.error if done else None) or "the check-in ended without a result")
+            raise RuntimeError((done.error if done else None) or f"{what} ended without a result")
         found = re.search(r"\{.*\}", done.final_text, re.DOTALL)
-        reply = json.loads(found[0]) if found else {}
-        start = reply.get("start_thread")
-        return {"notify": bool(reply.get("notify")), "text": str(reply.get("text") or "").strip(),
-                "urgency": reply.get("urgency") if reply.get("urgency") in URGENCIES else "normal",
-                "start_thread": start if isinstance(start, dict) and start.get("goal") else None}
+        return json.loads(found[0]) if found else None
+
+
+def _report(reply: dict[str, Any]) -> dict[str, Any]:
+    """The report a check-in's reply makes, with each field the bot left out or got wrong at its default."""
+    start, urgency = reply.get("start_thread"), reply.get("urgency")
+    return {"notify": bool(reply.get("notify")), "text": str(reply.get("text") or "").strip(),
+            "urgency": urgency if isinstance(urgency, str) and urgency in BY_URGENCY else "normal",
+            "start_thread": start if isinstance(start, dict) and start.get("goal") else None}

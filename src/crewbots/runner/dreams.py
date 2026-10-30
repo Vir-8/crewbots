@@ -3,8 +3,6 @@ noted since the last time, and crewbots applies what it decides to its notes and
 duplicate notes. The memory folder is committed after each run, so every change can be looked back on and undone."""
 
 import asyncio
-import json
-import re
 import time
 from datetime import datetime, timedelta
 from typing import Any
@@ -12,9 +10,8 @@ from typing import Any
 from crewbots import prompts
 from crewbots.backends import Access, RunSpec
 from crewbots.crew import Bot
-from crewbots.events import Done, Usage
 from crewbots.memory import CREW_SCOPE, MemoryError, Note
-from crewbots.runner.common import UnknownBot, _plan, _usage_data
+from crewbots.runner.common import UnknownBot, plan
 from crewbots.store import Status, Task
 
 DREAM_HOUR = 3  # local time: a night's consolidation is due from then
@@ -44,7 +41,7 @@ class Dreams:
         memory = self.crew.memory
         if not (memory.logs_since(bot, since) or memory.changed_since(bot, since)) or bot not in self.crew.bots:
             return False
-        return self.capacity.verdict(_plan(self.crew.bots[bot].backend)).go
+        return self.capacity.verdict(plan(self.crew.bots[bot].backend)).go
 
     def dream(self, bot: str, weekly: bool | None = None) -> Task:
         """Starts consolidating one bot's memory. The run is a task of its own, so what it cost is counted, and its
@@ -99,22 +96,15 @@ class Dreams:
         spec = RunSpec(prompt=materials, cwd=self.crew.home, access=Access.READ_ONLY, model=bot.model,
                        system_prompt=prompts.text("dream-setting", self.crew.home), effort=bot.effort,
                        timeout_s=bot.timeout_s, network=False, deny_read=self._state_denials(bot.name))
-        done: Done | None = None
-        async for event in self.backends[bot.backend].run(spec):
-            if isinstance(event, Usage):
-                self._record(task.id, kind="usage", data=_usage_data(event, bot))
-                self.store.add_usage(task.id, event.input_tokens, event.output_tokens, event.cost_usd)
-            elif isinstance(event, Done):
-                done = event
-        if done is None or done.is_error:
-            return {}, (done.error if done else None) or "the consolidation run ended without a result"
-        found = re.search(r"\{.*\}", done.final_text, re.DOTALL)
-        if not found:
-            return {}, "the consolidation's reply had no JSON in it"
         try:
-            return json.loads(found[0]), None
+            reply = await self._json_run(task, spec, "the consolidation run")
         except ValueError as e:
             return {}, f"the consolidation's reply wasn't JSON: {e}"
+        except RuntimeError as e:
+            return {}, str(e)
+        if reply is None:
+            return {}, "the consolidation's reply had no JSON in it"
+        return reply, None
 
     def _apply_dream(self, bot: str, reply: dict[str, Any]) -> dict[str, Any]:
         """Applies the consolidation's decisions to the bot's own notes (and the crew's, for what it shares or

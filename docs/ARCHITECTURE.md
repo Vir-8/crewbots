@@ -387,7 +387,7 @@ Each step leaves the system working.
   index), as a `review_change` event. A version reviewed in an earlier round counts as approved when its change is the
   same (`ReviewState.same_change`), so a turn that changed nothing, a commit or a clean rebase doesn't cost a round;
   changed context lines do, which is the safe side. A handoff's `checks` are rerun before a review's first turn
-  (`runner/checks.py`, hooked in `_tries_inner`): `codex sandbox` with crewbots' own profile (`sandbox_overrides`), the
+  (`runner/checks.py`, hooked in `_tries`): `codex sandbox` with crewbots' own profile (`sandbox_overrides`), the
   owner's network setting, no logins, in the review's copy, once per (work, version) and shared by the round's
   reviewers. A failure settles each review with a FAIL verdict whose finding's proof is the output, without a turn.
 - **Chasing** (`runner/watchdog.py`): open work owed by its delegator (handed back, a verdict, or a question escalated
