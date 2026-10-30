@@ -15,9 +15,9 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from crewbots import paths, worktree
+from crewbots.github import Snapshot
 
 KINDS = ("commit", "branch", "file", "review_requested", "ci_failed", "ci_passed", "thread_done")
 MAX_FILES = 2000  # of a watched folder, two levels deep
@@ -37,7 +37,7 @@ class Sources:
     def __init__(self) -> None:
         self._heads: dict[str, tuple[str, str]] = {}  # repository → (branch, head commit)
         self._files: dict[str, dict[str, float]] = {}  # folder → path → mtime
-        self._prs: dict[str, tuple[set[str], dict[str, str | None]]] = {}  # "github" → (asked, mine → checks)
+        self._prs: tuple[set[str], dict[str, str | None]] | None = None  # (asked, mine → checks)
 
     def git(self, repos: list[Path]) -> list[CrewEvent]:
         events = []
@@ -76,12 +76,12 @@ class Sources:
             events.append(CrewEvent("file", str(folder), f"{folder.name}: " + "; ".join(parts)))
         return events
 
-    def github(self, snapshot: Any) -> list[CrewEvent]:
+    def github(self, snapshot: Snapshot) -> list[CrewEvent]:
         """New review requests, and the user's pull requests whose checks just failed or passed."""
         asked = {pr.key for pr in snapshot.review_requested}
         mine = {pr.key: pr.checks for pr in snapshot.mine}
-        before = self._prs.get("github")
-        self._prs["github"] = (asked, mine)
+        before = self._prs
+        self._prs = (asked, mine)
         if before is None:
             return []
         events = [CrewEvent("review_requested", pr.key, f"{pr.author} asked you to review {pr.repo}#{pr.number}: "

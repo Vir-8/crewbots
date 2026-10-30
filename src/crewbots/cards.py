@@ -70,9 +70,7 @@ def save_card(home: Path, name: str, fields: dict[str, Any], instructions: str |
 
 
 def routine(home: Path, name: str) -> dict[str, Any]:
-    meta, body = read(_routine_path(home, name))
-    if True in meta:  # YAML reads a bare `on:` key as true
-        meta["on"] = meta.pop(True)
+    meta, body = _read_routine(_routine_path(home, name))
     return {"name": name, **{k: meta.get(k) for k in ROUTINE_FIELDS}, "goal": body.strip()}
 
 
@@ -86,9 +84,7 @@ def save_routine(home: Path, name: str, fields: dict[str, Any], goal: str | None
         meta, body = {}, ""
     else:
         path = _routine_path(home, name)
-        meta, body = read(path)
-        if True in meta:
-            meta["on"] = meta.pop(True)
+        meta, body = _read_routine(path)
     for key in ROUTINE_FIELDS:
         if key in fields:
             value = fields[key]
@@ -106,9 +102,16 @@ def delete_routine(home: Path, name: str) -> None:
     _routine_path(home, name).unlink()
 
 
+def _read_routine(path: Path) -> tuple[dict[str, Any], str]:
+    meta, body = read(path)
+    if True in meta:  # YAML reads a bare `on:` key as true
+        meta["on"] = meta.pop(True)
+    return meta, body
+
+
 def _compose(meta: dict[str, Any], body: str) -> str:
     raw = yaml.safe_dump(meta, sort_keys=False, allow_unicode=True, width=120)
-    raw = raw.replace("\ntrue:", "\non:").replace("'on':", "on:")  # keep the routine key readable as `on:`
+    raw = raw.replace("'on':", "on:")  # keep the routine key readable as `on:`
     return f"---\n{raw}---\n{body.strip()}\n"
 
 

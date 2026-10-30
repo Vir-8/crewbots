@@ -398,7 +398,7 @@ def parse_card(text: str, default_name: str, source: Path | str = "<card>") -> B
         proactive=bool(meta.get("proactive", True)) and backend != "antigravity",
         skills=_skill_names(meta.get("skills"), source),
         budget=_budget(meta.get("budget"), source),
-        network=_network(meta.get("network", False), access, backend, source),
+        network=_network(meta.get("network", False), backend, source),
         display_name=str(meta["display_name"]).strip() or None if meta.get("display_name") else None,
         avatar=_avatar(meta.get("avatar"), source),
         effort=_effort(meta.get("effort"), source),
@@ -464,7 +464,7 @@ def _avatar(raw: Any, source: Path | str) -> dict[str, str] | None:
     return {k: str(raw[k]) for k in ("color", "shape") if k in raw}
 
 
-def _network(raw: Any, access: Access, backend: str, source: Path | str) -> bool | tuple[str, ...]:
+def _network(raw: Any, backend: str, source: Path | str) -> bool | tuple[str, ...]:
     if raw is False or raw is None or raw == []:
         return False
     if raw is True:

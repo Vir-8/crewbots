@@ -88,7 +88,7 @@ def parse(text: str, path: Path) -> Project:
     name = path.stem
     if not NAME.fullmatch(name):
         raise ProjectError(f"{name!r} isn't a project name: lowercase letters, digits and dashes")
-    isolation = "in_place" if meta.get("isolation") == "branch" else meta.get("isolation")  # what branch mode became
+    isolation = meta.get("isolation")
     if "isolation" in meta and isolation not in ISOLATIONS:
         raise ProjectError("isolation must be `in_place` or `worktree`")
     ci = meta.get("ci", [])
