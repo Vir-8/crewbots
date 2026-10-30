@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Crew } from "../state";
-import { doing } from "../state";
+import { workingLine } from "../state";
 import type { Task } from "../types";
 import { ACTIVE } from "../types";
 import { Files } from "./Attachments";
@@ -123,7 +123,7 @@ export function Thread(props: {
         {active && (
           <div className="working-indicator">
             <span className="working-dot" />
-            <span className="shimmer">{(props.working && task.status !== "running" ? "" : doing(crew.latest.get(task.id))) || props.working || `${labelOf(task.bot)} is thinking`}</span>
+            <span className="shimmer">{(props.working && task.status !== "running" ? "" : workingLine(crew.latest.get(task.id))) || props.working || `${labelOf(task.bot)} is thinking`}</span>
           </div>
         )}
       </div>

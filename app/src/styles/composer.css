@@ -32,6 +32,11 @@
   width: 100%;
   padding: 2px 0;
   line-height: 1.55;
+  /* Its own height for the lines it draws. A height measured on a copy falls short: scrollHeight rounds a fraction off,
+     the scrollbar that fraction brings narrows the text a line taller, and WebKit can keep a word on the next line after
+     a backspace where a fresh copy fits it on this one. */
+  field-sizing: content;
+  max-height: 240px;
 }
 
 .composer textarea::placeholder {

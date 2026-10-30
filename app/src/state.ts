@@ -282,8 +282,8 @@ export function derive(tasks: Map<string, Task>, recent: StoredEvent[]) {
   const latest = new Map<string, StoredEvent>(); // the last thing each task did, for one-line status
   const verdicts = new Map<string, StoredEvent[]>(); // review events, by the work they reviewed
   for (const e of recent) {
-    // A message counts too: what a bot did before it isn't what it's doing now.
-    if (["message", "text", "tool_call", "handoff", "review", "escalation", "merged", "merge_proposed"].includes(e.kind)) {
+    // A message or a new turn counts too: what a bot did before it isn't what it's doing now.
+    if (["message", "turn_start", "text", "tool_call", "handoff", "review", "escalation", "merged", "merge_proposed"].includes(e.kind)) {
       latest.set(e.task_id, e);
     }
     if (e.kind === "review" && e.data.task_id === e.task_id) {
@@ -325,4 +325,4 @@ export function derive(tasks: Map<string, Task>, recent: StoredEvent[]) {
   return { goals, children, family, latest, verdicts, inbox, running, holds, asks };
 }
 
-export { describe, doing, limitText, describeCall, oneLine } from "./activityText";
+export { describe, doing, limitText, describeCall, oneLine, workingLine } from "./activityText";

@@ -58,6 +58,12 @@ export function doing(event: StoredEvent | undefined): string {
   }
 }
 
+/** The working line under a conversation: what `doing` says, but never a text, which the conversation shows as a
+ * message just above it. */
+export function workingLine(event: StoredEvent | undefined): string {
+  return event?.kind === "text" ? "" : doing(event);
+}
+
 /** "Claude plan: 82% of the five-hour limit used" */
 export function limitText(limit: { plan: string; window: string; status: string; used_percent?: number | null; resets_at?: number | null }): string {
   const plan = limit.plan.charAt(0).toUpperCase() + limit.plan.slice(1);

@@ -146,29 +146,20 @@ export function Composer(props: {
     }
   };
 
-  // Its height for what's in it, measured on a hidden copy. Setting the box itself to auto to measure it makes the
-  // conversation above it taller for that moment, and WebKit pulls the conversation's scroll back to fit and leaves it
-  // there once the box is back to the same height, so each key you type would push the latest messages under it.
-  const copy = useRef<HTMLTextAreaElement | null>(null);
-  useEffect(() => () => copy.current?.remove(), []);
+  // WebKit before Safari 26.2 has no field-sizing, so the box is sized here. The message box is held at its height
+  // while the box measures: were the conversation above to grow for that moment, WebKit would pull its scroll back and
+  // leave it there, and the latest messages would slide under the box.
   useEffect(() => {
     const el = area.current;
-    if (!el) return;
-    const measure = (copy.current ??= document.createElement("textarea"));
-    if (!measure.isConnected) {
-      measure.setAttribute("aria-hidden", "true");
-      measure.tabIndex = -1;
-      document.body.append(measure);
-    }
-    const style = getComputedStyle(el);
-    for (const name of ["font-family", "font-size", "font-weight", "font-style", "letter-spacing", "line-height",
-      "padding-top", "padding-bottom", "padding-left", "padding-right", "border-left-width", "border-right-width",
-      "box-sizing", "tab-size", "white-space", "word-break", "overflow-wrap", "width"])
-      measure.style.setProperty(name, style.getPropertyValue(name));
-    Object.assign(measure.style, { position: "fixed", top: "0", left: "-10000px", height: "0", overflow: "hidden",
-      visibility: "hidden", pointerEvents: "none" });
-    measure.value = text;
-    el.style.height = `${Math.min(measure.scrollHeight, 240)}px`;
+    const box = el?.closest<HTMLElement>(".composer");
+    if (!el || !box || window.CSS?.supports("field-sizing", "content")) return;
+    box.style.minHeight = `${box.offsetHeight}px`;
+    el.style.overflowY = "hidden";
+    el.style.height = "auto";
+    const height = el.scrollHeight;
+    el.style.height = `${Math.min(height, 240)}px`;
+    if (height > 240) el.style.overflowY = "auto";
+    box.style.minHeight = "";
   }, [text]);
   useEffect(() => {
     if (props.autoFocus) area.current?.focus();

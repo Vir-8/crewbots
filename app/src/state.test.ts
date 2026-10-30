@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { derive, doing, mergeLoadedEvents } from "./state";
+import { derive, doing, mergeLoadedEvents, workingLine } from "./state";
 import type { StoredEvent, Task } from "./types";
 
 const at = new Date(Date.UTC(2026, 9, 27, 7)).toISOString();
@@ -19,5 +19,22 @@ describe("what a bot is doing", () => {
 
     expect(doing(derive(tasks, [said]).latest.get("t_chat"))).toBe("My name is xyz now.");
     expect(doing(derive(tasks, [said, event(2, "message", { from: "user", text: "awesome" })]).latest.get("t_chat"))).toBe("");
+  });
+
+  it("starts over with a turn that no message woke", () => {
+    const tasks = new Map([["t_chat", { id: "t_chat", bot: "chief", status: "running" } as Task]]);
+    const said = event(1, "text", { text: "Cooling towers are in." });
+
+    expect(doing(derive(tasks, [said, event(2, "turn_start", { system: true })]).latest.get("t_chat"))).toBe("");
+  });
+
+  it("never repeats a text under the conversation, which shows it as a message just above", () => {
+    const tasks = new Map([["t_chat", { id: "t_chat", bot: "chief", status: "running" } as Task]]);
+    const call = event(1, "tool_call", { name: "Bash", input: { command: "git status" } });
+    const told = event(2, "text", { text: "Cooling towers are in.", level: "question", from: "Engineering" });
+
+    expect(workingLine(derive(tasks, [call]).latest.get("t_chat"))).toBe("Running git status");
+    expect(workingLine(derive(tasks, [call, told]).latest.get("t_chat"))).toBe("");
+    expect(workingLine(derive(tasks, [call, event(3, "text", { text: "Checked in git." })]).latest.get("t_chat"))).toBe("");
   });
 });
