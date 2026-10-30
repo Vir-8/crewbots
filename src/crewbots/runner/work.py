@@ -482,7 +482,7 @@ class Work(Landed, Closing, MergeStatus, SharedApps, Editors, InPlace):
         if (task.branch or files) and not evidence and not DROPPED.match(done):
             raise NotAllowed("hand back your evidence too: what you ran or looked at to prove it works and what it "
                              "showed (a command and its output, a measurement, a screenshot you shared), or what you "
-                             "couldn't check and why. For crewbots, the verify-crewbots skill says how")
+                             "couldn't check and why. A project's verify/README.md says how, when it has one")
         if not DROPPED.match(done) and (found := comments.excuses(self._work_diff(task, in_place, files))):
             raise NotAllowed(comments.refusal(found))
         checks = [line.strip() for line in checks or [] if line.strip()][:MAX_CHECKS]

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Runs what a change has to be checked in, in the background, and stops it again: the app's screens in the design
-# preview, a scratch daemon, and a page in WebKit. The how-to is .claude/skills/verify-crewbots/SKILL.md.
+# preview, a scratch daemon, and a page in WebKit. The how-to is verify/README.md.
 #
 #   scripts/verify doctor           what's missing for the others, and how to get it
 #   scripts/verify preview          the design preview (Vite, the demo crew) on a free port: prints url= pid= log=

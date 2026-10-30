@@ -1,6 +1,6 @@
 ---
 name: create-verification
-description: Give a project its verification map, the per-project half of verifying it the way a user would (verify-unity, verify-crewbots or the project's own method are the other half). Use when a project has none, before its first real piece of work, or when asked to "map how to verify" something.
+description: Give a project its verification map, the per-project half of verifying it the way a user would (verify-unity, or the project's own method are the other half). Use when a project has none, before its first real piece of work, or when asked to "map how to verify" something.
 ---
 
 # Create a project's verification map
@@ -13,9 +13,10 @@ which reads it cold, mid-task.
 ## Where it lives
 
 `verify/` at the project's root (outside `Assets/`, so Unity leaves it alone): `verify/README.md`, and one file per
-feature. A project that already keeps a verify skill of its own in `.agents/skills/verify*/` keeps its map there
-instead: add to that skill rather than starting a `verify/` beside it, and give it a "Last walked" line. Never in
-`.claude/`: Claude Code keeps bots from writing there, so no one could keep the map up.
+feature, with a line in the project's AGENTS.md pointing there. They're plain files, so any agent can follow and keep
+them. Never in an agent's own folder (`.claude/`, `.agents/`, `.codex/`, `.cursor/`): each agent reads only its own,
+and Claude Code keeps bots from writing in `.claude/`. A verify skill already in one moves to `verify/`, its text
+becoming the README.
 
 ## 1. Read the project, not the user
 
@@ -61,5 +62,6 @@ failed try too.
 
 ## Hand back
 
-The map's files as your `output`, the feature you proved and what it showed as `evidence`, and in `open` the features
-you saw but didn't map yet. Keeping it honest as the project changes is `maintain-verification`'s job.
+The map's files and the AGENTS.md change as your `output`, the feature you proved and what it showed as `evidence`,
+and in `open` the features you saw but didn't map yet. Keeping it honest as the project changes is
+`maintain-verification`'s job.
