@@ -19,7 +19,7 @@ from crewbots import github as github_module
 from crewbots import routines as routines_module
 from crewbots.attention import BREAK_S
 from crewbots.crew import NO_REPLY
-from crewbots.routines import Routine, RoutineError
+from crewbots.routines import OWN, Routine, RoutineError
 from crewbots.runner import Runner
 from crewbots.runner.common import plan
 from crewbots.runner.wakes import NEWS_GAP, URGENT_GAP
@@ -148,7 +148,7 @@ class Scheduler:
         once, until they write again."""
         last = self.store.last_user_message()
         away = bool(last) and now - datetime.fromisoformat(last) >= AWAY
-        said = (self.store.routine_state("away") or {}).get("last_run_at")
+        said = (self.store.routine_state(f"{OWN}away") or {}).get("last_run_at")
         if away and not said and any(r.enabled for r in self.routines):
             crew = self.runner.crew
             chief = self.runner.chief_bot()
@@ -156,9 +156,9 @@ class Scheduler:
                 chat = self.runner.chat(chief.name)
                 self.runner._record(chat.id, kind="text", data={"away": True, "text": prompts.text(
                     "away", crew.home, since=timefmt.to_local(last).strftime("%a %d %b"))})
-                self.store.routine_ran("away", now.isoformat(timespec="seconds"), chat.id)
+                self.store.routine_ran(f"{OWN}away", now.isoformat(timespec="seconds"), chat.id)
         elif not away and said:
-            self.store.routine_ran("away", "", "")  # back: routines carry on, and next time it's said again
+            self.store.routine_ran(f"{OWN}away", "", "")  # back: routines carry on, and next time it's said again
         return away
 
     def _look_around(self) -> list[sources.CrewEvent]:
@@ -186,7 +186,7 @@ class Scheduler:
             checklist = checkins.load(self.runner.crew.home, bot)
             if not checklist or not checklist.active(now) or self.runner.bot_busy(bot):
                 continue
-            last = {i.id: (self.runner.store.routine_state(f"checkin:{bot}:{i.id}") or {}).get("last_run_at")
+            last = {i.id: (self.runner.store.routine_state(f"{OWN}checkin:{bot}:{i.id}") or {}).get("last_run_at")
                     for i in checklist.items}
             first = self._first_seen.setdefault(bot, now.isoformat())  # what happened before isn't news to an item
             due = checklist.due(last, now, self.store.crew_events(_utc(now - timedelta(days=1))), first)
@@ -237,7 +237,7 @@ class Scheduler:
         checklist = checkins.load(self.runner.crew.home, bot)
         if items is None and not checklist:
             raise ValueError(f"{bot} has no checklist: write one in {checkins.path(self.runner.crew.home, bot)}")
-        last = (self.runner.store.routine_state(f"checkin:{bot}") or {}).get("last_run_at")
+        last = (self.runner.store.routine_state(f"{OWN}checkin:{bot}") or {}).get("last_run_at")
         since = datetime.fromisoformat(last) if last else now - timedelta(days=1)
         happened = "\n".join(_crew_lines(self.store.crew_events(_utc(since))))
         changes = ("# Events\n\n" + prompts.untrusted("events", happened) + "\n\n" if happened else "") + activity(

@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from crewbots.crew import Crew
+from crewbots.runner import Runner
 from crewbots.store import Status, Store
 from crewbots.store import db as db_module
 
@@ -111,6 +113,30 @@ def test_previous_version_gains_merged_tip_without_changing_tasks(tmp_path):
     migrated.update_task(task.id, merged_tip="tip")
     assert migrated.get_task(task.id).merged_tip == "tip"
     migrated.close()
+
+
+def test_previous_version_keeps_crewbots_own_bookkeeping_out_of_the_routines_way(tmp_path):
+    path = tmp_path / "crew.db"
+    store = Store(path)
+    own = ["away", "started", "chief-events", "checkin:engineer", "checkin:engineer:ci", "memory:engineer"]
+    for name in [*own, "standup"]:
+        store.routine_ran(name, "2026-10-30T09:00:00+05:30", "")
+    before = [name for name, _ in db_module.MIGRATIONS].index(
+        "crewbots' own rows in the routines table, under a name no routine can take")
+    store.db.execute(f"pragma user_version = {before}")
+    store.close()
+
+    migrated = Store(path)
+    assert Runner(migrated, Crew(home=tmp_path, bots={}, team_files={})).started()  # so it isn't greeted again
+    names = sorted(r["name"] for r in migrated.db.execute("select name from routines"))
+    assert names == sorted([f"crewbots:{name}" for name in own] + ["standup"])
+    migrated.routine_ran("away", "2026-10-31T09:00:00+05:30", "")  # a routine of the user's, now with a row of its own
+    migrated.db.execute(f"pragma user_version = {before}")
+    migrated.close()
+
+    again = Store(path)  # the step run twice changes nothing
+    assert sorted(r["name"] for r in again.db.execute("select name from routines")) == sorted([*names, "away"])
+    again.close()
 
 
 def test_previous_version_loses_branch_modes_columns_and_keeps_its_tasks(tmp_path):

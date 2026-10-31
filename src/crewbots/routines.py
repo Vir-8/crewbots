@@ -36,6 +36,7 @@ FIELDS = {
 }
 PLACEHOLDER = re.compile(r"\{\{\s*([a-z_.]+)\s*\}\}")
 LOOKBACK = timedelta(days=7)  # how far back a missed schedule is noticed, e.g. after a week away with the Mac shut
+OWN = "crewbots:"  # the start of crewbots' own rows in the routines table (check-ins, dreams, ...)
 
 
 class RoutineError(ValueError):
@@ -122,8 +123,11 @@ def parse(text: str, default_name: str, source: Path) -> Routine:
         raise RoutineError("a scheduled routine is a message in its bot's chat, so the bot's own budget covers it; "
                            "a per-run budget is for triggers, which open a thread")
     workspace = meta.get("workspace")
+    name = str(meta.get("name", default_name))
+    if name.startswith(OWN):
+        raise RoutineError(f"a routine's name can't start with {OWN!r}: crewbots keeps that for its own bookkeeping")
     return Routine(
-        name=str(meta.get("name", default_name)), bot=str(meta["bot"]), goal=goal, path=source,
+        name=name, bot=str(meta["bot"]), goal=goal, path=source,
         schedule=Cron.parse(str(meta["schedule"])) if "schedule" in meta else None, on=on,
         repo=str(meta["repo"]) if meta.get("repo") else None,
         workspace=Path(workspace).expanduser() if workspace else None, budget=budget,

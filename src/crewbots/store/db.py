@@ -478,6 +478,9 @@ MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] =
     ("the checks a handoff carries", _add_columns("handoffs", {"checks": "text not null default '[]'"})),
     ("forget branch mode's checkout and merge lock", _drop_columns("tasks", [
         "base_branch", "checkout_state", "merge_lock", "merge_marker"])),
+    ("crewbots' own rows in the routines table, under a name no routine can take", lambda db, _: db.execute(
+        "update or ignore routines set name = 'crewbots:' || name where name in ('away', 'started', 'chief-events')"
+        " or name glob 'checkin:*' or name glob 'memory:*'")),
 ]
 
 

@@ -7,6 +7,7 @@ from fakes import ScriptedCrew, bot, wait_until
 
 from crewbots.backends import Access
 from crewbots.events import Done
+from crewbots.routines import OWN
 from crewbots.runner import MAX_REVIEW_ROUNDS, MergeError
 from crewbots.store import Status, Store, Verdict
 
@@ -98,7 +99,7 @@ async def test_a_failed_notice_keeps_the_batch_and_the_time(store, tmp_path, mon
 
     monkeypatch.setattr(crew.runner, "_state_notice", broken)
     assert not crew.runner.flush_chief_events(T0)
-    assert len(store.chief_events()) == 1 and store.routine_state("chief-events") is None
+    assert len(store.chief_events()) == 1 and store.routine_state(f"{OWN}chief-events") is None
     monkeypatch.undo()
     assert crew.runner.flush_chief_events(T0)
     assert store.chief_events() == []

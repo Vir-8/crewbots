@@ -15,6 +15,7 @@ from crewbots import paths
 from crewbots.api import create_app
 from crewbots.events import Done, RateLimit, Usage
 from crewbots.memory import CREW_SCOPE, Memory
+from crewbots.routines import OWN
 from crewbots.runner import Runner
 from crewbots.store import Status, Store
 
@@ -159,8 +160,9 @@ async def test_it_runs_once_a_night_for_a_bot_with_something_new_when_the_crew_i
     task = runner.dream("engineer", weekly=False)
     assert not runner.dream_due("critic", night)  # one bot at a time
     await wait_until(lambda: task.id not in runner.running())
-    assert store.routine_state("memory:engineer")["last_run_at"]
-    store.routine_ran("memory:engineer", datetime(2026, 10, 26, 23, 30).astimezone().isoformat(), task.id)  # in a quiet evening
+    assert store.routine_state(f"{OWN}memory:engineer")["last_run_at"]
+    evening = datetime(2026, 10, 26, 23, 30).astimezone().isoformat()  # a quiet one
+    store.routine_ran(f"{OWN}memory:engineer", evening, task.id)
     assert not runner.dream_due("engineer", night)  # done this night, early hours and all
     assert runner.dream_due("engineer", night + timedelta(days=1))
 

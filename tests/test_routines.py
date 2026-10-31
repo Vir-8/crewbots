@@ -120,6 +120,7 @@ def test_on_is_read_as_a_trigger_not_as_yaml_true():
     ("---\nbot: chief\nschedule: '@daily'\nbudget: lots\n---\nx", "budget"),
     ("---\nbot: chief\nschedule: '@daily'\nbudget: 5000\n---\nx", "per-run budget is for triggers"),
     ("---\nbot: chief\nschedule: '@daily'\nwhen: now\n---\nx", "unknown fields"),
+    ("---\nname: crewbots:started\nbot: chief\nschedule: '@daily'\n---\nx", "its own bookkeeping"),
 ])
 def test_routine_mistakes_are_caught_when_the_file_is_read(text, error):
     with pytest.raises(RoutineError, match=error):

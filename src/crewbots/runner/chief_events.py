@@ -9,6 +9,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from crewbots.routines import OWN
 from crewbots.runner.common import MergeError
 from crewbots.store import Status, Task, Verdict
 
@@ -69,7 +70,7 @@ class ChiefEvents:
         chat = self.chat(chief.name)
         if not self.idle_chat(chat):
             return False
-        last = (self.store.routine_state("chief-events") or {}).get("last_run_at")
+        last = (self.store.routine_state(f"{OWN}chief-events") or {}).get("last_run_at")
         if last and now - datetime.fromisoformat(last) < BATCH:
             return False
         if not any(e["kind"] in NEEDS_CHIEF for e in events) and now - datetime.fromisoformat(events[0]["at"]) < QUIET:
@@ -88,7 +89,7 @@ class ChiefEvents:
             log.exception("could not send the chief its crew activity notice")
             return False
         self.store.clear_chief_events(events[-1]["id"])
-        self.store.routine_ran("chief-events", now.isoformat(), "")
+        self.store.routine_ran(f"{OWN}chief-events", now.isoformat(), "")
         return True
 
     def _event_line(self, e: dict[str, Any]) -> str:

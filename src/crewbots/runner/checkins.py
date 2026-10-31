@@ -12,6 +12,7 @@ from crewbots.attention import BY_URGENCY
 from crewbots.backends import Access, RunSpec
 from crewbots.checkins import Item
 from crewbots.events import Done, Usage
+from crewbots.routines import OWN
 from crewbots.runner.common import NotAllowed, UnknownBot, _usage_data, plan
 from crewbots.store import Status, Task
 
@@ -58,7 +59,7 @@ class Checkins:
         return task
 
     def _checkin_task(self, bot: str) -> Task:
-        kept = (self.store.routine_state(f"checkin:{bot}") or {}).get("last_task_id")
+        kept = (self.store.routine_state(f"{OWN}checkin:{bot}") or {}).get("last_task_id")
         if kept:
             try:
                 return self.store.get_task(kept)
@@ -66,7 +67,7 @@ class Checkins:
                 pass
         task = self.store.create_task(bot, f"{self.crew.bots[bot].label}'s check-ins", created_by="crewbots",
                                       status=Status.IDLE)
-        self.store.routine_ran(f"checkin:{bot}", "", task.id)
+        self.store.routine_ran(f"{OWN}checkin:{bot}", "", task.id)
         return task
 
     async def _check_in(self, task: Task, items: list[Item], changes: str, now: datetime) -> None:
@@ -86,8 +87,8 @@ class Checkins:
                     network=bot.network, proactive=True, deny_read=self._state_denials(bot.name))
                 report = _report(await self._json_run(task, spec, "the check-in") or {})
             for item in items:
-                self.store.routine_ran(f"checkin:{task.bot}:{item.id}", now.isoformat(timespec="seconds"), task.id)
-            self.store.routine_ran(f"checkin:{task.bot}", now.isoformat(timespec="seconds"), task.id)
+                self.store.routine_ran(f"{OWN}checkin:{task.bot}:{item.id}", now.isoformat(timespec="seconds"), task.id)
+            self.store.routine_ran(f"{OWN}checkin:{task.bot}", now.isoformat(timespec="seconds"), task.id)
             self._record(task.id, kind="checkin", data=report | {"items": [i.what for i in items]})
             if report["notify"] and report["text"]:  # at its level: now, at a break, or in the morning's digest
                 self.attention.raise_(task.bot, BY_URGENCY[report["urgency"]], report["text"], "checkin")

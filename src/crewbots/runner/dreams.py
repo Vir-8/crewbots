@@ -11,6 +11,7 @@ from crewbots import prompts
 from crewbots.backends import Access, RunSpec
 from crewbots.crew import Bot
 from crewbots.memory import CREW_SCOPE, MemoryError, Note
+from crewbots.routines import OWN
 from crewbots.runner.common import UnknownBot, plan
 from crewbots.store import Status, Task
 
@@ -32,7 +33,7 @@ class Dreams:
         quiet = time.time() - max(self._turn_ended.values(), default=self._started) >= QUIET_S
         if not (DREAM_HOUR <= now.hour < DREAM_UNTIL or quiet):
             return False
-        last = (self.store.routine_state(f"memory:{bot}") or {}).get("last_run_at")
+        last = (self.store.routine_state(f"{OWN}memory:{bot}") or {}).get("last_run_at")
         # A night runs noon to noon, so one consolidated in a quiet evening isn't consolidated again in the early hours.
         night = lambda t: (t - timedelta(hours=12)).date()  # noqa: E731
         if last and night(datetime.fromisoformat(last)) >= night(now):
@@ -59,7 +60,7 @@ class Dreams:
     async def _dream(self, task: Task, now: datetime, weekly: bool | None) -> Task:
         bot, b = task.bot, self.crew.bots[task.bot]
         weekly = now.weekday() == WEEKLY_DAY if weekly is None else weekly
-        last = (self.store.routine_state(f"memory:{bot}") or {}).get("last_run_at") or ""
+        last = (self.store.routine_state(f"{OWN}memory:{bot}") or {}).get("last_run_at") or ""
         since = last[:10] or (now.date() - timedelta(days=1)).isoformat()
         try:
             async with self._turn_slot(task.id):
@@ -70,7 +71,7 @@ class Dreams:
             summary = self._apply_dream(bot, reply)
             commit = self.crew.memory.commit(f"Consolidated {bot}'s memory, {now:%Y-%m-%d}{' (weekly)' if weekly else ''}")
             self._record(task.id, kind="consolidated", data={**summary, "commit": commit, "weekly": weekly})
-            self.store.routine_ran(f"memory:{bot}", now.isoformat(timespec="seconds"), task.id)
+            self.store.routine_ran(f"{OWN}memory:{bot}", now.isoformat(timespec="seconds"), task.id)
             return self._set(task.id, status=Status.IDLE, result=summary["text"])
         except Exception as e:  # a reply that couldn't be read or applied: nothing half-done is committed
             return self._set(task.id, status=Status.FAILED, error=f"crewbots: {e}")

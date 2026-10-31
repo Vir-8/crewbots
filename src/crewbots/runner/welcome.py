@@ -16,11 +16,12 @@ from crewbots import crew as crew_module
 from crewbots import projects as projects_module
 from crewbots.crew import Bot, CrewError
 from crewbots.projects import Project
+from crewbots.routines import OWN
 from crewbots.runner.common import NotAllowed
 from crewbots.store import Task
 from crewbots.store.records import _now
 
-STARTED = "started"  # in the routines table: when the crew was started off (once), and the thread it learned in
+STARTED = f"{OWN}started"  # in the routines table: when the crew was started off (once), and the thread it learned in
 NAME_CHARS = 40  # of the name a bot goes by
 
 

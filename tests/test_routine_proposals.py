@@ -85,4 +85,4 @@ async def test_after_a_week_away_routines_wait_and_the_chief_says_so_once(crew, 
     tomorrow = datetime.now().astimezone().replace(hour=9, minute=0, second=0, microsecond=0) + timedelta(days=1)
     await scheduler.tick(tomorrow - timedelta(minutes=1))
     assert len(await scheduler.tick(tomorrow)) == 1
-    assert not (store.routine_state("away") or {}).get("last_run_at")
+    assert not (store.routine_state(f"{routines.OWN}away") or {}).get("last_run_at")
