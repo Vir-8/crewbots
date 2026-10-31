@@ -39,12 +39,12 @@ for (const b of bots) {
   message(chief, "user", "Merge the login fix. Then add CSV export to the reports page; exports should respect the filters.");
   tool(chief, "mcp__crewbots__start_thread", { title: "Add CSV export", goal: "…" }, "Opened thread");
   say(chief, "Merged. The CSV export is with the engineer now, and the reviewer and critic will check it before it comes to you.");
-  message(chief, "user", "Please ask @engineer to check this with @Roger. Email vir@emberlane.games; `@engineer` is just code.");
+  message(chief, "user", "Please ask @engineer to check this with @Roger. Email you@example.com; `@engineer` is just code.");
   say(chief, "Thanks, I've sent this to @engineer. **@Roger** will follow up. `@engineer` and @unknown are examples, not mentions.\n\n```\n@engineer\n```");
   say(chief, overflowExample);
-  emit(chief, "push_proposed", { project: "crewbots", summary: "The reviewed fixes are ready to share.", branch: "main", upstream: "origin/main", push_url_display: "github.com/emberlane/crewbots.git", commits: ["a1b2c3d Fix the chat sidebar", "d4e5f6a Improve the update message"] });
-  emit(chief, "push_proposed", { project: "sky-islands", summary: "The project is already current.", branch: "main", upstream: "origin/main", push_url_display: "github.com/emberlane/sky-islands.git", commits: [] });
-  const refused = emit(chief, "push_proposed", { project: "base", summary: "The remote needs attention.", branch: "main", upstream: "origin/main", push_url_display: "github.com/emberlane/base.git", commits: ["123abcd Update base"] });
+  emit(chief, "push_proposed", { project: "acme-web", summary: "The reviewed fixes are ready to share.", branch: "main", upstream: "origin/main", push_url_display: "github.com/acme/web.git", commits: ["a1b2c3d Fix the chat sidebar", "d4e5f6a Improve the update message"] });
+  emit(chief, "push_proposed", { project: "glider", summary: "The project is already current.", branch: "main", upstream: "origin/main", push_url_display: "github.com/acme/glider.git", commits: [] });
+  const refused = emit(chief, "push_proposed", { project: "export-service", summary: "The remote needs attention.", branch: "main", upstream: "origin/main", push_url_display: "github.com/acme/export-service.git", commits: ["123abcd Update the export schema"] });
   emit(chief, "push_result", { proposal: refused.id, ok: false, reason: "The remote changed; make a new proposal." });
   message(chief, "user", "Write up the Q3 retro and a Q4 plan from it.");
   emit(chief, "text", { text: "Done: the retro is `docs/retro/q3-retro.pdf`, and the plan it led to is `docs/retro/q4-plan.md`.", files: [made.retro, made.plan] });
@@ -173,7 +173,7 @@ export const roomMessages = new Map<string, { id: number; room_id: string; autho
   roomMessages.set(room, [
     said("user", "Morning, everyone. @engineer how's CSV export going?"),
     said("engineer", "Endpoint's in and its tests pass. Wiring the button now. @reviewer it'll be yours in a few minutes.", 1),
-    said("reviewer", "Ready when you are. I'll check the filters reach the export. @everyone can find me at vir@emberlane.games; `@engineer` is code.", 2),
+    said("reviewer", "Ready when you are. I'll check the filters reach the export. @everyone can find me at reviews@example.com; `@engineer` is code.", 2),
     said("engineer", handover, 1),
     said("chief", "Thanks both. I'll propose it for merging once both reviews pass.", 1),
     said("engineer", overflowExample, 1),

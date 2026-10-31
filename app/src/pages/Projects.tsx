@@ -13,9 +13,9 @@ type Draft = { name: string; folder: string; about: string; existing: boolean; i
 const WHERE: Record<ProjectOut["isolation"], string> = { in_place: "The folder itself", worktree: "A worktree each" };
 const HOW: Record<ProjectOut["isolation"], string> = {
   in_place:
-    "Tasks work side by side in this folder, on the branch it's on, as you do: the lead gives each engineer different files. A Unity project's one Editor sees all of it, and one task drives it at a time.",
+    "Tasks work side by side in this folder, on the branch it's on, as you do: the lead gives each engineer different files.",
   worktree:
-    "Tasks run side by side, each in its own checkout of the project, which takes the disk space of its tracked files. In Unity, each worktree needs an Editor opened on it (its first open imports everything), and then engineers check their work at the same time.",
+    "Tasks run side by side, each in its own checkout of the project, so engineers check their work at the same time. Each checkout takes the disk space of its tracked files.",
 };
 
 /** Your projects: the folders the crew works in. A bot's chat isn't any one project's; work on a project runs in its

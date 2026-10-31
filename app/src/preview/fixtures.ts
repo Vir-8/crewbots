@@ -36,7 +36,7 @@ export const reviewInbox = {
     { repo: "acme/web", number: 409, title: "Fix the date filter's off-by-one at month boundaries", url: "https://github.com/acme/web/pull/409", draft: false, author: "lee", author_avatar: null, created_at: new Date(Date.now() - 30 * 3600e3).toISOString(), updated_at: new Date(Date.now() - 20 * 3600e3).toISOString(), additions: 18, deletions: 6, changed_files: 2, review_decision: "REVIEW_REQUIRED", checks: "FAILURE", reviewed_at: new Date().toISOString() },
   ],
   assigned: [
-    { repo: "acme/web", number: 401, title: "Upgrade the charts library", url: "https://github.com/acme/web/pull/401", draft: false, author: "vir", author_avatar: null, created_at: new Date(Date.now() - 70 * 3600e3).toISOString(), updated_at: new Date(Date.now() - 60 * 3600e3).toISOString(), additions: 210, deletions: 180, changed_files: 9, review_decision: null, checks: "SUCCESS", reviewed_at: null },
+    { repo: "acme/web", number: 401, title: "Upgrade the charts library", url: "https://github.com/acme/web/pull/401", draft: false, author: "kim", author_avatar: null, created_at: new Date(Date.now() - 70 * 3600e3).toISOString(), updated_at: new Date(Date.now() - 60 * 3600e3).toISOString(), additions: 210, deletions: 180, changed_files: 9, review_decision: null, checks: "SUCCESS", reviewed_at: null },
   ],
   team: [
     { repo: "acme/api", number: 88, title: "Paginate the audit log endpoint", url: "https://github.com/acme/api/pull/88", draft: true, author: "kim", author_avatar: null, created_at: new Date(Date.now() - 50 * 3600e3).toISOString(), updated_at: new Date(Date.now() - 48 * 3600e3).toISOString(), additions: 120, deletions: 30, changed_files: 6, review_decision: null, checks: "PENDING", reviewed_at: null },
@@ -109,17 +109,17 @@ export const reviewDrafts: { id: number; path: string; line: number; side: strin
 ];
 
 export const mcpServers: McpServerInfo[] = [
-  { name: "blender", transport: "stdio", command: "uv", args: ["--directory", "~/blender_mcp/mcp", "run", "blender-mcp"], url: null, env_keys: ["BLENDER_MCP_PORT"], header_keys: [], bots: ["engineer"] },
-  { name: "davinci-resolve", transport: "stdio", command: "/bin/sh", args: ["start-resolve-mcp.sh"], url: null, env_keys: ["RESOLVE_SCRIPT_API"], header_keys: [], bots: [] },
+  { name: "blender", transport: "stdio", command: "uvx", args: ["blender-mcp"], url: null, env_keys: ["BLENDER_PORT"], header_keys: [], bots: ["engineer"] },
+  { name: "github", transport: "stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-github"], url: null, env_keys: ["GITHUB_PERSONAL_ACCESS_TOKEN"], header_keys: [], bots: [] },
 ];
 
 export const skills = [
   { name: "arena", description: "Two or more agents attempt the same task independently; pick the best.", source: "crew", path: "~/.crewbots/crew/skills/arena/SKILL.md", used: true, same_as: null },
   { name: "interrogate", description: "Question the user until the goal is unambiguous.", source: "crew", path: "~/.crewbots/crew/skills/interrogate/SKILL.md", used: true, same_as: null },
-  { name: "pdf", description: "Read, fill and make PDF files.", source: "~/.claude/skills", path: "~/.claude/skills/synced/x/pdf/SKILL.md", used: true, same_as: null },
-  { name: "unity-mcp-orchestrator", description: "Orchestrate the Unity Editor through MCP for Unity.", source: "~/.claude/skills", path: "~/.claude/skills/unity-mcp-skill/SKILL.md", used: true, same_as: null },
-  { name: "graphify", description: "Turn a codebase into a knowledge graph.", source: "~/.claude/skills", path: "~/.claude/skills/graphify/SKILL.md", used: true, same_as: null },
-  { name: "graphify", description: "Turn a codebase into a knowledge graph.", source: "~/.codex/skills", path: "~/.codex/skills/graphify/SKILL.md", used: false, same_as: "~/.claude/skills" },
+  { name: "pdf", description: "Read, fill and make PDF files.", source: "~/.claude/skills", path: "~/.claude/skills/pdf/SKILL.md", used: true, same_as: null },
+  { name: "release-notes", description: "Write release notes from the merged pull requests.", source: "~/.claude/skills", path: "~/.claude/skills/release-notes/SKILL.md", used: true, same_as: null },
+  { name: "code-map", description: "Map a codebase's modules and how they connect.", source: "~/.claude/skills", path: "~/.claude/skills/code-map/SKILL.md", used: true, same_as: null },
+  { name: "code-map", description: "Map a codebase's modules and how they connect.", source: "~/.codex/skills", path: "~/.codex/skills/code-map/SKILL.md", used: false, same_as: "~/.claude/skills" },
 ];
 
 export const crewState = {

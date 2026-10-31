@@ -10,9 +10,9 @@ const missing = (what: string) => ({ ok: false, status: 404, data: { detail: `no
 
 /** The servers your other apps have set up. */
 const installed: { id: string; source: string; server: Server }[] = [
-  { id: "a", source: "Claude Code", server: { name: "blender", transport: "stdio", command: "uv", args: ["--directory", "~/blender_mcp/mcp", "run", "blender-mcp"], url: null, env_keys: ["BLENDER_MCP_PORT"], header_keys: [] } },
-  { id: "b", source: "Claude Code · Sky Islands", server: { name: "UnityMCP", transport: "http", command: null, args: [], url: "http://127.0.0.1:8080/mcp", env_keys: [], header_keys: [] } },
-  { id: "c", source: "Codex", server: { name: "gimp", transport: "stdio", command: "run-gimp-mcp.sh", args: [], url: null, env_keys: [], header_keys: [] } },
+  { id: "a", source: "Claude Code", server: { name: "blender", transport: "stdio", command: "uvx", args: ["blender-mcp"], url: null, env_keys: ["BLENDER_PORT"], header_keys: [] } },
+  { id: "b", source: "Claude Code · Glider", server: { name: "UnityMCP", transport: "http", command: null, args: [], url: "http://127.0.0.1:8080/mcp", env_keys: [], header_keys: [] } },
+  { id: "c", source: "Codex", server: { name: "postgres", transport: "stdio", command: "npx", args: ["-y", "@modelcontextprotocol/server-postgres", "postgresql://localhost/acme"], url: null, env_keys: [], header_keys: [] } },
 ];
 const registry = [{ name: "io.github.someone/figma-mcp", title: "Figma", description: "Read Figma files, frames and components.", version: "1.4.0", website: "https://github.com/someone/figma-mcp", options: [{ id: "package:0", label: "npm · figma-mcp 1.4.0", fields: [{ kind: "env", key: "FIGMA_TOKEN", description: "A personal access token", required: true, secret: true, default: null }] }, { id: "remote:0", label: "Remote · https://mcp.figma.example/mcp", fields: [] }] }];
 

@@ -82,7 +82,7 @@ async function request(method: string, path: string, body?: any) {
   }
   if (url.pathname === "/crew/timezone") {
     if (method === "PUT") previewZone = body?.timezone ?? null;
-    return ok({ timezone: previewZone ?? "Asia/Kolkata", system: "Asia/Kolkata", custom: previewZone !== null });
+    return ok({ timezone: previewZone ?? "Europe/London", system: "Europe/London", custom: previewZone !== null });
   }
   if (method === "GET" && url.pathname === "/version") return ok({ api: API_VERSION, schema_hash: API_SCHEMA, build: "preview", source_changed: false });
   if (url.pathname === "/crew/restart") {

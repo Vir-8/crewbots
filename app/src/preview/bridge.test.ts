@@ -30,9 +30,9 @@ it("remembers the merge switch", async () => {
 it("imports a server into the crew's and removes it again", async () => {
   const names = async () => ((await previewBridge.request("GET", "/mcp/servers")).data as { name: string }[]).map((s) => s.name);
   expect((await previewBridge.request("POST", "/mcp/import", { id: "c" })).ok).toBe(true);
-  expect(await names()).toContain("gimp");
-  await previewBridge.request("DELETE", "/mcp/servers/gimp");
-  expect(await names()).not.toContain("gimp");
+  expect(await names()).toContain("postgres");
+  await previewBridge.request("DELETE", "/mcp/servers/postgres");
+  expect(await names()).not.toContain("postgres");
 });
 
 it("turns on a proposed routine and runs it as a test, or declines it", async () => {

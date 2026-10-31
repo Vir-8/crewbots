@@ -332,16 +332,16 @@ function Custom({ taken, onAdded }: { taken: Set<string>; onAdded: () => void })
   return (
     <div className="registry-form">
       <Field label="Name" hint="Letters, digits, - and _.">
-        <input value={name} onChange={(e) => setName(e.target.value.trim())} placeholder="blender" />
+        <input value={name} onChange={(e) => setName(e.target.value.trim())} placeholder="filesystem" />
       </Field>
       <Segmented value={kind} options={[["stdio", "A program to start"], ["http", "A URL"]]} onChange={setKind} />
       {kind === "stdio" ? (
         <>
           <Field label="Command" hint="The program and its arguments, separated by spaces. Quotes aren't read, so an argument can't hold a space.">
-            <input className="mono" value={command} onChange={(e) => setCommand(e.target.value)} placeholder="uvx blender-mcp" />
+            <input className="mono" value={command} onChange={(e) => setCommand(e.target.value)} placeholder="npx -y @modelcontextprotocol/server-filesystem ~/code" />
           </Field>
           <Field label="Environment (optional)" hint="One KEY=value a line.">
-            <textarea className="mono" rows={3} value={env} onChange={(e) => setEnv(e.target.value)} placeholder="BLENDER_PORT=9876" />
+            <textarea className="mono" rows={3} value={env} onChange={(e) => setEnv(e.target.value)} placeholder="API_TOKEN=…" />
           </Field>
         </>
       ) : (
