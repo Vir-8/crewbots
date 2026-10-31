@@ -1,9 +1,10 @@
 """The words crewbots gives the models, each in a markdown file you can read and change.
 
-The defaults are packaged in `crewbots/prompts/`: the crew's tools and settings, the memory guide, the briefing and
-retry turns, the review prompts, and each crew tool's description (`tools/<name>.md`). A crew replaces any of them
-with a file at the same path under its own folder: `~/.crewbots/crew/prompts/review/lead.md` replaces
-`review/lead.md`, and deleting it brings the default back.
+The defaults are packaged in `crewbots/prompts/`: the crew's tools and settings, a bot's instructions' intros
+(`system/`) and who its task comes from (`this-task/`), the memory guide, the briefing and retry turns, the review
+prompts, and each crew tool's description (`tools/<name>.md`). A crew replaces any of them with a file at the same path
+under its own folder: `~/.crewbots/crew/prompts/review/lead.md` replaces `review/lead.md`, and deleting it brings the
+default back.
 
 `{name}` in a prompt is filled in from what the code passes (the review prompts take `{how_to_review}` and
 `{line_comment}`); braces around anything else are left as they are. A file is read when it's first needed and again

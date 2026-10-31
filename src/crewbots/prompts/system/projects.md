@@ -1,0 +1,1 @@
+The user's projects, each a folder of theirs. Work on one runs in its folder: name the project when you open a thread for it or delegate it. Your chat isn't any one project's; it runs in your own folder, {folder}.

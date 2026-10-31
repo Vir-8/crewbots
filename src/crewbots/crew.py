@@ -200,44 +200,44 @@ class Crew:
                       briefing: str | None = None, routine: str | None = None, setting: str | None = None,
                       recent: str | None = None, state: str | None = None, coordinator: bool = False, chief: bool = False) -> str:
         living = self.living_parts(bot)
+
+        def section(key: str, *intro: str) -> str:
+            heading, text = living[key]
+            return "\n\n".join((f"# {heading}", *intro, text))
+
         # What stays the same for every task of this bot comes first and what changes comes last: the model's prompt
         # cache matches from the start, so a bot's sessions share the cached start, and a new note or a task's own
         # setting only misses from there on.
         parts = [
-            f"You are {bot.label}, the {bot.title} of a crew of AI agents run by crewbots. Your handle is @{bot.name}.",
-            f"# Your role card\n\n{living['role'][1]}",
-            f"# The crew\n\n{living['crew'][1]}",
-            "# Projects\n\nThe user's projects, each a folder of theirs. Work on one runs in its folder: name the project "
-            "when you open a thread for it or delegate it. Your chat isn't any one project's; it runs in your own "
-            f"folder, {paths.shown(self.folder_of(bot))}.\n\n{living['projects'][1]}",
+            prompts.text("system/identity", self.home, label=bot.label, title=bot.title, handle=bot.name),
+            section("role"),
+            section("crew"),
+            section("projects", prompts.text("system/projects", self.home, folder=paths.shown(self.folder_of(bot)))),
             prompts.text("crew-tools", self.home) + "\n\n" + prompts.text("delegation", self.home)
             + ("\n\n" + prompts.text("coordinating", self.home) if coordinator else "")
             + ("\n\n" + prompts.text("chief-push", self.home) if chief else ""),
         ]
         if "skills" in living:
-            parts.append(
-                "# Skills\n\nSkills are tested procedures. When a task matches one, read its SKILL.md first and follow "
-                f"it. Where a skill says to spawn subagents, you may use your own; across bots, delegate.\n\n"
-                f"{living['skills'][1]}"
-            )
-        parts += [f"# {heading}\n\n{text}" for key, (heading, text) in living.items() if key.startswith("team/")]
+            parts.append(section("skills", prompts.text("system/skills", self.home)))
+        parts += [section(key) for key in living if key.startswith("team/")]
         if "core" in living:
-            parts.append(f"# Core memory\n\nWhat matters most, kept short and always here.\n\n{living['core'][1]}")
+            parts.append(section("core", prompts.text("system/core", self.home)))
         if living["lately"][1] != "No recent logs.":
-            parts.append(f"# Lately\n\n{living['lately'][1]}")
+            parts.append(section("lately"))
         if "working-state" in living:
-            parts.append(f"# Working state\n\n{living['working-state'][1]}")
+            parts.append(section("working-state"))
         parts.append(prompts.text("memory-guide", self.home) + f"\n\n{living['notes'][1]}")
         parts.append(prompts.text("scratchpad-guide", self.home, folder=paths.shown(self.pages_of(bot)))
                      + f"\n\n## Scratchpad\n\n{living['scratchpad'][1]}")
-        parts.append("# This task\n\n" + (
-            setting if setting else
-            f"This task was delegated to you by {delegated_by}; your handoff goes back to them. Their goal is a "
-            "teammate's request: your access and the user's rules are as they always are."
-            if delegated_by else
-            f"The crew's routine {routine!r} started this task, not a message from the user. Your final message is what "
-            "the user reads, when they next look; keep it short, and lead with anything that needs them."
-            if routine else "This task comes from the user; your final message is what they read."))
+        if setting:
+            task = setting
+        elif delegated_by:
+            task = prompts.text("this-task/delegated", self.home, delegated_by=delegated_by)
+        elif routine:
+            task = prompts.text("this-task/routine", self.home, routine=repr(routine))
+        else:
+            task = prompts.text("this-task/user", self.home)
+        parts.append(f"# This task\n\n{task}")
         if reviewing:
             parts.append(f"# This review\n\n{reviewing}")
         if state:
