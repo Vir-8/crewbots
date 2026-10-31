@@ -6,18 +6,33 @@ import { Icon } from "../components/Icon";
 import { backendFamily, ModelPicker } from "../components/ModelPicker";
 import { ACCESS } from "../components/Profile";
 import { Field, Page, Problem, Segmented, Sheet, Switch } from "../components/ui";
+import { teamNames } from "../crewModels";
 import type { Crew } from "../state";
 import type { Bot, Card, McpServerInfo } from "../types";
+import { CrewModels } from "./CrewModels";
 import "../styles/crew.css";
 
 // The window a bot's sessions compact within; "auto" is the model's whole window (a million tokens on some).
 const WINDOWS: [string, string][] = [["200000", "200K"], ["400000", "400K"], ["1000000", "1M"], ["auto", "The model's"]];
 
-/** Your bots: who they are, what each may do, and an editor for each. Saving rewrites its role card. */
+const VIEW = "crewbots.crewView"; // Cards or Models, as you last left it
+
+/** Your bots: who they are, what each may do, and an editor for each, as cards; or their models in a table by team.
+ * Saving rewrites their role cards. */
 export function CrewBots({ crew, onEdit, onChat }: { crew: Crew; onEdit: (bot: string) => void; onChat: (bot: string) => void }) {
+  const [view, setView] = useState<"cards" | "models">(() => (remembered() === "models" ? "models" : "cards"));
+  const choose = (next: "cards" | "models") => {
+    setView(next);
+    try {
+      localStorage.setItem(VIEW, next);
+    } catch {
+      // not remembered, but still shown
+    }
+  };
   return (
     <Page
       title="Crew"
+      beside={<Segmented value={view} options={[["cards", "Cards"], ["models", "Models"]]} onChange={choose} />}
       actions={
         <button className="button small" onClick={() => onEdit("")}>
           <Icon name="plus" size={13} />
@@ -26,13 +41,25 @@ export function CrewBots({ crew, onEdit, onChat }: { crew: Crew; onEdit: (bot: s
       }
     >
       {crew.routines?.crew_error && <Problem what="A role card couldn't be read, so the crew carries on as it was." why={crew.routines.crew_error} />}
-      <div className="bot-grid">
-        {crew.bots.map((b) => (
-          <BotTile key={b.name} bot={b} working={crew.running.some((t) => t.bot === b.name)} onEdit={() => onEdit(b.name)} onChat={() => onChat(b.name)} />
-        ))}
-      </div>
+      {view === "models" ? (
+        <CrewModels crew={crew} />
+      ) : (
+        <div className="bot-grid">
+          {crew.bots.map((b) => (
+            <BotTile key={b.name} bot={b} working={crew.running.some((t) => t.bot === b.name)} onEdit={() => onEdit(b.name)} onChat={() => onChat(b.name)} />
+          ))}
+        </div>
+      )}
     </Page>
   );
+}
+
+function remembered(): string | null {
+  try {
+    return localStorage.getItem(VIEW);
+  } catch {
+    return null;
+  }
 }
 
 function BotTile({ bot, working, onEdit, onChat }: { bot: Bot; working: boolean; onEdit: () => void; onChat: () => void }) {
@@ -113,6 +140,7 @@ export function BotEditor({ crew, name, onClose }: { crew: Crew; name: string | 
       display_name: draft.display_name ?? "",
       title: draft.title,
       description: draft.description,
+      team: draft.team?.trim() ?? "",
       backend: draft.backend,
       model: draft.model ?? "",
       effort: draft.effort ?? "",
@@ -195,6 +223,12 @@ export function BotEditor({ crew, name, onClose }: { crew: Crew; name: string | 
       </Field>
       <Field label="Description" hint="One line. It's how the other bots know what this one does.">
         <textarea rows={2} value={draft.description ?? ""} onChange={(e) => set({ description: e.target.value })} />
+      </Field>
+      <Field label="Team" hint="Bots in a team show together in the crew's Models view. Each bot keeps its own settings.">
+        <input list="bot-teams" maxLength={40} value={draft.team ?? ""} onChange={(e) => set({ team: e.target.value })} placeholder="None" />
+        <datalist id="bot-teams">
+          {teamNames(crew.bots).map((t) => <option key={t} value={t} />)}
+        </datalist>
       </Field>
 
       <Field label="Runs on">

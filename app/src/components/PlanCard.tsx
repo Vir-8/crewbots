@@ -1,6 +1,15 @@
 import { resets } from "../activityText";
 import type { Plans } from "../types";
 
+// Each plan keeps one color everywhere (orange and aqua, adjacent slots of the validated palette), set in tokens.css.
+export const PLAN_COLOR: Record<string, string> = { claude: "var(--plan-claude)", codex: "var(--plan-codex)", antigravity: "#4285f4" };
+
+/** How much of a window is left, as a percent, and the meter's tone for it: a warning under a fifth, limited at none. */
+export function leftOf(window: Plans["claude"]["windows"][number]): { left: number; tone: "" | "warning" | "limited" } {
+  const left = Math.max(0, 100 - window.used_percent);
+  return { left, tone: left <= 0 ? "limited" : left < 20 ? "warning" : "" };
+}
+
 /** One plan's limits: how much of each is left, and when it resets, with whatever else its CLI says about it. */
 export function PlanCard({ name, plan, color }: { name: string; plan: Plans["claude"] | undefined; color: string }) {
   return (
@@ -13,8 +22,7 @@ export function PlanCard({ name, plan, color }: { name: string; plan: Plans["cla
       {plan && !plan.available && <p className="error-text small">{plan.error}</p>}
       {plan?.available && plan.windows.length === 0 && <p className="faint small">No limits reported.</p>}
       {plan?.windows.map((w) => {
-        const left = Math.max(0, 100 - w.used_percent);
-        const tone = left <= 0 ? "limited" : left < 20 ? "warning" : "";
+        const { left, tone } = leftOf(w);
         return (
           <div key={w.name} className="plan-window">
             <div className="plan-window-top">

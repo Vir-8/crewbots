@@ -90,3 +90,257 @@
 .bot-tile-actions .button {
   background: var(--bg);
 }
+
+/* The crew's views: Cards or Models, beside the page's title. */
+
+.page-head .segmented {
+  margin: 0 0 0 6px;
+}
+
+/* Models: plan meters and presets over a table of the crew by team. */
+
+.models-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px 20px;
+  flex-wrap: wrap;
+}
+
+.preset-row {
+  flex: 1;
+  min-width: 260px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.preset-row > .faint {
+  margin-right: 4px;
+}
+
+.choice.preset {
+  padding: 0 4px 0 11px;
+}
+
+.choice.preset > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 100%;
+}
+
+.choice.preset.in-use .icon {
+  color: var(--green);
+}
+
+.preset-delete {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  color: var(--faint);
+}
+
+.preset-delete:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.choice.preset-new {
+  border-style: dashed;
+}
+
+.preset-name,
+.models-picked {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.preset-name .inline-input {
+  width: 180px;
+  height: 28px;
+}
+
+.plan-meters {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.plan-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 150px;
+  font-size: 11.5px;
+}
+
+.plan-meter-name {
+  font-size: 12px;
+  color: var(--soft);
+}
+
+.plan-meter.warning .plan-meter-name {
+  color: var(--amber);
+}
+
+.plan-meter.limited .plan-meter-name {
+  color: var(--red);
+}
+
+.plan-meter .meter {
+  height: 5px;
+  border-radius: 3px;
+}
+
+.models-draft {
+  display: flex;
+  align-items: center;
+  gap: 10px 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  background: color-mix(in srgb, var(--blue) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--blue) 32%, transparent);
+}
+
+.models-draft > .grow {
+  min-width: 240px;
+}
+
+.models-draft-detail {
+  color: var(--soft);
+}
+
+.models-picked {
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--raised);
+  font-size: 13px;
+}
+
+.models-picked .button {
+  background: var(--bg);
+}
+
+.models-picked .inline-input {
+  max-width: 220px;
+  height: 28px;
+}
+
+.models-table {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow-x: auto;
+}
+
+.models-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1.6fr) minmax(0, 1.4fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 680px;
+  padding: 5px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 13px;
+}
+
+.models-row:last-child {
+  border-bottom: 0;
+}
+
+.models-row.head {
+  padding: 9px 14px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom-color: var(--line);
+}
+
+.models-row.team {
+  padding: 8px 14px;
+  background: var(--raised);
+  font-weight: 600;
+}
+
+.models-name {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.models-row.bot .models-name {
+  padding-left: 14px;
+}
+
+.models-bot {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.models-cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.models-row select {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background-color: transparent;
+  color: var(--soft);
+  font-size: 13px;
+}
+
+.models-row.team select {
+  color: var(--text);
+  font-weight: 550;
+}
+
+.models-row select:hover:not(:disabled),
+.models-row select:focus {
+  border-color: var(--line);
+}
+
+.models-cell.changed select {
+  color: var(--blue);
+  background-color: color-mix(in srgb, var(--blue) 9%, transparent);
+  border-color: color-mix(in srgb, var(--blue) 30%, transparent);
+}
+
+.models-was {
+  padding-left: 9px;
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.models-name .models-was {
+  padding-left: 0;
+}
+
+.models-note {
+  padding-left: 9px;
+  color: var(--amber);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.models-foot {
+  margin: 0;
+}

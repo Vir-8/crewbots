@@ -3,6 +3,9 @@
 ## Sub-features
 - **Crew:** each bot's role card (model, effort, access, network, MCP servers, skills), editable in place; adding a bot.
   A coordinator's profile says it delegates; the app has no control for who is chief or a coordinator.
+- **Crew's Models view:** the crew's backends, models and efforts in a table by team (a role card's `team`), with
+  each plan's tightest window over it and presets to try. Changes are a draft until Apply, which makes one
+  `PUT /bots/models`; presets are `/presets`.
 - **Projects:** folders the crew may work in, each with its folder, a description and where tasks work (isolation). CI commands aren't set here.
 - **Activity:** who asked or handed what to whom, live.
 - **Landed:** what merged, the latest first, with its handback's evidence and the verdicts of the merged version; a
@@ -24,6 +27,14 @@ The "Your crew" menu at the bottom of the sidebar, or ⌘K. Landed has its own r
   `ProjectSettings/ProjectVersion.txt`) puts `verify-unity` in `GET /v1/skills` once the next tick reloads the crew.
 - The page is in `.main`; its title is the `h1`.
 - A project's row is a `.list-row`, which opens a `.sheet` with "Choose…", the `.segmented` buttons, Cancel and Save.
+- Crew: `.page-head .segmented` switches Cards and Models, remembered in `localStorage["crewbots.crewView"]`. In
+  Models, the rows are `.models-row.team` and `.models-row.bot`; their selects are labelled "<Team> runs on",
+  "<Team> model", "<Team> reasoning", or the bot's name in place of the team ("Engineer model"). A changed cell is
+  `.models-cell.changed` with the old value in `s.models-was`. Presets are `.preset > button` by name (the one in use
+  has `.in-use`), deleted by `button[title="Delete “<name>”"]` after a `window.confirm`; "Save as a preset…" opens an
+  input labelled "Preset name". The draft's banner is `.models-draft` with Apply and Discard. Ticking rows'
+  checkboxes shows `.models-picked`, whose "Set team" moves them. The demo has "Everyday" (in use) and "Codex is low"
+  (two bots change).
 - Settings switches are `[role=switch]` with `aria-label`s "Start at login", "Merge approved work automatically",
   "Pause the crew"; the time zone is `input[aria-label="Time zone"]`.
 - `?update` in the preview URL shows the update banner `.crew-banner`: "A new version of crewbots is installed",
@@ -35,5 +46,7 @@ The "Your crew" menu at the bottom of the sidebar, or ⌘K. Landed has its own r
 - Antigravity in the bot editor uses the account-advertised model list. In the preview, select Antigravity and
   check Gemini 3.8 Flash and its thinking levels; the proactive switch and custom context window are hidden.
   Analytics includes Antigravity token totals but directs quota checks to Antigravity itself.
+- The preview's bot editor doesn't keep a card's changes, so a team set there doesn't show in Models; set it from
+  the Models view's checkboxes instead. Its bulk edits and presets last until the page reloads.
 - The demo has fixed analytics and plans. Shapes are worth checking; numbers aren't.
 - Settings that change the daemon (auto-merge, time zone) need a scratch daemon to check that they took effect.

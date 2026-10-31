@@ -44,3 +44,31 @@ it("turns on a proposed routine and runs it as a test, or declines it", async ()
   await previewBridge.request("DELETE", "/routines/retro");
   expect((await list()).map((r) => r.name)).not.toContain("retro");
 });
+
+it("changes several bots' models at once, or none of them, and applies a preset", async () => {
+  type Listed = { presets: { name: string }[]; in_use: string | null };
+  const presets = async () => (await previewBridge.request("GET", "/presets")).data as Listed;
+  const engineer = async () => ((await previewBridge.request("GET", "/bots")).data as { name: string }[]).find((b) => b.name === "engineer");
+  expect(await presets()).toMatchObject({ presets: [{ name: "Everyday" }, { name: "Codex is low" }], in_use: "Everyday" });
+
+  const bad = await previewBridge.request("PUT", "/bots/models", { bots: { engineer: { backend: "claude" }, critic: { effort: "enormous" } } });
+  expect(bad.status).toBe(422);
+  expect(await engineer()).toMatchObject({ backend: "codex" });
+
+  const good = await previewBridge.request("PUT", "/bots/models", { bots: { engineer: { backend: "claude", model: "sonnet" }, critic: { team: "Critics" } } });
+  expect(good.data).toEqual({ changed: ["engineer", "critic"], skipped: [] });
+  expect(await engineer()).toMatchObject({ backend: "claude", model: "sonnet", team: "Engineers" });
+  expect((await presets()).in_use).toBeNull();
+
+  expect((await previewBridge.request("POST", "/presets/Everyday/apply")).data).toEqual({ changed: ["engineer"], skipped: [] });
+  expect(await engineer()).toMatchObject({ backend: "codex", model: null });
+  expect((await presets()).in_use).toBe("Everyday");
+});
+
+it("saves the crew as a preset, and deletes it", async () => {
+  const saved = await previewBridge.request("PUT", "/presets/Light%20week");
+  expect((saved.data as { presets: { name: string }[] }).presets.map((p) => p.name)).toContain("Light week");
+  const left = await previewBridge.request("DELETE", "/presets/Light%20week");
+  expect((left.data as { presets: { name: string }[] }).presets.map((p) => p.name)).not.toContain("Light week");
+  expect((await previewBridge.request("DELETE", "/presets/Light%20week")).status).toBe(404);
+});

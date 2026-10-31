@@ -17,44 +17,73 @@ export function ModelPicker(props: {
 }) {
   const { crew } = props;
   useEffect(() => crew.loadModels(), [crew.loadModels]);
-  const family = backendFamily(props.backend);
-  const list = crew.models?.[family] ?? [];
-  const chosen = list.find((m) => m.id === props.model) ?? list.find((m) => m.default && !props.model);
-  const efforts = chosen?.efforts ?? [];
+  const list = crew.models?.[backendFamily(props.backend)] ?? [];
+  const chosen = chosenModel(list, props.model);
   return (
     <span className="model-picker">
-      <select value={props.model ?? ""} onChange={(e) => props.onChange(e.target.value || null, keep(props.effort, list.find((m) => m.id === e.target.value)))}>
-        <option value="">{crew.models ? `Default${defaultName(list) ? ` (${defaultName(list)})` : ""}` : "Loading models…"}</option>
-        {groups(list).map(([title, models]) =>
-          title ? (
-            <optgroup key={title} label={title}>
-              {models.map((m) => (
-                <option key={m.id} value={m.id} title={m.description}>
-                  {m.label}
-                </option>
-              ))}
-            </optgroup>
-          ) : (
-            models.map((m) => (
-              <option key={m.id} value={m.id} title={m.description}>
-                {m.label}
-              </option>
-            ))
-          ),
-        )}
-        {props.model && !list.some((m) => m.id === props.model) && <option value={props.model}>{props.model}</option>}
+      <select value={props.model ?? ""} onChange={(e) => props.onChange(e.target.value || null, keptEffort(list, e.target.value || null, props.effort ?? null))}>
+        <ModelOptions crew={crew} list={list} model={props.model} />
       </select>
-      <select value={props.effort ?? ""} onChange={(e) => props.onChange(props.model ?? null, e.target.value || null)} disabled={crew.models !== null && efforts.length === 0}>
-        <option value="">{efforts.length === 0 && crew.models ? "No reasoning setting" : `Default effort${chosen?.default_effort ? ` (${EFFORT_LABEL[chosen.default_effort] ?? chosen.default_effort})` : ""}`}</option>
-        {efforts.map((e) => (
-          <option key={e} value={e}>
-            {EFFORT_LABEL[e] ?? e}
-          </option>
-        ))}
-        {props.effort && !efforts.includes(props.effort) && <option value={props.effort}>{EFFORT_LABEL[props.effort] ?? props.effort}</option>}
+      <select value={props.effort ?? ""} onChange={(e) => props.onChange(props.model ?? null, e.target.value || null)} disabled={crew.models !== null && !chosen?.efforts.length}>
+        <EffortOptions crew={crew} chosen={chosen} efforts={chosen?.efforts ?? []} effort={props.effort} />
       </select>
     </span>
   );
+}
+
+/** A model select's choices: the CLI's default, then what it lists, and the one set if the CLI doesn't list it. */
+export function ModelOptions({ crew, list, model }: { crew: Crew; list: Model[]; model: string | null | undefined }) {
+  return (
+    <>
+      <option value="">{crew.models ? `Default${defaultName(list) ? ` (${defaultName(list)})` : ""}` : "Loading models…"}</option>
+      {groups(list).map(([title, models]) =>
+        title ? (
+          <optgroup key={title} label={title}>
+            {models.map((m) => (
+              <option key={m.id} value={m.id} title={m.description}>
+                {m.label}
+              </option>
+            ))}
+          </optgroup>
+        ) : (
+          models.map((m) => (
+            <option key={m.id} value={m.id} title={m.description}>
+              {m.label}
+            </option>
+          ))
+        ),
+      )}
+      {model && !list.some((m) => m.id === model) && <option value={model}>{model}</option>}
+    </>
+  );
+}
+
+/** An effort select's choices: the model's default, the `efforts` it can take, and the one set if it isn't among them. */
+export function EffortOptions(props: { crew: Crew; chosen: Model | undefined; efforts: string[]; effort: string | null | undefined }) {
+  const { crew, chosen, efforts, effort } = props;
+  return (
+    <>
+      <option value="">{efforts.length === 0 && crew.models ? "No reasoning setting" : `Default effort${chosen?.default_effort ? ` (${EFFORT_LABEL[chosen.default_effort] ?? chosen.default_effort})` : ""}`}</option>
+      {efforts.map((e) => (
+        <option key={e} value={e}>
+          {EFFORT_LABEL[e] ?? e}
+        </option>
+      ))}
+      {effort && !efforts.includes(effort) && <option value={effort}>{EFFORT_LABEL[effort] ?? effort}</option>}
+    </>
+  );
+}
+
+/** The model a bot runs on: the one it names, or the CLI's default when it names none. */
+export function chosenModel(list: Model[], model: string | null | undefined): Model | undefined {
+  return list.find((m) => m.id === model) ?? list.find((m) => m.default && !model);
+}
+
+/** The effort a bot keeps on moving to `model`: only one that model offers. With nothing listed it can't be told, so
+ * it stays, as the daemon keeps it. */
+export function keptEffort(list: Model[], model: string | null, effort: string | null): string | null {
+  if (!effort || list.length === 0) return effort;
+  return chosenModel(list, model)?.efforts.includes(effort) ? effort : null;
 }
 
 /** "Sonnet · High": a model and effort, in words. */
@@ -78,12 +107,8 @@ function groups(list: Model[]): [string, Model[]][] {
 }
 
 /** What the CLI's default model is: Codex names it; Claude describes it ("Opus 4.6 with 1M context · …"). */
-function defaultName(list: Model[]): string {
+export function defaultName(list: Model[]): string {
   const found = list.find((m) => m.default);
   if (!found) return "";
   return found.id === "default" ? found.description.split(" · ")[0].replace(/\s*\[[^\]]*\]/g, "") : found.label;
-}
-
-function keep(effort: string | null | undefined, model: Model | undefined): string | null {
-  return effort && model?.efforts.includes(effort) ? effort : null;
 }

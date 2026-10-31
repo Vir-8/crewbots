@@ -6,6 +6,7 @@ import type { Bridge } from "../bridge";
 import type { ConnectionStatus, Live, StoredEvent, Task } from "../types";
 import * as demo from "./demo";
 import { landedRequest } from "./demo/landed";
+import { presetsRequest } from "./demo/presets";
 import { projectRequest } from "./demo/projects";
 import { settingsRequest } from "./demo/settings";
 import { toolsRequest } from "./demo/tools";
@@ -59,7 +60,7 @@ async function request(method: string, path: string, body?: any) {
   const allEvents = [...demo.events.values()].flat().sort((a, b) => a.id - b.id);
   await new Promise((r) => setTimeout(r, 60));
 
-  if (method === "GET" && url.pathname === "/bots") return ok(demo.bots);
+  if (method === "GET" && url.pathname === "/bots") return ok([...demo.bots]); // a copy, as over the wire: edits replace its bots
   if (method === "GET" && url.pathname === "/tasks") return ok(all.sort((a, b) => b.created_at.localeCompare(a.created_at)));
   if (method === "GET" && url.pathname === "/events/recent") return ok(allEvents.slice(-Number(url.searchParams.get("limit") ?? 400)));
   if (method === "GET" && url.pathname === "/events/cursor") return ok({ id: allEvents.at(-1)?.id ?? 0 });
@@ -95,6 +96,8 @@ async function request(method: string, path: string, body?: any) {
   if (landedAnswer) return landedAnswer;
   const settingsAnswer = settingsRequest(method, url.pathname, parts, body);
   if (settingsAnswer) return settingsAnswer;
+  const presetsAnswer = presetsRequest(method, url.pathname, parts, body);
+  if (presetsAnswer) return presetsAnswer;
   const toolsAnswer = await toolsRequest(method, url.pathname, parts, body, (name) => request("POST", `/routines/${name}/run`));
   if (toolsAnswer) return toolsAnswer;
   if (method === "GET" && url.pathname === "/chats") return ok(chats());

@@ -152,6 +152,7 @@ export function routines() {
 export const previewModels = {
       claude: [
         { id: "default", label: "Default (recommended)", description: "Opus", efforts: ["low", "medium", "high", "max"], default_effort: null, default: true },
+        { id: "opus", label: "Opus", description: "Most capable for complex work", efforts: ["low", "medium", "high", "max"], default_effort: null, default: false },
         { id: "sonnet", label: "Sonnet", description: "Best for everyday tasks", efforts: ["low", "medium", "high"], default_effort: null, default: false },
         { id: "haiku", label: "Haiku", description: "Fastest", efforts: [], default_effort: null, default: false },
       ],

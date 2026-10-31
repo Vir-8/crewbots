@@ -5,11 +5,13 @@ import { Icon } from "./Icon";
 import "../styles/dialogs.css";
 import "../styles/pages.css";
 
-export function Page(props: { title: string; actions?: ReactNode; children: ReactNode; wide?: boolean }) {
+/** A page: its title, what sits `beside` it (a switch between its views), its `actions` at the far end, and its body. */
+export function Page(props: { title: string; beside?: ReactNode; actions?: ReactNode; children: ReactNode; wide?: boolean }) {
   return (
     <>
       <header className="page-head" data-tauri-drag-region="deep">
         <h1>{props.title}</h1>
+        {props.beside}
         <span className="grow" />
         {props.actions}
       </header>

@@ -4,16 +4,14 @@ import { Avatar, labelOf } from "../components/Avatar";
 import { tokens } from "../components/bits";
 import { Icon } from "../components/Icon";
 import { BACKEND_LABEL, EFFORT_LABEL, modelLabel } from "../components/ModelPicker";
-import { PlanCard } from "../components/PlanCard";
+import { PLAN_COLOR, PlanCard } from "../components/PlanCard";
 import { Page, Segmented } from "../components/ui";
 import { usePlans } from "../plans";
 import type { Crew } from "../state";
 import type { Budget, UsageSummary } from "../types";
 import "../styles/analytics.css";
 
-// Each plan keeps one color everywhere on the page (orange and aqua, adjacent slots of the validated palette); the
-// activity grid's magnitude is a separate one-hue blue ramp, so neither reads as one plan's. Both are set in styles.css.
-const PLAN_COLOR: Record<string, string> = { claude: "var(--plan-claude)", codex: "var(--plan-codex)", antigravity: "#4285f4" };
+// The activity grid's magnitude is a one-hue blue ramp, so it doesn't read as either plan's color.
 const RAMP = [1, 2, 3, 4, 5];
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
