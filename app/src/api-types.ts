@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "a895b92e6cf1";
+export const API_SCHEMA = "8bd6fa5434a4";
 
 /** How much a run may touch. Each backend maps this onto its own permission or sandbox flags. */
 export type Access = "read_only" | "workspace_write" | "full";
@@ -67,7 +67,8 @@ export interface BotOut {
   network: boolean | string[];
   mcp: string[];
   skills: string[];
-  can_delegate: boolean;
+  chief: boolean;
+  coordinator: boolean;
   path: string | null;
   display_name: string | null;
   effort: string | null;

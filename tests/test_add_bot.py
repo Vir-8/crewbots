@@ -27,7 +27,7 @@ def crewed(tmp_path):
 
 def tools(runner, store, bot):
     task = store.create_task(bot, "asked to add a bot")
-    return CrewTools(runner, task.id, can_delegate=runner.crew.bots[bot].can_delegate), task
+    return CrewTools(runner, task.id, can_delegate=runner.is_coordinator(bot)), task
 
 
 async def test_the_chief_adds_a_bot_when_asked(crewed):
@@ -43,13 +43,16 @@ async def test_the_chief_adds_a_bot_when_asked(crewed):
     assert any(e.kind == "notice" and "Added Mira" in e.data["message"] for e in store.events(task.id))
 
 
-async def test_adding_earlier_coordinator_does_not_change_chief(crewed):
+async def test_a_bot_added_as_a_coordinator_coordinates_and_the_chief_stays(crewed):
     runner, store = crewed
     chief, _ = tools(runner, store, "chief")
-    await chief.call("add_bot", {**MARKETING, "name": "aaa", "can_delegate": True})
+    await chief.call("add_bot", {**MARKETING, "name": "aaa", "coordinator": True})
     assert list(runner.crew.bots)[0] == "aaa"
     assert store.chief() == runner.chief_bot().name == "chief"
-    assert not runner.is_coordinator("aaa")
+    assert runner.is_coordinator("aaa") and runner.is_coordinator("eng-lead")
+    added, _ = tools(runner, store, "aaa")
+    assert {"next_check", "propose_merge"} <= {t.name for t in added.definitions()}
+    assert "can_delegate" not in cards.read(runner.crew.home / "bots" / "aaa.md")[0]
 
 
 async def test_the_chief_gives_what_it_chooses_short_of_full_access_and_network_it_hasnt_got(crewed):
@@ -64,9 +67,9 @@ async def test_the_chief_gives_what_it_chooses_short_of_full_access_and_network_
     cards.save_card(runner.crew.home, "chief", {"network": True}, None)
     runner.reload(crew.load(runner.crew.home))
     chief, _ = tools(runner, store, "chief")
-    await chief.call("add_bot", {**MARKETING, "network": True, "can_delegate": True, "mcp": ["unity"]})
+    await chief.call("add_bot", {**MARKETING, "network": True, "mcp": ["unity"]})
     added = runner.crew.bots["marketing"]
-    assert added.network is True and added.can_delegate and added.mcp_names == ("unity",)
+    assert added.network is True and added.mcp_names == ("unity",) and not runner.is_coordinator("marketing")
 
 
 async def test_a_bot_added_without_a_word_on_network_has_the_chiefs(crewed):

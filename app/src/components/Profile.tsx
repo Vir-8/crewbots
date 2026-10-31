@@ -143,7 +143,7 @@ export function Profile(props: { crew: Crew; bot: string; onOpen: (id: string) =
             <dt>Access</dt>
             <dd>
               {ACCESS[bot.access]}
-              {bot.can_delegate ? " · delegates" : ""}
+              {bot.coordinator ? " · delegates" : ""}
             </dd>
             <dt>Network</dt>
             <dd>{network}</dd>

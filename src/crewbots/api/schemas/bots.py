@@ -19,7 +19,8 @@ class BotOut(BaseModel):
     network: bool | list[str]  # its shell commands: none, any host, or these hosts
     mcp: list[str]  # the MCP servers its role card grants, besides crewbots' own
     skills: list[str]
-    can_delegate: bool
+    chief: bool
+    coordinator: bool  # the chief, or one of the crew's coordinators
     path: str | None  # its role card
     display_name: str | None  # what you call it; `name` is its handle
     effort: str | None  # reasoning effort; none: the CLI's default

@@ -253,8 +253,9 @@ class Delegation(RoomTalk):
 
     def add_bot(self, task_id: str, fields: dict[str, Any]) -> Bot:
         """The chief adds a bot, when the user asks it to, with whatever it gives it: either access short of full
-        (no sandbox is the user's call), any of the crew's MCP servers (all of them unless it names some), delegation,
-        and network unless the chief has none itself. Nothing lets a bot remove or change one: that's the user's."""
+        (no sandbox is the user's call), any of the crew's MCP servers (all of them unless it names some), a place
+        among the coordinators, and network unless the chief has none itself. Nothing lets a bot remove or change one:
+        that's the user's."""
         maker = self.bot_for(self.store.get_task(task_id).bot)
         if maker is None or not self.is_chief(maker.name):
             raise NotAllowed("only the chief can add bots")
@@ -270,7 +271,7 @@ class Delegation(RoomTalk):
                 "description": fields["description"], "backend": fields.get("backend") or maker.backend,
                 "model": fields.get("model"), "effort": fields.get("effort"), "access": access.value,
                 "network": list(network) if isinstance(network, tuple) else network, "mcp": mcp,
-                "skills": list(fields.get("skills") or []), "can_delegate": bool(fields.get("can_delegate")) or None}
+                "skills": list(fields.get("skills") or [])}
         path = cards.save_card(self.crew.home, name, card, str(fields["instructions"]), create=True)
         try:
             crew = crew_module.load(self.crew.home)
@@ -278,6 +279,8 @@ class Delegation(RoomTalk):
             path.unlink(missing_ok=True)  # the crew must still load without it
             raise
         self.reload(crew)
+        if fields.get("coordinator"):
+            self.store.set_coordinators([*(self.store.coordinators() or []), name])
         added = crew.bots[name]
         self._record(task_id, Notice(message=f"Added {added.label} (@{added.name}), {added.title}, to the crew."))
         return added

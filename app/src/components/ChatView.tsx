@@ -333,7 +333,7 @@ function isEmpty(crew: Crew, taskId: string): boolean {
 /** The first time you open a bot's chat: who it is, and a few ways to start. */
 function Welcome({ crew, bot, onSay }: { crew: Crew; bot: string; onSay: (text: string) => void }) {
   const card = crew.bots.find((b) => b.name === bot);
-  const starts = card?.can_delegate
+  const starts = card?.coordinator
     ? ["What can you take off my plate?", "Plan a goal with me", "Who's on the crew, and what does each do?"]
     : ["What do you do, and how should I work with you?", "What would you need from me to start?", "What have you worked on lately?"];
   return (

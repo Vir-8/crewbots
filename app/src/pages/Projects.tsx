@@ -27,7 +27,7 @@ export function Projects(props: { crew: Crew; onChat: (bot: string) => void }) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [bringing, setBringing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const chief = props.crew.bots.find((b) => b.can_delegate) ?? props.crew.bots[0];
+  const chief = props.crew.bots.find((b) => b.chief) ?? props.crew.bots[0];
 
   const load = () =>
     api.projects().then(

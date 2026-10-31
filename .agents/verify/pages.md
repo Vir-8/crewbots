@@ -1,8 +1,8 @@
 # Pages
 
 ## Sub-features
-- **Crew:** each bot's role card (model, effort, access, network, MCP servers, skills), editable in place; adding a bot;
-  the chief and coordinators.
+- **Crew:** each bot's role card (model, effort, access, network, MCP servers, skills), editable in place; adding a bot.
+  A coordinator's profile says it delegates; the app has no control for who is chief or a coordinator.
 - **Projects:** folders the crew may work in, each with its folder, a description and where tasks work (isolation). CI commands aren't set here.
 - **Activity:** who asked or handed what to whom, live.
 - **Landed:** what merged, the latest first, with its handback's evidence and the verdicts of the merged version; a
@@ -20,7 +20,8 @@ The "Your crew" menu at the bottom of the sidebar, or ⌘K. Landed has its own r
 - Open the menu with `.side-row.crew-button`, then click the item by its text.
 - Projects: a row opens its sheet; "Where tasks work" is a `.segmented` of "The folder itself" and "A worktree each",
   and the row's second line ends with the one in use. The demo's `glider` is a Unity project,
-  worked in its folder itself.
+  worked in its folder itself. In a scratch daemon, adding a Unity project (a folder with
+  `ProjectSettings/ProjectVersion.txt`) puts `verify-unity` in `GET /v1/skills` once the next tick reloads the crew.
 - The page is in `.main`; its title is the `h1`.
 - A project's row is a `.list-row`, which opens a `.sheet` with "Choose…", the `.segmented` buttons, Cancel and Save.
 - Settings switches are `[role=switch]` with `aria-label`s "Start at login", "Merge approved work automatically",

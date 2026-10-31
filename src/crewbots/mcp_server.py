@@ -193,7 +193,7 @@ def _crew_server(client: httpx.Client) -> MCPServer:
     @server.tool(description=describe("add_bot"))
     def add_bot(name: str, title: str, description: str, instructions: str, display_name: str | None = None,
                 backend: str | None = None, model: str | None = None, effort: str | None = None,
-                access: str | None = None, network: bool | None = None, can_delegate: bool = False,
+                access: str | None = None, network: bool | None = None, coordinator: bool = False,
                 mcp: list[str] | None = None, skills: list[str] | None = None) -> str: ...
 
     @server.tool(description=describe("tell_user"))

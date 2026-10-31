@@ -22,9 +22,9 @@ def routes(c: Context) -> APIRouter:
             {"name": b.name, "title": b.title, "description": b.description, "backend": b.backend, "model": b.model,
              "access": b.access, "workspace": str(b.workspace) if b.workspace else None,
              "network": list(b.network) if isinstance(b.network, tuple) else b.network, "mcp": sorted(b.mcp),
-             "skills": list(b.skills), "can_delegate": b.can_delegate, "path": str(b.path) if b.path else None,
-             "display_name": b.display_name, "avatar": b.avatar, "effort": b.effort,
-             "context_window": b.context_window, "proactive": b.proactive}
+             "skills": list(b.skills), "chief": runner.is_chief(b.name), "coordinator": runner.is_coordinator(b.name),
+             "path": str(b.path) if b.path else None, "display_name": b.display_name, "avatar": b.avatar,
+             "effort": b.effort, "context_window": b.context_window, "proactive": b.proactive}
             for b in runner.crew.bots.values()
         ]
 

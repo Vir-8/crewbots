@@ -240,7 +240,7 @@ class AddBot(Forwarded):
     # Shown as a choice of these, but any is read: the runner refuses full access with why
     access: str | None = Field(None, json_schema_extra={"enum": ["read_only", "workspace_write"]})
     network: bool | None = None
-    can_delegate: bool | None = None
+    coordinator: bool | None = None
     mcp: list[str] | None = None
     skills: list[str] | None = None
 
