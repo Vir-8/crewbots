@@ -12,6 +12,11 @@ SESSION_HOME = Path(tempfile.mkdtemp(prefix="crewbots-tests-home-"))
 os.environ["HOME"] = str(SESSION_HOME)
 os.environ.pop("CREWBOTS_HOME", None)
 os.environ.pop("CODEX_HOME", None)
+# Run from a git hook or `git rebase --exec`, git hands down the repository it's in: every test's `git init` in a temp
+# folder would then reinitialise that repository instead (making it bare), and its commits would land there too.
+for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
+             "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE", "GIT_PREFIX"):
+    os.environ.pop(name, None)
 
 sys.path.insert(0, str(Path(__file__).parent))  # so tests can import helpers
 
