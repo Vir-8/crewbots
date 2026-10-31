@@ -39,6 +39,7 @@ class RoomMessageOut(BaseModel):
     depth: int
     at: str
     attachments: list[AttachmentOut] = []
+    folder: str | None = None  # where the bot's task that said it worked, which its relative links are from
 
 class LastMessage(BaseModel):
     author: str

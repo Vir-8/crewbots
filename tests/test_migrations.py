@@ -154,6 +154,29 @@ def test_previous_version_loses_branch_modes_columns_and_keeps_its_tasks(tmp_pat
     migrated.close()
 
 
+def test_previous_version_keeps_its_room_messages_with_no_folder(tmp_path):
+    path = tmp_path / "crew.db"
+    store = Store(path)
+    room = store.create_room("Crew", "chief", ["chief"])
+    said = store.add_room_message(room["id"], "chief", "See [the plan](docs/plan.md).")
+    store.db.execute("alter table room_messages drop column folder")
+    before = [name for name, _ in db_module.MIGRATIONS].index(
+        "where the bot that said each group chat message was working")
+    store.db.execute(f"pragma user_version = {before}")
+    store.close()
+
+    migrated = Store(path)
+    assert [(m["text"], m["folder"]) for m in migrated.room_messages(room["id"])] == [(said["text"], None)]
+    migrated.add_room_message(room["id"], "chief", "And [the notes](notes.md).", folder="/work/chief")
+    assert migrated.last_room_message(room["id"])["folder"] == "/work/chief"
+    migrated.db.execute(f"pragma user_version = {before}")
+    migrated.close()
+
+    again = Store(path)
+    assert again.last_room_message(room["id"])["folder"] == "/work/chief"  # the step run again changes nothing
+    again.close()
+
+
 def test_an_older_crews_room_called_crew_becomes_its_own(tmp_path):
     path = tmp_path / "crew.db"
     store = Store(path)

@@ -126,6 +126,8 @@ async def test_questions_answers_and_fix_requests_are_said_in_the_room(store, tm
     assert ("engineer", f"@lead {work.id}: Used CSV.") in said
     asked = said.index(("lead", "@reviewer Is the CSV quoted?"))
     assert said.index(("reviewer", "@lead Yes: every field is quoted.")) > asked
+    own = {name: str(crew.runner.crew.folder_of(b)) for name, b in crew.runner.crew.bots.items()}
+    assert all(m["folder"] == own[m["author"]] for m in store.room_messages(room["id"]))  # each from where it works
     await crew.runner.shutdown()
 
 

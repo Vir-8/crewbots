@@ -471,6 +471,7 @@ class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Revie
                     await self._close_session(task_id)
                     self._removed_worktrees.discard(task_id)
                 cwd = self._cwd(task, bot)
+                task = self.store.get_task(task_id)  # with the worktree its first turn just made
             except Exception as e:  # a bot removed from the crew, a missing workspace, a git failure
                 self._record(task_id, Done(final_text="", is_error=True, error=f"crewbots: {e}"))
                 self._failed(task_id, str(e))

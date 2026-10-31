@@ -210,7 +210,7 @@ export function GroupChat(props: { crew: Crew; chat: GroupChatOut; onOpen: (id: 
                         <Boundary key={m.id} where={`a group chat message (${m.id})`}>
                           <div className="room-message message-row" data-msg={m.id}>
                             <div className="message-body">
-                              {m.text && <LinksFrom files={m.attachments}><RoomBubble text={m.text} onOpen={props.onOpen} /></LinksFrom>}
+                              {m.text && <LinksFrom files={m.attachments} folder={m.folder ?? null}><RoomBubble text={m.text} onOpen={props.onOpen} /></LinksFrom>}
                               <Files items={m.attachments ?? []} />
                             </div>
                             <MessageMeta at={m.at} text={m.text} />

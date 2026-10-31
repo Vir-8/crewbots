@@ -23,20 +23,22 @@ class RoomTalk:
             return None
         return None if room["archived_at"] else room
 
-    def _say_in_room(self, task: Task, author: str, to: str, text: str) -> None:
+    def _say_in_room(self, task: Task, by: Task, to: str, text: str) -> None:
+        """Says `text` in the group chat `task` was handed out in, from `by`."""
         if room := self._work_room(task):
-            self._say(room, author, to, text)
+            self._say(room, by, to, text)
 
-    def _say(self, room: dict[str, Any], author: str, to: str, text: str) -> None:
-        """Says `text` to @`to` as `author`, if it's in the room. `to` hears it directly, so its seat there isn't sent
-        it again, unless it has other news there to catch up on."""
+    def _say(self, room: dict[str, Any], by: Task, to: str, text: str) -> None:
+        """Says `text` to @`to` as the bot of `by`, if it's in the room. `to` hears it directly, so its seat there
+        isn't sent it again, unless it has other news there to catch up on."""
+        author = by.bot
         if author not in room["members"]:
             return
         seat = self.store.seat_of(room["id"], to)
         key = f"seat:{seat.id}" if seat else ""
         caught_up = seat and not any(m["author"] != to for m in self.store.room_messages(room["id"],
                                                                                          after=self.store.seen(key)))
-        said = self.post(room["id"], author, text if to == author else f"@{to} {text}", recipients=[])
+        said = self.post(room["id"], author, text if to == author else f"@{to} {text}", recipients=[], by=by)
         if caught_up:
             self.store.mark_seen(key, said["id"])
 
@@ -50,7 +52,7 @@ class RoomTalk:
         if parent.kind == "review" or self.store.seen(key) > task.turns or not (room := self._work_room(task)):
             return
         self.store.mark_seen(key, task.turns + 1)
-        self._say(room, task.bot, parent.bot,
+        self._say(room, task, parent.bot,
                   _said(task, self.store.latest_handoff(task.id), self.store.latest_review(task.id)))
 
 

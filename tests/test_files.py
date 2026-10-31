@@ -25,14 +25,6 @@ def store(tmp_path):
 
 
 @pytest.fixture
-def studio(tmp_path):
-    """The artist's own folder: outside the crew's, where a writing bot can't work."""
-    folder = tmp_path.parent / f"{tmp_path.name}-studio"
-    folder.mkdir()
-    return folder
-
-
-@pytest.fixture
 def crew(store, tmp_path, studio):
     scripted = ScriptedCrew(store, tmp_path, bot("artist", Access.WORKSPACE_WRITE, workspace=studio), bot("critic"))
     scripted.script["artist"] = scripted.script["critic"] = lambda spec, me: [Done(final_text="ok")]

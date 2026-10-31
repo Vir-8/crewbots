@@ -229,13 +229,16 @@ class Rooms:
         return room
 
     def post(self, room_id: str, author: str, text: str, depth: int = 0,
-             attachments: list[dict[str, Any]] | None = None, *, recipients: list[str] | None = None) -> dict[str, Any]:
+             attachments: list[dict[str, Any]] | None = None, *, recipients: list[str] | None = None,
+             by: Task | None = None) -> dict[str, Any]:
         """A message in a room, from the user or a bot. It wakes the bots it mentions; one from the user that mentions
         no one wakes the lead, who answers it, hands it on or leaves it. Once the bots have replied to each other the
-        room's limit of times in a row, a bot's mentions wait for the user to continue."""
+        room's limit of times in a row, a bot's mentions wait for the user to continue. A bot's message names the task
+        that said it, `by`, and keeps the folder that task works in: its relative links are from there."""
         room = self.store.room(room_id)
         named, wake = self._recipients(room, author, text) if recipients is None else (recipients, recipients)
-        message = self.store.add_room_message(room_id, author, text, depth, attachments)
+        folder = str(self._work_folder(by)) if by else None
+        message = self.store.add_room_message(room_id, author, text, depth, attachments, folder)
         self.bus.publish({"type": "room_message", "message": message})
         if author in self.crew.bots:
             self.store.log_agent("post", author, room_id=room_id, text=text)
@@ -356,7 +359,8 @@ class Rooms:
             shown = self._shared_now.setdefault(task.id, set()) if own else set()
             attachments = self._named(task, text, shown)
             shown.update(Path(f["path"]) for f in attachments)  # its reply, in the same room, needn't show them again
-        return self.post(room["id"], task.bot, text, depth=self._seat_depth.get(task_id, 0) + 1, attachments=attachments)
+        return self.post(room["id"], task.bot, text, depth=self._seat_depth.get(task_id, 0) + 1, attachments=attachments,
+                         by=task)
 
     def tell_user(self, task_id: str, text: str, needs_you: bool = False) -> dict[str, Any]:
         """The `tell_user` tool: the chief says something to the user in its chat with them from wherever it's working,
@@ -463,9 +467,10 @@ class Rooms:
                 self.send(seat.id, prompts.text("mentioned", self.crew.home), sender="crewbots")
             elif nudged:
                 self.post(seat.room_id, seat.bot, "I don't have an answer yet.",
-                          depth=self._seat_depth.get(seat.id, 0) + 1)
+                          depth=self._seat_depth.get(seat.id, 0) + 1, by=seat)
             return
-        self.post(seat.room_id, seat.bot, text, depth=self._seat_depth.get(seat.id, 0) + 1, attachments=files or None)
+        self.post(seat.room_id, seat.bot, text, depth=self._seat_depth.get(seat.id, 0) + 1, attachments=files or None,
+                  by=seat)
 
 
 def _catch_up(said: list[str]) -> str:

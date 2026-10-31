@@ -50,7 +50,7 @@ class Retries:
                 else "bot not found" if "no bot named" in text else "backend error" if retry else "unexpected error")
         try:
             self.post(task.room_id, task.bot, f"I couldn't take this turn: {kind}. Details: room_status.",
-                      depth=self._seat_depth.get(task_id, 0) + 1)
+                      depth=self._seat_depth.get(task_id, 0) + 1, by=task)
         except KeyError:  # its room was deleted meanwhile
             pass
 

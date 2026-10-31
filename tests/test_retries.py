@@ -290,6 +290,7 @@ async def test_the_last_failed_try_clears_the_retry_and_tells_the_room_once(stor
     assert runner.retrying(seat().id) is None
     told = [m for m in store.room_messages(room["id"]) if m["author"] == "worker"]
     assert [m["text"] for m in told] == ["I couldn't take this turn: backend error. Details: room_status."]
+    assert told[0]["folder"] == str(runner.crew.folder_of(runner.crew.bots["worker"]))  # where its seat works
     assert "529" in store.get_task(seat().id).error  # the error stays where room_status reads it
 
 

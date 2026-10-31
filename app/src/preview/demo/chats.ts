@@ -2,7 +2,7 @@
 
 import { files, made } from "./files";
 import { bots, done, emit, message, say, task, tasks, tick, tool } from "./make";
-import type { Attachment, Room } from "../../types";
+import type { Room, RoomMessage } from "../../types";
 
 export const mutedBots = new Set(["reviewer"]);
 export const chatIds: Record<string, string> = {};
@@ -166,7 +166,7 @@ export const rooms: Room[] = [
   { id: "r_naming0003", title: "Naming the export", lead: "engineer", members: ["engineer", "critic"], created_at: tick(), updated_at: tick(), stopped: { after: 4, waiting: ["engineer"] } },
   { id: "r_launch0004", title: "Launch prep", lead: "chief", members: ["chief", "engineer"], created_at: tick(), updated_at: tick(), archived_at: tick() },
 ];
-export const roomMessages = new Map<string, { id: number; room_id: string; author: string; text: string; depth: number; at: string; attachments?: Attachment[] }[]>();
+export const roomMessages = new Map<string, RoomMessage[]>();
 {
   let id = 1;
   const room = rooms[0].id;
@@ -176,6 +176,8 @@ export const roomMessages = new Map<string, { id: number; room_id: string; autho
     said("engineer", "Endpoint's in and its tests pass. Wiring the button now. @reviewer it'll be yours in a few minutes.", 1),
     said("reviewer", "Ready when you are. I'll check the filters reach the export. @everyone can find me at reviews@example.com; `@engineer` is code.", 2),
     said("engineer", handover, 1),
+    // said from its export thread, so its relative link is from that thread's worktree
+    { ...said("engineer", "How the columns and dates are chosen is in [export notes](docs/export-notes.md), for whoever changes the label.", 1), folder: tasks.get("t_csv0000002")!.worktree_path },
     said("chief", "Thanks both. I'll propose it for merging once both reviews pass.", 1),
     said("engineer", overflowExample, 1),
     { ...said("engineer", "The launch cut, for anyone who wants a look before Friday:", 1), attachments: [files.cut] },

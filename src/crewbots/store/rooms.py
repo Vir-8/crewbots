@@ -48,14 +48,15 @@ class Rooms:
         return [_room(r) for r in rows]
 
     def add_room_message(self, room_id: str, author: str, text: str, depth: int = 0,
-                         attachments: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+                         attachments: list[dict[str, Any]] | None = None, folder: str | None = None) -> dict[str, Any]:
         now = _now()
         cur = self.db.execute(
-            "insert into room_messages (room_id, author, text, depth, at, attachments) values (?, ?, ?, ?, ?, ?)",
-            (room_id, author, text, depth, now, json.dumps(attachments) if attachments else None))
+            "insert into room_messages (room_id, author, text, depth, at, attachments, folder) "
+            "values (?, ?, ?, ?, ?, ?, ?)",
+            (room_id, author, text, depth, now, json.dumps(attachments) if attachments else None, folder))
         self.db.execute("update rooms set updated_at = ? where id = ?", (now, room_id))
         return {"id": cur.lastrowid, "room_id": room_id, "author": author, "text": text, "depth": depth, "at": now,
-                "attachments": attachments or []}
+                "attachments": attachments or [], "folder": folder}
 
     def room_messages(self, room_id: str, after: int = 0, limit: int = 1000) -> list[dict[str, Any]]:
         rows = self.db.execute("select * from room_messages where room_id = ? and id > ? order by id limit ?",

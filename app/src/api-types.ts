@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "ea405ea2f808";
+export const API_SCHEMA = "88c7c43d8bb5";
 
 /** How much a run may touch. Each backend maps this onto its own permission or sandbox flags. */
 export type Access = "read_only" | "workspace_write" | "full";
@@ -955,6 +955,7 @@ export interface RoomMessageOut {
   depth: number;
   at: string;
   attachments?: AttachmentOut[];
+  folder?: string | null;
 }
 
 export interface RoomOut {

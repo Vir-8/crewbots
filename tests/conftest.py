@@ -52,6 +52,14 @@ def quick_retries(monkeypatch):
 
 
 @pytest.fixture
+def studio(tmp_path):
+    """The artist's own folder: outside the crew's, where a writing bot can't work."""
+    folder = tmp_path.parent / f"{tmp_path.name}-studio"
+    folder.mkdir()
+    return folder
+
+
+@pytest.fixture
 def crew_app(tmp_path):
     """The daemon's API over a chief and an engineer whose runs stay open: (client, backend, store)."""
     store = Store(tmp_path / "crew.db")

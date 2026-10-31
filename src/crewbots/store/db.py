@@ -93,6 +93,7 @@ create table if not exists room_messages (
     text    text not null,
     depth   integer not null default 0,  -- how many bot replies away from the user's message it is
     at      text not null,
+    folder  text,                        -- where the bot's task that said it worked, which its relative links are from
     attachments text                     -- JSON list, like a message event's
 );
 create index if not exists room_messages_by_room on room_messages(room_id, id);
@@ -481,6 +482,8 @@ MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] =
     ("crewbots' own rows in the routines table, under a name no routine can take", lambda db, _: db.execute(
         "update or ignore routines set name = 'crewbots:' || name where name in ('away', 'started', 'chief-events')"
         " or name glob 'checkin:*' or name glob 'memory:*'")),
+    ("where the bot that said each group chat message was working", _add_columns("room_messages", {
+        "folder": "text"})),
 ]
 
 

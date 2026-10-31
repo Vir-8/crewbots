@@ -15,6 +15,7 @@
   - delete.
 - **New group chat:** a dialog with title, members and lead.
 - **Work handed out in the room:** reported there by the bot that did it, @mentioning whoever handed it out.
+- **Links in a bot's message:** as in a chat (chat.md), with relative ones found in the folder of the task that said it.
 
 ## How to get to it
 - A group's row in the sidebar (in the demo, "Review desk", "Naming the export", and the crew room, shown as "+2").

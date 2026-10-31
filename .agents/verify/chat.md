@@ -7,9 +7,9 @@
   - quiet lines (retried tries, compactions, drops);
   - links a bot writes, `[label](target)`: a web address opens in the browser, a path (absolute, from ~ or file://)
     is shown in Finder, and so is a relative one, found among the files shown under the message, else in the folder
-    its task works in (a thread's worktree or workspace, a chat's bot's workspace). A path Finder can't find greys,
-    and its title says it wasn't found. Anything else is only its label. A label may hold one level of brackets, and
-    its code and bold are drawn;
+    its task works in (a thread's worktree or workspace, a chat's bot's folder, or for a group chat message, the
+    folder of the task that said it). A path Finder can't find greys, and its title says it wasn't found. Anything
+    else is only its label. A label may hold one level of brackets, and its code and bold are drawn;
   - files a reply, or what the chief told you from elsewhere ("From Design"), names, shown under it.
 - Cards in the conversation:
   - work cards (see work-and-threads.md);
@@ -37,8 +37,9 @@ open last.
   in its label and one with bold and code. In the thread of "Add truncate(s, n) to text.py, with tests…" (open "Add
   truncate(s, n)…", then its card in the panel), the engineer's links go through its worktree, and "scratch notes"
   isn't there.
-- The app can't know a chat's own folder when its bot names no workspace (the daemon's ~/Documents/Crewbots/<bot>),
-  or which task posted to a group chat: their relative links resolve only to files shown under the message.
+- A group chat message keeps the folder of the task that said it (`folder` on the room message; the user's, crewbots'
+  own and ones from before it was kept have none, so their relative links resolve only to files shown under them).
+  In the demo's Crew group, the engineer's "export notes" link goes through its export thread's worktree.
 - The header is `.main header`. The Profile toggle is `header .icon-button[title="Profile"]`; its state is
   `aria-pressed`.
 - Demo URL switches:

@@ -100,7 +100,7 @@ class Delegation(RoomTalk):
         if review_of and (change := self._change_of(work)):  # so a later version with the same change keeps the verdict
             self._record(task.id, kind="review_change", data={"change": change})
         self.store.log_agent("review" if review_of else "delegate", parent.bot, bot, task.id, text=goal)
-        self._say_in_room(parent, parent.bot, bot, f"{task.id}" + (f", a review of {review_of}" if review_of else "")
+        self._say_in_room(parent, parent, bot, f"{task.id}" + (f", a review of {review_of}" if review_of else "")
                           + f": {goal}")
         return task
 
@@ -175,7 +175,7 @@ class Delegation(RoomTalk):
         task = self.submit(bot, prompts.text("ask", self.crew.home, asker=parent.bot, question=question),
                            created_by=parent.bot, parent_id=task_id, title=" ".join(question.split()), kind="ask")
         self.store.log_agent("ask", parent.bot, bot, task.id, text=question)
-        self._say_in_room(parent, parent.bot, bot, question)
+        self._say_in_room(parent, parent, bot, question)
         return task
 
     def children_of(self, parent_id: str) -> list[dict[str, Any]]:
@@ -208,7 +208,7 @@ class Delegation(RoomTalk):
         sender = self.store.get_task(parent_id).bot
         self.store.log_agent("message", sender, child.bot, task_id, text=text)
         if child.bot != sender:
-            self._say_in_room(child, sender, child.bot, f"{task_id}: {text}")
+            self._say_in_room(child, parent, child.bot, f"{task_id}: {text}")
         self._fix_round(child)
         return self.send(task_id, text, sender=sender)
 

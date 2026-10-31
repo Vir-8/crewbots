@@ -424,7 +424,7 @@ class Work(Landed, Closing, MergeStatus, SharedApps, Editors, InPlace):
             if room and not (chief and task.bot == chief.name) and task.bot != recipient:
                 self.post(room["id"], task.bot, f"@{recipient} {question}{listing}"
                           f"\n\nPlease reply to @{task.bot} in this room.",
-                          depth=-1, recipients=[recipient])
+                          depth=-1, recipients=[recipient], by=task)
                 return
         self._escalated.add(task_id)
         self._record(task_id, kind="escalation", data={"question": question} | (
@@ -441,7 +441,7 @@ class Work(Landed, Closing, MergeStatus, SharedApps, Editors, InPlace):
             if task.kind != "seat" and parent.kind == "seat" and parent.room_id and chief and parent.bot == chief.name:
                 self._chief_room_item(self.store.room(parent.room_id), task.bot, "escalated", f"task {task.id}")
             if task.kind != "seat":
-                self._say_in_room(task, task.bot, parent.bot, f"{task_id} needs an answer: {question}{listing}")
+                self._say_in_room(task, task, parent.bot, f"{task_id} needs an answer: {question}{listing}")
             self.store.update_task(task_id, reported=True)
             self.send(task.parent_id, sender="crewbots", text=(
                 f"{task.bot} escalated on task {task_id} ({task.title}):\n\n{question}\n\n"
