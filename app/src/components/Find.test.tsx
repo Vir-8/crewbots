@@ -11,6 +11,10 @@ describe("finding in a conversation", () => {
       "Fixed the **export**: `export_rows` now exports filtered rows.\n\n- export to CSV\n- 2. export again\n\n```\nexport()\n```",
       "## Export plan\n\nSee t_0123456789 and the EXPORT button.",
       "[the export](/Users/pat/export.png) and [Export](https://example.com/export(1)), **with [an export](/x/export.pdf)**",
+      "[export [1]](https://example.com/export) [**export** `export()`](export.md) [see [export](/e.md)](/x/export.md)",
+      "[[Plan#Export]], `[x](export)` and an ** export ` left open",
+      "```\nprintf '`[export](/e.md)'\n```\n\nSee [the export](/x/export.md) and `x`",
+      "Run `make\n\n[the export](/x/export.md) and `done`",
       "Nothing to see here.",
     ];
     for (const text of said) {

@@ -34,20 +34,61 @@ export function count(text: string, query: string): number {
   return n;
 }
 
-/** A [label](target) link, as `bits.tsx`'s Markdown draws it: the target in <...> when it has spaces, and with at most
- * one level of (...) in it otherwise. */
-export const LINK = /\[([^\]\n]+)\]\((<[^>\n]+>|(?:[^()\s]|\([^()\s]*\))+)\)/g;
+/** A [label](target) link, as `bits.tsx`'s Markdown draws it: with at most one level of [...] in its label, and the
+ * target in <...> when it has spaces, with at most one level of (...) in it otherwise. */
+const LINK = /\[((?:[^[\]\n]|\[[^[\]\n]*\])+)\]\((<[^>\n]+>|(?:[^()\s]|\([^()\s]*\))+)\)/;
 
-/** Markdown as it reads once drawn: without the marks that only format it (`bits.tsx`'s Markdown). */
+/** What Markdown styles in a line: `code`, **bold**, a [label](target) link (its label and target are the second and
+ * third groups), and a [[page]] link, unless a (target) follows it: then it's a link whose label is in brackets. */
+export const INLINE = new RegExp(`(\`[^\`]+\`|\\*\\*[^*]+\\*\\*|${LINK.source}|\\[\\[[^\\]\\n]+\\]\\])`, "g");
+
+/** What it styles in a link's label: `code` and **bold**, but no links in a link. */
+export const IN_LABEL = /(`[^`]+`|\*\*[^*]+\*\*)/g;
+
+/** A [[Page]] link (or [[Page#Heading|what it says]]), as in Obsidian: the page it opens and the words it shows. */
+export function wikiLink(raw: string): { page: string; label: string } {
+  const [target, label] = raw.slice(2, -2).split("|");
+  return { page: target.split("#")[0].trim(), label: (label ?? target).trim() };
+}
+
+/** Markdown as it reads once drawn: without the marks that only format it (`bits.tsx`'s Markdown). Marks pair only
+ * within a block, a paragraph, heading or list item, as they're drawn, and fenced code keeps them. */
 export function shown(markdown: string): string {
-  return markdown
-    .split(/\r\n?|\n/)
-    .filter((line) => !line.startsWith("```"))
-    .map((line) => line.replace(/^#{1,6}\s+/, "").replace(/^\s*([-*+]|\d+[.)])\s+/, ""))
-    .join("\n")
-    .replace(/\[\[([^\]|#\n]+)(?:#[^\]|\n]*)?(?:\|([^\]\n]+))?\]\]/g, (_, page: string, label?: string) => (label ?? page).trim())
-    .replace(LINK, "$1")
-    .replace(/\*\*|`/g, "");
+  const blocks: string[] = [];
+  let lines: string[] = [];
+  let code: string[] | null = null;
+  const end = () => {
+    if (lines.length) blocks.push(unmarked(lines.join("\n"), false));
+    lines = [];
+  };
+  for (const line of markdown.split(/\r\n?|\n/)) {
+    const heading = /^#{1,6}\s/.test(line);
+    if (line.startsWith("```")) {
+      end();
+      if (code) blocks.push(code.join("\n"));
+      code = code ? null : [];
+    } else if (code) {
+      code.push(line);
+    } else if (!line.trim() || heading || /^\s*([-*+]|\d+[.)])\s+/.test(line)) {
+      end();
+      if (line.trim()) lines.push(line.replace(/^#{1,6}\s+/, "").replace(/^\s*([-*+]|\d+[.)])\s+/, ""));
+      if (heading) end();
+    } else {
+      lines.push(line);
+    }
+  }
+  end();
+  if (code) blocks.push(code.join("\n"));
+  return blocks.join("\n");
+}
+
+function unmarked(text: string, label: boolean): string {
+  return text.replace(label ? IN_LABEL : INLINE, (token: string, ...groups: string[]) => {
+    if (token.startsWith("`")) return token.slice(1, -1);
+    if (token.startsWith("**")) return unmarked(token.slice(2, -2), label);
+    const [, linkLabel, target] = groups; // only INLINE has them, and only it matches a [
+    return target ? unmarked(linkLabel, true) : wikiLink(token).label;
+  });
 }
 
 // Which find bar ⌘F opens: the one in the part of the window you last clicked in, the thread beside a chat or the

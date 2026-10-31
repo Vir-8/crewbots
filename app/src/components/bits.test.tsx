@@ -94,6 +94,16 @@ describe("Markdown", () => {
       '<div class="md"><p><span class="pre">the plan and x</span></p></div>'); // nowhere to show them from
   });
 
+  it("takes one level of brackets in a label, and draws its code and bold, but no link in a link", () => {
+    expect(html("[see [1]](https://example.com/notes) and [[2]](/x/2.md)")).toContain(
+      '<a class="text-link" title="https://example.com/notes">see [1]</a> and <a class="text-link" title="/x/2.md">[2]</a>');
+    expect(html("[**bold** and `code`, **`both`**](/x/a.md)")).toContain(
+      '<a class="text-link" title="/x/a.md"><strong>bold</strong> and <code>code</code>, <strong><code>both</code></strong></a>');
+    expect(html("[see [x](/y.md) t_0123456789](/x/a.md)")).toContain(
+      '<a class="text-link" title="/x/a.md">see [x](/y.md) t_0123456789</a>');
+    expect(html("[a [b [c]]](/x/a.md)")).not.toContain("text-link"); // one level only
+  });
+
   it("finds a relative path among the files shown under the message, then in the folder its task works in", () => {
     const shot = { path: "/Users/pat/studio/renders/hero.png" };
     const text = "[shot](renders/hero.png) [plan](./docs/plan.md:12:3) [fix](src/app.py:42) [up](../secret.txt) " +

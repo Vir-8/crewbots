@@ -191,7 +191,7 @@ async def test_files_a_reply_names_show_under_it_where_they_are(crew, store, tmp
     os.utime(studio / "README.md", (1e9, 1e9))
     (studio / "app.py").write_text("print()")  # code: the diff shows it
     (tmp_path / "elsewhere.pdf").write_bytes(b"%PDF")  # not in its folders
-    for name in ("take two.mov", "renders/shot(1).png", "the poster.pdf"):
+    for name in ("take two.mov", "renders/shot(1).png", "the poster.pdf", "renders/still.png", "renders/wide.png"):
         (studio / name).write_bytes(PNG)
 
     def turn(spec, me):
@@ -201,6 +201,7 @@ async def test_files_a_reply_names_show_under_it_where_they_are(crew, store, tmp
         return [Text(text="Rendered `renders/hero.png` and [the notes](notes.md); see README.md, app.py and "
                           f"{tmp_path / 'elsewhere.pdf'}, and renders/missing.png."),
                 Text(text="Nothing named here."),
+                Text(text="[see [1]](renders/still.png) and [**the** `wide` one](renders/wide.png)"),
                 Text(text=f"[The take](<{studio}/take two.mov>), [the shot](renders/shot(1).png) and "
                           f"[the poster](file://{quote(str(studio / 'the poster.pdf'))}), as [the plan](plan.md:12:3) said."),
                 Done(final_text="ok")]
@@ -213,7 +214,8 @@ async def test_files_a_reply_names_show_under_it_where_they_are(crew, store, tmp
         ("hero.png", "", "image/png"), ("notes.md", "", "text/markdown")]
     assert said[0]["files"][0]["path"] == str((studio / "renders" / "hero.png").resolve())  # where it is, not a copy
     assert "files" not in said[1]
-    assert [f["name"] for f in said[2]["files"]] == ["take two.mov", "shot(1).png", "the poster.pdf", "plan.md"]
+    assert [f["name"] for f in said[2]["files"]] == ["still.png", "wide.png"]  # a label with brackets or marks in it
+    assert [f["name"] for f in said[3]["files"]] == ["take two.mov", "shot(1).png", "the poster.pdf", "plan.md"]
 
     shown = crew.runner._shared_now[chat.id]
     named = crew.runner._mentioned(store.get_task(chat.id), studio, "Here's `cut.mp4`.", 0, shown)

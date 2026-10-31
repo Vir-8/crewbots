@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import type { Status } from "../types";
-import { Finding, LINK, Marked } from "./Find";
+import { Finding, INLINE, IN_LABEL, Marked, wikiLink } from "./Find";
 import { crewMentionNames } from "./Avatar";
 import { Icon } from "./Icon";
 import { TextLink } from "./links";
@@ -363,39 +363,31 @@ export function PageLink({ page, label = page }: { page: string; label?: string 
   );
 }
 
-/** A [[Page]] link (or [[Page#Heading|what it says]]), as in Obsidian: the page it opens and the words it shows. */
-function wikiLink(raw: string): { page: string; label: string } {
-  const [target, label] = raw.slice(2, -2).split("|");
-  return { page: target.split("#")[0].trim(), label: (label ?? target).trim() };
-}
-
-const INLINE = new RegExp(`(\`[^\`]+\`|\\*\\*[^*]+\\*\\*|\\[\\[[^\\]\\n]+\\]\\]|${LINK.source})`, "g");
-
 function Inline({ text, onSelect, everyone = false }: { text: string; onSelect: (id: string) => void; everyone?: boolean }) {
   return <span className="pre">{inlineParts(text, onSelect, everyone)}</span>;
 }
 
-function inlineParts(text: string, onSelect: (id: string) => void, everyone: boolean): ReactNode[] {
+/** A line's parts as drawn; in a link's `label`, only its code and bold, since a link can't hold another. */
+function inlineParts(text: string, onSelect: (id: string) => void, everyone: boolean, label = false): ReactNode[] {
+  const plain = (key: string, s: string) => label ? <Marked key={key} text={s} /> : <Linked key={key} text={s} onSelect={onSelect} everyone={everyone} />;
   const parts: ReactNode[] = [];
   let last = 0;
-  for (const match of text.matchAll(INLINE)) {
-    parts.push(<Linked key={`t${last}`} text={text.slice(last, match.index)} onSelect={onSelect} everyone={everyone} />);
-    const [token, , label, target] = match;
+  for (const match of text.matchAll(label ? IN_LABEL : INLINE)) {
+    parts.push(plain(`t${last}`, text.slice(last, match.index)));
+    const [token, , linkLabel, target] = match;
     parts.push(
       token.startsWith("`") ? (
         <code key={`c${match.index}`}><Marked text={token.slice(1, -1)} /></code>
-      ) : token.startsWith("[[") ? (
-        <PageLink key={`p${match.index}`} {...wikiLink(token)} />
-      ) : label ? (
-        <TextLink key={`l${match.index}`} target={target.replace(/^<(.*)>$/, "$1")}>
-          {/^`[^`]+`$/.test(label) ? <code><Marked text={label.slice(1, -1)} /></code> : <Marked text={label} />}
-        </TextLink>
+      ) : token.startsWith("**") ? (
+        <strong key={`b${match.index}`}>{inlineParts(token.slice(2, -2), onSelect, everyone, label)}</strong>
+      ) : target ? (
+        <TextLink key={`l${match.index}`} target={target.replace(/^<(.*)>$/, "$1")}>{inlineParts(linkLabel, onSelect, everyone, true)}</TextLink>
       ) : (
-        <strong key={`b${match.index}`}>{inlineParts(token.slice(2, -2), onSelect, everyone)}</strong>
+        <PageLink key={`p${match.index}`} {...wikiLink(token)} />
       ),
     );
     last = match.index! + token.length;
   }
-  parts.push(<Linked key="end" text={text.slice(last)} onSelect={onSelect} everyone={everyone} />);
+  parts.push(plain("end", text.slice(last)));
   return parts;
 }
