@@ -16,7 +16,7 @@ End with exactly one, and say which:
 - **unchanged:** nothing changed in the project since the map's last walk (step 0), so nothing was driven.
 - **clean:** every feature was read and driven, and the map was right.
 - **changed:** the map needed corrections, proven live, and they're your handback.
-- **blocked:** coverage couldn't finish (the Editor wouldn't connect, a feature needs something only the user has), or
+- **blocked:** coverage couldn't finish (the app wouldn't start, a feature needs something only the user has), or
   a proven fix couldn't be made safely. Say exactly what blocked it.
 
 ## What you may change
@@ -39,12 +39,13 @@ and leave the map saying what should happen).
    them): how the feature works now, where it lives (file:line), drift the map shows, and one recipe for checking it
    live. Then sweep the commits since the last walk for user-facing changes the map doesn't cover, and only call a
    feature missing with the source path that shows it.
-3. **Live.** Drive every feature at least once, through the project's verify skill (verify-unity for a Unity game),
-   with as few separate setups as possible. Hold three rules the whole pass, whatever goes wrong:
+3. **Live.** Drive every feature at least once, through the project's verify skill if its map names one, with as
+   few separate setups as possible. Hold three rules the whole pass, whatever goes wrong:
    - run the doctor before the first drive and again after anything surprising, and reset to a known state rather than
      driving one you don't trust;
    - evidence you've captured survives every cleanup, checked where you said it is;
-   - nothing you started outlives its use: play mode stopped, scenes reopened as they were, temporary files gone.
+   - nothing you started outlives its use: servers and play mode stopped, what you opened put back as it was, temporary
+     files gone.
    A feature you can't reach is "unreachable" only with what it needs (an account, a device, a build, a state) and the
    route you tried; if the map doesn't say it needs that, that's drift too.
 4. **Sort what you found.**

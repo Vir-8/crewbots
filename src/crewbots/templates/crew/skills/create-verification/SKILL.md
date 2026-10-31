@@ -1,12 +1,12 @@
 ---
 name: create-verification
-description: Give a project its verification map, the per-project half of verifying it the way a user would (verify-unity, or the project's own method are the other half). Use when a project has none, before its first real piece of work, or when asked to "map how to verify" something.
+description: Give a project its verification map, the per-project half of verifying it the way a user would (a verify skill for its kind of app, or the project's own method, is the other half). Use when a project has none, before its first real piece of work, or when asked to "map how to verify" something.
 ---
 
 # Create a project's verification map
 
 A crewbots take on [pstack](https://github.com/cursor/plugins/tree/main/pstack)'s `create-verification-skill`. A verify
-skill says how to drive a kind of app (verify-unity for any Unity game); the project's map says how to drive this one:
+skill, where the crew has one, says how to drive a kind of app; the project's map says how to drive this one:
 where each feature is, how a user reaches it, how to drive it, and what proves it works. You write it for the next bot,
 which reads it cold, mid-task.
 
@@ -23,31 +23,32 @@ the README. A project with no `.agents/` folder yet: a Codex bot can't make one,
 
 From the code and the project's own docs (AGENTS.md, README, design docs), answer:
 
-- **Surface:** what a user touches: scenes and menus, a UI, a CLI, an API.
-- **Run:** how it starts for a check (for Unity: the Editor, which scene, play mode), what "ready" means.
-- **Drive:** what the harness can do to it (the Unity MCP, a browser, a command), and the stable handles it can use:
-  object names and paths, menu items, component fields, routes, labels. Not coordinates.
+- **Surface:** what a user touches: a UI, a CLI, an API, scenes and menus.
+- **Run:** how it starts for a check (a dev server, a build, an Editor and a scene), what "ready" means.
+- **Drive:** what the harness can do to it (a browser, a command, an MCP server), and the stable handles it can use:
+  routes, labels, menu items, object names and paths, component fields. Not coordinates.
 - **Observe:** what counts as evidence: values read back, the console, test results, screenshots, files written.
-- **Set up states:** debug or cheat commands, test scenes, editor menu items that put the game where a feature is.
+- **Set up states:** seed data, debug or cheat commands, test scenes or menu items that put the app where a feature is.
 
 Ask the user (`escalate`) only what you can't find out yourself.
 
 ## 2. Write `.agents/verify/README.md`
 
-- **Run and doctor:** what's particular to this project on top of its verify skill: which scene to start from, what
-  "ready" looks like, errors already in the console that aren't anyone's to chase.
-- **Setting up states:** the commands, menu items and test scenes that reach a state quickly.
-- **Tests:** which test assemblies exist and how long they take, or that there are none.
+- **Run and doctor:** the verify skill it builds on, by name, if there is one, so the next bot loads it. Then what's
+  particular to this project: where to start from, what "ready" looks like, errors already in the console that
+  aren't anyone's to chase.
+- **Setting up states:** the commands, seed data, menu items or test scenes that reach a state quickly.
+- **Tests:** which test suites exist and how long they take, or that there are none.
 - **Features:** the index, a line each, linking to its file.
 - **Last walked:** the date and commit of the last full pass (`maintain-verification` keeps it).
 
 ## 3. Seed the features
 
-One file per user-facing feature, the three to five that matter most to start (from scenes, menus, routes and docs),
+One file per user-facing feature, the three to five that matter most to start (from routes, screens, menus and docs),
 each with these four sections:
 
 - `## Sub-features`: what it is, in parts.
-- `## How to get to it (user POV)`: how a player or user reaches it.
+- `## How to get to it (user POV)`: how a user reaches it.
 - `## Driving it with <harness>`: the preconditions, then each step with its real handles and the observable result
   that proves it, ending with the evidence to capture.
 - `## Gotchas`: what trips a driver up, and what a passing-looking check can hide.

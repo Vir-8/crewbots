@@ -1,6 +1,6 @@
 """A bot's pages: its scratchpad, and the pages that grow from it, as Markdown files in its own folder
 (~/Documents/Crewbots/<bot>), which the user reads and edits too: in the app, or in any editor. Pages link to each
-other with [[Page name]], as in Obsidian, and a page can sit in a subfolder ([[Projects/Sky Islands]]).
+other with [[Page name]], as in Obsidian, and a page can sit in a subfolder ([[Projects/Website]]).
 
 The scratchpad, Scratchpad.md, is where a bot keeps what it's tracking: what's top of mind, what's in flight, what
 waits on the user. It's in the bot's instructions in every session, so the bot always has it in view, and an edit
@@ -26,7 +26,7 @@ class PageError(ValueError):
 
 @dataclass(frozen=True)
 class Page:
-    name: str  # its path in the folder, without .md: "Scratchpad", "Projects/Sky Islands"
+    name: str  # its path in the folder, without .md: "Scratchpad", "Projects/Website"
     path: Path
     updated: float
 

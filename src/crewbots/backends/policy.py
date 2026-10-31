@@ -56,7 +56,7 @@ NO_NETWORK = f"this bot has no network access; if this task needs it, {ASK}"
 OUTSIDE_SANDBOX = "commands run in the sandbox, with no way out of it: run it as it is"
 IN_THE_FOREGROUND = ("run it in the foreground, with a timeout of up to 10 minutes: nothing wakes you when a background "
                      "command finishes, so your work would stop there. Something that must keep running, such as a dev "
-                     "server, goes through a command that starts it detached and returns (scripts/verify, in crewbots)")
+                     "server, goes through a command that starts it detached and returns")
 SEARCH_NEEDS_ANY_HOST = "a web search can lead anywhere, and this bot's network is limited to some hosts"
 PRIVATE = "that's private: the user's logins and keys, or crewbots' own; no bot reads it"
 STAY_IN_SANDBOX = f"commands run inside this bot's sandbox, which a bot can't widen itself; if this task needs more, {ASK}"

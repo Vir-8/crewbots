@@ -1,4 +1,4 @@
-"""A page in WebKit, the engine the app runs in, for a bot's webkit_check tool. WebKit's helper processes can't start
+"""A page in WebKit, Safari's engine, for a bot's webkit_check tool. WebKit's helper processes can't start
 in a bot's sandbox, so the daemon runs the check for it, as it runs Chrome for the browser tools.
 
 The helper is verify-webkit.swift (what `scripts/verify webkit` runs), compiled into crewbots' temp folder, which no bot

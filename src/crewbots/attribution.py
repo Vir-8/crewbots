@@ -1,4 +1,4 @@
-"""Keeps AI attribution out of the commits crewbots makes: Vir never approved a "Co-Authored-By: Claude" trailer.
+"""Keeps AI attribution out of the commits crewbots makes: the user never approved a "Co-Authored-By: Claude" trailer.
 
 Every commit the daemon creates (squash merge, the save of uncommitted work, the memory repo) takes
 its message through `final_message`, which removes the AI trailers and then refuses a message that still has one. The

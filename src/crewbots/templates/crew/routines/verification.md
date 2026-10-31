@@ -5,10 +5,10 @@ schedule: "0 7 * * 1-5"   # weekdays at 7:00, before the day's work
 ---
 Run the crew's verification upkeep, over the projects in your Projects list.
 
-For each, hand one engineer the `maintain-verification` pass on it, as its own piece. They can all go at once: each
-project has an Editor of its own. The pass itself
-skips a project with nothing new since its last walk. A project with no verification map gets `create-verification`
-instead, but only one that has had work in the last week.
+For each, hand one engineer the `maintain-verification` pass on it, as its own piece. They can all go at once: if
+crewbots says you have too many out, hand out the rest as they come back. The pass itself skips a project with nothing
+new since its last walk. A project with no verification map gets `create-verification` instead, but only one that
+has had work in the last week.
 
 When they're back, `post` one short summary to the Engineering group chat: a line per project with its outcome, and any
 regression found, which you hand out there as new work. Propose the map corrections as usual.

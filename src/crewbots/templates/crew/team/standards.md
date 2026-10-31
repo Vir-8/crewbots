@@ -5,8 +5,8 @@ What good work looks like. The reviewer checks against this file. A mistake that
 - The change does what the task asked, and nothing it didn't ask for.
 - New behaviour has a test, and the project's existing tests still pass.
 - Names and structure match the code around them.
-- Work that changes what the player sees (a model, material, prefab or scene choice) carries a screenshot of it in the
-  handback, and the reviewer's verdict says what the screenshot shows.
+- Work that changes what a user sees (a screen, a page, a rendered scene) carries a screenshot of it in the handback,
+  and the reviewer's verdict says what the screenshot shows.
 - A change to a .gitignore lists what it newly ignores in its handback, and the reviewer reads the list.
 - No comments that excuse or defer: no workaround, hack or "for now" notes, no TODO or FIXME for what's unfinished
   (that goes in the handoff's `open`), no review feedback written into the code, no commented-out code. Fix the cause

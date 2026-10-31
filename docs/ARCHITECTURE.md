@@ -366,8 +366,7 @@ Each step leaves the system working.
 - **Verification maps** (skills `create-verification` and `maintain-verification`, routine `verification`). Each
   project keeps its map in `.agents/verify/` (README + a file per feature, pstack's shape), plain files any agent
   can follow, with AGENTS.md pointing there. Codex keeps `.agents/` read-only for its skills, so crewbots' sandbox
-  profile opens `.agents/verify/` alone to writing bots. A map found elsewhere moves there on its next pass. The weekday routine has the lead hand each project's pass to an engineer, at once since each project has its
-  own Editor; a pass skips a project whose commit matches the map's "Last walked", and sorts
+  profile opens `.agents/verify/` alone to writing bots. A map found elsewhere moves there on its next pass. The weekday routine has the lead hand each project's pass to an engineer, all at once; a pass skips a project whose commit matches the map's "Last walked", and sorts
   findings into drift (fixed in the map), harness gaps and regressions (reported, handed out as new work).
 - **Excuse comments** (`comments.py`): `handoff` refuses code work whose added lines (the worktree's diff, or in
   place the listed files') carry a comment with TODO, FIXME, HACK, workaround, temporary, "for now", review

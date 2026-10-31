@@ -22,7 +22,7 @@ async def browser_call(runner, task_id, name, args):
 
 
 async def webkit_call(runner, task_id, args):
-    """webkit_check: local pages only, whatever the bot's network setting, since it's for the app's own pages."""
+    """webkit_check, in WebKit (Safari's engine): local pages only, whatever the bot's network setting."""
     bot = runner.store.get_task(task_id).bot
     runner.store.log_agent("webkit", bot, task_id=task_id, text=str(args.get("url", "")))
     options = {k: args[k] for k in ("click", "setup", "js", "wait", "width", "height") if args.get(k) is not None}
