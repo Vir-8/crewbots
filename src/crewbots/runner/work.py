@@ -289,14 +289,16 @@ class Work(Landed, Closing, MergeStatus, SharedApps, Editors, InPlace):
             if self._in_folder(work):  # squashed into the branch the folder was on, so it goes back there first
                 self._leave_folder(work, wt)
                 left = True
-            tip, commit = self.merge_gated(work, wt, message)
+            tip, commit, ci_result = self.merge_gated(work, wt, message)
         except worktree.GitError as e:
             if left:
                 self._back_to_work(wt)
             raise MergeError(str(e)) from None
         task = self._set(task_id, merge_state="merged", merged_commit=commit, merged_tip=tip)
         self._record(task_id, kind="merged", data={"commit": commit, "into": str(wt.repo), "forced": not state.approved,
-                                                   "automatic": automatic})
+                                                   "automatic": automatic,
+                                                   "ci": {"status": ci_result.get("status"),
+                                                          "skipped": ci_result.get("skipped", [])}})
         self._cleanup_after_action(task)
         return task
 

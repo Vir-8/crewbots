@@ -72,6 +72,37 @@ def test_workflow_steps_gate_the_merge(work, tmp_path):  # noqa: F811
     assert git(repo, "rev-parse", "main") == head
 
 
+def commit_notify(repo, steps):
+    (repo / ".github" / "workflows").mkdir(parents=True)
+    head = "on:\n  push:\n    branches: [main]\njobs:\n  j:\n    steps:\n"
+    (repo / ".github" / "workflows" / "notify.yml").write_text(head + steps)
+    git(repo, "add", ".")
+    git(repo, *IDENT, "commit", "-qm", "notify")
+
+
+NOTIFY_STEP = "      - env:\n          TOKEN: ${{ secrets.SYNC_TOKEN }}\n        run: touch notified.txt\n"
+
+
+def test_a_workflow_step_that_needs_secrets_does_not_block_the_merge_and_the_event_records_it(work, tmp_path):  # noqa: F811
+    runner, store, repo, task, wt = work
+    commit_notify(repo, NOTIFY_STEP)
+    merged = runner.merge(task.id, force=True)
+    assert merged.merge_state == "merged" and git(repo, "rev-parse", "main") == merged.merged_commit
+    assert not (repo / "notified.txt").exists()
+    ci_data = store.last_event(task.id, ("merged",)).data["ci"]
+    assert ci_data == {"status": "none", "skipped": ["j: touch notified.txt: needs repository secrets"]}
+
+
+def test_a_failing_step_beside_a_secrets_step_still_blocks_the_merge(work, tmp_path):  # noqa: F811
+    runner, store, repo, task, wt = work
+    commit_notify(repo, "      - run: test -f nope.txt\n" + NOTIFY_STEP)
+    head = git(repo, "rev-parse", "main")
+    with pytest.raises(MergeError, match=r"nothing was merged.*test -f nope.txt"):
+        runner.merge(task.id, force=True)
+    assert git(repo, "rev-parse", "main") == head
+    assert store.get_task(task.id).merge_state == "proposed"
+
+
 async def test_the_route_keeps_the_loop_responsive_during_a_slow_merge(work, tmp_path):  # noqa: F811
     import asyncio
 

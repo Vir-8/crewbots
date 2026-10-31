@@ -45,11 +45,11 @@ class MergeStatus:
         event = self.store.last_event(task.id, ("merged",)) if task.merge_state == "merged" else None
         return event.data if event and event.data.get("commit") == task.merged_commit else {}
 
-    def ci_gate(self, task: Task, into: str, tip: str) -> tuple[str, str]:
+    def ci_gate(self, task: Task, into: str, tip: str) -> tuple[str, str, dict[str, Any]]:
         """Run the repo's CI steps on what a merge would land on `into`: the squash of `tip` on top of `into`, built
-        with merge-tree so no ref or file moves. Returns (branch, commit of it) that was tested. Raises MergeError
-        naming the failing step, or if the result can't be built (a conflict included): CI is never skipped. A repo
-        with no CI steps passes. Blocking, like the merge."""
+        with merge-tree so no ref or file moves. Returns (branch, commit of it) that was tested, and what CI
+        reported. Raises MergeError naming the failing step, or if the result can't be built (a conflict
+        included): CI is never skipped. A repo with no CI steps passes. Blocking, like the merge."""
         repo = Path(task.repo)
         target = f"refs/heads/{into}"
         try:
@@ -64,10 +64,10 @@ class MergeStatus:
         project = self.crew.project_at(Path(task.workspace or repo))  # its folder may be a subfolder of the repository
         within = project.folder.resolve().relative_to(repo.resolve()) if project else Path()
         try:
-            ci.check(repo, commit, into, project.ci if project else (), directory=str(within))
+            result = ci.check(repo, commit, into, project.ci if project else (), directory=str(within))
         except ci.CIFailed as e:
             raise MergeError(f"CI did not pass on the merged result, so nothing was merged: {e}") from None
-        return into, tested
+        return into, tested, result
 
     async def merge_off_loop(self, task_id: str, force: bool = False):
         """Runner.merge in a thread, so a long CI run doesn't freeze the daemon."""
@@ -105,19 +105,20 @@ class MergeStatus:
         if task_id and self.__dict__.get("_merging_now", {}).get(task_id):
             raise NotAllowed("a merge of this task is running; try again when it finishes")
 
-    def merge_gated(self, task: Task, wt: worktree.Worktree, message: str) -> tuple[str, str]:
-        """Run CI on the squash of the worktree's committed tip, then land it; returns (tip, merge commit).
+    def merge_gated(self, task: Task, wt: worktree.Worktree, message: str) -> tuple[str, str, dict[str, Any]]:
+        """Run CI on the squash of the worktree's committed tip, then land it; returns (tip, merge commit,
+        what CI reported).
         worktree.merge checks that the branch CI tested is still where it was. If main moved during CI, CI runs once
         more on the new squash; if that moves again too, the merge is refused. A proposal that changed while CI ran
         (withdrawn) is not landed."""
         for attempt in (1, 2):
             # In the folder itself, the folder is back on the branch it merges into by now (runner/folder_branch.py).
             tip = worktree._git(wt.path, "rev-parse", f"refs/heads/{wt.branch}" if self._in_folder(task) else "HEAD")
-            tested = self.ci_gate(task, worktree._git(wt.repo, "symbolic-ref", "--short", "HEAD"), tip)
+            branch, tested, result = self.ci_gate(task, worktree._git(wt.repo, "symbolic-ref", "--short", "HEAD"), tip)
             if self.store.get_task(task.id).merge_state != task.merge_state:
                 raise MergeError("the proposal changed while CI ran, so nothing was merged; propose again")
             try:
-                return tip, worktree.merge(wt, message, tip=tip, tested=tested)
+                return tip, worktree.merge(wt, message, tip=tip, tested=(branch, tested)), result
             except worktree.Moved as e:
                 if attempt == 2:
                     raise worktree.GitError(f"{e}, and again during the second CI run, so nothing was merged; "

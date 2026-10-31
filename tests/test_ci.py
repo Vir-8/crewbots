@@ -277,3 +277,112 @@ def test_a_job_with_no_steps_or_a_reusable_workflow_refuses(tmp_path):
         (flow / "a.yml").write_text("on: push\njobs:\n  j:\n" + job)
         with pytest.raises(NotAllowed, match=r"can't reproduce CI job j locally \(reusable workflow or no steps\)"):
             ci.plan_for(tmp_path, "main")
+
+
+NOTIFY = textwrap.dedent("""\
+    on:
+      push:
+        branches: [main]
+    jobs:
+      dispatch:
+        runs-on: ubuntu-latest
+        steps:
+          - name: Trigger
+            env:
+              DISPATCH_TOKEN: ${{ secrets.EMBERLANE_SYNC_TOKEN }}
+            run: touch notified.txt
+    """)
+
+
+def test_a_step_that_needs_secrets_is_skipped_and_nothing_in_it_runs(tmp_path):
+    flow = tmp_path / ".github" / "workflows"
+    flow.mkdir(parents=True)
+    (flow / "a.yml").write_text(NOTIFY)
+    plan = ci.plan_for(tmp_path, "main")
+    assert plan.steps == [] and plan.skipped == ["dispatch: Trigger: needs repository secrets"]
+    plan = ci.plan_for(tmp_path, "main", ("make test",))
+    assert [s.run for s in plan.steps] == ["make test"] and plan.skipped == ["dispatch: Trigger: needs repository secrets"]
+
+
+def test_a_job_with_a_real_check_and_a_secrets_step_still_runs_the_check(tmp_path):
+    flow = tmp_path / ".github" / "workflows"
+    flow.mkdir(parents=True)
+    codecov = ("on: push\njobs:\n  test:\n    steps:\n      - run: make test\n"
+               "      - uses: codecov/codecov-action@v4\n        with:\n          token: ${{ secrets.CODECOV_TOKEN }}\n"
+               "      - run: curl x\n        env:\n          T: ${{ secrets.T }}\n      - run: make lint\n")
+    (flow / "a.yml").write_text(codecov)
+    plan = ci.plan_for(tmp_path, "main")
+    assert [s.run for s in plan.steps] == ["make test", "make lint"]
+    assert plan.skipped == ["test: codecov/codecov-action@v4: needs repository secrets", "test: curl x: needs repository secrets"]
+
+
+def test_a_secret_in_a_steps_run_with_working_directory_or_if_skips_that_step(tmp_path):
+    flow = tmp_path / ".github" / "workflows"
+    flow.mkdir(parents=True)
+    for step in ("run: echo ${{ secrets.T }}", "run: make\n        working-directory: ${{ secrets.D }}",
+                 "run: make\n        if: ${{ secrets.T != '' }}", "run: make\n        if: ${{secrets['T']}}"):
+        (flow / "a.yml").write_text(f"on: push\njobs:\n  j:\n    steps:\n      - {step}\n      - run: make lint\n")
+        plan = ci.plan_for(tmp_path, "main")
+        assert [s.run for s in plan.steps] == ["make lint"] and plan.skipped[0].endswith("needs repository secrets")
+
+
+def test_a_secret_set_for_the_workflow_or_the_job_still_refuses(tmp_path):
+    flow = tmp_path / ".github" / "workflows"
+    flow.mkdir(parents=True)
+    for text in ("on: push\nenv:\n  T: ${{ secrets.T }}\njobs:\n  j:\n    steps:\n      - run: make test\n",
+                 "on: push\njobs:\n  j:\n    env:\n      T: ${{ secrets.T }}\n    steps:\n      - run: make test\n",
+                 "on: push\njobs:\n  j:\n    if: ${{ secrets.T != '' }}\n    steps:\n      - run: make test\n",
+                 "on: push\njobs:\n  j:\n    uses: ./.github/workflows/o.yml\n    secrets:\n      T: ${{ secrets.T }}\n"):
+        (flow / "a.yml").write_text(text)
+        with pytest.raises(NotAllowed):
+            ci.plan_for(tmp_path, "main")
+
+
+def test_other_expressions_still_fail_and_the_github_token_is_not_a_secret(tmp_path):
+    flow = tmp_path / ".github" / "workflows"
+    flow.mkdir(parents=True)
+    for step in ("run: echo ${{ github.sha }}", "run: echo hi\n        env:\n          X: ${{ vars.X }}",
+                 "run: echo hi\n        env:\n          X: ${{ secrets.GITHUB_TOKEN }}"):
+        (flow / "a.yml").write_text(f"on: push\njobs:\n  j:\n    steps:\n      - {step}\n")
+        with pytest.raises(NotAllowed, match="uses an expression"):
+            ci.plan_for(tmp_path, "main")
+    for token in ("secrets.GITHUB_TOKEN", "secrets['GITHUB_TOKEN']", 'secrets["GITHUB_TOKEN"]', "secrets[ 'GITHUB_TOKEN' ]"):
+        checkout = ("on: push\njobs:\n  j:\n    steps:\n      - uses: actions/checkout@v7\n        with:\n"
+                    "          token: ${{ " + token + " }}\n      - run: make\n")
+        (flow / "a.yml").write_text(checkout)
+        plan = ci.plan_for(tmp_path, "main")
+        assert [s.run for s in plan.steps] == ["make"] and plan.skipped == ["j: actions/checkout@v7"]
+    other = ("on: push\njobs:\n  j:\n    steps:\n      - uses: actions/checkout@v7\n        with:\n"
+             "          token: ${{ secrets['GITHUB_TOKEN_2'] }}\n      - run: make\n")
+    (flow / "a.yml").write_text(other)
+    assert ci.plan_for(tmp_path, "main").skipped == ["j: actions/checkout@v7: needs repository secrets"]
+    (flow / "a.yml").write_text("on: push\njobs:\n  j:\n    steps:\n      - run: echo 'no secrets.here'\n")
+    assert ci.plan_for(tmp_path, "main").steps[0].run == "echo 'no secrets.here'"
+
+
+def test_a_secrets_only_workflow_gives_a_card_that_says_what_was_skipped(push_setup):
+    runner, repo = push_setup
+    commit(repo, "Notify", **{".github__workflows__n.yml": NOTIFY})
+    runner.crew.projects["demo"] = Project("demo", repo, "", Path("x.md"))
+    ci_card = push(runner).data["ci"]
+    assert ci_card["status"] == "none" and ci_card["skipped"] == ["dispatch: Trigger: needs repository secrets"]
+    assert ci_card["note"] == "Nothing was run: skipped dispatch: Trigger: needs repository secrets"
+    runner.crew.projects["demo"] = Project("demo", repo, "", Path("x.md"), ci=("echo ok",))
+    ci_card = push(runner).data["ci"]
+    assert ci_card["status"] == "passed" and ci_card["steps"] == ["echo ok"]
+    assert ci_card["skipped"] == ["dispatch: Trigger: needs repository secrets"]
+    assert ci_card["note"].endswith(", skipped dispatch: Trigger: needs repository secrets")
+
+
+def test_a_passed_card_names_a_skipped_secrets_step_and_a_failing_step_beside_it_refuses(push_setup):
+    runner, repo = push_setup
+    flow = ("on: push\njobs:\n  test:\n    steps:\n      - run: echo ok\n      - run: curl x\n        env:\n"
+            "          T: ${{ secrets.T }}\n")
+    commit(repo, "Mixed", **{".github__workflows__n.yml": flow})
+    runner.crew.projects["demo"] = Project("demo", repo, "", Path("x.md"))
+    ci_card = push(runner).data["ci"]
+    assert ci_card["steps"] == ["test: echo ok"]
+    assert ci_card["note"].endswith(", skipped test: curl x: needs repository secrets")
+    commit(repo, "Broken", **{".github__workflows__n.yml": flow.replace("echo ok", "exit 1")})
+    with pytest.raises(NotAllowed, match="CI failed"):
+        push(runner)

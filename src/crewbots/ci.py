@@ -10,13 +10,18 @@ Commands come from `.github/workflows/*.yml`. Supported, and nothing else:
   `node-version` (a major such as 22, or 22.x) must be installed: the node on PATH if its major matches, else one
   of the usual install places (Homebrew node@N, nvm, fnm, volta), put first on PATH for that job's steps. If there
   is none the check fails. The version used is recorded.
+- a step that uses repository secrets (`${{ secrets.NAME }}` in its own env, run, with, working-directory or if) is
+  skipped: it can't be reproduced locally, and running it would reach outside the machine. The job's other steps still
+  run, and the skip is recorded as "<job>: <step>: needs repository secrets" and named on the card. A secret anywhere
+  else (workflow or job env, job `if`) fails the check like any other expression. `secrets.GITHUB_TOKEN`, in either
+  spelling, is not one of these.
 - only setup steps with no effect on the result are skipped: actions/checkout, setup-python, setup-node,
   astral-sh/setup-uv, actions/cache, actions/upload-artifact. Any other `uses:` step, and any step or job with an
   `if:` other than `always()` or `success()`, makes the check fail ("can't reproduce CI step"): a run never passes
   having skipped a real check. A matrix, `${{ }}` expressions or a `shell` other than bash fail it too.
-With no workflow job for the branch, a project's own `ci:` list of commands is run, from the project's folder. With
-neither there's nothing to run, and the card says so: a project needn't have CI (a Unity game's tests need its open
-Editor).
+With no workflow step to run for the branch, a project's own `ci:` list of commands is run, from the project's folder.
+With neither there's nothing to run, and the card says so, and what was skipped: a project needn't have CI (a Unity
+game's tests need its open Editor).
 
 The commit is checked out into a shared clone under the daemon's temp folder, so the user's folder is never touched.
 """
@@ -44,6 +49,9 @@ STEP_TIMEOUT = 20 * 60
 SETUP_ACTIONS = ("actions/checkout", "actions/setup-python", "actions/setup-node", "astral-sh/setup-uv",
                  "actions/cache", "actions/upload-artifact")
 TAIL_LINES = 40
+NEEDS_SECRETS = "needs repository secrets"
+SECRETS = re.compile(r"\$\{\{(?:(?!\}\}).)*\bsecrets(?:\.(?!GITHUB_TOKEN\b)|\[(?!\s*['\"]GITHUB_TOKEN['\"]\s*\]))",
+                     re.DOTALL | re.IGNORECASE)
 
 
 class CIFailed(NotAllowed):
@@ -110,6 +118,14 @@ def _major(version: Any, where: str) -> str:
     return match.group(1)
 
 
+def _needs_secrets(step: dict[str, Any]) -> bool:
+    return bool(SECRETS.search(yaml.safe_dump(step)))
+
+
+def skipped_secrets(plan_skipped: list[str]) -> list[str]:
+    return [s for s in plan_skipped if s.endswith(NEEDS_SECRETS)]
+
+
 def _env(*maps: Any) -> dict[str, str]:
     env: dict[str, str] = {}
     for m in maps:
@@ -142,6 +158,9 @@ def _plan_workflow(path: Path, branch: str, plan: Plan) -> None:
         python = node = ""
         for step in job["steps"]:
             label = step.get("name") or step.get("run", step.get("uses", "?")).strip().splitlines()[0]
+            if _needs_secrets(step):
+                plan.skipped.append(f"{job_id}: {label}: {NEEDS_SECRETS}")
+                continue
             if "if" in step and not _always(step["if"]):
                 raise CIFailed(f"can't reproduce CI step {job_id}: {label} locally (if: {step['if']})")
             if "run" in step:
@@ -169,7 +188,7 @@ def plan_for(checkout: Path, branch: str, project_commands: tuple[str, ...] = ()
     for path in workflows:
         _plan_workflow(path, branch, plan)
     if not plan.steps:
-        plan.skipped = []
+        plan.skipped = skipped_secrets(plan.skipped)
         plan.steps = [Step(c.strip().splitlines()[0], c, directory) for c in project_commands]
     return plan
 
@@ -280,8 +299,8 @@ def _run(folder: Path, sha: str, branch: str, project_commands: tuple[str, ...],
         raise CIFailed(f"CI could not check out {sha[:12]}: {getattr(e, 'stderr', None) or e}") from None
     plan = plan_for(checkout, branch, project_commands, directory)
     if not plan.steps:
-        return {"status": "none", "sha": sha, "steps": [], "skipped": [], "node": [],
-                "note": "No CI configured, so nothing was run"}
+        note = f"Nothing was run: skipped {'; '.join(plan.skipped)}" if plan.skipped else "No CI configured, so nothing was run"
+        return {"status": "none", "sha": sha, "steps": [], "skipped": plan.skipped, "node": [], "note": note}
     nodes = {major: find_node(major) for major in dict.fromkeys(s.node for s in plan.steps if s.node)}
     home = work / "home"
     home.mkdir()
@@ -296,4 +315,5 @@ def _run(folder: Path, sha: str, branch: str, project_commands: tuple[str, ...],
             raise CIFailed(f"CI failed on {sha[:12]} at step '{step.name}' (exit {code}):\n{_tail(output)}")
     return {"status": "passed", "sha": sha, "steps": [s.name for s in plan.steps], "skipped": plan.skipped,
             "node": sorted(v for _, v in nodes.values()), "note": f"CI passed locally on {sha[:12]}"
-            + (f", Node {', '.join(sorted(v for _, v in nodes.values()))}" if nodes else "")}
+            + (f", Node {', '.join(sorted(v for _, v in nodes.values()))}" if nodes else "")
+            + (f", skipped {'; '.join(skipped_secrets(plan.skipped))}" if skipped_secrets(plan.skipped) else "")}
