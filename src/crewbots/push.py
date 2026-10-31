@@ -274,7 +274,7 @@ def _attempt(runner: Any, data: dict[str, Any]) -> dict[str, Any]:
         if tracking_old is not None and _ref(project.folder, data["tracking"]) != data["head"]:
             _git(project.folder, "-c", "core.hooksPath=/dev/null", "update-ref", data["tracking"],
                  data["head"], tracking_old)
-        reason = "Push completed."
     except Exception as e:
-        reason = f"Push completed, but the local tracking ref was not updated: {e}"
-    return {"ok": True, "pushed": True, "reason": reason}
+        warning = f"The local tracking ref was not updated: {e}"
+        return {"ok": True, "pushed": True, "reason": f"Push completed. {warning}", "warning": warning}
+    return {"ok": True, "pushed": True, "reason": "Push completed."}

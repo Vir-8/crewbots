@@ -58,7 +58,8 @@ def summary(store: Store, bot_for, days: int = 371) -> dict[str, Any]:
         "streak": _streaks(active, today),
         "models": [{"plan": p, "model": m, "tokens": t, **_cached(cache[f"model:{p}:{m}"])}
                    for (p, m), t in models.most_common(8)],
-        "bots": [{"bot": b, "tokens": t, **_cached(cache[f"bot:{b}"])} for b, t in bots.most_common(8)],
+        "bots": [{"bot": b, "kind": "review" if b == REVIEWER else "bot", "tokens": t, **_cached(cache[f"bot:{b}"])}
+                 for b, t in bots.most_common(8)],
         "cache": _cached(cache["all"]),
         "efforts": [{"effort": e, "turns": n} for e, n in efforts.most_common()],
         "counts": store.count_since(since),

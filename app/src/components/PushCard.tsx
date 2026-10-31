@@ -29,6 +29,9 @@ export function CiNote({ ci }: { ci: Ci }) {
 export function PushCard({ block }: { block: Extract<Block, { kind: "push" }> }) {
   const { busy, error, result, act: push } = useProposal(block.result, () => api.push(block.id));
   const { data } = block;
+  // A push recorded before `warning` was sent carries it only in its reason.
+  const warning = result?.warning ?? (result?.reason !== "Push completed." ? result?.reason : undefined);
+  const note = result?.ok && (result.pushed ? warning : result.reason);
   if (block.replaced && !result && !block.started) {
     return <div className="ask push-card replaced">
       <div className="ask-head">Push {data.project}</div>
@@ -41,7 +44,7 @@ export function PushCard({ block }: { block: Extract<Block, { kind: "push" }> })
     {data.branch && <div className="small">Branch: <code>{data.branch}</code> · Upstream: <code>{data.upstream}</code>{data.push_url_display && <> · Destination: <code>{data.push_url_display}</code></>}</div>}
     {data.ci && <CiNote ci={data.ci} />}
     {data.commits && <pre className="push-commits">{data.commits.length ? data.commits.join("\n") : "Everything up-to-date. Nothing to push."}</pre>}
-    {result?.ok && result.reason !== "Push completed." && <div className="small">{result.reason}</div>}
+    {note && <div className="small">{note}</div>}
     {block.started && !result && <div className={busy ? "small" : "push-error"}>{busy ? "Pushing…" : "Push started; result unknown. Check the remote before making a new proposal."}</div>}
     {(data.error || result?.reason && !result.ok || error) && <pre className="push-error">{data.error || result?.reason || error}</pre>}
     {!result && !block.started && !data.error && <div className="permission-actions"><button className="button primary small" disabled={busy} onClick={push}>Push</button></div>}

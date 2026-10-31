@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "4452e717420d";
+export const API_SCHEMA = "a895b92e6cf1";
 
 /** How much a run may touch. Each backend maps this onto its own permission or sandbox flags. */
 export type Access = "read_only" | "workspace_write" | "full";
@@ -78,6 +78,7 @@ export interface BotOut {
 
 export interface BotUse {
   bot: string;
+  kind: "bot" | "review";
   tokens: number;
   input: number;
   cached: number;

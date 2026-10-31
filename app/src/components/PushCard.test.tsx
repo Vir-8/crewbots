@@ -48,6 +48,19 @@ describe("push proposals", () => {
     expect(html).toContain("Nothing was pushed");
     expect(html).not.toContain("Pushed demo");
   });
+  it("shows a warning after a push, and nothing else", () => {
+    const result = (data: object): StoredEvent => ({ id: 2, task_id: "chat", kind: "push_result", at: "", data: { proposal: 1, ok: true, pushed: true, ...data } });
+    const card = (data: object) => {
+      const block = build([event, result(data)], [], new Map())[0];
+      if (block.kind !== "push") throw new Error("missing push card");
+      return renderToStaticMarkup(<PushCard block={block} />);
+    };
+    expect(card({ reason: "Push completed." })).not.toContain("Push completed");
+    const warned = card({ reason: "Push completed. The local tracking ref was not updated: locked", warning: "The local tracking ref was not updated: locked" });
+    expect(warned).toContain("Pushed demo");
+    expect(warned).toContain("tracking ref was not updated");
+    expect(card({ reason: "Push completed, but the local tracking ref was not updated: locked" })).toContain("tracking ref was not updated");
+  });
   it("refuses a previously started proposal after reload", () => {
     const started: StoredEvent = { id: 2, task_id: "chat", kind: "push_started", at: "", data: { proposal: 1 } };
     const block = build([event, started], [], new Map())[0];

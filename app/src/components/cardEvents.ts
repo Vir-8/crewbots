@@ -43,4 +43,4 @@ export type ReplaceProposal = {
 };
 
 /** What a card's button did. */
-export type Outcome = { ok: boolean; reason: string; pushed?: boolean };
+export type Outcome = { ok: boolean; reason: string; pushed?: boolean; warning?: string };

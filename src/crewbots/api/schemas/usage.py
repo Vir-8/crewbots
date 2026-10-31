@@ -51,6 +51,7 @@ class ModelUse(BaseModel):
 
 class BotUse(BaseModel):
     bot: str
+    kind: Literal["bot", "review"]  # "review": code review's own use, not a bot's
     tokens: int
     input: int
     cached: int

@@ -70,9 +70,9 @@ export function usageSummary(days: number) {
       { plan: "codex", model: "gpt-6-luna", tokens: Math.round(totals.codex * 0.2), input: Math.round(totals.codex * 0.7), cached: Math.round(totals.codex * 0.4) },
     ],
     bots: [
-      { bot: "engineer", tokens: Math.round(totals.codex * 0.7), input: Math.round(totals.codex * 0.7) * 4, cached: Math.round(totals.codex * 0.7) * 3 }, { bot: "chief", tokens: Math.round(totals.claude * 0.5), input: Math.round(totals.claude * 0.5) * 4, cached: Math.round(totals.claude * 0.5) * 3 },
-      { bot: "reviewer", tokens: Math.round(totals.claude * 0.3), input: Math.round(totals.claude * 0.3) * 4, cached: Math.round(totals.claude * 0.3) * 3 }, { bot: "PR reviewer", tokens: Math.round((totals.claude + totals.codex) * 0.12) },
-      { bot: "critic", tokens: Math.round(totals.codex * 0.18), input: Math.round(totals.codex * 0.18) * 4, cached: Math.round(totals.codex * 0.18) * 3 },
+      { bot: "engineer", kind: "bot", tokens: Math.round(totals.codex * 0.7), input: Math.round(totals.codex * 0.7) * 4, cached: Math.round(totals.codex * 0.7) * 3 }, { bot: "chief", kind: "bot", tokens: Math.round(totals.claude * 0.5), input: Math.round(totals.claude * 0.5) * 4, cached: Math.round(totals.claude * 0.5) * 3 },
+      { bot: "reviewer", kind: "bot", tokens: Math.round(totals.claude * 0.3), input: Math.round(totals.claude * 0.3) * 4, cached: Math.round(totals.claude * 0.3) * 3 }, { bot: "PR reviewer", kind: "review", tokens: Math.round((totals.claude + totals.codex) * 0.12) },
+      { bot: "critic", kind: "bot", tokens: Math.round(totals.codex * 0.18), input: Math.round(totals.codex * 0.18) * 4, cached: Math.round(totals.codex * 0.18) * 3 },
     ],
     efforts: [{ effort: "high", turns: 812 }, { effort: "medium", turns: 433 }, { effort: "xhigh", turns: 167 }],
     counts: { threads: 64, reviews: 23, routine_runs: 41, room_messages: 318 },

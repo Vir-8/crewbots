@@ -288,8 +288,27 @@ def test_a_tracking_ref_the_push_moved_itself_is_no_warning(setup, monkeypatch):
 
     monkeypatch.setattr(push_module, "_git", newer_git)
     pushed = press(client, propose(runner, runner.chat("chief").id, "demo", "Ready"))
-    assert pushed["pushed"] and pushed["reason"] == "Push completed."
+    assert pushed["pushed"] and "warning" not in pushed
     assert git(repo, "rev-parse", "refs/remotes/origin/main") == git(repo, "rev-parse", "HEAD")
+
+
+def test_a_tracking_ref_left_behind_is_a_warning(setup, monkeypatch):
+    runner, client, repo, remote, _ = setup
+    before = git(repo, "rev-parse", "refs/remotes/origin/main")
+
+    def older_git(folder, *args, **kw):  # as older git does, the push leaves the tracking ref; updating it then fails
+        if "update-ref" in args:
+            raise push_module.GitFailed("locked")
+        out = _git(folder, *args, **kw)
+        if "push" in args:
+            _git(folder, "update-ref", "refs/remotes/origin/main", before)
+        return out
+
+    monkeypatch.setattr(push_module, "_git", older_git)
+    pushed = press(client, propose(runner, runner.chat("chief").id, "demo", "Ready"))
+    assert pushed["ok"] and pushed["pushed"]
+    assert pushed["warning"] == "The local tracking ref was not updated: locked"
+    assert git(remote, "rev-parse", "refs/heads/main") == git(repo, "rev-parse", "HEAD")
 
 
 def test_started_without_result_cannot_be_pressed_again(setup):

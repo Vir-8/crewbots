@@ -101,7 +101,7 @@ export function Analytics({ crew }: { crew: Crew }) {
             </section>
             <section className="page-section">
               <h2>By bot</h2>
-              <Ranked rows={data.bots.map((b) => (b.bot === "PR reviewer" ? { key: b.bot, label: b.bot, icon: "branch" as const, tokens: b.tokens, cached: share(b) } : { key: b.bot, label: labelOf(b.bot), face: b.bot, tokens: b.tokens, cached: share(b) }))} />
+              <Ranked rows={data.bots.map((b) => (b.kind === "review" ? { key: b.bot, label: b.bot, icon: "branch" as const, tokens: b.tokens, cached: share(b) } : { key: b.bot, label: labelOf(b.bot), face: b.bot, tokens: b.tokens, cached: share(b) }))} />
             </section>
           </div>
 
