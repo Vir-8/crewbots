@@ -34,6 +34,10 @@ export function count(text: string, query: string): number {
   return n;
 }
 
+/** A [label](target) link, as `bits.tsx`'s Markdown draws it: the target in <...> when it has spaces, and with at most
+ * one level of (...) in it otherwise. */
+export const LINK = /\[([^\]\n]+)\]\((<[^>\n]+>|(?:[^()\s]|\([^()\s]*\))+)\)/g;
+
 /** Markdown as it reads once drawn: without the marks that only format it (`bits.tsx`'s Markdown). */
 export function shown(markdown: string): string {
   return markdown
@@ -42,6 +46,7 @@ export function shown(markdown: string): string {
     .map((line) => line.replace(/^#{1,6}\s+/, "").replace(/^\s*([-*+]|\d+[.)])\s+/, ""))
     .join("\n")
     .replace(/\[\[([^\]|#\n]+)(?:#[^\]|\n]*)?(?:\|([^\]\n]+))?\]\]/g, (_, page: string, label?: string) => (label ?? page).trim())
+    .replace(LINK, "$1")
     .replace(/\*\*|`/g, "");
 }
 

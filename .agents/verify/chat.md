@@ -4,7 +4,10 @@
 - The conversation:
   - your messages and the bot's replies, with time breaks;
   - working between two messages folded into one line ("Kept 2 notes · 1 step");
-  - quiet lines (retried tries, compactions, drops).
+  - quiet lines (retried tries, compactions, drops);
+  - links a bot writes, `[label](target)`: a web address opens in the browser, a path (absolute, from ~ or file://)
+    is shown in Finder, and anything else is only its label;
+  - files a reply, or what the chief told you from elsewhere ("From Design"), names, shown under it.
 - Cards in the conversation:
   - work cards (see work-and-threads.md);
   - questions with choices;
@@ -25,6 +28,8 @@ open last.
 - Open a chat: `browser_evaluate` clicks `[...document.querySelectorAll('.sidebar .chat-row')]`, the one whose
   `innerText` includes the bot's name.
 - The conversation is `.main .thread`, with its blocks in `.main .thread-col`.
+- A bot's links are `a.text-link`, titled with their target. Roger's last message, "From Design", has two path
+  links, a web link and the two screenshots they name.
 - The header is `.main header`. The Profile toggle is `header .icon-button[title="Profile"]`; its state is
   `aria-pressed`.
 - Demo URL switches:

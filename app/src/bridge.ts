@@ -2,6 +2,7 @@
 
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { homeDir } from "@tauri-apps/api/path";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { previewBridge } from "./preview/bridge";
@@ -32,6 +33,8 @@ const tauriBridge = {
     return typeof picked === "string" ? picked : null;
   },
   reveal: (path: string) => revealItemInDir(path),
+  /** Your home folder, for a path from ~. */
+  home: () => homeDir(),
   /** Whether the crew starts at login; pass `enabled` to change it. */
   startAtLogin: (enabled?: boolean) => invoke<boolean>("start_at_login", { enabled: enabled ?? null }),
   /** Whether a newer build of the app is installed over this one, and why the last restart failed (said once). */
@@ -49,7 +52,7 @@ const tauriBridge = {
   openFile: (path: string) => invoke<void>("open_file", { path }),
   /** Quick Look's thumbnail of a file (a PDF's first page), as a path to draw, or null. */
   thumbnail: (path: string, size: number) => invoke<string | null>("thumbnail", { path, size }),
-  /** A GitHub page, in your browser. */
+  /** A web page, in your browser. */
   openUrl: (url: string) => openUrl(url),
   onStatus: (callback: (status: ConnectionStatus) => void) => subscribe("crew:status", callback),
   onLive: (callback: (message: Live) => void) => subscribe("crew:live", callback),

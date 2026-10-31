@@ -10,6 +10,7 @@ describe("finding in a conversation", () => {
     const said = [
       "Fixed the **export**: `export_rows` now exports filtered rows.\n\n- export to CSV\n- 2. export again\n\n```\nexport()\n```",
       "## Export plan\n\nSee t_0123456789 and the EXPORT button.",
+      "[the export](/Users/pat/export.png) and [Export](https://example.com/export(1)), **with [an export](/x/export.pdf)**",
       "Nothing to see here.",
     ];
     for (const text of said) {

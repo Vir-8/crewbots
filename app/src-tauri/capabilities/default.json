@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "What the window may do: talk to the crew through the shell, pick folders, show and open files in the crew's folder, open GitHub pages, drag the title bar",
+  "description": "What the window may do: talk to the crew through the shell, pick folders, show and open files in the crew's folder, open web pages in the browser, drag the title bar",
   "windows": [
     "main"
   ],
@@ -22,7 +22,10 @@
       "identifier": "opener:allow-open-url",
       "allow": [
         {
-          "url": "https://github.com/*"
+          "url": "https://*"
+        },
+        {
+          "url": "http://*"
         }
       ]
     }

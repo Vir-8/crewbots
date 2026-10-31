@@ -92,7 +92,8 @@ select {
   color: var(--text);
 }
 
-.task-link {
+.task-link,
+.text-link {
   color: var(--link);
   cursor: pointer;
 }

@@ -371,6 +371,7 @@ export const previewBridge = {
   request,
   pickFolder: async () => "~/code/acme-web",
   reveal: async (_path: string) => undefined,
+  home: async () => "/Users/pat",
   openPath: async (_path: string) => undefined,
   fileSrc: (path: string) => previewFileSrc(path),
   showFiles: async (_paths: string[]) => undefined,

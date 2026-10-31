@@ -135,5 +135,8 @@ demoFiles.set(`${files.notes.path}.png`, text(firstPage, "image/svg+xml")); // Q
 export const made = {
   retro: named("~/code/acme-web/docs/retro/q3-retro.pdf", "application/pdf", "", 96_000),
   plan: named("~/code/acme-web/docs/retro/q4-plan.md", "text/markdown", text("# Q4 plan\n\n- Ship the filtered export to everyone\n- Cut the test suite to 15 seconds\n- Try recharts behind a flag\n"), 140),
+  // Browser screenshots, named in what the chief told the user from a group chat: kept in the crew's attachments
+  mockA: named("~/.crewbots/crew/attachments/919bcfd31991/browser-dark-a.png", "image/png", render(), 88_000),
+  mockB: named("~/.crewbots/crew/attachments/25228c2ea788/browser-dark-b.png", "image/png", render(), 91_000),
 };
 demoFiles.set(`${made.retro.path}.png`, text(firstPage.replace("Release notes 2.4", "Q3 retro"), "image/svg+xml"));

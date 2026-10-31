@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { bridge } from "../bridge";
 import type { Status } from "../types";
-import { Finding, Marked } from "./Find";
+import { Finding, LINK, Marked } from "./Find";
 import { crewMentionNames } from "./Avatar";
 import { Icon } from "./Icon";
 
@@ -256,7 +257,7 @@ export function CodeBlock({ text }: { text: string }) {
 
 /**
  * The Markdown bots write: paragraphs, headings, lists (nested, and numbered from where they start), fenced code,
- * `code` and **bold**. Built as React elements, never as HTML, so nothing a bot writes can run in the window.
+ * `code`, **bold** and [links](target). Built as React elements, never as HTML, so nothing a bot writes can run in the window.
  */
 export function Markdown({ text, onSelect, everyone = false }: { text: string; onSelect: (id: string) => void; everyone?: boolean }) {
   const blocks: ReactNode[] = [];
@@ -368,26 +369,68 @@ function wikiLink(raw: string): { page: string; label: string } {
   return { page: target.split("#")[0].trim(), label: (label ?? target).trim() };
 }
 
+/** A [label](target) link a bot wrote. A web address opens in the browser; a path (absolute, from ~, or a file://
+ * address, maybe with a :line after it) is shown in Finder, never opened: a bot wrote it, and it could be something
+ * that runs. Anything else, a relative path say, has nowhere to be shown from, so it's only its label. */
+export function TextLink({ label, target }: { label: string; target: string }) {
+  const web = /^https?:\/\//i.test(target);
+  const path = web ? "" : local(target);
+  const text = /^`[^`]+`$/.test(label) ? <code><Marked text={label.slice(1, -1)} /></code> : <Marked text={label} />;
+  if (!web && !path) return text;
+  const open = (e: MouseEvent) => {
+    e.preventDefault();
+    void (web ? bridge.openUrl(target) : reveal(path)).catch(() => undefined);
+  };
+  return (
+    <a className="text-link" onClick={open} title={target}>
+      {text}
+    </a>
+  );
+}
+
+/** The file a path link names, or "" if it isn't absolute or from ~. */
+function local(target: string): string {
+  let path = target;
+  if (/^file:\/\//i.test(path)) {
+    try {
+      path = decodeURIComponent(path.slice(7));
+    } catch {
+      return "";
+    }
+  }
+  path = path.replace(/(:\d+)+$/, "");
+  return path.startsWith("/") || path.startsWith("~/") ? path : "";
+}
+
+async function reveal(path: string) {
+  await bridge.reveal(path.startsWith("~/") ? `${await bridge.home()}${path.slice(1)}` : path);
+}
+
+const INLINE = new RegExp(`(\`[^\`]+\`|\\*\\*[^*]+\\*\\*|\\[\\[[^\\]\\n]+\\]\\]|${LINK.source})`, "g");
+
 function Inline({ text, onSelect, everyone = false }: { text: string; onSelect: (id: string) => void; everyone?: boolean }) {
+  return <span className="pre">{inlineParts(text, onSelect, everyone)}</span>;
+}
+
+function inlineParts(text: string, onSelect: (id: string) => void, everyone: boolean): ReactNode[] {
   const parts: ReactNode[] = [];
-  const pattern = /(`[^`]+`|\*\*[^*]+\*\*|\[\[[^\]\n]+\]\])/g;
   let last = 0;
-  for (const match of text.matchAll(pattern)) {
+  for (const match of text.matchAll(INLINE)) {
     parts.push(<Linked key={`t${last}`} text={text.slice(last, match.index)} onSelect={onSelect} everyone={everyone} />);
-    const token = match[0];
+    const [token, , label, target] = match;
     parts.push(
       token.startsWith("`") ? (
         <code key={`c${match.index}`}><Marked text={token.slice(1, -1)} /></code>
       ) : token.startsWith("[[") ? (
         <PageLink key={`p${match.index}`} {...wikiLink(token)} />
+      ) : label ? (
+        <TextLink key={`l${match.index}`} label={label} target={target.replace(/^<(.*)>$/, "$1")} />
       ) : (
-        <strong key={`b${match.index}`}>
-          <Linked text={token.slice(2, -2)} onSelect={onSelect} everyone={everyone} />
-        </strong>
+        <strong key={`b${match.index}`}>{inlineParts(token.slice(2, -2), onSelect, everyone)}</strong>
       ),
     );
     last = match.index! + token.length;
   }
   parts.push(<Linked key="end" text={text.slice(last)} onSelect={onSelect} everyone={everyone} />);
-  return <span className="pre">{parts}</span>;
+  return parts;
 }

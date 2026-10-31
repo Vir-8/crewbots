@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
-import { Markdown, MentionText, MessageMeta, dayAndTime, stamp, timeBreaks } from "./bits";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { bridge } from "../bridge";
+import { Markdown, MentionText, MessageMeta, TextLink, dayAndTime, stamp, timeBreaks } from "./bits";
 import { setCrew } from "./Avatar";
 import { Finding, count } from "./Find";
 import { bots } from "../preview/demo/make";
@@ -69,10 +70,34 @@ describe("Markdown", () => {
     expect(html("See t_0123456789 for it")).toContain('<a class="task-link">t_0123456789</a>');
   });
 
+  it("turns [label](target) into a link titled with its target, but not in code or a page link", () => {
+    setCrew(bots);
+    const shot = "/Users/pat/.crewbots/crew/attachments/919bcfd31991/browser-dark-c0.png";
+    const out = html(`[A — two columns](${shot}) for @Roger, t_0123456789 and **bold**; [the PR](https://github.com/o/r/pull/7)\n\n` +
+      "`[x](y)` and [[Plan]] and [not a link] (here)");
+    expect(out).toContain(`<a class="text-link" title="${shot}">A — two columns</a> for <span class="mention">@Roger</span>`);
+    expect(out).toContain('<a class="task-link">t_0123456789</a> and <strong>bold</strong>');
+    expect(out).toContain('<a class="text-link" title="https://github.com/o/r/pull/7">the PR</a>');
+    expect(out).toContain("<code>[x](y)</code>");
+    expect(out).toContain('class="page-link off">Plan</span> and [not a link] (here)');
+    expect(out.match(/text-link/g)).toHaveLength(2);
+    expect(html("```\n[x](y)\n```")).not.toContain("text-link");
+  });
+
+  it("draws links in bold, with parentheses or spaces in their target, and code as their label", () => {
+    expect(html("**see [A](/x/a.png) now**")).toContain('<strong>see <a class="text-link" title="/x/a.png">A</a> now</strong>');
+    expect(html("[Foo](https://en.wikipedia.org/wiki/Foo_(bar)) after"))
+      .toContain('<a class="text-link" title="https://en.wikipedia.org/wiki/Foo_(bar)">Foo</a> after');
+    expect(html("[A](</Users/x/My Shot.png>)")).toContain('<a class="text-link" title="/Users/x/My Shot.png">A</a>');
+    expect(html("[`run.sh`](/x/run.sh)")).toContain('<a class="text-link" title="/x/run.sh"><code>run.sh</code></a>');
+    expect(html("[the plan](docs/plan.md) and [x](javascript:alert(1))")).toBe(
+      '<div class="md"><p><span class="pre">the plan and x</span></p></div>'); // nowhere to show them from
+  });
+
   it("finishes every document quickly, whatever it's made of", () => {
     // Fragments that start, end or confuse blocks, joined at random: 5,000 documents, each with a time budget.
     const parts = ["- ", "* ", "+ ", "1. ", "10) ", "  ", "\t", "    - ", "```", "``", "`", "# ", "###### ", "**", "*",
-      "\r\n", "\n", "\r", " ", "", " ", "text", "t_0123456789", "@name", "<b>", "&amp;", "\\", "\u0000", "🙂"];
+      "\r\n", "\n", "\r", " ", "", " ", "text", "t_0123456789", "@name", "<b>", "&amp;", "\\", "\u0000", "🙂", "[", "](", ")", "[[", "]]"];
     let seed = 7;
     const random = () => (seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31;
     let slowest = 0;
@@ -83,6 +108,35 @@ describe("Markdown", () => {
       slowest = Math.max(slowest, performance.now() - started);
     }
     expect(slowest).toBeLessThan(100);
+  });
+});
+
+describe("a link a bot wrote", () => {
+  afterEach(() => vi.restoreAllMocks());
+  const click = (target: string) => {
+    const preventDefault = vi.fn();
+    TextLink({ label: "it", target }).props.onClick({ preventDefault });
+    expect(preventDefault).toHaveBeenCalled(); // the window never goes there itself
+  };
+
+  it("opens a web address in the browser", () => {
+    const openUrl = vi.spyOn(bridge, "openUrl").mockResolvedValue(undefined);
+    const reveal = vi.spyOn(bridge, "reveal").mockResolvedValue(undefined);
+    click("https://example.com/a?b=1");
+    expect(openUrl).toHaveBeenCalledWith("https://example.com/a?b=1");
+    expect(reveal).not.toHaveBeenCalled();
+  });
+
+  it("shows a path in Finder, never opening it", async () => {
+    const openUrl = vi.spyOn(bridge, "openUrl").mockResolvedValue(undefined);
+    const reveal = vi.spyOn(bridge, "reveal").mockRejectedValue(new Error("gone"));
+    const openFile = vi.spyOn(bridge, "openFile");
+    vi.spyOn(bridge, "home").mockResolvedValue("/Users/pat");
+    for (const target of ["/Users/pat/work/run.sh", "file:///Users/pat/My%20Shot.png", "/Users/pat/a.ts:12:3", "~/notes.md"]) click(target);
+    await vi.waitFor(() => expect(reveal).toHaveBeenCalledTimes(4));
+    expect(reveal.mock.calls).toEqual([["/Users/pat/work/run.sh"], ["/Users/pat/My Shot.png"], ["/Users/pat/a.ts"], ["/Users/pat/notes.md"]]);
+    expect(openUrl).not.toHaveBeenCalled();
+    expect(openFile).not.toHaveBeenCalled();
   });
 });
 
