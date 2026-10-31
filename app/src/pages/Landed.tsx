@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, errorText } from "../api";
+import { api, bridge, errorText } from "../api";
 import type { LandedItem, LandedOut } from "../api-types";
 import { Avatar, labelOf } from "../components/Avatar";
 import { ago, Markdown } from "../components/bits";
@@ -43,7 +43,7 @@ function LandedRow({ item, isNew, onOpen, onChange }: { item: LandedItem; isNew:
   const [failure, setFailure] = useState("");
   const { task } = item;
   const revert = async () => {
-    if (!window.confirm(`Revert ${oneLine(task.title, 80)}? It adds a commit that undoes ${item.commit?.slice(0, 7)} in ${item.into}.`)) return;
+    if (!(await bridge.confirm(`Revert ${oneLine(task.title, 80)}? It adds a commit that undoes ${item.commit?.slice(0, 7)} in ${item.into}.`, "Revert"))) return;
     setBusy(true);
     setFailure("");
     try {

@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useReducer, useState } from "react";
 import { resets } from "../activityText";
-import { api, errorText } from "../api";
+import { api, bridge, errorText } from "../api";
 import type { ModelChange, PresetBot, PresetsOut } from "../api-types";
 import { Icon } from "../components/Icon";
 import { BACKEND_LABEL } from "../components/ModelPicker";
@@ -44,7 +44,7 @@ export function CrewModels({ crew }: { crew: Crew }) {
     }
   };
   const save = async (name: string) => {
-    if (presets?.presets.some((p) => p.name === name) && !window.confirm(`Replace the preset “${name}” with the models shown?`)) return false;
+    if (presets?.presets.some((p) => p.name === name) && !(await bridge.confirm(`Replace the preset “${name}” with the models shown?`, "Replace"))) return false;
     // What the table shows, so a draft can be kept as a preset without applying it.
     const bots = Object.fromEntries(crew.bots.map((b): [string, PresetBot] => {
       const { backend, model, effort } = planned(b, draft);
@@ -59,7 +59,7 @@ export function CrewModels({ crew }: { crew: Crew }) {
     }
   };
   const remove = async (name: string) => {
-    if (!window.confirm(`Delete the preset “${name}”? The bots keep the models they have.`)) return;
+    if (!(await bridge.confirm(`Delete the preset “${name}”? The bots keep the models they have.`, "Delete"))) return;
     try {
       setPresets(await api.deletePreset(name));
       if (draft.trying === name) dispatch({ kind: "discard" });

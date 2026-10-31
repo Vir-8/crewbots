@@ -3,7 +3,7 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { homeDir } from "@tauri-apps/api/path";
-import { open } from "@tauri-apps/plugin-dialog";
+import { confirm, open } from "@tauri-apps/plugin-dialog";
 import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { previewBridge } from "./preview/bridge";
 import type { ConnectionStatus, Live } from "./types";
@@ -33,6 +33,9 @@ const tauriBridge = {
     return typeof picked === "string" ? picked : null;
   },
   reveal: (path: string) => revealItemInDir(path),
+  /** Asks before something that can't simply be taken back. A native dialog: the window's WebKit view answers
+   * window.confirm without showing anything. */
+  confirm: (message: string, okLabel: string) => confirm(message, { title: "crewbots", kind: "warning", okLabel }),
   /** Your home folder, for a path from ~. */
   home: () => homeDir(),
   /** Whether the crew starts at login; pass `enabled` to change it. */

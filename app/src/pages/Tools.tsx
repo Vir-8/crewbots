@@ -28,7 +28,7 @@ export function Tools({ crew }: { crew: Crew }) {
   };
   const remove = async (s: McpServerInfo) => {
     const users = s.bots.length ? ` ${s.bots.map(labelOf).join(", ")} will lose it too.` : "";
-    if (!window.confirm(`Remove ${s.name} from the crew?${users}`)) return;
+    if (!(await bridge.confirm(`Remove ${s.name} from the crew?${users}`, "Remove"))) return;
     await api.removeMcpServer(s.name).catch((e) => setError(errorText(e)));
     load();
   };

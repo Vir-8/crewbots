@@ -377,6 +377,7 @@ export const previewBridge = {
     if (demo.gone.has(path.replace(/^\/Users\/pat\//, "~/"))) throw new Error(`${path}: no such file`);
   },
   home: async () => "/Users/pat",
+  confirm: async (message: string, _okLabel: string) => window.confirm(message),
   openPath: async (_path: string) => undefined,
   fileSrc: (path: string) => previewFileSrc(path),
   showFiles: async (_paths: string[]) => undefined,

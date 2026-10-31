@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, errorText } from "../api";
+import { api, bridge, errorText } from "../api";
 import type { Crew } from "../state";
 import { doing, oneLine } from "../activityText";
 import type { Task } from "../types";
@@ -149,7 +149,7 @@ export function MergeButton({ crew, task }: { crew: Crew; task: Task }) {
   }
   if (task.merge_state !== "proposed") return null;
   const merge = async () => {
-    if (!window.confirm(`Merge ${task.branch} into ${task.repo ?? "your checkout"}?`)) return;
+    if (!(await bridge.confirm(`Merge ${task.branch} into ${task.repo ?? "your checkout"}?`, "Merge"))) return;
     setBusy(true);
     await crew.merge(task.id, false).catch(() => undefined);
     setBusy(false);
