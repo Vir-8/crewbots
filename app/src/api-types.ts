@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "005379fcb1cb";
+export const API_SCHEMA = "9ff62955423b";
 
 /** How much a run may touch. Each backend maps this onto its own permission or sandbox flags. */
 export type Access = "read_only" | "workspace_write" | "full";
@@ -558,6 +558,18 @@ export interface Message {
   question_id?: number | null;
 }
 
+/** One bot's part of a change across the crew. Fields left out are left as they are. */
+export interface ModelChange {
+  backend?: string;
+  model?: string | null;
+  effort?: string | null;
+  team?: string | null;
+}
+
+export interface ModelChanges {
+  bots: Record<string, ModelChange>;
+}
+
 export interface ModelOut {
   id: string;
   label: string;
@@ -574,6 +586,10 @@ export interface ModelUse {
   input: number;
   cached: number;
   written?: number;
+}
+
+export interface ModelsChanged {
+  changed: string[];
 }
 
 export interface ModelsOut {

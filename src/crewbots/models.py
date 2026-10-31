@@ -36,6 +36,21 @@ async def models(fresh: bool = False) -> dict[str, list[dict[str, Any]]]:
     return {"claude": claude, "codex": codex, "antigravity": antigravity}
 
 
+def family(backend: str) -> str:
+    """Which CLI's list a backend's models come from: claude-cli runs Claude's, codex-exec Codex's."""
+    return "antigravity" if backend == "antigravity" else "codex" if backend.startswith("codex") else "claude"
+
+
+def efforts(listed: dict[str, list[dict[str, Any]]], backend: str, model: str | None) -> list[str] | None:
+    """The efforts a model takes, from its CLI's list (blank: the CLI's default model); None when the CLI listed
+    nothing, so it can't be told. A model the CLI doesn't list takes none."""
+    found = listed.get(family(backend)) or []
+    if not found:
+        return None
+    chosen = next((m for m in found if (m["id"] == model if model else m["default"])), None)
+    return chosen["efforts"] if chosen else []
+
+
 async def _codex() -> list[dict[str, Any]]:
     from crewbots.backends.codex_app_server import ask_once
 

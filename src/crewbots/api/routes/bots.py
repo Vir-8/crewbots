@@ -8,7 +8,18 @@ from fastapi import APIRouter, HTTPException
 from crewbots import cards, mcp_catalog, pages
 from crewbots import models as models_module
 from crewbots.api.context import Context
-from crewbots.api.schemas import BotOut, CardBody, CardOut, ModelsOut, NewBot, PageBody, PageOut, ProfileOut
+from crewbots.api.schemas import (
+    BotOut,
+    CardBody,
+    CardOut,
+    ModelChanges,
+    ModelsChanged,
+    ModelsOut,
+    NewBot,
+    PageBody,
+    PageOut,
+    ProfileOut,
+)
 
 
 def routes(c: Context) -> APIRouter:
@@ -75,6 +86,12 @@ def routes(c: Context) -> APIRouter:
             raise HTTPException(404, f"no bot named {name}") from None
         reload_crew()
         return cards.card(runner.crew.home, name)
+
+    @v1.put("/bots/models", response_model=ModelsChanged)
+    async def put_models(body: ModelChanges):
+        """Changes several bots' backend, model, effort and team at once: none of them, if any one can't be."""
+        return {"changed": await c.edit_models({name: change.model_dump(exclude_unset=True)
+                                                for name, change in body.bots.items()})}
 
     @v1.post("/bots", status_code=201, response_model=CardOut)
     async def new_bot(body: NewBot):

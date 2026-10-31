@@ -13,9 +13,11 @@ from typing import Any
 
 import yaml
 
-from crewbots import frontmatter
+from crewbots import crew as crew_module
+from crewbots import frontmatter, models
 from crewbots import routines as routines_module
-from crewbots.crew import CrewError, _context_window, parse_card
+from crewbots.backends import Access
+from crewbots.crew import Bot, Crew, CrewError, _context_window, parse_card
 
 HANDLE = re.compile(r"[a-z][a-z0-9-]{0,30}")
 BOT_FIELDS = ("display_name", "title", "description", "backend", "model", "effort", "context_window", "access", "network",
@@ -48,6 +50,53 @@ def card(home: Path, name: str) -> dict[str, Any]:
 
 def save_card(home: Path, name: str, fields: dict[str, Any], instructions: str | None, create: bool = False) -> Path:
     """Updates a role card's editable fields and its instructions (the body), or writes a new bot's card."""
+    path, text = _edited(home, name, fields, instructions, create)
+    if text is not None:
+        write(path, text)
+    return path
+
+
+def save_cards(home: Path, changes: dict[str, dict[str, Any]]) -> tuple[Crew, list[str]]:
+    """Several role cards' fields at once, all or nothing: every change is checked before any card is written, and if
+    the crew then doesn't load (a bot moved to Codex with an SSE server, say), every card goes back as it was. Gives the
+    crew as loaded and the bots whose cards changed."""
+    edits = {name: _edited(home, name, fields, None) for name, fields in changes.items()}
+    new = {name: (path, text) for name, (path, text) in edits.items() if text is not None}
+    before = {name: path.read_text() for name, (path, _) in new.items()}
+    try:
+        for path, text in new.values():
+            write(path, text)
+        return crew_module.load(home), list(new)
+    except Exception:
+        for name, (path, _) in new.items():
+            write(path, before[name])
+        raise
+
+
+def model_fields(bot: Bot, change: dict[str, Any], listed: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    """A change of a bot's backend, model, effort or team as the card fields it makes, by the bot editor's rules: a move
+    to another CLI starts from its default model and effort and gives up what that CLI can't take, and a new model
+    keeps the effort only if it offers it (`listed` is what the CLIs offer; with nothing listed, it can't be told)."""
+    fields = dict(change)
+    backend = fields.get("backend", bot.backend)
+    if models.family(backend) != models.family(bot.backend):
+        fields.setdefault("model", None)
+        fields.setdefault("effort", None)
+        if models.family(backend) != "claude" and isinstance(bot.network, tuple):
+            fields["network"] = False
+        if backend == "antigravity" and bot.access is Access.FULL:
+            fields["access"] = Access.WORKSPACE_WRITE.value
+    if fields.get("model", bot.model) != bot.model and "effort" not in fields:
+        offered = models.efforts(listed, backend, fields["model"])
+        if offered is not None and bot.effort not in offered:
+            fields["effort"] = None
+    return fields
+
+
+def _edited(home: Path, name: str, fields: dict[str, Any], instructions: str | None, create: bool = False,
+            ) -> tuple[Path, str | None]:
+    """A role card with these changes, as its path and new text once the crew's parser accepts it; no text when they
+    change nothing, so the card isn't rewritten (which would drop its YAML comments)."""
     if create:
         if not HANDLE.fullmatch(name):
             raise CrewError("a bot's handle is lowercase letters, digits and dashes, starting with a letter: it's how "
@@ -59,6 +108,7 @@ def save_card(home: Path, name: str, fields: dict[str, Any], instructions: str |
     else:
         path = bot_path(home, name)
         meta, body = read(path)
+    was = dict(meta)
     for key in BOT_FIELDS:
         if key in fields:
             value = fields[key]
@@ -66,10 +116,12 @@ def save_card(home: Path, name: str, fields: dict[str, Any], instructions: str |
                 meta.pop(key, None)
             else:
                 meta[key] = value
-    text = _compose(meta, instructions if instructions is not None else body)
+    new_body = instructions if instructions is not None else body
+    if not create and meta == was and new_body.strip() == body.strip():
+        return path, None
+    text = _compose(meta, new_body)
     parse_card(text, default_name=name, source=path.name)  # refuse anything the crew couldn't load
-    _write(path, text)
-    return path
+    return path, text
 
 
 def routine(home: Path, name: str) -> dict[str, Any]:
@@ -97,7 +149,7 @@ def save_routine(home: Path, name: str, fields: dict[str, Any], goal: str | None
                 meta[key] = value
     text = _compose(meta, goal if goal is not None else body)
     routines_module.parse(text, name, path)  # refuse anything the scheduler couldn't run
-    _write(path, text)
+    write(path, text)
     return path
 
 
@@ -118,7 +170,7 @@ def _compose(meta: dict[str, Any], body: str) -> str:
     return f"---\n{raw}---\n{body.strip()}\n"
 
 
-def _write(path: Path, text: str) -> None:
+def write(path: Path, text: str) -> None:
     """All or nothing: the daemon reloads on change, and must never read half a file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".edit-")

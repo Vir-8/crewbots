@@ -12,8 +12,9 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 
 from crewbots import attachments as attachments_module
+from crewbots import cards, paths
 from crewbots import crew as crew_module
-from crewbots import paths
+from crewbots import models as models_module
 from crewbots.api.schemas import Message
 from crewbots.reviews import Reviews
 from crewbots.runner import Runner
@@ -73,3 +74,17 @@ class Context:
 
     def reload_crew(self) -> None:
         self.runner.reload(crew_module.load(self.runner.crew.home))
+
+    async def edit_models(self, changes: dict[str, dict[str, Any]]) -> list[str]:
+        """Changes several bots' backend, model, effort and team in one go, all or nothing (`cards.save_cards`), and
+        gives the bots whose cards changed."""
+        bots = self.runner.crew.bots
+        if unknown := sorted(set(changes) - set(bots)):
+            raise HTTPException(422, f"no bots named {', '.join(unknown)}")
+        clears = any("model" in change and "effort" not in change for change in changes.values())
+        listed = await models_module.models() if clears else {}
+        fields = {name: cards.model_fields(bots[name], change, listed) for name, change in changes.items()}
+        crew, changed = cards.save_cards(self.runner.crew.home, fields)
+        if changed:
+            self.runner.reload(crew)
+        return changed

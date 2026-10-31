@@ -523,6 +523,9 @@ Each step leaves the system working.
   doesn't edit kept, after the crew's own parser accepts the new text, and atomically. YAML comments don't survive.
   A bot's handle stays fixed (tasks and @mentions use it); its display name, which @mentions also match, can change.
   A card's `team` (Engineers, say) only groups bots on the Crew page: nothing follows from it.
+  Several bots' backend, model, effort and team change in one call (`PUT /bots/models`, the Crew page's Models
+  view), all or nothing: every card is checked before any is written, and if the crew then doesn't load, every one goes
+  back as it was. A model change that leaves an effort the new model doesn't offer clears it, as the app's picker does.
 
 ## Performance budgets
 

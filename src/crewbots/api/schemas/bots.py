@@ -72,6 +72,20 @@ class NewBot(CardBody):
 class CardOut(CardBody):
     name: str
 
+class ModelChange(BaseModel):
+    """One bot's part of a change across the crew. Fields left out are left as they are."""
+
+    backend: str = "claude"
+    model: str | None = None  # blank: the CLI's default
+    effort: str | None = None  # left out when the model changes: kept if the new model offers it
+    team: str | None = None  # blank: none
+
+class ModelChanges(BaseModel):
+    bots: dict[str, ModelChange]  # by handle
+
+class ModelsChanged(BaseModel):
+    changed: list[str]  # the bots whose cards changed
+
 class ModelOut(BaseModel):
     id: str
     label: str
