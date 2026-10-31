@@ -26,6 +26,10 @@ from crewbots.scheduler import Scheduler
 from crewbots.store import Store
 
 LOG_CHECK_S = 600.0  # how often the daemon looks at its log's size
+# How long a stop waits for open requests. Some never end by themselves (a shared app's MCP stream, held by a bot's
+# session), and sessions only close in the lifespan's shutdown, after this: waiting for them would never stop. It's
+# under launchd's exit timeout (5s), so the shutdown that follows gets to run.
+SHUTDOWN_GRACE_S = 2.0
 
 
 def _warm_inbox(reviews: Reviews) -> None:
@@ -53,6 +57,11 @@ def read_daemon_info(home: Path) -> DaemonInfo:
     if not path.exists():
         raise FileNotFoundError(f"no daemon running for {home} (start one with `crewbots serve`)")
     return DaemonInfo(**json.loads(path.read_text()))
+
+
+def http_server(app: FastAPI, port: int) -> uvicorn.Server:
+    return uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning",
+                                         timeout_graceful_shutdown=SHUTDOWN_GRACE_S))
 
 
 def serve(home: Path, port: int = DEFAULT_PORT, max_parallel: int = 4, sessions: bool = True, max_depth: int = 3) -> None:
@@ -97,7 +106,7 @@ def serve(home: Path, port: int = DEFAULT_PORT, max_parallel: int = 4, sessions:
     app = create_app(runner, token, port, scheduler)
     app.router.lifespan_context = lifespan
     print(f"crewbots: {len(crew.bots)} bots ({', '.join(crew.bots)}) from {home}, on http://127.0.0.1:{port}", flush=True)
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    server = http_server(app, port)
     exit_code = 0
 
     def stop(code: int) -> None:

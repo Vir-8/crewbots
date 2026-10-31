@@ -229,3 +229,51 @@ def test_the_crews_record_can_be_searched(client):
 def test_each_bot_says_where_its_chat_runs(client):
     worker = client.get("/bots", headers=AUTH).json()[0]
     assert worker["workspace"] is None and worker["folder"] == str(paths.bot_folders() / worker["name"])
+
+
+def test_a_stop_ends_streams_that_never_end_and_still_shuts_the_crew_down():
+    # A shared app's MCP stream stays open as long as the bot's session does, and sessions close only in the
+    # lifespan's shutdown: a stop that waited for every request would never get there.
+    import asyncio
+    import contextlib
+    import socket
+    import threading
+
+    import httpx
+    from fastapi import FastAPI
+    from fastapi.responses import StreamingResponse
+
+    from crewbots.api.daemon import SHUTDOWN_GRACE_S, http_server
+
+    shut_down, opened = threading.Event(), threading.Event()
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_app):
+        yield
+        shut_down.set()
+
+    app = FastAPI(lifespan=lifespan)
+
+    async def forever():
+        opened.set()
+        while True:
+            yield b": still here\n\n"
+            await asyncio.sleep(0.05)
+
+    app.get("/stream")(lambda: StreamingResponse(forever(), media_type="text/event-stream"))
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    server = http_server(app, port)
+    serving = threading.Thread(target=server.run, daemon=True)
+    serving.start()
+    with httpx.Client() as client:
+        for _ in range(200):
+            with contextlib.suppress(httpx.TransportError):
+                with client.stream("GET", f"http://127.0.0.1:{port}/stream", timeout=None):
+                    assert opened.wait(5)
+                    server.should_exit = True
+                    serving.join(SHUTDOWN_GRACE_S + 5)
+                    break
+            time.sleep(0.02)
+    assert not serving.is_alive() and shut_down.is_set()

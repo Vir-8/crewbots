@@ -250,14 +250,21 @@ impl Crew {
         serde_json::from_str(&text).ok()
     }
 
+    /// Whether the crew's daemon answers at its address. Its answer has to be the crew's bots: once a daemon stops,
+    /// another server on this Mac can take the port (one listening on every address answers for 127.0.0.1 too), and
+    /// a page of its own isn't the daemon.
     async fn reachable(&self, daemon: &Daemon) -> bool {
-        self.http
+        let answer = self
+            .http
             .get(format!("{}/v1/bots", daemon.url))
             .bearer_auth(&daemon.token)
             .timeout(Duration::from_secs(3))
             .send()
-            .await
-            .is_ok_and(|r| r.status().is_success())
+            .await;
+        match answer {
+            Ok(r) if r.status().is_success() => r.json::<Value>().await.is_ok_and(|bots| bots.is_array()),
+            _ => false,
+        }
     }
 
     async fn follow(&self, app: &AppHandle, daemon: &Daemon) {
