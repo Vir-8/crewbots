@@ -4,10 +4,12 @@ project with their .meta files, on the folder's branch, leaving the rest of what
 import dataclasses
 import subprocess
 
+import httpx
 import pytest
 from fakes import ScriptedCrew, bot, git_repo, wait_until
 
 from crewbots import worktree
+from crewbots.api import create_app
 from crewbots.backends import Access
 from crewbots.crew_tools import merge_text
 from crewbots.projects import Project
@@ -120,10 +122,14 @@ async def test_output_git_ignores_is_named_rather_than_left_out_quietly(game):
     review = crew.runner.delegate(lead.id, "reviewer", "review it again", review_of=work.id)
     await wait_until(crew.settled(review.id))
     crew.runner.review(review.id, Verdict.PASS, "fine", [])
-    store.set_auto_merge(True)
-    merged = await crew.runner.propose_merge_off_loop(lead.id, work.id, "Add the player")
+    crew.runner.propose_merge(lead.id, work.id, "Add the player")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(crew.runner, token="t")),
+                                 base_url="http://127.0.0.1:8765/v1") as client:
+        response = await client.post(f"/tasks/{work.id}/merge", headers={"Authorization": "Bearer t"})
     committed = worktree._git(repo, "show", "--name-only", "--format=", "HEAD").split()
     assert committed == ["Assets/Player.cs", "Assets/Player.cs.meta"]
+    assert response.json()["ignored"] == [skill]  # the user's merge says so too
+    merged = store.get_task(work.id)
     details = crew.runner.merged_details(merged)
     assert details["ignored"] == [skill]
     assert f"Left out, as git ignores them in this project: {skill}." in merge_text(

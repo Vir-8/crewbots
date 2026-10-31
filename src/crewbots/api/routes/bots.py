@@ -68,7 +68,7 @@ def routes(c: Context) -> APIRouter:
     async def put_card(name: str, body: CardBody):
         fields = edited(body.model_dump(mode="json", exclude_unset=True, exclude={"instructions"}))
         if fields.get("mcp") is not None:
-            mcp_catalog.keep_inline(runner.crew.home, name, fields["mcp"])
+            mcp_catalog.move_inline(runner.crew.home, name, fields["mcp"])
         try:
             cards.save_card(runner.crew.home, name, fields, body.instructions)
         except KeyError:

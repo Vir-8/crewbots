@@ -83,6 +83,20 @@ def test_removing_a_server_finds_a_card_by_its_name_not_its_file(tmp_path):
     assert crew.load(home).bots["engineer-1"].mcp_names == ("blender",)
 
 
+def test_a_server_defined_on_a_card_moves_to_the_crews_list_when_the_card_is_saved(tmp_path):
+    home = a_crew(tmp_path, servers={"blender": BLENDER}, card_mcp="{gimp: {command: run-gimp.sh}, web: {command: x}}")
+    store = Store(tmp_path / "crew.db")
+    runner = Runner(store, crew.load(home), {"fake": FakeBackend()}, worktree_root=tmp_path / "wts")
+    with TestClient(create_app(runner, "t", 8765), base_url="http://127.0.0.1:8765") as client:
+        saved = client.put("/v1/bots/engineer-1/card", json={"mcp": ["gimp", "blender"]},
+                           headers={"Authorization": "Bearer t"})
+
+        assert saved.json()["mcp"] == ["gimp", "blender"]
+        assert mcp_catalog.servers(home) == {"blender": BLENDER, "gimp": {"command": "run-gimp.sh"}}  # web was dropped
+        assert runner.crew.bots["engineer-1"].mcp_names == ("gimp", "blender")
+    store.close()
+
+
 def test_your_apps_servers_are_found_once_each(tmp_path, monkeypatch):
     claude = tmp_path / "claude.json"
     claude.write_text(json.dumps({"mcpServers": {"blender": BLENDER, "crewbots": {"command": "x"}},

@@ -43,7 +43,7 @@ def save(home: Path, name: str, spec: dict[str, Any]) -> None:
     _write(home, servers(home) | {name: spec})
 
 
-def keep_inline(home: Path, bot: str, kept: list[str]) -> None:
+def move_inline(home: Path, bot: str, kept: list[str]) -> None:
     """Moves the servers defined on a bot's card itself that it keeps, by name, to the crew's list, unless the crew
     has a server of that name already."""
     with contextlib.suppress(KeyError, OSError):
