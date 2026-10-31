@@ -81,8 +81,7 @@ def test_the_starter_crew_loads(tmp_path):
     assert [b.name for b in loaded.bots.values() if b.can_delegate] == ["chief", "eng-lead"]
     assert {loaded.bots["reviewer"].backend, loaded.bots["critic"].backend} == {"claude", "codex"}
     assert set(loaded.team_files) == {"mission.md", "standards.md", "protocol.md", "rules.md"}
-    assert set(loaded.skills) == {"interrogate", "arena", "swarm", "verify-unity", "create-verification",
-                                  "maintain-verification"}
+    assert set(loaded.skills) == {"interrogate", "arena", "swarm", "create-verification", "maintain-verification"}
     assert loaded.bots["chief"].skills == ("interrogate", "arena", "swarm")
 
 

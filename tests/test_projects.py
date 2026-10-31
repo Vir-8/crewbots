@@ -1,10 +1,12 @@
 """The user's projects: folders the crew works in, one file each, that only the user adds or removes."""
 
+import shutil
+
 import pytest
 from fakes import FakeBackend, bot, make_crew
 from fastapi.testclient import TestClient
 
-from crewbots import discovery, paths, projects
+from crewbots import crew, discovery, paths, projects
 from crewbots.api import create_app
 from crewbots.projects import ProjectError
 from crewbots.runner import Runner
@@ -95,6 +97,27 @@ def test_project_isolation_defaults_and_explicit_settings(tmp_path):
     with pytest.raises(ProjectError, match="isolation must"):
         projects.save(home, "project", folder, "A project", isolation="branch")  # branch mode is gone
     assert projects.load(home)[0]["project"].isolation == "in_place"
+
+
+def test_adding_a_unity_project_gives_the_crew_the_unity_verify_skill(tmp_path):
+    home, web, game = crew.init(tmp_path / "crew"), tmp_path / "web", tmp_path / "game"
+    web.mkdir()
+    (game / "ProjectSettings").mkdir(parents=True)
+    (game / "ProjectSettings" / "ProjectVersion.txt").write_text("m_EditorVersion: 6000.3.12f1\n")
+
+    projects.save(home, "web", web, "A website")
+    assert "verify-unity" not in crew.load(home).skills
+    projects.save(home, "web", game, "Now the game")  # an existing project moved to a Unity folder
+    assert "verify-unity" in crew.load(home).skills
+    projects.delete(home, "web")
+    shutil.rmtree(home / "skills" / "verify-unity")
+    projects.save(home, "game", game, "A game")
+    assert "verify-unity" in crew.load(home).skills
+
+    (home / "skills" / "verify-unity" / "SKILL.md").write_text("---\nname: verify-unity\ndescription: Mine\n---\n")
+    projects.save(home, "game", game, "A game, edited")
+    projects.save(home, "other-game", game, "The same game again")
+    assert crew.load(home).skills["verify-unity"].description == "Mine"  # the crew's own copy is left alone
 
 
 @pytest.fixture

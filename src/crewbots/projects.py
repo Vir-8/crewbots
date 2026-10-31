@@ -14,11 +14,13 @@ delegated in that project, and runs in its folder, as the project's `isolation` 
 when the bot writes and the folder is a git repository (the default), or `in_place`, the folder itself, on whatever
 branch it's on, beside the user and the other bots (a Unity project's default: one Editor can have it open, and
 engineers split the work by files). A folder that isn't a git repository is worked in place. Only the user adds,
-changes or removes a project.
+changes or removes a project. Adding a Unity project gives the crew the `verify-unity` skill.
 """
 
 import re
+import shutil
 from dataclasses import dataclass
+from importlib import resources
 from pathlib import Path
 from typing import Literal
 
@@ -124,7 +126,20 @@ def save(home: Path, name: str, folder: Path, about: str, isolation: Isolation |
     meta = {"folder": paths.shown(folder), **({"isolation": isolation} if isolation is not None else {}),
             **({"ci": list(old.ci)} if old and old.ci else {})}
     path.write_text(f"---\n{yaml.safe_dump(meta, sort_keys=False)}---\n{about.strip()}\n")
+    if is_unity(folder) and (old is None or old.folder.resolve() != folder.resolve()):
+        _add_unity_skill(home)
     return parse(path.read_text(), path)
+
+
+def _add_unity_skill(home: Path) -> None:
+    """Gives the crew the skill for verifying Unity work, unless it has it already. It comes with a Unity project, so
+    a crew without one never sees it."""
+    target = home / "skills" / "verify-unity"
+    if target.exists():
+        return
+    skill = resources.files("crewbots") / "templates" / "integrations" / "unity" / "skills" / "verify-unity"
+    with resources.as_file(skill) as source:
+        shutil.copytree(source, target)
 
 
 def delete(home: Path, name: str) -> None:

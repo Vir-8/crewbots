@@ -6,9 +6,9 @@ description: Prove a change to a Unity project works in the open Unity Editor (i
 # Verify a Unity change
 
 Tests prove units. This proves the change in the Editor, the way a player meets it, and leaves evidence someone else
-can check without taking your word for it. It works through the Unity MCP (the `UnityMCP` server: `manage_editor`,
-`run_tests`, `read_console`, `manage_camera`, `manage_scene` and the rest); the `unity-mcp-orchestrator` skill has their
-details. "It compiles" alone isn't done.
+can check without taking your word for it. It works through the Unity MCP server in your mcp.json (MCP for Unity names
+it `UnityMCP`): `manage_editor`, `run_tests`, `read_console`, `manage_camera`, `manage_scene` and the rest. "It
+compiles" alone isn't done.
 
 ## How Unity work runs here
 
