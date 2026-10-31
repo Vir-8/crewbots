@@ -26,7 +26,7 @@ from crewbots.projects import Project
 
 CARD_FIELDS = {
     "name", "title", "description", "backend", "model", "access", "workspace", "worktree", "timeout", "mcp",
-    "can_delegate", "skills", "budget", "network", "display_name", "avatar", "effort", "context_window", "proactive",
+    "can_delegate", "skills", "budget", "network", "display_name", "avatar", "effort", "context_window", "proactive", "team",
 }
 # How much conversation a bot's session holds before the CLI compacts it, and what the rollover is measured against.
 # Unless its card says, the model's whole window: on a 1M model, the rollover comes at about 700K tokens.
@@ -36,6 +36,7 @@ EFFORTS = ("low", "medium", "high", "xhigh", "max", "ultra")  # what each CLI ac
 # A bot's face in the app: one of these colors and shapes, or one picked from its name.
 AVATAR_COLORS = ("blue", "orange", "aqua", "yellow", "magenta", "green", "violet", "red")  # validated for charts too
 AVATAR_SHAPES = ("circle", "drop", "square", "flower", "hex")
+TEAM_LENGTH = 40
 BUDGET_WINDOWS = {"day": timedelta(days=1), "week": timedelta(days=7)}
 
 NO_REPLY = "NO_REPLY"  # a bot's whole reply in a group chat when it has nothing to add
@@ -84,6 +85,7 @@ class Bot:
     effort: str | None = None  # reasoning effort for every turn it takes, its threads' too; None: the CLI's default
     context_window: int | None = None  # tokens its sessions hold before compacting; None: the model's whole window
     proactive: bool = True  # whether a check-in of its may start low-risk work on its own
+    team: str | None = None  # a grouping in the app, such as Engineers; nothing follows from it
 
     @property
     def label(self) -> str:
@@ -404,6 +406,7 @@ def parse_card(text: str, default_name: str, source: Path | str = "<card>") -> B
         avatar=_avatar(meta.get("avatar"), source),
         effort=_effort(meta.get("effort"), source),
         context_window=_context_window(meta.get("context_window", DEFAULT_CONTEXT_WINDOW), source),
+        team=_team(meta.get("team"), source),
     )
 
 
@@ -437,6 +440,13 @@ def _effort(raw: Any, source: Path | str) -> str | None:
     if raw not in EFFORTS:
         raise CrewError(f"{source}: effort is one of {list(EFFORTS)}, not {raw!r}")
     return str(raw)
+
+
+def _team(raw: Any, source: Path | str) -> str | None:
+    team = str(raw).strip() if raw is not None else ""
+    if len(team) > TEAM_LENGTH:
+        raise CrewError(f"{source}: a team is a short name, {TEAM_LENGTH} characters at most, such as Engineers")
+    return team or None
 
 
 def _context_window(raw: Any, source: Path | str) -> int | None:

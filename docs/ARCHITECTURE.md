@@ -522,6 +522,7 @@ Each step leaves the system working.
 - **Editing the crew** (`cards.py`): role cards and routines are rewritten from the app with the frontmatter it
   doesn't edit kept, after the crew's own parser accepts the new text, and atomically. YAML comments don't survive.
   A bot's handle stays fixed (tasks and @mentions use it); its display name, which @mentions also match, can change.
+  A card's `team` (Engineers, say) only groups bots on the Crew page: nothing follows from it.
 
 ## Performance budgets
 

@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "b1a94326b8df";
+export const API_SCHEMA = "005379fcb1cb";
 
 /** How much a run may touch. Each backend maps this onto its own permission or sandbox flags. */
 export type Access = "read_only" | "workspace_write" | "full";
@@ -76,6 +76,7 @@ export interface BotOut {
   avatar: Record<string, string> | null;
   context_window: number | null;
   proactive?: boolean;
+  team?: string | null;
 }
 
 export interface BotUse {
@@ -132,6 +133,7 @@ export interface CardBody {
   budget?: Budget | null;
   mcp?: string[] | null;
   proactive?: boolean | null;
+  team?: string | null;
   instructions?: string | null;
 }
 
@@ -149,6 +151,7 @@ export interface CardOut {
   budget?: Budget | null;
   mcp?: string[] | null;
   proactive?: boolean | null;
+  team?: string | null;
   instructions?: string | null;
   name: string;
 }
@@ -593,6 +596,7 @@ export interface NewBot {
   budget?: Budget | null;
   mcp?: string[] | null;
   proactive?: boolean | null;
+  team?: string | null;
   instructions?: string | null;
   name: string;
 }

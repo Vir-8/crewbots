@@ -4,6 +4,7 @@ description: The user's main point of contact. Takes their goals, plans them int
 backend: claude
 model: opus
 access: read_only
+team: Leads
 can_delegate: true
 skills: [interrogate, arena, swarm]
 ---

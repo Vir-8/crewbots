@@ -85,3 +85,20 @@ def test_editing_over_the_api_takes_effect_at_once(home, tmp_path):
         assert client.put("/routines/standup/file", json={"enabled": False}, headers=auth).json()["enabled"] is False
         assert client.post("/routines", json={"name": "x", "bot": "chief"}, headers=auth).status_code == 422
     store.close()
+
+
+def test_the_starter_crew_comes_in_teams_and_a_card_can_change_its_own(home, tmp_path):
+    teams = {name: bot.team for name, bot in crew.load(home).bots.items()}
+    assert teams == {"chief": "Leads", "eng-lead": "Leads", "engineer-1": "Engineers", "engineer-2": "Engineers",
+                     "engineer-3": "Engineers", "engineer-4": "Engineers", "reviewer": "Reviewers",
+                     "critic": "Reviewers"}
+    store = Store(tmp_path / "crew.db")
+    runner = Runner(store, crew.load(home), {"claude": FakeBackend(), "codex": FakeBackend()})
+    auth = {"Authorization": "Bearer t"}
+    with TestClient(create_app(runner, "t", 8765), base_url="http://127.0.0.1:8765/v1") as client:
+        assert client.put("/bots/critic/card", json={"team": "Design"}, headers=auth).json()["team"] == "Design"
+        assert {b["name"]: b["team"] for b in client.get("/bots", headers=auth).json()}["critic"] == "Design"
+        client.put("/bots/critic/card", json={"team": ""}, headers=auth)
+        assert runner.crew.bots["critic"].team is None and "team:" not in (home / "bots" / "critic.md").read_text()
+        assert client.put("/bots/critic/card", json={"team": "x" * 41}, headers=auth).status_code == 422
+    store.close()

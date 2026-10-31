@@ -5,6 +5,7 @@ description: 'Owns engineering goals end to end: plans them, hands the code to t
 backend: claude
 model: opus
 access: read_only
+team: Leads
 can_delegate: true
 skills: [interrogate, arena, swarm]
 ---
