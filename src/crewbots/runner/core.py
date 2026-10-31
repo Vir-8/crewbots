@@ -662,6 +662,8 @@ class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Revie
                "CREWBOTS_CHIEF": "1" if self.is_chief(bot.name) else "0",
                "CREWBOTS_TOOLS": tools, "CREWBOTS_REVIEW": flags, "CREWBOTS_KIND": task.kind if task else "",
                "CREWBOTS_REVIEWING": "1" if task and task.review_of else "0",
+               "CREWBOTS_UNITY": "1" if task and self.offers_unity_editor(task.id) else "0",
+               "CREWBOTS_SHARED_APP": "1" if self.has_shared_app(bot.name) else "0",
                "CREWBOTS_HOME": str(self.crew.home)}  # for the crew's own tool descriptions (prompts/tools/)
         return {MCP_SERVER_NAME: McpServer(command=command, args=list(args), env=env)}
 

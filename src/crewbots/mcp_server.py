@@ -61,10 +61,11 @@ class _Daemon(MCPServer):
 
 
 def build_server(client: httpx.Client, can_delegate: bool, *, is_chief: bool = False, kind: str | None = None,
-                 reviewing: bool = False) -> MCPServer:
+                 reviewing: bool = False, unity: bool = False, shared_app: bool = False) -> MCPServer:
     """The crew tools for one task: those `crew_tools.tools_for` gives it, as Claude's bots get them."""
     server = _crew_server(client)
-    given = {tool.name for tool in tools_for(can_delegate, is_chief=is_chief, kind=kind, reviewing=reviewing)}
+    given = {tool.name for tool in tools_for(can_delegate, is_chief=is_chief, kind=kind, reviewing=reviewing,
+                                             unity=unity, shared_app=shared_app)}
     for name in SPECS.keys() - given:
         server.remove_tool(name)
     return server
@@ -262,9 +263,12 @@ def main() -> None:
         flags = set(os.environ.get("CREWBOTS_REVIEW", "").split(","))
         build_review_server(client, reads_github="github" in flags, drafting="drafts" in flags).run("stdio")
     else:
-        build_server(client, can_delegate=os.environ.get("CREWBOTS_DELEGATE") == "1",
-                     is_chief=os.environ.get("CREWBOTS_CHIEF") == "1", kind=os.environ.get("CREWBOTS_KIND") or None,
-                     reviewing=os.environ.get("CREWBOTS_REVIEWING") == "1").run("stdio")
+        def on(name: str) -> bool:
+            return os.environ.get(f"CREWBOTS_{name}") == "1"
+
+        build_server(client, can_delegate=on("DELEGATE"), is_chief=on("CHIEF"),
+                     kind=os.environ.get("CREWBOTS_KIND") or None, reviewing=on("REVIEWING"), unity=on("UNITY"),
+                     shared_app=on("SHARED_APP")).run("stdio")
 
 
 if __name__ == "__main__":

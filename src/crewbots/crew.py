@@ -512,12 +512,14 @@ def mcp_server(name: str, spec: Any, source: Path | str) -> McpServer:
         raise CrewError(f"{source}: mcp server name {name!r} must be letters, digits, - or _")
     if not isinstance(spec, dict) or not (spec.get("command") or spec.get("url")):
         raise CrewError(f"{source}: mcp server {name!r} needs a command, or a url")
-    if spec.get("one_at_a_time") and not (spec.get("url") and spec.get("type", "http") == "http"):
-        raise CrewError(f"{source}: mcp server {name!r} can be one_at_a_time only as an http server, at a url")
+    for key in ("one_at_a_time", "unity"):
+        if spec.get(key) and not (spec.get("url") and spec.get("type", "http") == "http"):
+            raise CrewError(f"{source}: mcp server {name!r} can be {key} only as an http server, at a url")
     if spec.get("url"):
         transport = "sse" if spec.get("type") == "sse" else "http"
         return McpServer(url=str(spec["url"]), headers={k: str(v) for k, v in (spec.get("headers") or {}).items()},
-                         transport=transport, one_at_a_time=bool(spec.get("one_at_a_time")))
+                         transport=transport, one_at_a_time=bool(spec.get("one_at_a_time")),
+                         unity=bool(spec.get("unity")))
     return McpServer(command=str(spec["command"]), args=[str(a) for a in spec.get("args") or []],
                      env={k: str(v) for k, v in (spec.get("env") or {}).items()})
 

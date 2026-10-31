@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import sys
 
 import httpx
 import pytest
@@ -144,8 +145,9 @@ async def test_a_failed_build_says_why_and_leaves_no_helper(tmp_path):
         await WebKit(tmp_path / "webkit", swiftc=str(tmp_path / "missing")).check("http://127.0.0.1:5173/")
 
 
-async def test_the_tool_through_crew_tools_the_bot_api_and_mcp(service, tmp_path):
+async def test_the_tool_through_crew_tools_the_bot_api_and_mcp(service, tmp_path, monkeypatch):
     fake_helper(service, TITLE)
+    monkeypatch.setattr(sys, "platform", "darwin")  # where it's offered: the helper here is a fake
     store = Store(tmp_path / "crew.db")
     runner = Runner(store, make_crew(tmp_path, bot("engineer", workspace=tmp_path)), {"fake": FakeBackend()})
     runner.webkit = service

@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from crewbots import paths, unity
+from crewbots.backends import McpServer
 from crewbots.projects import is_unity
 from crewbots.runner.common import NotAllowed
 from crewbots.store import Task
@@ -116,6 +117,17 @@ class Editors:
         self.send(task_id, f"Unity hasn't connected to the Unity MCP in {CONNECT_S // 60} minutes: check the Editor "
                   "on your worktree, or say what's wrong.", sender="crewbots")
 
+    def offers_unity_editor(self, task_id: str) -> bool:
+        """Whether the task is offered open_unity_editor: it works in a Unity worktree of its own or a review copy, and
+        its bot has a Unity MCP, which tells it when the Editor has connected. Read afresh: a first turn's worktree is
+        made just before its session opens."""
+        task = self.store.get_task(task_id)
+        try:
+            self._unity_folder(task)
+        except NotAllowed:
+            return False
+        return self._unity_mcp_url(task) is not None
+
     def _unity_folder(self, task: Task) -> Path:
         folder = Path(task.worktree_path or task.workspace or "")
         if not (task.worktree_path or task.workspace) or not self._in_own_worktree(folder):
@@ -127,11 +139,11 @@ class Editors:
 
     def _unity_mcp_url(self, task: Task) -> str | None:
         bot = self.bot_for(task.bot)
-        return next((s.url for name, s in (bot.mcp if bot else {}).items() if "unity" in name.lower() and s.url), None)
+        return unity_mcp_url(bot.mcp) if bot else None
 
-    def _crew_editors(self) -> dict[Path, int]:
+    def _crew_editors(self, running: dict[Path, int] | None = None) -> dict[Path, int]:
         """The Editors open on this crew's worktrees, by folder: one on any other folder isn't its to count or close."""
-        return {folder: pid for folder, pid in unity.editors().items()
+        return {folder: pid for folder, pid in (unity.editors() if running is None else running).items()
                 if self._in_own_worktree(folder) and self.store.tasks_in(str(folder))}
 
     def _in_own_worktree(self, folder: str | Path) -> bool:
@@ -151,9 +163,12 @@ class Editors:
             unity.close_editor(pid)
             self._editor_room()
 
-    def close_idle_editors(self) -> None:
-        """On the scheduler's tick: Editors no task has used for EDITOR_IDLE_S."""
-        for folder, pid in self._crew_editors().items():
+    async def close_idle_editors(self) -> None:
+        """On the scheduler's tick: Editors no task has used for EDITOR_IDLE_S. Only a bot with a Unity MCP is offered
+        open_unity_editor, so a crew with none has no Editors to look for; the look runs `ps`, off the loop."""
+        if not any(unity_mcp_url(bot.mcp) for bot in self.crew.bots.values()):
+            return
+        for folder, pid in self._crew_editors(await asyncio.to_thread(unity.editors)).items():
             if not self._editor_in_use(folder):
                 unity.close_editor(pid)
         self._editor_room()
@@ -166,3 +181,10 @@ class Editors:
                           sender="crewbots")
             except NotAllowed:
                 pass
+
+
+def unity_mcp_url(servers: dict[str, McpServer]) -> str | None:
+    """The url of the Unity MCP among a bot's servers: the one mcp.json marks `unity`, or else one named for Unity."""
+    marked = [s for s in servers.values() if s.unity]
+    named = [s for name, s in servers.items() if "unity" in name.lower() and s.url]
+    return next((s.url for s in marked or named), None)

@@ -5,11 +5,15 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from fakes import ScriptedCrew, bot, git_repo, wait_until
+from fakes import ADMIN, PORT, HeldBackend, ScriptedCrew, bot, git_repo, make_crew, wait_until
+from fastapi.testclient import TestClient
 
-from crewbots import unity, worktree
+from crewbots import crew as crew_module
+from crewbots import mcp_catalog, unity, worktree
+from crewbots.api import create_app
 from crewbots.backends import Access, McpServer
-from crewbots.runner import NotAllowed
+from crewbots.crew_tools import CrewTools
+from crewbots.runner import NotAllowed, Runner
 from crewbots.runner import editors as editors_module
 from crewbots.store import Status, Store
 
@@ -113,6 +117,25 @@ async def test_only_a_worktree_of_the_tasks_own_gets_one(store, unity_crew):
     await crew.runner.shutdown()
 
 
+async def test_only_a_unity_worktree_with_a_unity_mcp_is_offered_the_tool(store, unity_crew, tmp_path):
+    crew, work, open_now, said, repo = unity_crew
+    started = crew.runner.submit("engineer", "build", workspace=str(repo))  # its worktree is made as its turn starts
+    await wait_until(crew.settled(started.id))
+    assert crew.backend.specs[-1].mcp_servers["crewbots"].env["CREWBOTS_UNITY"] == "1"  # what Codex is shown
+
+    def offered(task):
+        return "open_unity_editor" in {d.name for d in CrewTools(crew.runner, task.id, False).definitions()}
+
+    plain = git_repo(tmp_path / "web")
+    web = store.create_task("engineer", "build", status=Status.IDLE)
+    web = store.update_task(web.id, worktree_path=str(worktree.create(plain, web.id, root=tmp_path / "crew" / "wts").path))
+    in_place = store.create_task("engineer", "build", workspace=str(repo), status=Status.IDLE)
+    assert offered(work()) and not offered(web) and not offered(in_place)
+    crew.runner.crew.bots["engineer"].mcp.clear()  # no Unity MCP to say when it has connected
+    assert not offered(work())
+    await crew.runner.shutdown()
+
+
 async def test_at_most_two_at_once_an_idle_one_makes_room_and_one_closes_when_its_worktree_goes(store, unity_crew):
     crew, work, open_now, said, repo = unity_crew
     first, second, third, fourth = work(), work(), work(), work()
@@ -123,7 +146,7 @@ async def test_at_most_two_at_once_an_idle_one_makes_room_and_one_closes_when_it
     assert len(open_now) == 2
     old = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
     store.db.execute("update tasks set updated_at = ? where id = ?", (old, first.id))
-    crew.runner.close_idle_editors()  # nobody has used the first's for an hour
+    await crew.runner.close_idle_editors()  # nobody has used the first's for an hour
     assert list(open_now) == [Path(second.worktree_path).resolve()]
     assert told(store, third.id) == ["There's room for a Unity Editor now: ask for yours with open_unity_editor."]
 
@@ -175,9 +198,51 @@ async def test_an_editor_on_a_folder_of_no_task_of_ours_is_left_alone(store, uni
     crew, work, open_now, said, repo = unity_crew
     stranger = (tmp_path / "crew" / "wts" / "other-crew" / "t_0000000000").resolve()
     open_now[stranger] = 999  # another crew's, or opened by hand
-    crew.runner.close_idle_editors()
+    await crew.runner.close_idle_editors()
     assert open_now == {stranger: 999}
     first, second = work(), work()
     crew.runner.open_unity_editor(first.id)
     assert "Opening Unity" in crew.runner.open_unity_editor(second.id)  # it doesn't count against ours
+    await crew.runner.shutdown()
+
+
+async def test_the_server_marked_unity_is_the_one_asked_whatever_its_name(store, unity_crew, monkeypatch):
+    crew, work, open_now, said, repo = unity_crew
+    crew.runner.crew.bots["engineer"].mcp.clear()
+    crew.runner.crew.bots["engineer"].mcp.update({
+        "community-api": McpServer(url="http://community.test/mcp", transport="http"),  # "unity" in its name
+        "editor": McpServer(url="http://editor.test/mcp", transport="http", unity=True)})
+    asked = []
+
+    async def connected(url, name):
+        asked.append(url)
+        return True
+
+    monkeypatch.setattr(unity, "connected", connected)
+    task = work()
+    crew.runner.open_unity_editor(task.id)
+    await wait_until(lambda: told(store, task.id))
+    assert set(asked) == {"http://editor.test/mcp"}
+    await crew.runner.shutdown()
+
+
+def test_a_unity_mcp_is_an_http_server_and_stays_marked_when_edited(tmp_path):
+    with pytest.raises(crew_module.CrewError, match="unity only as an http server"):
+        crew_module.mcp_server("editor", {"command": "unity-mcp", "unity": True}, "mcp.json")
+    assert crew_module.mcp_server("editor", {"url": "http://x/mcp", "unity": True}, "mcp.json").unity
+    mcp_catalog.save(tmp_path, "editor", {"type": "http", "url": "http://x/mcp", "unity": True})
+    store = Store(tmp_path / "crew.db")
+    runner = Runner(store, make_crew(tmp_path, bot("chief")), {"fake": HeldBackend()})
+    with TestClient(create_app(runner, ADMIN, PORT), base_url=f"http://127.0.0.1:{PORT}/v1") as client:
+        client.put("/mcp/servers/editor", json={"transport": "http", "url": "http://y/mcp"},
+                   headers={"Authorization": f"Bearer {ADMIN}"})
+    assert mcp_catalog.servers(tmp_path)["editor"] == {"type": "http", "url": "http://y/mcp", "unity": True}
+    store.close()
+
+
+async def test_a_crew_with_no_unity_mcp_doesnt_look_for_editors(store, unity_crew, monkeypatch):
+    crew, work, open_now, said, repo = unity_crew
+    crew.runner.crew.bots["engineer"].mcp.clear()
+    monkeypatch.setattr(unity, "editors", lambda: pytest.fail("listed processes"))
+    await crew.runner.close_idle_editors()
     await crew.runner.shutdown()

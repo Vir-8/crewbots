@@ -354,15 +354,20 @@ Each step leaves the system working.
   folders' (`git status -uall -- <specs>`, then `git commit -- <files>`), so others' work in the folder stays
   uncommitted; the `merged` event carries the files, and the
   Landed page and the chief's push card follow as for a merge. Its reviewers are told which files are its own.
-- **Unity Editors for worktrees** (`unity.py`, `runner/editors.py`). `open_unity_editor` starts
+- **Unity Editors for worktrees** (`unity.py`, `runner/editors.py`). `open_unity_editor` is offered only to a task in
+  a Unity worktree of its own (or a review copy) whose bot has a Unity MCP: the http server mcp.json marks
+  `unity: true`, or else one with "unity" in its name (`crew_tools.offered`; Codex's MCP server reads CREWBOTS_UNITY).
+  It starts
   `<Hub>/Editor/<m_EditorVersion>/Unity.app` with `open -n -g … --args -projectPath <worktree>` after `defaults write
   com.unity3d.UnityEditor5.x MCPForUnity.AutoStartOnLoad -int 1`, the package's own auto-start (HttpAutoStartHandler),
   so no computer use. A watcher reads `mcpforunity://instances` until the worktree's folder name shows, then tells the
   task. Editors are found from `ps` by `-projectPath` (import workers run with `-batchMode` and are skipped), closed
   with SIGTERM (1 s), before `_cleanup_worktree` touches the folder and on the tick once no task in the folder has run
-  for EDITOR_IDLE_S. MAX_EDITORS (2) at once: an idle one makes room, or the task is told when there is some. Only
-  Editors on this crew's own tasks' worktrees count or are closed (`store.tasks_in`): another crew's, or one opened
-  by hand, is left alone.
+  for EDITOR_IDLE_S (the tick looks only in a crew with a Unity MCP, and runs `ps` off the loop). MAX_EDITORS (2) at
+  once: an idle one makes room, or the task is told when there is some. Only Editors on this crew's own tasks'
+  worktrees count or are closed (`store.tasks_in`): another crew's, or one opened by hand, is left alone. The
+  `verify-unity` skill isn't in the starter crew: `projects.save` copies it from `templates/integrations/unity/` into
+  the crew's `skills/` when a Unity project is added and the crew has none by that name.
 - **Verification maps** (skills `create-verification` and `maintain-verification`, routine `verification`). Each
   project keeps its map in `.agents/verify/` (README + a file per feature, pstack's shape), plain files any agent
   can follow, with AGENTS.md pointing there. Codex keeps `.agents/` read-only for its skills, so crewbots' sandbox
@@ -373,14 +378,19 @@ Each step leaves the system working.
   feedback or "do not remove", unless the line links an issue. team/standards.md says the rest for reviewers.
 - **Shared apps** (`runner/shared_apps.py`, `api/routes/shared_apps.py`). An http MCP server marked `one_at_a_time`
   in mcp.json reaches a bot at `/v1/bot/mcp/<server>`, with its run token, and the daemon passes everything on except a
-  `tools/call` while another task holds that project's app (keyed by server and the task's folder): that's answered with a tool error naming the holder, and the task
-  queued. A task in no folder (a chat, a room's seat) can point the server at any project's app, so its key matches
-  every folder's: it waits for any holder and holds them all, and is told when its own bot's task is the holder. A task
-  holds it from its first tool call while its turn runs, until it calls `release_app`, or APP_IDLE_S (5 min) after its
-  last call; `free_apps` (as turns end, on `release_app`, and on the scheduler's tick) lets go and tells the next task
-  in line, one at a time, WAKE_AGAIN_S apart, or at once when the one told last has taken it. A task working in a worktree under the worktree root (or reviewing one) never waits
-  (`_own_checkout`): its app is the one opened on its own folder. Checked against MCP for Unity 3.4.8 (event-stream replies): two tasks' sessions, one call
-  through, the other answered busy.
+  `tools/call` while another task holds the app: that's answered with a tool error naming the holder (and saying so when
+  it's its own bot's task), and the task queued. The lock is per server, since one app is running, except for the
+  Unity MCP in a Unity project: Unity opens a folder in one Editor only, so a task whose folder is one (`is_unity`) is
+  keyed by server and folder, and tasks in different Unity projects don't wait for each other. Any other server's
+  calls, and the Unity MCP's from any other task (one in another folder, a chat, a room's seat), can reach whichever
+  app is running, so their key matches every folder's: such a task waits for any holder and holds them all.
+  `release_app` is offered only to a bot with a `one_at_a_time` server (`crew_tools.offered`; for Codex,
+  CREWBOTS_SHARED_APP). A task holds it from its first tool call while its turn runs, until it calls `release_app`, or
+  APP_IDLE_S (5 min) after its last call; `free_apps` (as turns end, on `release_app`, and on the scheduler's tick) lets
+  go and tells the next task in line, one at a time, WAKE_AGAIN_S apart, or at once when the one told last has taken
+  it. A task in a Unity worktree under the worktree root (or reviewing one) never waits for the Unity MCP: its app is
+  the Editor opened on its own folder. Checked against MCP for Unity 3.4.8 (event-stream replies): two tasks' sessions, one
+  call through, the other answered busy.
 - **Trusting a verdict, cheaply.** A review records its work's change (`worktree.change_id`: `git patch-id
   --stable` of the diff from where it meets its merge target, uncommitted and new files included, through a copy of the
   index), as a `review_change` event. A version reviewed in an earlier round counts as approved when its change is the

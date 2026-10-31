@@ -5,6 +5,7 @@ and no token. One that can't (Codex) gets the same tools from `crewbots.mcp_serv
 API with a session token. Either way the runner decides what the task may do.
 """
 
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -109,14 +110,18 @@ SPECS: dict[str, Spec] = {
 
 
 CHIEF_ONLY = {"add_bot", "propose_push", "propose_replace_main", "tell_user"}
-# Tools only some tasks are offered, by what the task is: listed to every task, they'd cost each turn for nothing.
+# Tools only some tasks are offered, by what the task is and what its bot and machine have: listed to every task,
+# they'd cost each turn for nothing.
 # The daemon still refuses one used out of place, with why.
 WHERE_THE_USER_TALKS = {"propose_routine", "remind_on"}  # a chat or a group chat
 NOT_IN_REVIEWS = {"delegate", "start_thread", "open_group", "add_to_group", "write_page", "edit_page", "handoff"}
 
 
-def offered(name: str, kind: str | None, reviewing: bool) -> bool:
-    """Whether a task of this kind (None: any) is offered the tool `name`."""
+def offered(name: str, kind: str | None, reviewing: bool, unity: bool = False, shared_app: bool = False) -> bool:
+    """Whether a task of this kind (None: any) is offered the tool `name`. `unity`: it works in a Unity worktree of its
+    own, or a review copy, and its bot has a Unity MCP. `shared_app`: its bot has a one_at_a_time MCP server."""
+    if name == "webkit_check":
+        return sys.platform == "darwin"
     if kind is None:
         return True
     if name == "review":
@@ -130,7 +135,9 @@ def offered(name: str, kind: str | None, reviewing: bool) -> bool:
     if name == "tell_user":
         return kind != "chat"  # in its chat with the user, what it says there already is
     if name == "open_unity_editor":
-        return kind not in ("chat", "seat", "ask")  # work in a worktree of its own
+        return unity and kind not in ("chat", "seat", "ask")
+    if name == "release_app":
+        return shared_app
     return name not in WHERE_THE_USER_TALKS or kind in ("chat", "seat")
 
 
@@ -140,10 +147,10 @@ def describe(name: str, home: Path | None = None) -> str:
 
 
 def tools_for(can_delegate: bool, home: Path | None = None, *, is_chief: bool = False, kind: str | None = None,
-              reviewing: bool = False) -> list[ToolDef]:
+              reviewing: bool = False, unity: bool = False, shared_app: bool = False) -> list[ToolDef]:
     return [ToolDef(name, describe(name, home), spec.schema) for name, spec in SPECS.items()
             if (can_delegate or not spec.coordinator_only) and (name not in CHIEF_ONLY or is_chief)
-            and offered(name, kind, reviewing)]
+            and offered(name, kind, reviewing, unity, shared_app)]
 
 
 class ToolRefused(Exception):
@@ -165,7 +172,8 @@ class CrewTools:
 
     def definitions(self) -> list[ToolDef]:
         task = self.runner.store.get_task(self.task_id)
-        where = {"kind": task.kind, "reviewing": bool(task.review_of)}
+        where = {"kind": task.kind, "reviewing": bool(task.review_of),
+                 "unity": self.runner.offers_unity_editor(task.id), "shared_app": self.runner.has_shared_app(task.bot)}
         if not self.can_delegate:
             return tools_for(False, self.runner.crew.home, **where)
         return tools_for(self.runner.is_coordinator(task.bot), self.runner.crew.home,

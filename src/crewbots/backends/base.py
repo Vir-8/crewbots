@@ -73,6 +73,7 @@ class McpServer:
     headers: dict[str, str] = field(default_factory=dict)
     transport: str = "stdio"  # stdio, http or sse
     one_at_a_time: bool = False  # it drives one running app: one task uses it at a time (runner/shared_apps.py)
+    unity: bool = False  # the Unity MCP, which says when an Editor has connected (runner/editors.py)
 
     def config(self) -> dict[str, Any]:
         """The server in Claude's mcpServers shape, which the Agent SDK, `claude --mcp-config` and mcp.json all use."""

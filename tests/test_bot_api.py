@@ -2,6 +2,7 @@
 
 import json
 import re
+import sys
 import time
 from pathlib import Path
 
@@ -279,7 +280,12 @@ async def test_each_task_is_offered_the_tools_for_what_it_is(crew_app):
     assert {"propose_routine", "remind_on"} <= chat & seat and not {"propose_routine", "remind_on"} & (thread | review)
     assert "review" in review and "review" not in thread
     assert not {"handoff", "delegate", "start_thread", "open_group", "write_page"} & review
-    assert {"recall", "remember", "escalate", "share", "browser_open", "webkit_check"} <= chat & seat & thread & review
+    assert {"recall", "remember", "escalate", "share", "browser_open"} <= chat & seat & thread & review
+    assert ("webkit_check" in chat & seat & thread & review) == (sys.platform == "darwin")  # it runs Safari's WebKit
+    assert not {"open_unity_editor", "release_app"} & (chat | seat | thread | review)
+    unity = await offered(kind="thread", unity=True, shared_app=True)
+    assert {"open_unity_editor", "release_app"} <= unity
+    assert "open_unity_editor" not in await offered(kind="chat", unity=True)  # its own worktree, which a chat hasn't
 
 
 def test_a_verdict_from_a_task_that_is_not_a_review_is_refused_with_a_reason(crew_app):
