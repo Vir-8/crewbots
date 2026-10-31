@@ -5,6 +5,7 @@ from fakes import FakeBackend, make_crew
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from crewbots import paths
 from crewbots.api import create_app
 from crewbots.runner import Runner
 from crewbots.store import Store
@@ -223,3 +224,8 @@ def test_the_crews_record_can_be_searched(client):
     hits = client.get("/search", params={"q": "pagination"}, headers=AUTH).json()
 
     assert hits and hits[0]["task_id"] == task["id"] and "«pagination»" in hits[0]["snippet"]
+
+
+def test_each_bot_says_where_its_chat_runs(client):
+    worker = client.get("/bots", headers=AUTH).json()[0]
+    assert worker["workspace"] is None and worker["folder"] == str(paths.bot_folders() / worker["name"])

@@ -20,7 +20,7 @@ def routes(c: Context) -> APIRouter:
     async def bots():
         return [
             {"name": b.name, "title": b.title, "description": b.description, "backend": b.backend, "model": b.model,
-             "access": b.access, "workspace": str(b.workspace) if b.workspace else None,
+             "access": b.access, "workspace": str(b.workspace) if b.workspace else None, "folder": str(runner.crew.folder_of(b)),
              "network": list(b.network) if isinstance(b.network, tuple) else b.network, "mcp": sorted(b.mcp),
              "skills": list(b.skills), "chief": runner.is_chief(b.name), "coordinator": runner.is_coordinator(b.name),
              "path": str(b.path) if b.path else None, "display_name": b.display_name, "avatar": b.avatar,

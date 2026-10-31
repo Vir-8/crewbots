@@ -110,7 +110,7 @@ export function Thread(props: {
     >
       <div className={`thread-col ${props.compact ? "compact" : ""} ${props.chat ? "chat" : ""}`} ref={col}>
         <Finding.Provider value={query}>
-        <LinksFrom folder={task.worktree_path ?? task.workspace ?? crew.bots.find((b) => b.name === task.bot)?.workspace ?? null}>
+        <LinksFrom folder={task.worktree_path ?? task.workspace ?? crew.bots.find((b) => b.name === task.bot)?.folder ?? null}>
         {!events && <div className="thread-loading" />}
         {start > 0 && (
           <button className="thread-earlier text-button" onClick={() => earlier(start - PAGE)}>

@@ -16,6 +16,7 @@ class BotOut(BaseModel):
     model: str | None
     access: Access
     workspace: str | None
+    folder: str  # where its chat and work outside any project run: its workspace, or its own folder
     network: bool | list[str]  # its shell commands: none, any host, or these hosts
     mcp: list[str]  # the MCP servers its role card grants, besides crewbots' own
     skills: list[str]

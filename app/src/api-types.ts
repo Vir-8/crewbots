@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "a28ece1c682e";
+export const API_SCHEMA = "b1a94326b8df";
 
 /** How much a run may touch. Each backend maps this onto its own permission or sandbox flags. */
 export type Access = "read_only" | "workspace_write" | "full";
@@ -64,6 +64,7 @@ export interface BotOut {
   model: string | null;
   access: Access;
   workspace: string | null;
+  folder: string;
   network: boolean | string[];
   mcp: string[];
   skills: string[];
