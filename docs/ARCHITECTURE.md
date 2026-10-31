@@ -1,6 +1,6 @@
 # crewbots architecture
 
-This records the decisions that shape crewbots past the prototype, and why. [DESIGN.md](DESIGN.md) covers the product idea and what each milestone taught us. This file is the system.
+This records the decisions that shape crewbots past the prototype, and why. [DESIGN.md](DESIGN.md) covers the product idea and what building it taught us. This file is the system.
 
 ## What it has to do
 
