@@ -1,6 +1,8 @@
 """Tasks: starting, reading, messaging, stopping, releasing and merging them, and answering what they ask to be
 allowed."""
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Query
 
 from crewbots.api.context import Context
@@ -59,7 +61,7 @@ def routes(c: Context) -> APIRouter:
     @v1.post("/tasks/{task_id}/drop-worktree")
     async def drop_worktree(task_id: str):
         task_or_404(task_id)
-        return runner.drop_worktree(task_id)
+        return await asyncio.to_thread(runner.drop_worktree, task_id)
 
     @v1.get("/tasks/{task_id}", response_model=TaskOut)
     async def task(task_id: str):
@@ -127,6 +129,6 @@ def routes(c: Context) -> APIRouter:
     @v1.post("/tasks/{task_id}/withdraw-merge", response_model=TaskOut)
     async def withdraw_merge(task_id: str, body: WithdrawalReason):
         task_or_404(task_id)
-        return runner.task_json(runner.withdraw_merge(task_id, body.reason))
+        return runner.task_json(await asyncio.to_thread(runner.withdraw_merge, task_id, body.reason))
 
     return v1

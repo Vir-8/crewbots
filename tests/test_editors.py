@@ -2,6 +2,7 @@
 with. Unity's processes and the Unity MCP are stood in for."""
 
 import asyncio
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -99,9 +100,9 @@ async def test_a_worktree_task_gets_an_editor_and_is_told_once_its_connected(sto
     crew, work, open_now, said, repo = unity_crew
     task = work()
 
-    answer = crew.runner.open_unity_editor(task.id)
+    answer = await crew.runner.open_unity_editor(task.id)
     assert "Opening Unity on your worktree" in answer and list(open_now) == [Path(task.worktree_path).resolve()]
-    assert "already open" in crew.runner.open_unity_editor(task.id) and len(open_now) == 1
+    assert "already open" in await crew.runner.open_unity_editor(task.id) and len(open_now) == 1
     said["connected"] = True
     await wait_until(lambda: told(store, task.id))
     assert told(store, task.id)[0].startswith("Unity is open on your worktree and connected: set_active_instance to its "
@@ -113,7 +114,7 @@ async def test_only_a_worktree_of_the_tasks_own_gets_one(store, unity_crew):
     crew, work, open_now, said, repo = unity_crew
     in_place = store.create_task("engineer", "build", workspace=str(repo), status=Status.IDLE)
     with pytest.raises(NotAllowed, match="only on a worktree of the task's own"):
-        crew.runner.open_unity_editor(in_place.id)
+        await crew.runner.open_unity_editor(in_place.id)
     assert open_now == {}
     await crew.runner.shutdown()
 
@@ -140,10 +141,10 @@ async def test_only_a_unity_worktree_with_a_unity_mcp_is_offered_the_tool(store,
 async def test_at_most_two_at_once_an_idle_one_makes_room_and_one_closes_when_its_worktree_goes(store, unity_crew):
     crew, work, open_now, said, repo = unity_crew
     first, second, third, fourth = work(), work(), work(), work()
-    crew.runner.open_unity_editor(first.id)
-    crew.runner.open_unity_editor(second.id)
+    await crew.runner.open_unity_editor(first.id)
+    await crew.runner.open_unity_editor(second.id)
 
-    assert "2 Unity Editors are open for other tasks" in crew.runner.open_unity_editor(third.id)
+    assert "2 Unity Editors are open for other tasks" in await crew.runner.open_unity_editor(third.id)
     assert len(open_now) == 2
     old = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
     store.db.execute("update tasks set updated_at = ? where id = ?", (old, first.id))
@@ -151,19 +152,19 @@ async def test_at_most_two_at_once_an_idle_one_makes_room_and_one_closes_when_it
     assert list(open_now) == [Path(second.worktree_path).resolve()]
     assert told(store, third.id) == ["There's room for a Unity Editor now: ask for yours with open_unity_editor."]
 
-    crew.runner.open_unity_editor(third.id)
+    await crew.runner.open_unity_editor(third.id)
     crew.runner.close_editor(Path(second.worktree_path))  # its worktree is going
     assert list(open_now) == [Path(third.worktree_path).resolve()]
-    assert "Opening Unity" in crew.runner.open_unity_editor(fourth.id)
+    assert "Opening Unity" in await crew.runner.open_unity_editor(fourth.id)
     await crew.runner.shutdown()
 
 
 async def test_the_tick_looks_for_room_off_the_event_loop(store, unity_crew, monkeypatch):
     crew, work, open_now, said, repo = unity_crew
     first, second, third = work(), work(), work()
-    crew.runner.open_unity_editor(first.id)
-    crew.runner.open_unity_editor(second.id)
-    crew.runner.open_unity_editor(third.id)  # it waits for room
+    await crew.runner.open_unity_editor(first.id)
+    await crew.runner.open_unity_editor(second.id)
+    await crew.runner.open_unity_editor(third.id)  # it waits for room
 
     def listed():
         with pytest.raises(RuntimeError):  # no loop runs in this thread
@@ -176,12 +177,59 @@ async def test_the_tick_looks_for_room_off_the_event_loop(store, unity_crew, mon
     await crew.runner.shutdown()
 
 
+async def test_unity_quitting_slowly_doesnt_hold_up_the_daemon(store, unity_crew, monkeypatch):
+    crew, work, open_now, said, repo = unity_crew
+    first, second, third = work(), work(), work()
+    await crew.runner.open_unity_editor(first.id)
+    await crew.runner.open_unity_editor(second.id)
+    quit_at_once = unity.close_editor
+
+    def quit_slowly(pid):  # Unity can take up to 10 seconds to quit
+        time.sleep(0.3)
+        quit_at_once(pid)
+
+    monkeypatch.setattr(unity, "close_editor", quit_slowly)
+    beats = 0
+
+    async def heartbeat():
+        nonlocal beats
+        while True:
+            beats += 1
+            await asyncio.sleep(0.01)
+
+    beating = asyncio.create_task(heartbeat())
+    old = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    store.db.execute("update tasks set updated_at = ? where id = ?", (old, first.id))
+    assert "Opening Unity" in await crew.runner.open_unity_editor(third.id)  # the idle first makes room
+    assert beats > 10 and Path(first.worktree_path).resolve() not in open_now
+    beats = 0
+    store.db.execute("update tasks set updated_at = ? where id = ?", (old, second.id))
+    await crew.runner.close_idle_editors()
+    assert beats > 10 and list(open_now) == [Path(third.worktree_path).resolve()]
+    beating.cancel()
+    await crew.runner.shutdown()
+
+
+async def test_an_editor_closed_in_a_thread_leaves_the_waiting_task_to_the_next_tick(store, unity_crew):
+    crew, work, open_now, said, repo = unity_crew
+    first, second, third = work(), work(), work()
+    await crew.runner.open_unity_editor(first.id)
+    await crew.runner.open_unity_editor(second.id)
+    await crew.runner.open_unity_editor(third.id)  # it waits for room
+
+    await asyncio.to_thread(crew.runner.close_editor, Path(first.worktree_path))  # as the worktree sweep does
+    assert told(store, third.id) == []
+    await crew.runner.close_idle_editors()
+    assert told(store, third.id) == ["There's room for a Unity Editor now: ask for yours with open_unity_editor."]
+    await crew.runner.shutdown()
+
+
 async def test_waiting_for_its_editor_isnt_reported_as_finished_and_the_wait_survives_a_restart(store, unity_crew):
     crew, work, open_now, said, repo = unity_crew
     lead = store.create_task("lead", "lead", status=Status.IDLE)
     task = work()
     store.update_task(task.id, parent_id=lead.id, turns=1)
-    crew.runner.open_unity_editor(task.id)
+    await crew.runner.open_unity_editor(task.id)
     crew.runner._report_up(task.id)  # its turn ended, to wait for Unity
     assert not [e for e in store.events(lead.id) if e.kind == "message" and e.data["from"] == "crewbots"]
     assert store.chief_events() == []  # nor to the chief
@@ -202,7 +250,7 @@ async def test_waiting_for_its_editor_isnt_reported_as_finished_and_the_wait_sur
 async def test_an_editor_told_before_connections_were_recorded_isnt_watched_again(store, unity_crew):
     crew, work, open_now, said, repo = unity_crew
     task = work()
-    crew.runner.open_unity_editor(task.id)
+    await crew.runner.open_unity_editor(task.id)
     for watch in list(crew.runner._editor_watches):
         watch.cancel()
     await wait_until(lambda: not crew.runner._editor_watches)
@@ -220,8 +268,8 @@ async def test_an_editor_on_a_folder_of_no_task_of_ours_is_left_alone(store, uni
     await crew.runner.close_idle_editors()
     assert open_now == {stranger: 999}
     first, second = work(), work()
-    crew.runner.open_unity_editor(first.id)
-    assert "Opening Unity" in crew.runner.open_unity_editor(second.id)  # it doesn't count against ours
+    await crew.runner.open_unity_editor(first.id)
+    assert "Opening Unity" in await crew.runner.open_unity_editor(second.id)  # it doesn't count against ours
     await crew.runner.shutdown()
 
 
@@ -239,7 +287,7 @@ async def test_the_server_marked_unity_is_the_one_asked_whatever_its_name(store,
 
     monkeypatch.setattr(unity, "connected", connected)
     task = work()
-    crew.runner.open_unity_editor(task.id)
+    await crew.runner.open_unity_editor(task.id)
     await wait_until(lambda: told(store, task.id))
     assert set(asked) == {"http://editor.test/mcp"}
     await crew.runner.shutdown()

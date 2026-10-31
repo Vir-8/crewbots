@@ -1,6 +1,8 @@
 """Closing work without merging it: a merge proposal withdrawn, a task dropped on purpose, a task's folder removed (by
 cleanup.py)."""
 
+import asyncio
+
 from crewbots.runner.common import NotAllowed
 from crewbots.store import Status, Task
 
@@ -59,7 +61,7 @@ class Closing:
         if task.active or task.status in (Status.HELD, Status.NEEDS_INPUT, Status.INTERRUPTED):  # nor picked up again
             task = await self.cancel(task_id)
         self._mark_dropped(task, caller.bot, reason)
-        return self._drop_checkout(self.store.get_task(task_id))
+        return await asyncio.to_thread(self._drop_checkout, self.store.get_task(task_id))
 
     def _mark_dropped(self, task: Task, by: str, reason: str) -> None:
         self._set(task.id, merge_state="dropped")

@@ -5,6 +5,7 @@ and no token. One that can't (Codex) gets the same tools from `crewbots.mcp_serv
 API with a session token. Either way the runner decides what the task may do.
 """
 
+import asyncio
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -266,7 +267,7 @@ class CrewTools:
                     task = await r.propose_merge_off_loop(me, args["task_id"], args["summary"])
                     return merge_text(task.id, task.merge_state, task.merged_commit, r.merged_details(task))
                 case "withdraw_merge":
-                    task = r.withdraw_merge(args["task_id"], args["reason"], parent_id=me)
+                    task = await asyncio.to_thread(r.withdraw_merge, args["task_id"], args["reason"], parent_id=me)
                     return f"Withdrew the merge proposal for {task.id}."
                 case "drop_task":
                     return dropped_text(await r.drop(args["task_id"], args["reason"], by_task=me))
@@ -293,7 +294,7 @@ class CrewTools:
                                       check=args["check"])
                     return remembered_text({"title": note.title, "path": str(note.path), "earlier": earlier})
                 case "open_unity_editor":
-                    return r.open_unity_editor(me)
+                    return await r.open_unity_editor(me)
                 case "release_app":
                     return r.release_app(me)
                 case "next_check":

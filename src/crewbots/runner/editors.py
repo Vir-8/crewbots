@@ -42,7 +42,7 @@ class Editors:
         """Whether the task waits for an Editor, or for room to open one, or for a shared app: each wakes it."""
         return task_id in self._editor_opening or task_id in self._editor_waits or self._waiting_for_app(task_id)
 
-    def open_unity_editor(self, task_id: str) -> str:
+    async def open_unity_editor(self, task_id: str) -> str:
         task = self.store.get_task(task_id)
         folder = self._unity_folder(task)
         if folder in (open_now := self._crew_editors()):
@@ -59,7 +59,7 @@ class Editors:
                 return (f"{MAX_EDITORS} Unity Editors are open for other tasks ({', '.join(f.name for f in open_now)}), "
                         "the most at once. Do what doesn't need one, or end your turn: crewbots tells you when there's "
                         "room, and you ask again.")
-            unity.close_editor(open_now[idle[0]])
+            await asyncio.to_thread(unity.close_editor, open_now[idle[0]])  # it waits up to 10s for Unity to quit
         unity.open_editor(app, folder)
         self._record(task_id, kind="unity_editor", data={"opened": str(folder)})
         url = self._unity_mcp_url(task)
@@ -158,11 +158,10 @@ class Editors:
                    for t in self.store.tasks_in(str(folder)))
 
     def close_editor(self, folder: Path) -> None:
-        """Before a worktree goes: its Editor, if one is open on it."""
+        """Before a worktree goes: its Editor, if one is open on it. This waits for Unity to quit, so it runs in a thread
+        when the event loop is the caller; a task waiting for room hears of it on the scheduler's next tick."""
         if pid := self._crew_editors().get(folder.resolve()):
             unity.close_editor(pid)
-            if self._editor_waits:
-                self._editor_room(unity.editors())
 
     async def close_idle_editors(self) -> None:
         """On the scheduler's tick: Editors no task has used for EDITOR_IDLE_S. Only a bot with a Unity MCP is offered
@@ -171,7 +170,7 @@ class Editors:
             return
         for folder, pid in self._crew_editors(await asyncio.to_thread(unity.editors)).items():
             if not self._editor_in_use(folder):
-                unity.close_editor(pid)
+                await asyncio.to_thread(unity.close_editor, pid)
         if self._editor_waits:
             self._editor_room(await asyncio.to_thread(unity.editors))
 
