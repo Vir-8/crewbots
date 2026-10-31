@@ -161,7 +161,8 @@ class Editors:
         """Before a worktree goes: its Editor, if one is open on it."""
         if pid := self._crew_editors().get(folder.resolve()):
             unity.close_editor(pid)
-            self._editor_room()
+            if self._editor_waits:
+                self._editor_room(unity.editors())
 
     async def close_idle_editors(self) -> None:
         """On the scheduler's tick: Editors no task has used for EDITOR_IDLE_S. Only a bot with a Unity MCP is offered
@@ -171,10 +172,12 @@ class Editors:
         for folder, pid in self._crew_editors(await asyncio.to_thread(unity.editors)).items():
             if not self._editor_in_use(folder):
                 unity.close_editor(pid)
-        self._editor_room()
+        if self._editor_waits:
+            self._editor_room(await asyncio.to_thread(unity.editors))
 
-    def _editor_room(self) -> None:
-        if self._editor_waits and len(self._crew_editors()) < MAX_EDITORS:
+    def _editor_room(self, running: dict[Path, int]) -> None:
+        """The first task waiting for room to open an Editor is told, if the `running` Editors leave some."""
+        if len(self._crew_editors(running)) < MAX_EDITORS:
             task_id = self._editor_waits.pop(0)
             try:
                 self.send(task_id, "There's room for a Unity Editor now: ask for yours with open_unity_editor.",

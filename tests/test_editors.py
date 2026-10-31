@@ -1,6 +1,7 @@
 """Unity Editors crewbots opens on a task's own worktree, tells it of once connected, and closes when the work is done
 with. Unity's processes and the Unity MCP are stood in for."""
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -154,6 +155,24 @@ async def test_at_most_two_at_once_an_idle_one_makes_room_and_one_closes_when_it
     crew.runner.close_editor(Path(second.worktree_path))  # its worktree is going
     assert list(open_now) == [Path(third.worktree_path).resolve()]
     assert "Opening Unity" in crew.runner.open_unity_editor(fourth.id)
+    await crew.runner.shutdown()
+
+
+async def test_the_tick_looks_for_room_off_the_event_loop(store, unity_crew, monkeypatch):
+    crew, work, open_now, said, repo = unity_crew
+    first, second, third = work(), work(), work()
+    crew.runner.open_unity_editor(first.id)
+    crew.runner.open_unity_editor(second.id)
+    crew.runner.open_unity_editor(third.id)  # it waits for room
+
+    def listed():
+        with pytest.raises(RuntimeError):  # no loop runs in this thread
+            asyncio.get_running_loop()
+        return dict(open_now)
+
+    monkeypatch.setattr(unity, "editors", listed)
+    await crew.runner.close_idle_editors()
+    assert told(store, third.id) == []  # both are in use: no room yet
     await crew.runner.shutdown()
 
 
