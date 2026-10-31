@@ -1,8 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
-import { api, bridge } from "./api";
+import { describe, expect, it } from "vitest";
 import type { ModelChange } from "./api-types";
-import { type Draft, type DraftAction, NO_CHANGES, apply, byTeam, draftReducer, planned, setupOf } from "./crewModels";
-import { bots as demoBots } from "./preview/demo/make";
+import { type Draft, type DraftAction, NO_CHANGES, byTeam, draftReducer, planned, setupOf } from "./crewModels";
 import type { Bot, Models } from "./types";
 
 const models: Models = {
@@ -39,8 +37,15 @@ describe("the Models view's draft", () => {
     // A move to Claude starts from its defaults, so engineer-1's Codex effort goes; engineer-3 was already there.
     expect(draft.changes).toEqual({
       "engineer-1": { backend: "claude", model: "sonnet", effort: null },
-      "engineer-2": { backend: "claude", model: "sonnet" },
+      "engineer-2": { backend: "claude", model: "sonnet", effort: null },
     });
+  });
+
+  it("names the effort of a bot moved to another CLI, even one it had before, so it isn't reset", () => {
+    const draft = run([set(["lead"], { backend: "codex" }), set(["lead"], { effort: "high" })]);
+    expect(draft.changes).toEqual({ lead: { backend: "codex", model: null, effort: "high" } });
+    const preset = { name: "Codex high", bots: { lead: { backend: "codex", model: null, effort: "high" } } };
+    expect(run([{ kind: "try", bots: crew, preset }]).changes).toEqual(draft.changes);
   });
 
   it("fills only a preset's differences, and says which of its bots are gone", () => {
@@ -79,18 +84,5 @@ describe("the Models view's draft", () => {
     const draft = run([set(team("Engineers"), { backend: "claude" }), { kind: "discard" }]);
     expect(crew.map((b) => planned(b, draft))).toEqual(crew.map(setupOf));
     expect(draft.trying).toBeNull();
-  });
-
-  it("applies in one call with only the changes", async () => {
-    const request = vi.spyOn(bridge, "request");
-    const draft = run([
-      { kind: "set", bots: demoBots, models, names: ["engineer", "reviewer"], change: { backend: "claude" } },
-      { kind: "set", bots: demoBots, models, names: ["engineer"], change: { model: "sonnet" } },
-    ]);
-    expect(await apply(draft)).toEqual({ changed: ["engineer"], skipped: [] });
-    expect(request).toHaveBeenCalledTimes(1);
-    expect(request).toHaveBeenCalledWith("PUT", "/bots/models", { bots: { engineer: { backend: "claude", model: "sonnet" } } });
-    expect((await api.bots()).find((b) => b.name === "engineer")).toMatchObject({ backend: "claude", model: "sonnet", team: "Engineers" });
-    request.mockRestore();
   });
 });

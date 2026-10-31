@@ -3,13 +3,14 @@
 
 import type { ReactNode } from "react";
 import type { ModelChange } from "../api-types";
-import { type Draft, givesUp, planned, setupOf } from "../crewModels";
+import { type Draft, type Setup, givesUp, planned, setupOf } from "../crewModels";
 import type { Crew } from "../state";
 import type { Bot, Model } from "../types";
 import { Avatar, labelOf } from "./Avatar";
-import { BACKEND_LABEL, EFFORT_LABEL, EffortOptions, ModelOptions, backendFamily, chosenModel, defaultName } from "./ModelPicker";
+import { BACKEND_LABEL, EFFORT_LABEL, EffortOptions, ModelOptions, backendFamily, blankEffort, chosenModel, defaultName } from "./ModelPicker";
 
 const MIXED = "*"; // a team's select when its bots differ: no backend, model or effort is called that
+const EACH_OWN = "Each bot's own";
 
 type Family = keyof typeof BACKEND_LABEL;
 type Change = (names: string[], change: ModelChange) => void;
@@ -18,24 +19,8 @@ export function TeamRow(props: { crew: Crew; team: string | null; bots: Bot[]; d
   const { crew, bots, draft } = props;
   const title = props.team ?? "No team";
   const names = bots.map((b) => b.name);
-  const was = bots.map(setupOf);
-  const next = bots.map((b) => planned(b, draft));
-  const family = shared(next.map((s) => backendFamily(s.backend)));
-  const model = family === MIXED ? MIXED : shared(next.map((s) => s.model ?? ""));
-  const effort = shared(next.map((s) => s.effort ?? ""));
-  const list = family === MIXED ? [] : listOf(crew, family);
-  const chosen = model === MIXED ? undefined : chosenModel(list, model || null);
-  // Only the efforts every bot's model takes can be set for all of them.
-  const offered = next.map((s) => chosenModel(listOf(crew, backendFamily(s.backend)), s.model)?.efforts ?? []);
-  const efforts = offered.reduce((a, b) => a.filter((e) => b.includes(e)));
-  const ownEfforts = offered.some((list) => list.length > 0); // but none that all of them take
-  const labels = (setups: typeof was) => ({
-    backend: label(shared(setups.map((s) => backendFamily(s.backend))), (f) => BACKEND_LABEL[f]),
-    model: label(shared(setups.map((s) => modelName(listOf(crew, backendFamily(s.backend)), s.model))), (m) => m),
-    effort: label(shared(setups.map((s) => s.effort ?? "")), effortName),
-  });
-  const before = labels(was);
-  const after = labels(next);
+  const before = teamOf(crew, bots.map(setupOf)).words;
+  const { family, model, effort, list, chosen, efforts, eachOwn, words: after } = teamOf(crew, bots.map((b) => planned(b, draft)));
   return (
     <div className="models-row team">
       <span className="models-name">
@@ -53,9 +38,9 @@ export function TeamRow(props: { crew: Crew; team: string | null; bots: Bot[]; d
         </select>
       </Cell>
       <Cell was={before.effort !== after.effort ? before.effort : null}>
-        <select value={effort} disabled={crew.models !== null && efforts.length === 0 && effort === ""} title={efforts.length === 0 && ownEfforts ? "Their models take different reasoning settings: set each bot's" : undefined} aria-label={`${title} reasoning`} onChange={(e) => props.set(names, { effort: e.target.value || null })}>
+        <select value={effort} disabled={crew.models !== null && efforts.length === 0 && (effort === "" || eachOwn)} title={eachOwn ? "Their models take different reasoning settings: set each bot's" : undefined} aria-label={`${title} reasoning`} onChange={(e) => props.set(names, { effort: e.target.value || null })}>
           {effort === MIXED && <option value={MIXED} disabled>Mixed</option>}
-          {efforts.length === 0 && ownEfforts ? <option value="">Each bot's own</option> : <EffortOptions crew={crew} chosen={chosen} efforts={efforts} effort={effort === MIXED ? null : effort || null} />}
+          {eachOwn ? <option value="">{EACH_OWN}</option> : <EffortOptions crew={crew} chosen={chosen} efforts={efforts} effort={effort === MIXED ? null : effort || null} />}
         </select>
       </Cell>
     </div>
@@ -73,6 +58,8 @@ export function BotRow(props: { crew: Crew; bot: Bot; draft: Draft; picked: bool
   const efforts = chosen?.efforts ?? [];
   const wasModel = modelName(listOf(crew, wasFamily), was.model);
   const model = modelName(list, next.model);
+  const wasEffort = effortName(crew, was);
+  const effort = effortName(crew, next);
   const name = labelOf(bot.name);
   return (
     <div className="models-row bot">
@@ -90,7 +77,7 @@ export function BotRow(props: { crew: Crew; bot: Bot; draft: Draft; picked: bool
           <ModelOptions crew={crew} list={list} model={next.model} />
         </select>
       </Cell>
-      <Cell was={was.effort !== next.effort ? effortName(was.effort ?? "") : null}>
+      <Cell was={wasEffort !== effort ? wasEffort : null}>
         <select value={next.effort ?? ""} disabled={crew.models !== null && efforts.length === 0 && !next.effort} aria-label={`${name} reasoning`} onChange={(e) => props.set([bot.name], { effort: e.target.value || null })}>
           <EffortOptions crew={crew} chosen={chosen} efforts={efforts} effort={next.effort} />
         </select>
@@ -107,6 +94,25 @@ function Cell({ was, note, children }: { was: string | null; note?: string | nul
       {note && <span className="models-note">{note}</span>}
     </span>
   );
+}
+
+/** What a team's selects show when its bots are set like this, and those choices in words. */
+function teamOf(crew: Crew, setups: Setup[]) {
+  const family = shared(setups.map((s) => backendFamily(s.backend)));
+  const model = family === MIXED ? MIXED : shared(setups.map((s) => s.model ?? ""));
+  const effort = shared(setups.map((s) => s.effort ?? ""));
+  const list = family === MIXED ? [] : listOf(crew, family);
+  const chosen = model === MIXED ? undefined : chosenModel(list, model || null);
+  // Only the efforts every bot's model takes can be set for all of them.
+  const offered = setups.map((s) => chosenModel(listOf(crew, backendFamily(s.backend)), s.model)?.efforts ?? []);
+  const efforts = offered.reduce((a, b) => a.filter((e) => b.includes(e)));
+  const eachOwn = efforts.length === 0 && offered.some((o) => o.length > 0);
+  const words = {
+    backend: label(family, (f) => BACKEND_LABEL[f]),
+    model: label(shared(setups.map((s) => modelName(listOf(crew, backendFamily(s.backend)), s.model))), (m) => m),
+    effort: label(effort, (e) => (e ? EFFORT_LABEL[e] ?? e : eachOwn ? EACH_OWN : blankEffort(crew, chosen, efforts))),
+  };
+  return { family, model, effort, list, chosen, efforts, eachOwn, words };
 }
 
 function BackendSelect({ value, label, onChange }: { value: string; label: string; onChange: (backend: Family) => void }) {
@@ -140,6 +146,9 @@ function modelName(list: Model[], model: string | null): string {
   return defaultName(list) ? `Default (${defaultName(list)})` : "Default";
 }
 
-function effortName(effort: string): string {
-  return effort ? EFFORT_LABEL[effort] ?? effort : "Default";
+/** A bot's effort as its select names it. */
+function effortName(crew: Crew, setup: Setup): string {
+  if (setup.effort) return EFFORT_LABEL[setup.effort] ?? setup.effort;
+  const chosen = chosenModel(listOf(crew, backendFamily(setup.backend)), setup.model);
+  return blankEffort(crew, chosen, chosen?.efforts ?? []);
 }

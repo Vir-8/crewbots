@@ -520,15 +520,16 @@ Each step leaves the system working.
   Codex), so the daemon asks when it starts and keeps the answers: an answer over two minutes old is served at once
   while a new one is asked for behind it, one ask per CLI at a time, and a failed ask keeps the last good answer.
 - **Editing the crew** (`cards.py`): role cards and routines are rewritten from the app with the frontmatter it
-  doesn't edit kept, after the crew's own parser accepts the new text, and atomically. YAML comments don't survive.
+  doesn't edit kept, after the crew's own parser accepts the new text, and atomically. YAML comments survive unless
+  a list or map is changed, when the frontmatter is written out whole.
   A bot's handle stays fixed (tasks and @mentions use it); its display name, which @mentions also match, can change.
   A card's `team` (Engineers, say) only groups bots on the Crew page: nothing follows from it.
   Several bots' backend, model, effort and team change in one call (`PUT /bots/models`, the Crew page's Models
   view), all or nothing: every card is checked before any is written, and if the crew then doesn't load, every one goes
   back as it was. A model change that leaves an effort the new model doesn't offer clears it, as the app's picker does.
   Presets (`presets.py`) are the crew's models saved by name, in `presets.json` in the crew's folder, which the user can
-  read and edit; a fresh crew has none. Applying one is that same call for the bots it names, skipping any that are
-  gone, and the one in use is the first the crew matches now. A reset keeps them.
+  read and edit; a fresh crew has none. The app applies one by trying it in the Models view's draft, which skips the bots
+  that are gone, and then sends that same call. Every preset the crew matches now is in use. A reset keeps them.
 
 ## Performance budgets
 

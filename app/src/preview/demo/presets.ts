@@ -16,7 +16,7 @@ const presets: PresetOut[] = [
 ];
 
 export function presetsRequest(method: string, pathname: string, parts: string[], body: any) {
-  if (method === "PUT" && pathname === "/bots/models") return edit(body.bots, []);
+  if (method === "PUT" && pathname === "/bots/models") return edit(body.bots);
   if (parts[0] !== "presets") return null;
   if (method === "GET" && parts.length === 1) return listing();
   const name = decodeURIComponent(parts[1] ?? "").trim();
@@ -35,26 +35,22 @@ export function presetsRequest(method: string, pathname: string, parts: string[]
     presets.splice(at, 1);
     return listing();
   }
-  if (method === "POST" && parts[2] === "apply") {
-    const named = Object.entries(presets[at].bots);
-    return edit(Object.fromEntries(named.filter(([bot]) => bots.some((b) => b.name === bot))), named.map(([bot]) => bot).filter((bot) => !bots.some((b) => b.name === bot)));
-  }
   return null;
 }
 
 function listing() {
   const current = now();
-  const inUse = presets.find((p) => {
+  const inUse = presets.filter((p) => {
     const present = Object.keys(p.bots).filter((bot) => bot in current);
     return present.length > 0 && present.every((bot) => same(p.bots[bot], current[bot]));
   });
-  return ok({ presets: structuredClone(presets), in_use: inUse?.name ?? null });
+  return ok({ presets: structuredClone(presets), in_use: inUse.map((p) => p.name) });
 }
 
 const same = (a: PresetBot, b: PresetBot) => a.backend === b.backend && (a.model ?? null) === (b.model ?? null) && (a.effort ?? null) === (b.effort ?? null);
 
 /** Every change checked before any is made, as the daemon does; a move to another CLI starts from its defaults. */
-function edit(changes: Record<string, ModelChange>, skipped: string[]) {
+function edit(changes: Record<string, ModelChange>) {
   for (const [name, change] of Object.entries(changes)) {
     if (!bots.some((b) => b.name === name)) return refused(422, `no bot named ${name}`);
     if (change.effort && !EFFORTS.includes(change.effort)) return refused(422, `${name}.md: effort is one of ${EFFORTS.join(", ")}, not '${change.effort}'`);
@@ -75,5 +71,5 @@ function edit(changes: Record<string, ModelChange>, skipped: string[]) {
     bots[at] = next;
     changed.push(name);
   }
-  return ok({ changed, skipped });
+  return ok({ changed });
 }

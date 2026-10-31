@@ -85,7 +85,6 @@ class ModelChanges(BaseModel):
 
 class ModelsChanged(BaseModel):
     changed: list[str]  # the bots whose cards changed
-    skipped: list[str] = []  # bots a preset names that are gone
 
 class ModelOut(BaseModel):
     id: str

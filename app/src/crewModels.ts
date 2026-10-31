@@ -1,8 +1,7 @@
 // The Models view's draft: changes to the crew's backends, models, efforts and teams, made in its table or by trying a
 // preset. Nothing is saved until Apply sends the draft in one call, which the daemon takes all or nothing.
 
-import { api } from "./api";
-import type { ModelChange, ModelsChanged, PresetBot, PresetOut } from "./api-types";
+import type { ModelChange, PresetBot, PresetOut } from "./api-types";
 import { backendFamily, keptEffort } from "./components/ModelPicker";
 import { ACCESS } from "./components/Profile";
 import type { Bot, Models } from "./types";
@@ -54,11 +53,6 @@ export function draftReducer(draft: Draft, action: DraftAction): Draft {
   }
 }
 
-/** Sends the draft: one call with only what changes. */
-export function apply(draft: Draft): Promise<ModelsChanged> {
-  return api.editModels(draft.changes);
-}
-
 /** The crew by team, as the draft would leave it: named teams in alphabetical order, then the bots in none. */
 export function byTeam(bots: Bot[], draft: Draft): { team: string | null; bots: Bot[] }[] {
   const teams = new Map<string | null, Bot[]>();
@@ -108,10 +102,12 @@ function fromPreset(setup: PresetBot): Omit<Setup, "team"> {
 
 function difference(bot: Bot, setup: Setup): ModelChange {
   const now = setupOf(bot);
+  // A move to another CLI names its model and effort too, or the daemon would start both from that CLI's defaults.
+  const moved = backendFamily(setup.backend) !== backendFamily(now.backend);
   const change: ModelChange = {};
   if (setup.backend !== now.backend) change.backend = setup.backend;
-  if (setup.model !== now.model) change.model = setup.model;
-  if (setup.effort !== now.effort) change.effort = setup.effort;
+  if (moved || setup.model !== now.model) change.model = setup.model;
+  if (moved || setup.effort !== now.effort) change.effort = setup.effort;
   if (setup.team !== now.team) change.team = setup.team;
   return change;
 }

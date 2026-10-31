@@ -1,6 +1,6 @@
 """Presets: the crew's models as they were, by name, to go back to ("Everyday", "Codex is low"). Each is a backend,
 model and effort per bot, kept in the crew's folder as presets.json, which you can read and edit too. A fresh crew has
-none. Applying one changes the role cards of the bots it names, in one go (`cards.save_cards`), and no others.
+none. The app applies one as a draft of the bots it names, which it sends as one change (`PUT /bots/models`).
 """
 
 import json
@@ -38,8 +38,8 @@ def now(crew: Crew) -> dict[str, Setup]:
     return {b.name: {"backend": b.backend, "model": b.model, "effort": b.effort} for b in crew.bots.values()}
 
 
-def save(crew: Crew, name: str, bots: dict[str, dict[str, Any]]) -> str:
-    """Saves a preset of these bots' setups, or replaces the one of that name. Gives its name, trimmed."""
+def save(crew: Crew, name: str, bots: dict[str, dict[str, Any]]) -> None:
+    """Saves a preset of these bots' setups, or replaces the one of that name."""
     name = name.strip()
     if not name or len(name) > NAME_LENGTH:
         raise CrewError(f"a preset's name is 1 to {NAME_LENGTH} characters")
@@ -56,7 +56,6 @@ def save(crew: Crew, name: str, bots: dict[str, dict[str, Any]]) -> str:
     presets = load(crew.home)
     presets[name] = setups
     _write(crew.home, presets)
-    return name
 
 
 def delete(home: Path, name: str) -> None:
@@ -66,20 +65,11 @@ def delete(home: Path, name: str) -> None:
     _write(home, presets)
 
 
-def in_use(presets: dict[str, dict[str, Setup]], crew: Crew) -> str | None:
-    """The first preset the crew matches now: applying it would change nothing."""
+def in_use(presets: dict[str, dict[str, Setup]], crew: Crew) -> list[str]:
+    """Every preset the crew matches now, for the bots it names that are still in the crew."""
     current = now(crew)
-    for name, bots in presets.items():
-        present = [bot for bot in bots if bot in current]
-        if present and all(bots[bot] == current[bot] for bot in present):
-            return name
-    return None
-
-
-def changes(bots: dict[str, Setup], crew: Crew) -> tuple[dict[str, Setup], list[str]]:
-    """What applying a preset of these bots asks: the setups of the bots still in the crew, and the ones that are gone."""
-    return ({bot: setup for bot, setup in bots.items() if bot in crew.bots},
-            [bot for bot in bots if bot not in crew.bots])
+    return [name for name, bots in presets.items()
+            if (present := [bot for bot in bots if bot in current]) and all(bots[bot] == current[bot] for bot in present)]
 
 
 def _setup(raw: dict[str, Any]) -> Setup:

@@ -51,6 +51,21 @@ def test_a_new_bot_needs_a_handle_of_its_own(home):
         cards.save_card(home, "Big Bot", {"description": "x"}, "", create=True)
 
 
+def test_a_rewritten_card_keeps_its_mode_and_a_new_one_gets_a_new_files(home):
+    path = home / "bots" / "critic.md"
+    path.chmod(0o640)
+    plain = home / "plain.txt"
+    plain.write_text("")
+
+    cards.save_cards(home, {"critic": {"model": "gpt-6"}, "reviewer": {"effort": "high"}})
+    cards.save_card(home, "designer", {"description": "Draws the UI."}, "", create=True)
+
+    def mode(p):
+        return p.stat().st_mode & 0o777
+    assert mode(path) == 0o640 and mode(home / "bots" / "reviewer.md") == mode(plain)
+    assert mode(home / "bots" / "designer.md") == mode(plain)
+
+
 def test_routines_are_edited_created_and_deleted(home):
     cards.save_routine(home, "standup", {"enabled": False, "schedule": "30 8 * * 1-5"}, None)
     assert cards.routine(home, "standup") | {"goal": ""} == {

@@ -45,24 +45,28 @@ it("turns on a proposed routine and runs it as a test, or declines it", async ()
   expect((await list()).map((r) => r.name)).not.toContain("retro");
 });
 
-it("changes several bots' models at once, or none of them, and applies a preset", async () => {
-  type Listed = { presets: { name: string }[]; in_use: string | null };
+it("changes several bots' models at once, or none of them, and marks every preset the crew matches", async () => {
+  type Listed = { presets: { name: string }[]; in_use: string[] };
   const presets = async () => (await previewBridge.request("GET", "/presets")).data as Listed;
   const engineer = async () => ((await previewBridge.request("GET", "/bots")).data as { name: string }[]).find((b) => b.name === "engineer");
-  expect(await presets()).toMatchObject({ presets: [{ name: "Everyday" }, { name: "Codex is low" }], in_use: "Everyday" });
+  expect(await presets()).toMatchObject({ presets: [{ name: "Everyday" }, { name: "Codex is low" }], in_use: ["Everyday"] });
 
   const bad = await previewBridge.request("PUT", "/bots/models", { bots: { engineer: { backend: "claude" }, critic: { effort: "enormous" } } });
   expect(bad.status).toBe(422);
   expect(await engineer()).toMatchObject({ backend: "codex" });
 
   const good = await previewBridge.request("PUT", "/bots/models", { bots: { engineer: { backend: "claude", model: "sonnet" }, critic: { team: "Critics" } } });
-  expect(good.data).toEqual({ changed: ["engineer", "critic"], skipped: [] });
+  expect(good.data).toEqual({ changed: ["engineer", "critic"] });
   expect(await engineer()).toMatchObject({ backend: "claude", model: "sonnet", team: "Engineers" });
-  expect((await presets()).in_use).toBeNull();
+  expect((await presets()).in_use).toEqual([]);
 
-  expect((await previewBridge.request("POST", "/presets/Everyday/apply")).data).toEqual({ changed: ["engineer"], skipped: [] });
+  const back = await previewBridge.request("PUT", "/bots/models", { bots: { engineer: { backend: "codex", model: null, effort: null } } });
+  expect(back.data).toEqual({ changed: ["engineer"] });
   expect(await engineer()).toMatchObject({ backend: "codex", model: null });
-  expect((await presets()).in_use).toBe("Everyday");
+  expect((await presets()).in_use).toEqual(["Everyday"]);
+  await previewBridge.request("PUT", "/presets/Same%20again");
+  expect((await presets()).in_use).toEqual(["Everyday", "Same again"]);
+  await previewBridge.request("DELETE", "/presets/Same%20again");
 });
 
 it("saves the crew as a preset, and deletes it", async () => {

@@ -63,7 +63,7 @@ export function EffortOptions(props: { crew: Crew; chosen: Model | undefined; ef
   const { crew, chosen, efforts, effort } = props;
   return (
     <>
-      <option value="">{efforts.length === 0 && crew.models ? "No reasoning setting" : `Default effort${chosen?.default_effort ? ` (${EFFORT_LABEL[chosen.default_effort] ?? chosen.default_effort})` : ""}`}</option>
+      <option value="">{blankEffort(crew, chosen, efforts)}</option>
       {efforts.map((e) => (
         <option key={e} value={e}>
           {EFFORT_LABEL[e] ?? e}
@@ -72,6 +72,12 @@ export function EffortOptions(props: { crew: Crew; chosen: Model | undefined; ef
       {effort && !efforts.includes(effort) && <option value={effort}>{EFFORT_LABEL[effort] ?? effort}</option>}
     </>
   );
+}
+
+/** What an effort select calls no effort: the model's default, or nothing to set when it takes none. */
+export function blankEffort(crew: Crew, chosen: Model | undefined, efforts: string[]): string {
+  if (efforts.length === 0 && crew.models) return "No reasoning setting";
+  return `Default effort${chosen?.default_effort ? ` (${EFFORT_LABEL[chosen.default_effort] ?? chosen.default_effort})` : ""}`;
 }
 
 /** The model a bot runs on: the one it names, or the CLI's default when it names none. */

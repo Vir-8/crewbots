@@ -138,7 +138,7 @@ def test_the_presets_of_the_crews_models_stay(home):
     reset.reset(home, WHEN)
 
     assert (home / presets.FILE).read_text() == before
-    assert presets.in_use(presets.load(home), crew_module.load(home)) == "Everyday"
+    assert presets.in_use(presets.load(home), crew_module.load(home)) == ["Everyday"]
 
 
 def test_then_the_chief_greets_the_user_again(home):

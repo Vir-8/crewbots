@@ -270,10 +270,19 @@
 }
 
 .models-name {
+  position: sticky; /* so a row's bot stays in view when the table scrolls sideways */
+  left: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 9px;
   min-width: 0;
+  align-self: stretch;
+  background: var(--bg);
+}
+
+.models-row.team .models-name {
+  background: var(--raised);
 }
 
 .models-row.bot .models-name {
@@ -322,7 +331,7 @@
 
 .models-was {
   padding-left: 9px;
-  color: var(--faint);
+  color: var(--soft);
   font-size: 11px;
   font-weight: 400;
   white-space: nowrap;

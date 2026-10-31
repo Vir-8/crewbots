@@ -2,12 +2,14 @@
 
 The files stay the source of truth, and what's written is exactly what the crew reads: every change is checked by
 the same parser the daemon uses before it replaces a file, so a bad edit is refused instead of breaking the crew.
-Frontmatter the app doesn't edit (a bot's MCP servers, say) is kept as it was. YAML comments are not.
+Frontmatter the app doesn't edit (a bot's MCP servers, say) is kept as it was, and so are YAML comments, unless a list or
+map is changed: then the frontmatter is written out again whole.
 """
 
 import os
 import re
-import tempfile
+import secrets
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -96,7 +98,7 @@ def model_fields(bot: Bot, change: dict[str, Any], listed: dict[str, list[dict[s
 def _edited(home: Path, name: str, fields: dict[str, Any], instructions: str | None, create: bool = False,
             ) -> tuple[Path, str | None]:
     """A role card with these changes, as its path and new text once the crew's parser accepts it; no text when they
-    change nothing, so the card isn't rewritten (which would drop its YAML comments)."""
+    change nothing, so the card isn't rewritten."""
     if create:
         if not HANDLE.fullmatch(name):
             raise CrewError("a bot's handle is lowercase letters, digits and dashes, starting with a letter: it's how "
@@ -119,9 +121,34 @@ def _edited(home: Path, name: str, fields: dict[str, Any], instructions: str | N
     new_body = instructions if instructions is not None else body
     if not create and meta == was and new_body.strip() == body.strip():
         return path, None
-    text = _compose(meta, new_body)
+    raw = None if create else _frontmatter(path.read_text(), was, meta)
+    text = _compose(meta, new_body) if raw is None else f"---{raw}---\n{new_body.strip()}\n"
     parse_card(text, default_name=name, source=path.name)  # refuse anything the crew couldn't load
     return path, text
+
+
+def _frontmatter(text: str, was: dict[str, Any], meta: dict[str, Any]) -> str | None:
+    """A card's frontmatter with only the lines of the plain values that changed rewritten, added or removed, so its
+    comments stay; None when a list or map changed or the lines can't be told apart."""
+    if (parts := frontmatter.split(text)) is None:
+        return None
+    lines = parts[0].split("\n")
+    for key in [k for k in {**was, **meta} if was.get(k) != meta.get(k)]:
+        if isinstance(was.get(key), (list, dict)) or isinstance(meta.get(key), (list, dict)):
+            return None
+        at = [i for i, line in enumerate(lines) if line.startswith(f"{key}:")]
+        if len(at) != int(key in was):
+            return None
+        new = [yaml.safe_dump({key: meta[key]}, allow_unicode=True, width=120).rstrip("\n")] if key in meta else []
+        if at:
+            lines[at[0]:at[0] + 1] = new
+        else:  # a new key goes after the others, ahead of any comments at the end
+            end = len(lines)
+            while end > 0 and (not lines[end - 1].strip() or lines[end - 1].startswith("#")):
+                end -= 1
+            lines[end:end] = new
+    raw = "\n".join(lines)
+    return raw if (yaml.safe_load(raw) or {}) == meta else None
 
 
 def routine(home: Path, name: str) -> dict[str, Any]:
@@ -171,11 +198,14 @@ def _compose(meta: dict[str, Any], body: str) -> str:
 
 
 def write(path: Path, text: str) -> None:
-    """All or nothing: the daemon reloads on change, and must never read half a file."""
+    """All or nothing: the daemon reloads on change, and must never read half a file. A file keeps its mode, and a new
+    one gets any new file's (mkstemp's would be 0600)."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".edit-")
-    with os.fdopen(fd, "w") as f:
+    tmp = path.with_name(f".edit-{secrets.token_hex(6)}")
+    with open(tmp, "x") as f:
         f.write(text)
+    if path.exists():
+        shutil.copymode(path, tmp)
     os.replace(tmp, path)
 
 

@@ -17,4 +17,4 @@ class PresetOut(BaseModel):
 
 class PresetsOut(BaseModel):
     presets: list[PresetOut]  # in the order they were first saved
-    in_use: str | None  # the preset the crew matches now, if any
+    in_use: list[str]  # the presets the crew matches now

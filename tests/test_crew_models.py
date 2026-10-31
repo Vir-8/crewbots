@@ -57,7 +57,8 @@ def test_one_call_changes_several_bots(api, home):
     bots = runner.crew.bots
     assert all((bots[e].backend, bots[e].model, bots[e].effort) == ("claude", "sonnet", "high") for e in ENGINEERS)
     assert bots["critic"].team == "Design" and bots["critic"].backend == "codex"
-    assert "model: sonnet" in (home / "bots" / "engineer-1.md").read_text()
+    card = (home / "bots" / "engineer-1.md").read_text()
+    assert "model: sonnet" in card and "# network: true" in card  # its comments are kept
     assert client.put("/bots/models", json={"bots": {"critic": {"team": "Design"}}}).json()["changed"] == []
 
 
@@ -109,41 +110,42 @@ def test_a_move_to_another_cli_starts_from_its_defaults(api, home):
 
     bot = runner.crew.bots["engineer-1"]
     assert (bot.backend, bot.model, bot.effort, bot.access) == ("antigravity", None, None, "workspace_write")
+    client.put("/bots/models", json={"bots": {"engineer-1": {"backend": "codex", "model": None, "effort": "high"}}})
+    assert runner.crew.bots["engineer-1"].effort == "high"  # unless the change names them
 
 
 def test_presets_are_saved_listed_with_the_one_in_use_and_deleted(api, home):
     client, runner = api
-    assert client.get("/presets").json() == {"presets": [], "in_use": None}  # none until the user saves one
+    assert client.get("/presets").json() == {"presets": [], "in_use": []}  # none until the user saves one
 
     saved = client.put("/presets/Everyday").json()  # the crew as it is now
-    assert saved["in_use"] == "Everyday" and saved["presets"][0]["bots"]["chief"] == {
+    assert saved["in_use"] == ["Everyday"] and saved["presets"][0]["bots"]["chief"] == {
         "backend": "claude", "model": "opus", "effort": None}
     low = {e: {"backend": "codex", "model": "gpt-6-mini", "effort": "low"} for e in ENGINEERS}
-    assert client.put("/presets/Codex is low", json={"bots": low}).json()["in_use"] == "Everyday"
+    assert client.put("/presets/Codex is low", json={"bots": low}).json()["in_use"] == ["Everyday"]
     assert json.loads((home / presets.FILE).read_text())["Codex is low"] == low  # a file the user can read
 
     client.put("/bots/models", json={"bots": low})
     listed = client.get("/presets").json()
-    assert [p["name"] for p in listed["presets"]] == ["Everyday", "Codex is low"] and listed["in_use"] == "Codex is low"
+    assert [p["name"] for p in listed["presets"]] == ["Everyday", "Codex is low"] and listed["in_use"] == ["Codex is low"]
     assert client.put("/presets/Odd", json={"bots": {"nobody": {}}}).status_code == 422
     assert client.put("/presets/" + "x" * 41).status_code == 422
+    both = client.put("/presets/Codex%2FClaude").json()  # the crew as it is now, which "Codex is low" matches too
+    assert both["presets"][-1]["name"] == "Codex/Claude" and both["in_use"] == ["Codex is low", "Codex/Claude"]
+    client.delete("/presets/Codex%2FClaude")
 
-    assert client.delete("/presets/Codex is low").json() == {"presets": listed["presets"][:1], "in_use": None}
+    assert client.delete("/presets/Codex is low").json() == {"presets": listed["presets"][:1], "in_use": []}
     assert client.delete("/presets/Codex is low").status_code == 404
 
 
-def test_applying_a_preset_skips_the_bots_that_are_gone(api, home):
+def test_a_preset_naming_a_bot_that_is_gone_is_in_use_when_the_rest_match(api, home):
     client, runner = api
     client.put("/presets/Everyday")
-    client.put("/bots/models", json={"bots": {"chief": {"model": "sonnet"}, "critic": {"model": "gpt-6-mini"}}})
     path = home / presets.FILE  # edited by hand: a bot that has since gone
     saved = json.loads(path.read_text())
     saved["Everyday"]["designer"] = {"backend": "claude", "model": "opus", "effort": None}
     path.write_text(json.dumps(saved))
 
-    applied = client.post("/presets/Everyday/apply").json()
-
-    assert sorted(applied["changed"]) == ["chief", "critic"] and applied["skipped"] == ["designer"]
-    assert runner.crew.bots["chief"].model == "opus" and runner.crew.bots["critic"].model is None
-    assert client.get("/presets").json()["in_use"] == "Everyday"
-    assert client.post("/presets/Nope/apply").status_code == 404
+    assert client.get("/presets").json()["in_use"] == ["Everyday"]
+    client.put("/bots/models", json={"bots": {"chief": {"model": "sonnet"}}})
+    assert client.get("/presets").json()["in_use"] == []

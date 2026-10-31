@@ -7,7 +7,7 @@ import { BACKEND_LABEL } from "../components/ModelPicker";
 import { BotRow, TeamRow } from "../components/ModelsRows";
 import { PLAN_COLOR, leftOf } from "../components/PlanCard";
 import { Problem } from "../components/ui";
-import { NO_CHANGES, apply, byTeam, draftReducer, planned, teamNames } from "../crewModels";
+import { NO_CHANGES, byTeam, draftReducer, planned, teamNames } from "../crewModels";
 import { usePlans } from "../plans";
 import type { Crew } from "../state";
 
@@ -33,7 +33,7 @@ export function CrewModels({ crew }: { crew: Crew }) {
     setApplying(true);
     setError(null);
     try {
-      await apply(draft);
+      await api.editModels(draft.changes);
       await crew.refresh();
       dispatch({ kind: "discard" });
       loadPresets();
@@ -74,7 +74,7 @@ export function CrewModels({ crew }: { crew: Crew }) {
         <div className="preset-row">
           <span className="faint">Preset</span>
           {presets?.presets.map((p) => {
-            const inUse = presets.in_use === p.name;
+            const inUse = presets.in_use.includes(p.name);
             return (
               <span key={p.name} className={`choice preset ${draft.trying === p.name ? "on" : ""} ${inUse ? "in-use" : ""}`}>
                 <button onClick={() => dispatch({ kind: "try", bots: crew.bots, preset: p })} title={inUse ? "In use: the crew is set like this now" : `Try “${p.name}” in the table`}>
@@ -95,9 +95,9 @@ export function CrewModels({ crew }: { crew: Crew }) {
       {count > 0 && (
         <div className="models-draft">
           <span className="grow">
-            <strong>{draft.trying ? `Trying “${draft.trying}”:` : bots(count)}</strong>
+            <strong>{draft.trying ? `Trying “${draft.trying}”:` : botsChange(count)}</strong>
             <span className="models-draft-detail">
-              {draft.trying ? ` ${bots(count)}, shown below.` : ", shown below."} Nothing is saved until you apply.
+              {draft.trying ? ` ${botsChange(count)}, shown below.` : ", shown below."} Nothing is saved until you apply.
               {draft.gone.length > 0 && ` It names ${draft.gone.join(", ")}, no longer in the crew, so ${draft.gone.length === 1 ? "that one is" : "those are"} skipped.`}
             </span>
           </span>
@@ -114,17 +114,17 @@ export function CrewModels({ crew }: { crew: Crew }) {
 
       <div className="models-table">
         <div className="models-row head">
-          <span>Team / bot</span>
+          <span className="models-name">Team / bot</span>
           <span>Runs on</span>
           <span>Model</span>
           <span>Reasoning</span>
         </div>
-        {byTeam(crew.bots, draft).map(({ team, bots: members }) => {
-          const names = members.map((b) => b.name);
+        {byTeam(crew.bots, draft).map(({ team, bots }) => {
+          const names = bots.map((b) => b.name);
           return (
             <Fragment key={team ?? ""}>
-              <TeamRow crew={crew} team={team} bots={members} draft={draft} picked={names.every((n) => picked.includes(n))} onPick={() => pick(names)} set={set} />
-              {members.map((b) => (
+              <TeamRow crew={crew} team={team} bots={bots} draft={draft} picked={names.every((n) => picked.includes(n))} onPick={() => pick(names)} set={set} />
+              {bots.map((b) => (
                 <BotRow key={b.name} crew={crew} bot={b} draft={draft} picked={picked.includes(b.name)} onPick={() => pick([b.name])} set={set} />
               ))}
             </Fragment>
@@ -136,7 +136,7 @@ export function CrewModels({ crew }: { crew: Crew }) {
   );
 }
 
-const bots = (n: number) => (n === 1 ? "1 bot changes" : `${n} bots change`);
+const botsChange = (n: number) => (n === 1 ? "1 bot changes" : `${n} bots change`);
 
 /** "Save as a preset…", which asks for the name in place. */
 function SavePreset({ onSave }: { onSave: (name: string) => Promise<boolean> }) {
