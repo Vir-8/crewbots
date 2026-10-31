@@ -22,7 +22,6 @@ from crewbots.api.routes import (
     attachments,
     bot,
     bots,
-    browser,
     chats,
     crew,
     events,
@@ -45,8 +44,7 @@ from crewbots.scheduler import Scheduler
 from crewbots.store import Store, Task
 
 DEFAULT_PORT = 8765
-AREAS = (bots, mcp, tasks, attachments, chats, reviews, usage, crew, routines, projects, events, browser, push, bot,
-         shared_apps)
+AREAS = (bots, mcp, tasks, attachments, chats, reviews, usage, crew, routines, projects, events, push, bot, shared_apps)
 
 
 def create_app(runner: Runner, token: str, port: int = DEFAULT_PORT, scheduler: Scheduler | None = None,

@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "8bd6fa5434a4";
+export const API_SCHEMA = "a28ece1c682e";
 
 /** How much a run may touch. Each backend maps this onto its own permission or sandbox flags. */
 export type Access = "read_only" | "workspace_write" | "full";
@@ -95,13 +95,6 @@ export interface BroughtIn {
   projects: ProjectOut[];
   memories: number;
   task_id: string | null;
-}
-
-export interface BrowserInput {
-  generation: number;
-  lease_generation: number;
-  owner: string;
-  event: Record<string, unknown>;
 }
 
 export interface Budget {
@@ -419,12 +412,6 @@ export interface LastMessage {
   author: string;
   text: string;
   at: string;
-}
-
-export interface LeaseRef {
-  generation: number;
-  lease_generation: number;
-  owner: string;
 }
 
 export interface LiveBots {
@@ -1007,10 +994,6 @@ export interface SearchHit {
   snippet: string;
   bot: string;
   title: string;
-}
-
-export interface SessionRef {
-  generation: number;
 }
 
 export interface SkillOut {

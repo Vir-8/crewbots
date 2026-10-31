@@ -1,7 +1,6 @@
 """Daemon-owned Chrome, one disposable context per task. No CLI sandbox is widened.
 
-Sessions are the single source for tab identity, URL and title; a future app pane can
-subscribe to these same CDP sessions for screencast frames and user input.
+Sessions are the single source for tab identity, URL and title.
 """
 
 import asyncio
@@ -20,7 +19,6 @@ from uuid import uuid4
 
 from crewbots import paths
 from crewbots.browser_cdp import CDP, BrowserError
-from crewbots.browser_control import CONTROL_NOTICE, BrowserControl, ControlLease
 from crewbots.browser_process import LaunchStillRunning, Profiles, find_chrome, launch
 from crewbots.browser_proxy import BrowserProxy, Network, allowed
 
@@ -44,12 +42,6 @@ class BrowserSession:
     auth_requests: deque = field(default_factory=lambda: deque(maxlen=200))
     idle: asyncio.Task | None = None
     failure: str | None = None
-    generation: int = 0
-    lease: ControlLease | None = None
-    notice: bool = False
-    control_transition: str | None = None
-    control_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    viewport: tuple[int, int] | None = None
 
 
 class TargetCloseError(BrowserError):
@@ -58,7 +50,7 @@ class TargetCloseError(BrowserError):
         self.tab = tab
 
 
-class Browser(BrowserControl):
+class Browser:
     def __init__(self, root: Path | None = None, *, idle_s: float = 900):
         self.root = (root or paths.root() / "browser").absolute()
         self.idle_s = idle_s
@@ -73,10 +65,6 @@ class Browser(BrowserControl):
         self._lock = asyncio.Lock()
         self._active: asyncio.Task | None = None
         self._closing = False
-        # A new daemon must not reuse a generation from its predecessor.
-        self._session_generation = uuid4().int >> 88  # stays exact as a JavaScript number
-        self._lease_generation = 0
-        self._control_notices = deque(maxlen=256)
         self._log = None
         self._creating: dict[str, asyncio.Future] = {}
         self._disposing: dict[str, BrowserSession] = {}
@@ -153,8 +141,7 @@ class Browser(BrowserControl):
                 raise BrowserError(f"Chrome timed out: Target.attachedToTarget for target {target}, context {context}") from None
             if attached_target != target:
                 raise BrowserError(f"Unexpected auto-attached target {attached_target}; expected {target}")
-            self._session_generation += 1
-            tab = BrowserSession(task_id, context, target, session, network, proxy, generation=self._session_generation)
+            tab = BrowserSession(task_id, context, target, session, network, proxy)
             self.sessions[task_id] = tab
             self._gone.pop(task_id, None)
             await self._configure(session)
@@ -322,9 +309,6 @@ class Browser(BrowserControl):
         return result.get("result", {}).get("value")
 
     async def action(self, task_id: str, folder: Path, network: Network, action: str, args: dict) -> list[dict]:
-        tab = self.sessions.get(task_id)
-        if tab and tab.lease and tab.network == network:
-            raise BrowserError("The user has control of the browser; wait for hand-back")
         async with self._lock:
             if self._closing:
                 raise BrowserError("The browser service is shutting down")
@@ -341,8 +325,6 @@ class Browser(BrowserControl):
         if tab and tab.network != network:
             await self._close_task(task_id)
             tab = None
-        if tab and tab.lease:
-            raise BrowserError("The user has control of the browser; wait for hand-back")
         try:
             if action == "open":
                 if not allowed(args["url"], network) or urlsplit(args["url"]).scheme not in {"http", "https"}:
@@ -364,10 +346,6 @@ class Browser(BrowserControl):
             else:
                 content = await self._perform(tab, folder, action, args)
             self._arm_idle(tab)
-            if tab.notice or task_id in self._control_notices:
-                tab.notice = False
-                self._control_notices = deque((t for t in self._control_notices if t != task_id), maxlen=256)
-                content.insert(0, {"type": "text", "text": CONTROL_NOTICE})
             return content
         except (OSError, ValueError, KeyError, TypeError) as e:
             raise BrowserError(str(e)) from None
@@ -404,7 +382,6 @@ class Browser(BrowserControl):
                 raise BrowserError("theme must be light or dark")
             await self.cdp.call("Emulation.setDeviceMetricsOverride", {
                 "width": width, "height": height, "deviceScaleFactor": 1, "mobile": False}, tab.session)
-            tab.viewport = (width, height)
             await self.cdp.call("Emulation.setEmulatedMedia", {
                 "features": [{"name": "prefers-color-scheme", "value": theme}]}, tab.session)
             await self._evaluate(tab, "document.fonts.ready.then(() => new Promise(r => "
@@ -518,9 +495,6 @@ class Browser(BrowserControl):
     async def _close_task(self, task_id):
         tab = self.sessions.pop(task_id, None)
         if tab:
-            if tab.lease and tab.lease.timer and tab.lease.timer is not asyncio.current_task():
-                tab.lease.timer.cancel()
-            tab.lease = None
             if tab.idle and tab.idle is not asyncio.current_task():
                 tab.idle.cancel()
             await self._dispose_tab(tab)
