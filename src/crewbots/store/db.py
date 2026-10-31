@@ -28,8 +28,6 @@ create table if not exists tasks (
     worktree_path text,
     branch        text,
     base          text,
-    base_branch   text,                        -- branch-mode checkout's original branch (branch mode is gone)
-    checkout_state text,                       -- starting until switch -c and linking finish
     session_id    text,
     session_backend text,                      -- the backend that made session_id: another backend can't resume it
     result        text,
@@ -44,8 +42,6 @@ create table if not exists tasks (
     merge_state   text,                        -- null, proposed, merging, merged or dropped
     merged_commit text,
     merged_tip    text,                        -- task branch tip at merge, before its checkout is removed
-    merge_lock    text,                        -- device:inode of our in-progress index lock
-    merge_marker  text,                        -- timestamp and nonce for this lock attempt
     briefing      text,                        -- where things stood, carried into a fresh session at rollover
     kind          text not null default 'thread', -- chat, seat, thread, review or ask
     room_id       text,                        -- a seat's room
@@ -438,6 +434,16 @@ def _add_columns(table: str, columns: dict[str, str],
     return step
 
 
+def _drop_columns(table: str, columns: list[str]) -> Callable[[Connection, Callable[[], None]], None]:
+    """A step that drops columns from a table, each if it's there."""
+    def step(db: Connection, _: Callable[[], None]) -> None:
+        have = {r["name"] for r in db.execute(f"pragma table_info({table})")}
+        for column in columns:
+            if column in have:
+                db.execute(f"alter table {table} drop column {column}")
+    return step
+
+
 # Each step runs once, in order, on a database that hasn't had it: (what it does, the step).
 MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] = [
     ("everything up to 26 October 2026", _catch_up),
@@ -470,6 +476,8 @@ MIGRATIONS: list[tuple[str, Callable[[Connection, Callable[[], None]], None]]] =
         "seen_event": "integer"})),
     ("the evidence a handoff carries", _add_columns("handoffs", {"evidence": "text not null default '[]'"})),
     ("the checks a handoff carries", _add_columns("handoffs", {"checks": "text not null default '[]'"})),
+    ("forget branch mode's checkout and merge lock", _drop_columns("tasks", [
+        "base_branch", "checkout_state", "merge_lock", "merge_marker"])),
 ]
 
 

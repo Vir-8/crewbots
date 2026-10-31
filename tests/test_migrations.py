@@ -113,6 +113,21 @@ def test_previous_version_gains_merged_tip_without_changing_tasks(tmp_path):
     migrated.close()
 
 
+def test_previous_version_loses_branch_modes_columns_and_keeps_its_tasks(tmp_path):
+    path = tmp_path / "crew.db"
+    store = Store(path)
+    task = store.create_task("worker", "from branch mode")
+    store.db.execute("alter table tasks add column merge_lock text")  # as an old crew's database has it, and not the other three
+    store.db.execute("update tasks set merge_lock = '1:2'")
+    before = [name for name, _ in db_module.MIGRATIONS].index("forget branch mode's checkout and merge lock")
+    store.db.execute(f"pragma user_version = {before}")
+    store.close()
+
+    migrated = Store(path)
+    assert [t.title for t in migrated.list_tasks()] == [task.title]
+    migrated.close()
+
+
 def test_an_older_crews_room_called_crew_becomes_its_own(tmp_path):
     path = tmp_path / "crew.db"
     store = Store(path)
