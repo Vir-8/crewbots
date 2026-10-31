@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "9ff62955423b";
+export const API_SCHEMA = "4b1ebbcc000a";
 
 /** How much a run may touch. Each backend maps this onto its own permission or sandbox flags. */
 export type Access = "read_only" | "workspace_write" | "full";
@@ -590,6 +590,7 @@ export interface ModelUse {
 
 export interface ModelsChanged {
   changed: string[];
+  skipped?: string[];
 }
 
 export interface ModelsOut {
@@ -725,6 +726,26 @@ export interface PlansOut {
   claude: PlanOut;
   codex: PlanOut;
   antigravity?: PlanOut | null;
+}
+
+export interface PresetBody {
+  bots?: Record<string, PresetBot> | null;
+}
+
+export interface PresetBot {
+  backend?: string;
+  model?: string | null;
+  effort?: string | null;
+}
+
+export interface PresetOut {
+  name: string;
+  bots: Record<string, PresetBot>;
+}
+
+export interface PresetsOut {
+  presets: PresetOut[];
+  in_use: string | null;
 }
 
 /** Something the crew raised on its own, and how it reached the user. */

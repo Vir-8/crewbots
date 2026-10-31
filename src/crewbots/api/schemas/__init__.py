@@ -78,6 +78,7 @@ from crewbots.api.schemas.mcp import (
     RegistryOption,
     SkillOut,
 )
+from crewbots.api.schemas.presets import PresetBody, PresetBot, PresetOut, PresetsOut
 from crewbots.api.schemas.projects import (
     BringIn,
     BroughtIn,
@@ -230,6 +231,10 @@ __all__ = [
     "ModelUse",
     "ModelsOut",
     "NewBot",
+    "PresetBody",
+    "PresetBot",
+    "PresetOut",
+    "PresetsOut",
     "NewRoom",
     "NewRoutine",
     "NewTask",

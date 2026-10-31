@@ -526,6 +526,9 @@ Each step leaves the system working.
   Several bots' backend, model, effort and team change in one call (`PUT /bots/models`, the Crew page's Models
   view), all or nothing: every card is checked before any is written, and if the crew then doesn't load, every one goes
   back as it was. A model change that leaves an effort the new model doesn't offer clears it, as the app's picker does.
+  Presets (`presets.py`) are the crew's models saved by name, in `presets.json` in the crew's folder, which the user can
+  read and edit; a fresh crew has none. Applying one is that same call for the bots it names, skipping any that are
+  gone, and the one in use is the first the crew matches now. A reset keeps them.
 
 ## Performance budgets
 

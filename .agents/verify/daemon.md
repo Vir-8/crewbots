@@ -18,6 +18,10 @@ The app talks to it at `~/.crewbots/crew/daemon.json` (`url`, `token`), on route
 - Seen working: `POST /rooms` (title, members, lead) makes a room; `POST /rooms/{id}/messages` with `{"text":"@engineer-2
   hello"}` returns 201, the message reads back from `GET /rooms/{id}/messages` and from `/search`, and the mentioned
   bot's task goes `queued`, then `idle` with no reply: it can't reach a model.
+- Seen working: `PUT /presets/Everyday` with no body saves the crew's models as they are (`presets.json` in the crew's
+  folder); `PUT /bots/models` with `{"bots": {"engineer-1": {"backend": "claude", "model": "sonnet", "effort":
+  "high"}, ...}}` rewrites those cards in one go (a bad effort for one bot gives 422 and writes none); `POST
+  /presets/Everyday/apply` puts them back, and `GET /presets` says `"in_use": "Everyday"` again.
 - The whole API is described by `crewbots openapi`, and typed in `app/src/api-types.ts`.
 - Making rooms, posting, and reading state back all work without a model: a bot's turn fails, which is recorded, and
   everything up to it can be checked.

@@ -10,7 +10,7 @@ from datetime import datetime
 import pytest
 from fakes import FakeBackend
 
-from crewbots import cards, paths, reset
+from crewbots import cards, paths, presets, reset
 from crewbots import crew as crew_module
 from crewbots.runner import Runner
 from crewbots.runner.welcome import STARTED
@@ -129,6 +129,16 @@ def test_the_setup_and_code_review_stay(home):
     store.close()
     assert crew_module.load(home).bots.keys() == {"chief", "eng-lead", *(f"engineer-{n}" for n in range(1, 5)), "reviewer",
                                                   "critic"}
+
+
+def test_the_presets_of_the_crews_models_stay(home):
+    presets.save(crew_module.load(home), "Everyday", presets.now(crew_module.load(home)))
+    before = (home / presets.FILE).read_text()
+
+    reset.reset(home, WHEN)
+
+    assert (home / presets.FILE).read_text() == before
+    assert presets.in_use(presets.load(home), crew_module.load(home)) == "Everyday"
 
 
 def test_then_the_chief_greets_the_user_again(home):

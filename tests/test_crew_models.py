@@ -1,10 +1,13 @@
-"""Changing models across the crew: several bots in one call, all or nothing."""
+"""Changing models across the crew: several bots in one call, all or nothing, and presets of the crew's models to go
+back to."""
+
+import json
 
 import pytest
 from fakes import FakeBackend
 from fastapi.testclient import TestClient
 
-from crewbots import crew
+from crewbots import crew, presets
 from crewbots import models as models_module
 from crewbots.api import create_app
 from crewbots.runner import Runner
@@ -106,3 +109,41 @@ def test_a_move_to_another_cli_starts_from_its_defaults(api, home):
 
     bot = runner.crew.bots["engineer-1"]
     assert (bot.backend, bot.model, bot.effort, bot.access) == ("antigravity", None, None, "workspace_write")
+
+
+def test_presets_are_saved_listed_with_the_one_in_use_and_deleted(api, home):
+    client, runner = api
+    assert client.get("/presets").json() == {"presets": [], "in_use": None}  # none until the user saves one
+
+    saved = client.put("/presets/Everyday").json()  # the crew as it is now
+    assert saved["in_use"] == "Everyday" and saved["presets"][0]["bots"]["chief"] == {
+        "backend": "claude", "model": "opus", "effort": None}
+    low = {e: {"backend": "codex", "model": "gpt-6-mini", "effort": "low"} for e in ENGINEERS}
+    assert client.put("/presets/Codex is low", json={"bots": low}).json()["in_use"] == "Everyday"
+    assert json.loads((home / presets.FILE).read_text())["Codex is low"] == low  # a file the user can read
+
+    client.put("/bots/models", json={"bots": low})
+    listed = client.get("/presets").json()
+    assert [p["name"] for p in listed["presets"]] == ["Everyday", "Codex is low"] and listed["in_use"] == "Codex is low"
+    assert client.put("/presets/Odd", json={"bots": {"nobody": {}}}).status_code == 422
+    assert client.put("/presets/" + "x" * 41).status_code == 422
+
+    assert client.delete("/presets/Codex is low").json() == {"presets": listed["presets"][:1], "in_use": None}
+    assert client.delete("/presets/Codex is low").status_code == 404
+
+
+def test_applying_a_preset_skips_the_bots_that_are_gone(api, home):
+    client, runner = api
+    client.put("/presets/Everyday")
+    client.put("/bots/models", json={"bots": {"chief": {"model": "sonnet"}, "critic": {"model": "gpt-6-mini"}}})
+    path = home / presets.FILE  # edited by hand: a bot that has since gone
+    saved = json.loads(path.read_text())
+    saved["Everyday"]["designer"] = {"backend": "claude", "model": "opus", "effort": None}
+    path.write_text(json.dumps(saved))
+
+    applied = client.post("/presets/Everyday/apply").json()
+
+    assert sorted(applied["changed"]) == ["chief", "critic"] and applied["skipped"] == ["designer"]
+    assert runner.crew.bots["chief"].model == "opus" and runner.crew.bots["critic"].model is None
+    assert client.get("/presets").json()["in_use"] == "Everyday"
+    assert client.post("/presets/Nope/apply").status_code == 404

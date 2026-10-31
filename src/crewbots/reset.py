@@ -4,8 +4,8 @@ and its setup stays as it is, so the chief greets the user again as it did the f
 Moved: every chat, thread and group chat with what was said in them, and the bots' sessions of them (their Claude
 Code and Codex session files); the bots' memory, and their folders in Documents, pages and all; the projects; and the
 files shared in chats. The names the user gave bots come off too (the chief asks again). Kept: the bots and the rest
-of their role cards, the team's files, the routines, the skills, the MCP servers, and code review, which keeps its
-own reviews, drafts and sessions.
+of their role cards, the team's files, the routines, the skills, the MCP servers, the presets of the crew's models,
+and code review, which keeps its own reviews, drafts and sessions.
 
 Nothing is deleted: the backup has the database as it was, every file moved, by where it came from, and the role
 cards that had names. `reset` needs the daemon stopped, since it holds the database and the sessions; `start_over`
