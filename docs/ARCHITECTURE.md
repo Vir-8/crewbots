@@ -572,7 +572,7 @@ Checked on Claude Code 2.1.310 and codex-cli 0.164.0 (26 October 2026), before b
   - Config plugins are switched off, and so is the `apps` feature.
   - The role card's servers are added back.
   - A run whose isolation can't be worked out doesn't start.
-  - Before this, a Codex bot could reach the user's trading account, Slack and screen control.
+  - Before this, a Codex bot could reach the user's email, Slack and screen control.
 - **t3code ([pingdotgg/t3code](https://github.com/pingdotgg/t3code)) uses the official integration points**: `codex app-server` for Codex, the Claude Agent SDK for Claude, and ACP for other agents. The Agent SDK still runs the `claude` binary, but over a control protocol that offers what a raw `claude -p` session lacks:
   - interrupting a turn without killing the process
   - a `can_use_tool` callback and hooks, so the harness decides on each tool call

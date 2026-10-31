@@ -62,7 +62,7 @@ def home(tmp_path):
     (home / "memory" / "chief" / "notes").mkdir(parents=True)
     (home / "memory" / "chief" / "notes" / "who.md").write_text("Makes cozy games.\n")
     (home / "projects").mkdir()
-    (home / "projects" / "sky-islands.md").write_text("---\nfolder: ~/Games/Sky Islands\n---\n")
+    (home / "projects" / "lantern.md").write_text("---\nfolder: ~/Games/Lantern\n---\n")
     (home / "attachments" / "abc").mkdir(parents=True)
     (home / "attachments" / "abc" / "shot.png").write_bytes(b"png")
     pages = paths.bot_folders() / "chief"
@@ -89,7 +89,7 @@ def test_it_moves_the_conversations_and_what_the_bots_kept_into_a_backup(home):
     backup = paths.root() / "backups" / "2026-10-27-140500"
     assert done.backup == backup and done.tasks == 2
     assert (backup / "memory" / "chief" / "notes" / "who.md").read_text() == "Makes cozy games.\n"
-    assert (backup / "projects" / "sky-islands.md").is_file() and (backup / "attachments" / "abc" / "shot.png").is_file()
+    assert (backup / "projects" / "lantern.md").is_file() and (backup / "attachments" / "abc" / "shot.png").is_file()
     assert (backup / "folders" / "chief" / "Scratchpad.md").is_file()
     assert not (home / "memory").exists() and not (home / "projects").exists()
     assert not (paths.bot_folders() / "chief").exists()

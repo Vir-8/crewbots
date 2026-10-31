@@ -33,8 +33,8 @@ def codex_session(cwd, day="2026/10/27", when=None):
 
 def test_the_folders_worked_in_lately_with_their_memories(tmp_path, monkeypatch):
     monkeypatch.setattr(time, "time", lambda: 1_800_000_000)  # late 2027: every file here is recent
-    game = git_repo(paths.home() / "Games" / "Sky Islands")
-    (game / "README.md").write_text("# Sky Islands\n\n![badge](x.png)\nA cozy [glider](x) game. Made in Unity.\n")
+    game = git_repo(paths.home() / "Games" / "Lantern")
+    (game / "README.md").write_text("# Lantern\n\n![badge](x.png)\nA cozy [glider](x) game. Made in Unity.\n")
     (game / "Assets").mkdir()
     site = paths.home() / "code" / "site"
     site.mkdir(parents=True)
@@ -49,14 +49,14 @@ def test_the_folders_worked_in_lately_with_their_memories(tmp_path, monkeypatch)
     folders, memories = discovery.found()
 
     assert {f.folder for f in folders} == {game.resolve(), site.resolve()}
-    sky = next(f for f in folders if f.folder == game.resolve())
-    assert sky.name == "sky-islands" and sky.sources == {"claude", "codex"} and sky.sessions == 2  # one folder, as a repo
-    assert sky.about == "A cozy glider game."
-    assert [m.title for m in sky.memories] == ["Its index", 'Stylized "fantasy" art']
+    found = next(f for f in folders if f.folder == game.resolve())
+    assert found.name == "lantern" and found.sources == {"claude", "codex"} and found.sessions == 2  # one folder, as a repo
+    assert found.about == "A cozy glider game."
+    assert [m.title for m in found.memories] == ["Its index", 'Stylized "fantasy" art']
     assert memories == []  # Codex keeps no memories here
-    text, taken = discovery.digest(sky.memories)
+    text, taken = discovery.digest(found.memories)
     assert "## Claude Code: ~/.claude/projects/" in text and "Stylized" in text
-    assert taken == discovery.fingerprints(sky.memories) and len(taken) == 2
+    assert taken == discovery.fingerprints(found.memories) and len(taken) == 2
     assert "private words" not in text  # sessions give their folder, nothing they said
 
 

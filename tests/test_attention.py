@@ -76,8 +76,8 @@ async def test_the_chief_tells_the_user_in_its_chat_from_a_group_chat_without_wa
                                                 "from": "Engineering"}
     assert not store.room_messages(room["id"])
     runner.attention.now = lambda: at(23)
-    assert runner.tell_user(seat.id, "Sky Islands is merged.", needs_you=True)["level"] == "question"  # no notification
-    assert said(store, runner, "chief")[-1]["text"] == "Sky Islands is merged."
+    assert runner.tell_user(seat.id, "Lantern is merged.", needs_you=True)["level"] == "question"  # no notification
+    assert said(store, runner, "chief")[-1]["text"] == "Lantern is merged."
 
     section, _ = runner._said_elsewhere(runner.chat("chief"), None)  # its chat hears it, next time it runs
     assert "to the user in this chat, from Engineering: Turn on UnityMCP for the reviewer" in section

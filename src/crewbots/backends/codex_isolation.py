@@ -6,7 +6,7 @@ name: servers from config.toml get `enabled=false`; servers that come from elsew
 app's computer use) get a disabled stub, since a bare `enabled=false` on them is an invalid config. Plugins in
 config.toml and the apps feature are switched off too. The role card's own servers are then added on top.
 
-Without this, a bot could reach whatever the user connected Codex to: their trading account, Slack, their screen.
+Without this, a bot could reach whatever the user connected Codex to: their email, Slack, their screen.
 """
 
 import json

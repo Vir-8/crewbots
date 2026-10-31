@@ -27,7 +27,7 @@ const found: FoundOut = {
   folders: [
     { folder: "/Users/you/code/acme-web", name: "acme-web", about: "Acme's customer site.", sources: ["claude", "codex"], sessions: 42, last_used: new Date(Date.now() - 2 * 3600_000).toISOString(), memories: [{ path: "/Users/you/.claude/projects/acme-web/memory/MEMORY.md", source: "claude", title: "Its index", brought_at: new Date(Date.now() - 3 * 86400_000).toISOString() }, { path: "/Users/you/.claude/projects/acme-web/memory/deploys.md", source: "claude", title: "Deploys go out from main on Fridays only", brought_at: new Date(Date.now() - 3 * 86400_000).toISOString(), changed: true }], project: "acme-web" },
     { folder: "/Users/you/Games/Lantern", name: "lantern", about: "A cozy puzzle game in Unity.", sources: ["claude"], sessions: 24, last_used: new Date(Date.now() - 26 * 3600_000).toISOString(), memories: [{ path: "/Users/you/.claude/projects/lantern/memory/MEMORY.md", source: "claude", title: "Its index" }, { path: "/Users/you/.claude/projects/lantern/memory/art.md", source: "claude", title: "Hand-drawn art; no outlines" }, { path: "/Users/you/.claude/projects/lantern/memory/demo.md", source: "claude", title: "The demo build's status" }], project: null },
-    { folder: "/Users/you/Documents/Trading", name: "trading", about: "", sources: ["codex"], sessions: 27, last_used: new Date(Date.now() - 4 * 86400_000).toISOString(), memories: [], project: null },
+    { folder: "/Users/you/Documents/Notes", name: "notes", about: "", sources: ["codex"], sessions: 27, last_used: new Date(Date.now() - 4 * 86400_000).toISOString(), memories: [], project: null },
   ],
   memories: [],
 };

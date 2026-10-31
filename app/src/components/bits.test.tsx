@@ -10,11 +10,11 @@ const html = (text: string) => renderToStaticMarkup(<Markdown text={text} onSele
 describe("Markdown", () => {
   it("styles crew handles and display names, but not emails, unknown words, or code", () => {
     setCrew(bots);
-    const out = html("@engineer and **@Roger**; vir@engineer.games @engineer-extra @unknown `@engineer`\n\n```\n@Roger\n```");
+    const out = html("@engineer and **@Roger**; pat@engineer.games @engineer-extra @unknown `@engineer`\n\n```\n@Roger\n```");
     expect(out.match(/class="mention"/g)).toHaveLength(2);
     expect(out).toContain('<span class="mention">@engineer</span>');
     expect(out).toContain('<span class="mention">@Roger</span>');
-    expect(out).toContain('vir@engineer.games @engineer-extra @unknown <code>@engineer</code>');
+    expect(out).toContain('pat@engineer.games @engineer-extra @unknown <code>@engineer</code>');
     expect(out).toContain('<pre>@Roger</pre>');
   });
 

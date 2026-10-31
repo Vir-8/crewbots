@@ -75,20 +75,20 @@ def test_a_crew_the_user_has_talked_with_isnt_greeted(store, tmp_path):
 async def test_bringing_in_adds_projects_and_learns_in_a_thread_of_its_own(store, tmp_path):
     runner = runner_for(store, tmp_path, display_name="Roger")
     chat = runner.greet()
-    game = paths.home() / "Games" / "Sky Islands"
+    game = paths.home() / "Games" / "Lantern"
     game.mkdir(parents=True)
     memory = paths.home() / "art.md"
     memory.write_text("Stylized art, never painted pavements.")
 
-    added, thread = runner.bring_in([{"name": "sky-islands", "folder": str(game), "about": "A cozy game."}],
+    added, thread = runner.bring_in([{"name": "lantern", "folder": str(game), "about": "A cozy game."}],
                                     [discovery.FoundMemory(memory, "claude", "Art", game)])
     await wait_until(lambda: not runner.running())
 
-    assert [p.name for p in added] == ["sky-islands"] and "sky-islands" in runner.crew.projects
+    assert [p.name for p in added] == ["lantern"] and "lantern" in runner.crew.projects
     assert thread.parent_id == chat.id and thread.title == "Learn what Claude Code and Codex know"
     first = store.events(thread.id)[0]
     assert first.data["from"] == "crewbots" and "never painted pavements" in first.data["text"]  # out of view
-    assert ("onboarding", {"brought": {"projects": ["sky-islands"], "memories": 1, "thread": thread.id}}) in kinds(
+    assert ("onboarding", {"brought": {"projects": ["lantern"], "memories": 1, "thread": thread.id}}) in kinds(
         store, chat.id)
     told = [e.data["text"] for e in store.events(chat.id) if e.kind == "message" and e.data["from"] == "crewbots"]
     assert told[-1].startswith("The thread you opened to learn what Claude Code and Codex know has finished")

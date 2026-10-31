@@ -159,22 +159,22 @@ def test_project_isolation_api_validates_and_preserves_setting(client, tmp_path)
 
 
 def test_bringing_in_what_claude_code_and_codex_know(client, monkeypatch):
-    sky = paths.home() / "Games" / "Sky Islands"
-    sky.mkdir(parents=True)
-    memory = paths.home() / ".claude" / "projects" / "sky" / "memory" / "art.md"
+    lantern = paths.home() / "Games" / "Lantern"
+    lantern.mkdir(parents=True)
+    memory = paths.home() / ".claude" / "projects" / "lantern" / "memory" / "art.md"
     memory.parent.mkdir(parents=True)
     memory.write_text("Stylized art, never painted pavements.")
-    found_memory = discovery.FoundMemory(memory, "claude", "Art", sky)
-    monkeypatch.setattr(discovery, "found", lambda: ([discovery.FoundFolder(sky, {"claude"}, 3, 1.8e9, [found_memory],
-                                                                             "sky-islands")], []))
+    found_memory = discovery.FoundMemory(memory, "claude", "Art", lantern)
+    monkeypatch.setattr(discovery, "found", lambda: ([discovery.FoundFolder(lantern, {"claude"}, 3, 1.8e9, [found_memory],
+                                                                             "lantern")], []))
 
     found = client.get("/projects/found", headers=AUTH).json()
-    assert found["folders"][0]["name"] == "sky-islands" and found["folders"][0]["memories"][0]["title"] == "Art"
+    assert found["folders"][0]["name"] == "lantern" and found["folders"][0]["memories"][0]["title"] == "Art"
     brought = client.post("/projects/bring-in", headers=AUTH, json={
-        "projects": [{"name": "sky-islands", "folder": str(sky)}],
+        "projects": [{"name": "lantern", "folder": str(lantern)}],
         "memories": [str(memory), "/etc/passwd"]}).json()  # only what was found comes in
 
-    assert [p["name"] for p in brought["projects"]] == ["sky-islands"] and brought["memories"] == 1
+    assert [p["name"] for p in brought["projects"]] == ["lantern"] and brought["memories"] == 1
     sent = [e.data for e in client.runner.store.events(brought["task_id"]) if e.kind == "message"]
     assert sent[0]["from"] == "crewbots" and "never painted pavements" in sent[0]["text"]
     assert "passwd" not in sent[0]["text"]
@@ -182,7 +182,7 @@ def test_bringing_in_what_claude_code_and_codex_know(client, monkeypatch):
 
     # Looking again, what's in already says so, and so does a memory that's changed since.
     again = client.get("/projects/found", headers=AUTH).json()["folders"][0]
-    assert again["project"] == "sky-islands"
+    assert again["project"] == "lantern"
     assert again["memories"][0]["brought_at"] and again["memories"][0]["changed"] is False
     memory.write_text("Stylized art, never painted pavements. Warm light.")
     assert client.get("/projects/found", headers=AUTH).json()["folders"][0]["memories"][0]["changed"] is True

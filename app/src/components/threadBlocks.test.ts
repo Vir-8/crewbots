@@ -40,7 +40,7 @@ it("names the teammate a permission the chief asks is for", () => {
 it("shows withdrawn proposals and searches the displayed folder", () => {
   const event: StoredEvent = { id: 1, task_id: "task", kind: "merge_withdrawn", data: { by: "user", reason: "Superseded" }, at: "" };
   expect(build([event], [], new Map())[0]).toMatchObject({ text: "You withdrew the merge proposal: Superseded" });
-  expect(said({ kind: "permission", id: 2, permission: 1, bot: "chief", taskId: "task", ask: "folder", what: "Write", why: "", folder: "/Users/apple/Documents/test", here: true })).toBe("Write\n~/Documents/test");
+  expect(said({ kind: "permission", id: 2, permission: 1, bot: "chief", taskId: "task", ask: "folder", what: "Write", why: "", folder: "/Users/you/Documents/test", here: true })).toBe("Write\n~/Documents/test");
 });
 
 it("anchors each work card to its own delegation or creation, even as its status changes", () => {

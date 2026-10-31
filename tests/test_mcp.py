@@ -100,7 +100,7 @@ def test_a_server_defined_on_a_card_moves_to_the_crews_list_when_the_card_is_sav
 def test_your_apps_servers_are_found_once_each(tmp_path, monkeypatch):
     claude = tmp_path / "claude.json"
     claude.write_text(json.dumps({"mcpServers": {"blender": BLENDER, "crewbots": {"command": "x"}},
-                                  "projects": {"/u/Sky Islands": {"mcpServers": {"UnityMCP": UNITY}},
+                                  "projects": {"/u/Lantern": {"mcpServers": {"UnityMCP": UNITY}},
                                                "/u/Gold Hauler": {"mcpServers": {"UnityMCP": UNITY}}}}))
     codex = tmp_path / "config.toml"
     codex.write_text('[mcp_servers.gimp]\ncommand = "run-gimp.sh"\n\n[mcp_servers.off]\ncommand = "x"\nenabled = false\n'
@@ -112,7 +112,7 @@ def test_your_apps_servers_are_found_once_each(tmp_path, monkeypatch):
     found = mcp_catalog.installed()
 
     assert [(f["source"], f["name"]) for f in found] == [
-        ("Claude Code", "blender"), ("Claude Code · Sky Islands", "UnityMCP"), ("Codex", "gimp"), ("Codex", "web")]
+        ("Claude Code", "blender"), ("Claude Code · Lantern", "UnityMCP"), ("Codex", "gimp"), ("Codex", "web")]
     assert found[-1]["spec"] == {"type": "http", "url": "https://example.com/mcp", "headers": {"X-Key": "k"}}
 
 

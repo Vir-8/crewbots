@@ -20,9 +20,9 @@ from crewbots.store import Status, Store
 
 EDITOR = "/Applications/Unity/Hub/Editor/6000.3.12f1/Unity.app/Contents/MacOS/Unity"
 PS = "\n".join([
-    f"  101 {EDITOR} -projectpath /Users/v/Unity Games/Sky Islands -useHub -hubIPC",
-    f"  102 {EDITOR} -adb2 -batchMode -name AssetImportWorker0 -projectPath /Users/v/Unity Games/Sky Islands -logFile x",
-    f"  103 {EDITOR} -projectPath /w/Sky Islands-1/t_1",
+    f"  101 {EDITOR} -projectpath /Users/you/Unity Games/Lantern -useHub -hubIPC",
+    f"  102 {EDITOR} -adb2 -batchMode -name AssetImportWorker0 -projectPath /Users/you/Unity Games/Lantern -logFile x",
+    f"  103 {EDITOR} -projectPath /w/Lantern-1/t_1",
     "  104 /usr/bin/python3 server.py -projectPath /nowhere",
 ])
 
@@ -39,8 +39,8 @@ def test_the_editor_for_a_project_and_the_folders_editors_have_open(tmp_path, mo
     assert unity.editor_app(tmp_path) is None  # not a Unity project
 
     monkeypatch.setattr(unity, "_processes", lambda: PS)
-    assert unity.editors() == {Path("/Users/v/Unity Games/Sky Islands").resolve(): 101,
-                               Path("/w/Sky Islands-1/t_1").resolve(): 103}  # not its import workers
+    assert unity.editors() == {Path("/Users/you/Unity Games/Lantern").resolve(): 101,
+                               Path("/w/Lantern-1/t_1").resolve(): 103}  # not its import workers
 
 
 def test_where_processes_cant_be_listed_there_are_no_editors(monkeypatch):

@@ -24,15 +24,15 @@ def store(tmp_path):
 
 def test_pages_link_to_each_other_and_the_scratchpad_comes_first(tmp_path):
     folder = tmp_path / "chief"
-    pages.write(folder, "Projects/Sky Islands", "# Sky Islands\n\nDemo on Friday.")
-    pages.write(folder, "Scratchpad", "## Top of mind\n\n- The demo: [[Sky Islands]]")
+    pages.write(folder, "Projects/Lantern", "# Lantern\n\nDemo on Friday.")
+    pages.write(folder, "Scratchpad", "## Top of mind\n\n- The demo: [[Lantern]]")
     pages.edit(folder, "Scratchpad", "The demo", "Friday's demo")
 
-    assert [p.name for p in pages.pages(folder)] == ["Scratchpad", "Projects/Sky Islands"]
-    assert pages.read(folder, "Scratchpad") == "## Top of mind\n\n- Friday's demo: [[Sky Islands]]\n"
-    assert pages.resolve(folder, "sky islands") == "Projects/Sky Islands"  # by its own name, wherever it is
+    assert [p.name for p in pages.pages(folder)] == ["Scratchpad", "Projects/Lantern"]
+    assert pages.read(folder, "Scratchpad") == "## Top of mind\n\n- Friday's demo: [[Lantern]]\n"
+    assert pages.resolve(folder, "lantern") == "Projects/Lantern"  # by its own name, wherever it is
     shown = pages.for_instructions(folder)
-    assert shown.startswith("## Top of mind") and "Your other pages: [[Projects/Sky Islands]]." in shown
+    assert shown.startswith("## Top of mind") and "Your other pages: [[Projects/Lantern]]." in shown
     assert pages.for_instructions(tmp_path / "new") == "(empty: you haven't started it yet)"
 
 
