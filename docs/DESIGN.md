@@ -10,7 +10,7 @@ A desktop app for running a crew of persistent coding agents. You talk to a lead
 | ChatGPT Dots | Custom Rules: free / ask first / hand back | Per-bot **rules**, enforced by the harness, not by the prompt |
 | ChatGPT Dots | Activity View: running and delegated work, steer or stop it | The app's main screen |
 | Grok Bot | A manager bot coordinating specialist bots | A **lead** bot with delegation tools |
-| Grok Bot | Bots message each other in shared threads | `message_bot` / group threads |
+| Grok Bot | Bots message each other in shared threads | `message` and group chats |
 | Grok Bot | Routines and schedules | **Triggers** (cron first, events later) |
 | pi | Use the subscriptions you already pay for | Run the official **Claude Code** and **Codex** CLIs headless, so they use their own sign-in |
 
@@ -30,89 +30,36 @@ From [a guide to running a Grok Bot team](https://x.com/eng_khairallah1/status/2
 
 ## The key decision: the CLIs are the agent loop
 
-We don't write the coding loop ourselves. Claude Code (`claude -p --output-format stream-json`) and Codex (`codex exec --json`) already provide file editing, shell, sandboxing and context management, and both run on your subscription. crewbots is the layer **above** them:
+We don't write the coding loop ourselves. Claude Code and Codex already provide file editing, shell, sandboxing and context management, and both run on your subscription. crewbots is the layer **above** them:
 
-- **Backends** run a CLI as a subprocess and translate its event stream into one common `Event` type. They also resume sessions (`claude --resume`, `codex exec resume`).
-- **Orchestration tools** come from an MCP server that crewbots hosts. Each CLI is started with it (`--mcp-config` for Claude, `-c mcp_servers.*` for Codex), so any bot on either backend can call `delegate_task`, `message_bot`, `list_tasks`, `request_approval` and `remember`.
-- **Rules** become CLI flags (permission mode, allowed tools, sandbox mode). Anything that needs your sign-off goes through `request_approval`, which blocks until you answer in the app.
+- **Backends** drive each CLI through its official integration point (the Claude Agent SDK, `codex app-server`) and translate its events into one common `Event` type. They resume a task's session on its next turn.
+- **Crew tools** are Python functions in the daemon. Claude gets them in-process; Codex gets them from a small MCP server over stdio that forwards each call to the daemon. Either way a bot can call `delegate`, `ask`, `message`, `handoff`, `escalate` and `remember`, and the daemon decides what each task may do.
+- **Rules** become CLI flags (permission mode, allowed tools, sandbox mode). Work that needs more than a role card gives goes through `ask_permission`, and decisions that aren't the bot's go up through `escalate`. Both wait for the answer.
 
 The model can only *request*; code decides what actually happens.
 
-## Pieces
-
-```
-desktop app (Tauri)
-        │  WebSocket + HTTP, localhost only
-crewbots daemon (Python, asyncio)
-  ├── api/          HTTP + WebSocket for the app
-  ├── store/        SQLite: bots, threads, messages, tasks, events, approvals
-  ├── crew/         bots, the lead, delegation, rules
-  ├── tasks/        task runner, git worktrees, merging back
-  ├── backends/     claude_cli, codex_cli → common Event stream
-  ├── mcp/          the orchestration tools served to every CLI
-  └── triggers/     schedules
-```
-
-**Core types**
-- `Bot`: name, role prompt, backend + model, rules, memory file, workspace (repo path).
-- `Thread`: a conversation with one or more bots and you.
-- `Task`: a piece of work given to a bot, with a goal, a worktree/branch, status (`queued → running → needs_input → review → merged | failed | cancelled`), the backend session id, and a cost/usage total.
-- `Event`: normalized backend output (`text`, `tool_call`, `tool_result`, `usage`, `done`, `error`), stored and streamed live to the app.
-
-## Milestones
-
-1. **Backends** (done). Run one prompt through each CLI in a worktree, normalize the events, resume a session. Tests use a fake CLI script, so none of them call a model.
-2. **Daemon and store** (done). Bots loaded from role cards, the `team/` brain in every bot's instructions, tasks with a single owner, events in SQLite, an HTTP/WebSocket API, and the `crewbots` CLI. There is no separate "thread" type: a conversation with a bot is a task, and a follow-up message resumes its session.
-3. **Crew** (done). The crewbots MCP server (`delegate`, `tasks`, `message` for coordinators; `handoff`, `escalate` for everyone), handoffs stored as records, reporting back to the coordinator when its work is done, run tokens, and skills, including crew versions of pstack's `interrogate`, `arena` and `swarm`.
-   Then the review loop and the merge. Reviews are tasks with `review_of`, and verdicts are records. A round is one reviewed version of the work, and the 3-round limit is enforced in code. Only approved work can be proposed, and only the user merges. Still to come: `ask_bot` between workers.
-4. **Rhythm.** Bot memory, schedules, routines (standup, planning, retro), budgets and per-bot metrics.
-5. **Desktop app.** The Activity view, threads, diff review and approvals.
-
-### Learned in milestone 1
+## Learned running the CLIs headless
 
 - Without `--strict-mcp-config` and `--setting-sources project,local`, `claude -p` loads the user's personal MCP servers, hooks and plugins. Bots must not inherit those.
 - `codex exec resume` takes neither `-s` nor `-C`, so the sandbox is set with `-c` (crewbots' permissions profile) and the directory is the process's working directory.
 - Claude's list options (`--allowedTools`, `--mcp-config`) take multiple values and would swallow a prompt passed after them, so both CLIs get the prompt on stdin.
 - Read-only access was checked on real runs: Claude's `dontAsk` mode with only the Read, Glob and Grep tools, and Codex's `read-only` sandbox, both refused to write a file.
 
-### Learned building the review loop
+## Learned building the daemon and store
 
-- Codex's `workspace-write` sandbox can't commit inside a worktree. A worktree's git metadata lives in the main repo's `.git/worktrees/`, outside the writable root. So bots leave changes uncommitted, and crewbots commits them when the user merges. That is also the right split: the commit and the merge are the user's act.
-- Counting a round as "one reviewed version" (the work's finished-run count when review was asked for) makes the limit objective. Two reviewers of the same version are one round, and a revision makes the next review a new round. A pass on version 1 never approves version 2.
-- In the live run, both reviewers recorded structured PASS verdicts. The Codex critic ran 610 boundary and property checks. The round status told the chief it could propose, and it did, with a summary covering edge-case decisions and the critic's "consider" notes. The merge commit records who reviewed it and in which round.
+- Codex's `workspace-write` sandbox limits *writes* to the worktree, but it can still *read* anywhere. On a real run the engineer searched every crewbots worktree for an AGENTS.md. Worktrees keep parallel bots from colliding; they are not a security boundary between bots. (The Grok Bot guide says the same: "don't treat separate bots as a security boundary.")
+- A reviewer with read-only access can't run tests, and it said so ("tests were not run") instead of claiming they passed. When the review step lands, it should get the engineer's test output, or a way to run tests that can't write.
+- Watchers must never see a task go `idle` while a follow-up is waiting to start, or they stop early. A task with queued messages stays `queued` between turns.
 
-### Learned in milestone 3
+## Learned building the crew tools
 
 - Codex refuses MCP calls that need approval when its approval policy is `never`, so a headless bot's tools failed until each crew-granted server got `default_tools_approval_mode = "approve"`. The role card granting the server is the approval, which matches Claude's `--allowedTools`.
 - mcp 2.x hides an exception's message from the model ("Error executing tool delegate") unless the tool raises `ToolError`. Refusals have to say why, or the bot can't correct course.
 - With "don't poll" in its instructions, the chief still called `tasks()` once straight after delegating, just to "wait". The tool description now says it is for looking things up, not for waiting.
 - In the first real run, the chief made the design decision itself instead of escalating trivia. It ran interrogate on two backends and read the final code itself before reporting. The Codex critic ran 17 extra edge-case checks that the Claude reviewer didn't.
 
-### Learned in milestone 2
+## Learned building the review loop
 
-- Codex's `workspace-write` sandbox limits *writes* to the worktree, but it can still *read* anywhere. On a real run the engineer searched every crewbots worktree for an AGENTS.md. Worktrees keep parallel bots from colliding; they are not a security boundary between bots. (The Grok Bot guide says the same: "don't treat separate bots as a security boundary.")
-- A reviewer with read-only access can't run tests, and it said so ("tests were not run") instead of claiming they passed. When the review step lands, it should get the engineer's test output, or a way to run tests that can't write.
-- Watchers must never see a task go `idle` while a follow-up is waiting to start, or they stop early. A task with queued messages stays `queued` between turns.
-
-## The stack so far
-
-| Layer | What | Why |
-|---|---|---|
-| Agent loop | Claude Code through the Claude Agent SDK, Codex through `codex app-server` (one-shot `codex exec` and `claude -p` as fallbacks) | Coding agents that already work, on subscriptions you already pay for, driven through their official integration points |
-| Daemon | Python 3.12, asyncio, FastAPI + uvicorn (HTTP + WebSocket), httpx | One process that runs every bot; the API is the contract for every client |
-| State | SQLite (stdlib, WAL): tasks, events, handoffs, reviews | One file per crew, no server to run |
-| Crew tools | MCP Python SDK 2.x, a stdio server per run | Both CLIs speak MCP, so one set of tools works on either |
-| Isolation | git worktrees, the CLIs' own sandboxes and permission modes | Parallel bots never share a checkout |
-| Crew config | Markdown + YAML role cards, `team/` files, Agent Skills (`SKILL.md`) | Editable files you own, and the format pstack and others ship in |
-| App | Tauri 2 (Rust), React 19, TypeScript 7, Vite 8 | Small and fast; the Rust side holds the token and proxies, the UI is plain React |
-| Tooling | uv, pytest + pytest-asyncio, ruff; npm, tsc; cargo | Types for the UI are generated from the API schema (`crewbots openapi --ts`) |
-
-There is no vector database, queue or container yet. Each would come in when a need below calls for it.
-
-## Next
-
-The architecture past the prototype (where it runs, the app, long-lived sessions, containment, memory, always-on, the API) is settled in [ARCHITECTURE.md](ARCHITECTURE.md), along with the order of work.
-
-## Open questions
-
-- Settled in [ARCHITECTURE.md](ARCHITECTURE.md): Tauri for the shell, and long-lived sessions instead of a process per turn.
+- Codex's `workspace-write` sandbox can't commit inside a worktree. A worktree's git metadata lives in the main repo's `.git/worktrees/`, outside the writable root. So bots leave changes uncommitted, and crewbots commits them when the user merges. That is also the right split: the commit and the merge are the user's act.
+- Counting a round as "one reviewed version" (the work's finished-run count when review was asked for) makes the limit objective. Two reviewers of the same version are one round, and a revision makes the next review a new round. A pass on version 1 never approves version 2.
+- In the live run, both reviewers recorded structured PASS verdicts. The Codex critic ran 610 boundary and property checks. The round status told the chief it could propose, and it did, with a summary covering edge-case decisions and the critic's "consider" notes. The merge commit records who reviewed it and in which round.
