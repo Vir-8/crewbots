@@ -46,7 +46,7 @@ class StarterOut(BaseModel):
 
 class RoutinesOut(BaseModel):
     routines: list[RoutineOut]
-    errors: dict[str, str]  # routine file → why it couldn't be read
+    errors: dict[str, str]  # routine file, or a checklist's path in the crew folder → what's wrong with it
     github_error: str | None
     crew_error: str | None  # a role card or team file that couldn't be read; the crew carries on as it was
     starters: list[StarterOut]  # starter routines this crew doesn't have yet

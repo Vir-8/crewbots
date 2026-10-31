@@ -5,8 +5,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from crewbots.api.schemas.tasks import TaskOut
-
-Access = Literal["read_only", "workspace_write", "full"]
+from crewbots.backends import Access
 
 
 class BotOut(BaseModel):

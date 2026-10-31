@@ -56,7 +56,7 @@ class Sessions:
         bot = self.bot_for(task.bot)
         opened = self._sessions.get(task_id)
         percent = self._context_seen.get(task_id)
-        measure = getattr(opened.session, "context_percent", None) if opened and opened.session.alive else None
+        measure = opened.session.context_percent if opened and opened.session.alive else None
         if measure and task_id not in self._runs:
             with contextlib.suppress(Exception):
                 percent = await asyncio.wait_for(measure(), 10) or percent
@@ -75,7 +75,7 @@ class Sessions:
     def _window(self, task: Task, bot: Bot) -> int | None:
         """The context a task's sessions hold before compacting: its bot's, and at most CONVERSATION_WINDOW for a chat
         or group chat."""
-        if not getattr(self.backends[bot.backend], "automatic_turns", True):
+        if not self.automatic(bot):
             return None  # the official ACP runtime manages its own context
         if task.kind in ("chat", "seat"):
             return min(bot.context_window or CONVERSATION_WINDOW, CONVERSATION_WINDOW)
@@ -91,7 +91,7 @@ class Sessions:
     async def _stop_session(self, task_id: str) -> None:
         """After a task's turn was stopped: its session goes, unless it stopped the turn and stays warm."""
         opened = self._sessions.get(task_id)
-        if not (opened and opened.session.alive and getattr(opened.session, "interruptible", False)):
+        if not (opened and opened.session.alive and opened.session.interruptible):
             await self._close_session(task_id)
 
     @property
@@ -104,7 +104,7 @@ class Sessions:
         done, rather than holding it until the turn ends. Only conversation steers: the user's, a group chat's and a
         teammate's. crewbots' own notices and reports wait for the turn to end."""
         opened = self._steering.get(task.id)
-        if (not opened or not getattr(opened.session, "steerable", False)
+        if (not opened or not opened.session.steerable
                 or not (sender in ("user", "room") or sender in self.crew.bots)):
             return False
         steering = asyncio.get_running_loop().create_task(self._steer_into(task.id, opened, text))
@@ -140,7 +140,7 @@ class Sessions:
                     yield event
         finally:
             self._steering.pop(task_id, None)
-            for text in getattr(opened.session, "missed_steers", list)():
+            for text in opened.session.missed_steers():
                 self._requeue(task_id, text)
 
     async def _session_for(self, task: Task, bot: Bot, cwd: Path, backend: Backend) -> OpenSession | None:
@@ -324,9 +324,9 @@ class Sessions:
         cache is warm: its bot first sets down where things stand (`_flush`), then the CLI compacts it in place with
         the crew's instructions. If that fails twice, it carries on in a fresh session from its notes, logs and state.
         A session that can't compact on request rolls over to a fresh one from a briefing instead (`_roll_over`)."""
-        if not getattr(self.backends[bot.backend], "automatic_turns", True):
+        if not self.automatic(bot):
             return
-        measure = getattr(opened.session, "context_percent", None) if opened and opened.session.alive else None
+        measure = opened.session.context_percent if opened and opened.session.alive else None
         if not self.rollover_percent or measure is None:
             return
         percent = await measure()
@@ -334,7 +334,7 @@ class Sessions:
             self._context_seen[task_id] = percent
         if percent is None or percent < self.rollover_percent:
             return
-        compact = getattr(opened.session, "compact", None)
+        compact = opened.session.compact
         if compact is None:
             await self._roll_over(task_id, opened, bot, percent)
             return
@@ -357,7 +357,7 @@ class Sessions:
         """Before compacting, or about 50 minutes into idleness while the cache is warm: the bot sets down where the
         task stands (`update_state`) and what's worth keeping from it in today's log. Nobody sees the turn; a quiet
         line in the thread says it happened."""
-        if not getattr(self.backends[bot.backend], "automatic_turns", True):
+        if not self.automatic(bot):
             return
         done, _ = await self._hidden(task_id, opened.session.turn(prompts.text("flush", self.crew.home,
                                                                                  no_reply=NO_REPLY)), bot)
@@ -427,7 +427,7 @@ class Sessions:
         now = time.time()
         for task_id, ended in list(self._turn_ended.items()):
             bot = self.bot_for(self.store.get_task(task_id).bot)
-            if bot and not getattr(self.backends[bot.backend], "automatic_turns", True):
+            if bot and not self.automatic(bot):
                 continue
             if (task_id in self._flushed or task_id in self._runs or task_id in self._cancelling
                     or not self.flush_idle_s <= now - ended < self.cold_s

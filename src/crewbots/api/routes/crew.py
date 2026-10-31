@@ -136,7 +136,7 @@ def routes(c: Context) -> APIRouter:
     @v1.post("/memory/consolidate", status_code=201, response_model=TaskOut)
     async def consolidate(body: Consolidate):
         """Consolidates a bot's memory now, rather than overnight."""
-        return runner.dream(body.bot, body.weekly).to_json()
+        return runner.task_json(runner.dream(body.bot, body.weekly))
 
     @v1.post("/proactive/{item_id}/react", response_model=ProactiveOut)
     async def react(item_id: int, body: Reaction):

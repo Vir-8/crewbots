@@ -28,7 +28,7 @@ PIN = re.compile(r"(bot|room):[\w.-]{1,64}")
 
 def routes(c: Context) -> APIRouter:
     runner, store = c.runner, c.store
-    attached = c.attached
+    attached, bot_or_404 = c.attached, c.bot_or_404
     v1 = APIRouter()
 
     def busy(task_id: str) -> bool:
@@ -59,7 +59,7 @@ def routes(c: Context) -> APIRouter:
         return {"key": f"room:{room['id']}", "kind": "group", "title": room["title"], "bot": None, "task_id": None,
                 "room": room, "last": last,
                 "unread": unread, "muted": room["muted"],
-                "working": any(s and s.status is Status.RUNNING and not runner._retrying(s.id) for s in seats),
+                "working": any(s and s.status is Status.RUNNING and not runner.retrying(s.id) for s in seats),
                 "updated_at": room["updated_at"]}
 
     def room_or_404(room_id: str) -> dict[str, Any]:
@@ -79,8 +79,7 @@ def routes(c: Context) -> APIRouter:
 
     @v1.put("/chats/bot/{bot}/mute", response_model=ChatMute)
     async def mute_chat(bot: str, body: ChatMute):
-        if bot not in runner.crew.bots:
-            raise HTTPException(404, f"no bot named {bot!r}")
+        bot_or_404(bot)
         store.set_chat_muted(bot, body.muted)
         runner.bus.publish({"type": "chat_mute", "bot": bot, "muted": body.muted})
         return body
@@ -102,23 +101,22 @@ def routes(c: Context) -> APIRouter:
     @v1.post("/chats/bot/{bot}/threads", status_code=201, response_model=TaskOut)
     async def thread_from_chat(bot: str, body: NewThread):
         """A thread you start from a bot's chat (`/new`): it hangs from the chat, and its result comes back there."""
-        if bot not in runner.crew.bots:
-            raise HTTPException(404, f"no bot named {bot!r}")
+        bot_or_404(bot)
         if not body.goal.strip():
             raise HTTPException(422, "a thread needs a goal")
-        return runner.thread_for(bot, body.goal.strip()).to_json()
+        return runner.task_json(runner.thread_for(bot, body.goal.strip()))
 
     @v1.post("/chats/bot/{bot}/notes", status_code=201, response_model=NoteOut)
     async def note_for_bot(bot: str, body: NewNote):
         """A note you give a bot (`/remember`), in its memory; its first line is the title."""
-        if bot not in runner.crew.bots:
-            raise HTTPException(404, f"no bot named {bot!r}")
+        bot_or_404(bot)
         note = runner.remember_for(bot, body.text)
         return {"title": note.title, "path": str(note.path)}
 
     @v1.post("/chats/bot/{bot}/messages", response_model=TaskOut)
     async def message_bot(bot: str, body: Message):
-        return runner.say(bot, body.text, attachments=attached(body)).to_json()
+        bot_or_404(bot)
+        return runner.task_json(runner.say(bot, body.text, attachments=attached(body)))
 
     @v1.post("/chats/{key}/read")
     async def read(key: str):

@@ -50,6 +50,10 @@ class TaskOut(BaseModel):
     attempt: RetryOut | None = None  # set while it waits between tries
 
 
+class MergedOut(TaskOut):
+    ignored: list[str] = []  # output it handed back that git ignores in the project, so the merge left it out
+
+
 class MergeStatusOut(BaseModel):
     already_on: str | None  # the branch a proposal's changes are already part of
 

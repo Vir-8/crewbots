@@ -10,10 +10,11 @@ from crewbots import routines as routines_module
 from crewbots.api.context import Context
 from crewbots.api.schemas import NewRoutine, RoutineBody, RoutineFileOut, RoutineOut, RoutinesOut, TaskOut
 from crewbots.routines import RoutineError
+from crewbots.scheduler import RoutineView
 
 
 def routes(c: Context) -> APIRouter:
-    runner, scheduler = c.runner, c.scheduler
+    runner, scheduler, bot_or_404 = c.runner, c.scheduler, c.bot_or_404
     v1 = APIRouter()
 
     @v1.get("/routines", response_model=RoutinesOut)
@@ -32,10 +33,9 @@ def routes(c: Context) -> APIRouter:
     @v1.post("/checkins/{bot}", status_code=201, response_model=TaskOut)
     async def check_in(bot: str):
         """Checks a bot in on its whole checklist now, whatever's due."""
-        if bot not in runner.crew.bots:
-            raise HTTPException(404, f"no bot named {bot}")
+        bot_or_404(bot)
         try:
-            return scheduler.check_in(bot).to_json()
+            return runner.task_json(scheduler.check_in(bot))
         except ValueError as e:
             raise HTTPException(422, str(e)) from None
 
@@ -93,17 +93,17 @@ def routes(c: Context) -> APIRouter:
         routine = next((r for r in scheduler.routines if r.name == name), None)
         if routine is None:
             raise RoutineError(scheduler.errors.get(f"{name}.md", f"{name} didn't load"))
-        return scheduler.run_now(name).to_json() if routine.schedule else None
+        return runner.task_json(scheduler.run_now(name)) if routine.schedule else None
 
     @v1.post("/routines/{name}/run", status_code=201, response_model=TaskOut)
     async def run_routine(name: str):
         """Runs a scheduled routine now, as if its time had come."""
-        return scheduler.run_now(name).to_json()
+        return runner.task_json(scheduler.run_now(name))
 
     return v1
 
 
-def _routine_out(view: Any) -> dict[str, Any]:
+def _routine_out(view: RoutineView) -> dict[str, Any]:
     r = view.routine
     return {"name": r.name, "description": r.description, "bot": r.bot, "when": r.when,
             "schedule": r.schedule.text if r.schedule else None, "on": r.on, "repo": r.repo,

@@ -3,12 +3,12 @@
 import asyncio
 import re
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 from crewbots import prompts
 from crewbots.events import Notice
 from crewbots.runner.common import _duration
-from crewbots.store import Status
+from crewbots.store import Status, Task
 
 # What a backend says when the session it was asked to resume is gone: Codex's app-server, and Claude.
 SESSION_GONE = re.compile(r"no rollout found|no conversation found", re.IGNORECASE)
@@ -25,12 +25,16 @@ class Attempt:
 
 
 class Retries:
-    def _retrying(self, task_id: str) -> dict[str, int | float] | None:
+    def retrying(self, task_id: str) -> dict[str, int | float] | None:
         """Where a task waiting to try again stands (from the same state `room_status` reads); None otherwise."""
         a = self._attempts.get(task_id)
         if not a or a.state != "backoff":
             return None
         return {"attempt": a.attempt, "of": a.of, "wait_seconds": a.wait_seconds}
+
+    def task_json(self, task: Task) -> dict[str, Any]:
+        """A task as the API and the app's live updates show it: with its try, while it waits to try again."""
+        return {**task.to_json(), "attempt": self.retrying(task.id)}
 
     def _failed(self, task_id: str, error: str | None, result: str | None = None, retry: str | None = None) -> None:
         """A turn failed for good, whether it ran or never started. The task settles as failed; a seat's room is told
@@ -64,7 +68,7 @@ class Retries:
                     return  # settled: finished, or failed for good
                 task = self.store.get_task(task_id)
                 bot = self.bot_for(task.bot)
-                if bot and not getattr(self.backends[bot.backend], "automatic_turns", True):
+                if bot and not self.automatic(bot):
                     self._failed(task_id, done.error, done.final_text or None, done.retry)
                     return
                 if task.session_id and not fresh and SESSION_GONE.search(done.error or ""):

@@ -9,6 +9,7 @@ from crewbots.api.schemas import (
     ChildOut,
     EventOut,
     LandedOut,
+    MergedOut,
     MergeRequest,
     MergeStatusOut,
     Message,
@@ -30,11 +31,11 @@ def routes(c: Context) -> APIRouter:
 
     @v1.get("/tasks", response_model=list[TaskOut])
     async def tasks(status: Status | None = None, bot: str | None = None, limit: int = Query(100, le=1000)):
-        return [{**t.to_json(), "attempt": runner._retrying(t.id)} for t in store.list_tasks(status=status, bot=bot, limit=limit)]
+        return [runner.task_json(t) for t in store.list_tasks(status=status, bot=bot, limit=limit)]
 
     @v1.post("/tasks", status_code=201, response_model=TaskOut)
     async def new_task(body: NewTask):
-        return runner.submit(body.bot, body.goal, workspace=body.workspace).to_json()
+        return runner.task_json(runner.submit(body.bot, body.goal, workspace=body.workspace))
 
     @v1.get("/landed", response_model=LandedOut)
     async def landed():
@@ -49,7 +50,7 @@ def routes(c: Context) -> APIRouter:
     async def revert(task_id: str):
         """Reverts merged work, as a commit of its own in the folder it merged into."""
         task_or_404(task_id)
-        return runner.revert(task_id).to_json()
+        return runner.task_json(runner.revert(task_id))
 
     @v1.post("/worktrees/sweep")
     async def sweep_worktrees():
@@ -62,7 +63,7 @@ def routes(c: Context) -> APIRouter:
 
     @v1.get("/tasks/{task_id}", response_model=TaskOut)
     async def task(task_id: str):
-        return {**task_or_404(task_id).to_json(), "attempt": runner._retrying(task_id)}
+        return runner.task_json(task_or_404(task_id))
 
     @v1.get("/tasks/{task_id}/status", response_model=TaskStatus)
     async def task_status(task_id: str):
@@ -77,12 +78,12 @@ def routes(c: Context) -> APIRouter:
     @v1.post("/tasks/{task_id}/messages", response_model=TaskOut)
     async def message(task_id: str, body: Message):
         task_or_404(task_id)
-        return runner.send(task_id, body.text, attachments=attached(body), question_id=body.question_id).to_json()
+        return runner.task_json(runner.send(task_id, body.text, attachments=attached(body), question_id=body.question_id))
 
     @v1.post("/tasks/{task_id}/cancel", response_model=TaskOut)
     async def cancel(task_id: str):
         task_or_404(task_id)
-        return (await runner.cancel(task_id)).to_json()
+        return runner.task_json(await runner.cancel(task_id))
 
     @v1.get("/tasks/{task_id}/changes", response_model=ChangesOut)
     async def changes(task_id: str):
@@ -93,7 +94,7 @@ def routes(c: Context) -> APIRouter:
     async def release(task_id: str):
         """Lets a task held on a budget or plan limit go ahead, with the rest of its goal."""
         task_or_404(task_id)
-        return runner.release(task_id).to_json()
+        return runner.task_json(runner.release(task_id))
 
     @v1.post("/permissions/{permission_id}", response_model=PermissionOut)
     async def answer_permission(permission_id: int, body: PermissionAnswer):
@@ -113,10 +114,11 @@ def routes(c: Context) -> APIRouter:
         task_or_404(task_id)
         return runner.review_state(task_id).to_json()
 
-    @v1.post("/tasks/{task_id}/merge", response_model=TaskOut)
+    @v1.post("/tasks/{task_id}/merge", response_model=MergedOut)
     async def merge(task_id: str, body: MergeRequest | None = None):
         task_or_404(task_id)
-        return (await runner.merge_off_loop(task_id, force=bool(body and body.force))).to_json()
+        task = await runner.merge_off_loop(task_id, force=bool(body and body.force))
+        return runner.task_json(task) | {"ignored": runner.merged_details(task).get("ignored") or []}
 
     @v1.get("/tasks/{task_id}/merge-status", response_model=MergeStatusOut)
     async def merge_status(task_id: str):
@@ -125,6 +127,6 @@ def routes(c: Context) -> APIRouter:
     @v1.post("/tasks/{task_id}/withdraw-merge", response_model=TaskOut)
     async def withdraw_merge(task_id: str, body: WithdrawalReason):
         task_or_404(task_id)
-        return runner.withdraw_merge(task_id, body.reason).to_json()
+        return runner.task_json(runner.withdraw_merge(task_id, body.reason))
 
     return v1

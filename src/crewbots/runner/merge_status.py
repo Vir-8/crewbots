@@ -7,6 +7,7 @@ import asyncio
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Any
 
 from crewbots import ci, worktree
 from crewbots.crew import is_no_reply
@@ -36,6 +37,12 @@ class MergeStatus:
             return into if worktree.already_in(repo, f"refs/heads/{into}", tip, task.base) else None
         except worktree.GitError:
             return None
+
+    def merged_details(self, task: Task) -> dict[str, Any]:
+        """What the merge that landed the task recorded (its commit, files, what git ignored): {} when it isn't
+        merged, or its latest merged event names another commit."""
+        event = self.store.last_event(task.id, ("merged",)) if task.merge_state == "merged" else None
+        return event.data if event and event.data.get("commit") == task.merged_commit else {}
 
     def ci_gate(self, task: Task, into: str, tip: str) -> tuple[str, str]:
         """Run the repo's CI steps on what a merge would land on `into`: the squash of `tip` on top of `into`, built

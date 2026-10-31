@@ -2,7 +2,10 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "48fdba8857e7";
+export const API_SCHEMA = "4452e717420d";
+
+/** How much a run may touch. Each backend maps this onto its own permission or sandbox flags. */
+export type Access = "read_only" | "workspace_write" | "full";
 
 /** One thing a bot did to another: delegated, asked for a review, asked, messaged, posted, or opened or grew a
 group chat; or a tool call of a bot's that crewbots refused. */
@@ -59,7 +62,7 @@ export interface BotOut {
   description: string;
   backend: string;
   model: string | null;
-  access: "read_only" | "workspace_write" | "full";
+  access: Access;
   workspace: string | null;
   network: boolean | string[];
   mcp: string[];
@@ -127,7 +130,7 @@ export interface CardBody {
   model?: string | null;
   effort?: string | null;
   context_window?: number | "auto" | null;
-  access?: "read_only" | "workspace_write" | "full" | null;
+  access?: Access | null;
   network?: boolean | string[] | null;
   avatar?: Avatar | null;
   budget?: Budget | null;
@@ -144,7 +147,7 @@ export interface CardOut {
   model?: string | null;
   effort?: string | null;
   context_window?: number | "auto" | null;
-  access?: "read_only" | "workspace_write" | "full" | null;
+  access?: Access | null;
   network?: boolean | string[] | null;
   avatar?: Avatar | null;
   budget?: Budget | null;
@@ -520,6 +523,42 @@ export interface MergeStatusOut {
   already_on: string | null;
 }
 
+export interface MergedOut {
+  id: string;
+  bot: string;
+  title: string;
+  status: Status;
+  created_by: string;
+  parent_id: string | null;
+  workspace: string | null;
+  repo: string | null;
+  worktree_path: string | null;
+  branch: string | null;
+  base: string | null;
+  session_id: string | null;
+  result: string | null;
+  error: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+  reported: boolean;
+  turns: number;
+  review_of: string | null;
+  review_version: number | null;
+  merge_state: MergeState | null;
+  merged_commit: string | null;
+  merged_tip: string | null;
+  kind: Kind;
+  room_id: string | null;
+  pr: string | null;
+  routine: string | null;
+  budget: number | null;
+  created_at: string;
+  updated_at: string;
+  attempt?: RetryOut | null;
+  ignored?: string[];
+}
+
 export interface Message {
   text?: string;
   attachments?: string[];
@@ -558,7 +597,7 @@ export interface NewBot {
   model?: string | null;
   effort?: string | null;
   context_window?: number | "auto" | null;
-  access?: "read_only" | "workspace_write" | "full" | null;
+  access?: Access | null;
   network?: boolean | string[] | null;
   avatar?: Avatar | null;
   budget?: Budget | null;

@@ -224,7 +224,7 @@ class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Revie
         One from a teammate reaches the bot marked as a teammate's, so it isn't taken for the user's word."""
         task = self.store.get_task(task_id)
         card = self.bot_for(task.bot)
-        if sender == "crewbots" and card and not getattr(self.backends[card.backend], "automatic_turns", True):
+        if sender == "crewbots" and card and not self.automatic(card):
             if _record_message:
                 self._message(task_id, sender, text, attachments)
             self._held_notices.setdefault(task_id, []).append(text)
@@ -333,7 +333,7 @@ class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Revie
             task = self.store.get_task(turn["task_id"])
             self.store.clear_pending(task.id)
             if (task.kind == "review" or task.bot not in self.crew.bots
-                    or not getattr(self.backends[self.crew.bots[task.bot].backend], "automatic_turns", True)):
+                    or not self.automatic(self.crew.bots[task.bot])):
                 continue  # a code review is restarted by the user, as it always was
             if turn["resumed"]:
                 self._record(task.id, kind="restarted", data={"again": True})
@@ -355,6 +355,11 @@ class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Revie
     def bot_for(self, name: str) -> Bot | None:
         """A crew bot, or the reviewer agent a code review runs as (it isn't one of the crew)."""
         return self.crew.bots.get(name) or reviewer_bot(name, self.crew.home)
+
+    def automatic(self, bot: Bot) -> bool:
+        """Whether crewbots may start the bot's turns on its own, not only the ones someone asked for."""
+        backend = self.backends.get(bot.backend)
+        return backend is None or backend.automatic_turns
 
     def note(self, task_id: str, message: str) -> None:
         """A line in a task's conversation from crewbots itself, such as what a review is waiting on."""
@@ -587,7 +592,7 @@ class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Revie
     def _spec(self, task: Task, bot: Bot, cwd: Path, token: str, prompt: str, backend: Backend) -> RunSpec:
         if task.kind == "review":  # its own instructions and tools, and nothing of the crew's: no roster, no memory
             tools = self.review_tools(task) if self.review_tools and self.api_url else None
-            in_process = tools is not None and getattr(backend, "in_process_tools", False)
+            in_process = tools is not None and backend.in_process_tools
             flags = ",".join(f for f, on in (("github", getattr(tools, "reads_github", False)),
                                              ("drafts", getattr(tools, "drafting", False))) if on)
             servers = {} if tools is None or in_process else self._crew_tools(token, bot, tools="review", flags=flags)
@@ -598,7 +603,7 @@ class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Revie
                            mcp_servers=servers, crew=tools if in_process else None, network=bot.network,
                            deny_read=self._state_denials(bot.name))
         # A backend that hosts tools in-process gets the crew tools as Python; any other, as an MCP server with a token.
-        in_process = getattr(backend, "in_process_tools", False) and self.api_url is not None
+        in_process = backend.in_process_tools and self.api_url is not None
         grants = self._grants(task)  # what the user allowed this task beyond its bot's role card
         proactive = task.created_by == "crewbots" and task.parent_id is not None  # started on its own, from a check-in
         return RunSpec(
@@ -675,7 +680,7 @@ class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Revie
             if fields["status"] in (Status.FAILED, Status.CANCELLED):
                 self._close_questions(task.id)
             self._refresh_working_state(task.bot)
-        self.bus.publish({"type": "task", "task": {**task.to_json(), "attempt": self._retrying(task_id)}})
+        self.bus.publish({"type": "task", "task": self.task_json(task)})
         if self.restarting and "status" in fields:  # how many turns the restart still waits for
             self.bus.publish({"type": "crew", "crew": self.state()})
         return task

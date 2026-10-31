@@ -63,7 +63,7 @@ class Welcome:
         in what Claude Code and Codex know. Only at a first meeting: a crew the user has talked with counts as started
         off already."""
         chief = self.chief_bot()
-        if chief is None or self.started() or not getattr(self.backends.get(chief.backend), "automatic_turns", True):
+        if chief is None or self.started() or not self.automatic(chief):
             return None
         if self.store.talked_with_crew():
             self.store.routine_ran(STARTED, _now(), "")

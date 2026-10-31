@@ -440,6 +440,8 @@ def _review(args: argparse.Namespace) -> int:
 def _merge(args: argparse.Namespace) -> int:
     task = _client(args).post(f"/tasks/{args.task_id}/merge", json={"force": args.force}).raise_for_status().json()
     print(f"merged {task['id']} ({task['branch']}) as {task['merged_commit'][:12]}")
+    if task["ignored"]:
+        print("Left out, as git ignores them in this project: " + ", ".join(task["ignored"]))
     return 0
 
 

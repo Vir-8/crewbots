@@ -256,9 +256,7 @@ class CrewTools:
                     return proposal_message(r, proposal)
                 case "propose_merge":
                     task = await r.propose_merge_off_loop(me, args["task_id"], args["summary"])
-                    event = r.store.last_event(task.id, ("merged",)) if task.merge_state == "merged" else None
-                    details = event.data if event and event.data.get("commit") == task.merged_commit else {}
-                    return merge_text(task.id, task.merge_state, task.merged_commit, details)
+                    return merge_text(task.id, task.merge_state, task.merged_commit, r.merged_details(task))
                 case "withdraw_merge":
                     task = r.withdraw_merge(args["task_id"], args["reason"], parent_id=me)
                     return f"Withdrew the merge proposal for {task.id}."

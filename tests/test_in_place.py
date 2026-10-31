@@ -124,10 +124,10 @@ async def test_output_git_ignores_is_named_rather_than_left_out_quietly(game):
     merged = await crew.runner.propose_merge_off_loop(lead.id, work.id, "Add the player")
     committed = worktree._git(repo, "show", "--name-only", "--format=", "HEAD").split()
     assert committed == ["Assets/Player.cs", "Assets/Player.cs.meta"]
-    event = store.last_event(work.id, ("merged",))
-    assert event.data["ignored"] == [skill]
+    details = crew.runner.merged_details(merged)
+    assert details["ignored"] == [skill]
     assert f"Left out, as git ignores them in this project: {skill}." in merge_text(
-        work.id, merged.merge_state, merged.merged_commit, event.data)
+        work.id, merged.merge_state, merged.merged_commit, details)
     await crew.runner.shutdown()
 
 

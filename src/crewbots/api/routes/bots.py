@@ -1,6 +1,5 @@
 """Bots: the crew's list, each bot's role card and profile, adding one, and the models they can run on."""
 
-import contextlib
 from datetime import datetime
 from typing import Any
 
@@ -14,7 +13,7 @@ from crewbots.api.schemas import BotOut, CardBody, CardOut, ModelsOut, NewBot, P
 
 def routes(c: Context) -> APIRouter:
     runner, store = c.runner, c.store
-    reload_crew = c.reload_crew
+    reload_crew, bot_or_404 = c.reload_crew, c.bot_or_404
     v1 = APIRouter()
 
     @v1.get("/bots", response_model=list[BotOut])
@@ -35,9 +34,7 @@ def routes(c: Context) -> APIRouter:
         return fields
 
     def pages_folder(bot: str):
-        if bot not in runner.crew.bots:
-            raise HTTPException(404, f"no bot named {bot!r}")
-        return runner.crew.pages_of(runner.crew.bots[bot])
+        return runner.crew.pages_of(bot_or_404(bot))
 
     @v1.get("/bots/{bot}/pages", response_model=list[PageOut])
     async def bot_pages(bot: str):
@@ -69,13 +66,9 @@ def routes(c: Context) -> APIRouter:
 
     @v1.put("/bots/{name}/card", response_model=CardOut)
     async def put_card(name: str, body: CardBody):
-        fields = edited(body.model_dump(exclude_unset=True, exclude={"instructions"}))
-        if fields.get("mcp") is not None:  # servers defined on the card move to the crew's list, kept by name
-            with contextlib.suppress(KeyError, OSError):
-                inline = cards.read(cards._bot_path(runner.crew.home, name))[0].get("mcp")
-                for server in fields["mcp"]:
-                    if isinstance(inline, dict) and server in inline and server not in mcp_catalog.servers(runner.crew.home):
-                        mcp_catalog.save(runner.crew.home, server, inline[server])
+        fields = edited(body.model_dump(mode="json", exclude_unset=True, exclude={"instructions"}))
+        if fields.get("mcp") is not None:
+            mcp_catalog.keep_inline(runner.crew.home, name, fields["mcp"])
         try:
             cards.save_card(runner.crew.home, name, fields, body.instructions)
         except KeyError:
@@ -85,7 +78,7 @@ def routes(c: Context) -> APIRouter:
 
     @v1.post("/bots", status_code=201, response_model=CardOut)
     async def new_bot(body: NewBot):
-        fields = edited(body.model_dump(exclude_unset=True, exclude={"instructions", "name"}))
+        fields = edited(body.model_dump(mode="json", exclude_unset=True, exclude={"instructions", "name"}))
         cards.save_card(runner.crew.home, body.name, fields, body.instructions or "", create=True)
         reload_crew()
         return cards.card(runner.crew.home, body.name)
@@ -93,8 +86,7 @@ def routes(c: Context) -> APIRouter:
     @v1.get("/bots/{bot}/profile", response_model=ProfileOut)
     async def profile(bot: str):
         """What a bot is doing and has done: its threads, newest first, and the files they handed back."""
-        if bot not in runner.crew.bots:
-            raise HTTPException(404, f"no bot named {bot}")
+        bot_or_404(bot)
         threads = store.threads_of(bot)
         outputs = []
         for thread in threads:
@@ -105,7 +97,7 @@ def routes(c: Context) -> APIRouter:
         mine = [chat, *threads, *(s for r in store.rooms() if (s := store.seat_of(r["id"], bot)))]
         return {"bot": bot, "working": any(t.id in runner.running() and t.id not in runner.held() for t in mine),
                 "last_active": max((t.updated_at for t in mine), default=None),
-                "threads": [t.to_json() for t in threads], "outputs": outputs[:30]}
+                "threads": [runner.task_json(t) for t in threads], "outputs": outputs[:30]}
 
     @v1.get("/models", response_model=ModelsOut)
     async def list_models(fresh: bool = False):

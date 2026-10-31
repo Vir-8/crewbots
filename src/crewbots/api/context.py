@@ -59,6 +59,12 @@ class Context:
         except KeyError:
             raise HTTPException(404, f"no task {task_id}") from None
 
+    def bot_or_404(self, name: str) -> crew_module.Bot:
+        try:
+            return self.runner.crew.bots[name]
+        except KeyError:
+            raise HTTPException(404, f"no bot named {name!r}") from None
+
     def attached(self, body: Message) -> list[dict[str, Any]]:
         """A message's attachments, found in the crew's folder; a message needs text or one of them."""
         if not body.text.strip() and not body.attachments:

@@ -270,10 +270,10 @@ async def test_a_seat_waiting_to_try_again_says_so_and_is_not_running(store, tmp
     with runner.bus.subscribe() as queue:
         runner.post(room["id"], "user", "@worker go")
         seat = lambda: store.seat_of(room["id"], "worker")  # noqa: E731
-        await wait_until(lambda: seat() and runner._retrying(seat().id))
+        await wait_until(lambda: seat() and runner.retrying(seat().id))
 
         assert seat().status is Status.QUEUED  # not running: nothing is being done
-        assert runner._retrying(seat().id) == {"attempt": 2, "of": 3, "wait_seconds": 30.0}
+        assert runner.retrying(seat().id) == {"attempt": 2, "of": 3, "wait_seconds": 30.0}
         shown = [t for t in seat_updates(queue) if t["id"] == seat().id]
         assert shown[-1]["status"] == "queued" and shown[-1]["attempt"] == {"attempt": 2, "of": 3, "wait_seconds": 30.0}
         assert all(t["attempt"] is None for t in shown if t["status"] == "running")
@@ -287,7 +287,7 @@ async def test_the_last_failed_try_clears_the_retry_and_tells_the_room_once(stor
     await wait_until(lambda: seat() and seat().status is Status.FAILED)
     await asyncio.sleep(0.05)
 
-    assert runner._retrying(seat().id) is None
+    assert runner.retrying(seat().id) is None
     told = [m for m in store.room_messages(room["id"]) if m["author"] == "worker"]
     assert [m["text"] for m in told] == ["I couldn't take this turn: backend error. Details: room_status."]
     assert "529" in store.get_task(seat().id).error  # the error stays where room_status reads it

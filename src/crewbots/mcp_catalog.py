@@ -43,6 +43,17 @@ def save(home: Path, name: str, spec: dict[str, Any]) -> None:
     _write(home, servers(home) | {name: spec})
 
 
+def keep_inline(home: Path, bot: str, kept: list[str]) -> None:
+    """Moves the servers defined on a bot's card itself that it keeps, by name, to the crew's list, unless the crew
+    has a server of that name already."""
+    with contextlib.suppress(KeyError, OSError):
+        inline = cards.read(cards.bot_path(home, bot))[0].get("mcp")
+        if isinstance(inline, dict):
+            for name in kept:
+                if name in inline and name not in servers(home):
+                    save(home, name, inline[name])
+
+
 def remove(home: Path, name: str) -> list[str]:
     """Removes a server, and takes it off every role card that names it. Returns those bots."""
     found = servers(home)

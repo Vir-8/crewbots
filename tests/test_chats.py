@@ -591,6 +591,14 @@ def test_direct_mute_persists_and_is_served_without_erasing_unread(crew, store, 
         assert not store.chat_muted("engineer")
 
 
+def test_a_missing_bot_is_not_found_whichever_chat_route_names_it(crew):
+    with TestClient(create_app(crew.runner, "t", 8765), base_url="http://127.0.0.1:8765/v1") as client:
+        auth = {"Authorization": "Bearer t"}
+        for path, body in [("messages", {"text": "hi"}), ("threads", {"goal": "x"}), ("notes", {"text": "x"})]:
+            refused = client.post(f"/chats/bot/missing/{path}", json=body, headers=auth)
+            assert (refused.status_code, refused.json()["detail"]) == (404, "no bot named 'missing'")
+
+
 def test_the_app_sees_every_conversation_with_what_is_unread(crew, store):
     with TestClient(create_app(crew.runner, "t", 8765), base_url="http://127.0.0.1:8765/v1") as client:
         auth = {"Authorization": "Bearer t"}

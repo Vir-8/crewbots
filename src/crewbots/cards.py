@@ -34,7 +34,7 @@ def read(path: Path) -> tuple[dict[str, Any], str]:
 
 
 def card(home: Path, name: str) -> dict[str, Any]:
-    meta, body = read(_bot_path(home, name))
+    meta, body = read(bot_path(home, name))
     out = {"name": name, **{k: meta.get(k) for k in BOT_FIELDS}, "instructions": body}
     if isinstance(out.get("mcp"), dict):  # servers defined on the card itself: the app shows them by name
         out["mcp"] = sorted(out["mcp"])
@@ -57,7 +57,7 @@ def save_card(home: Path, name: str, fields: dict[str, Any], instructions: str |
             raise CrewError(f"there's already a bot called {name}")
         meta, body = {}, ""
     else:
-        path = _bot_path(home, name)
+        path = bot_path(home, name)
         meta, body = read(path)
     for key in BOT_FIELDS:
         if key in fields:
@@ -127,7 +127,8 @@ def _write(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
-def _bot_path(home: Path, name: str) -> Path:
+def bot_path(home: Path, name: str) -> Path:
+    """The role card of the bot with this handle; KeyError if there's none."""
     for path in sorted((home / "bots").glob("*.md")):
         meta, _ = read(path)
         if str(meta.get("name", path.stem)) == name:
