@@ -62,7 +62,7 @@ class Scheduler:
         self.github_every_s = github_every_s
         self.github = github
         self.routines: list[Routine] = []
-        self.errors: dict[str, str] = {}  # routine file → why it couldn't be read
+        self.errors: dict[str, str] = {}  # routine file, or a checklist's path in the crew folder → what's wrong with it
         self.github_error: str | None = None
         self._polled: float | None = None
         self._skipped: dict[str, str] = {}
@@ -76,7 +76,11 @@ class Scheduler:
 
     def load(self) -> None:
         """Read every tick, so a routine file you add or edit counts without restarting anything."""
-        self.routines, self.errors = routines_module.load(self.runner.crew.routines_dir, set(self.runner.crew.bots))
+        crew = self.runner.crew
+        self.routines, self.errors = routines_module.load(crew.routines_dir, set(crew.bots))
+        for bot in crew.bots:
+            if bad := checkins.problems(crew.home, bot):
+                self.errors[str(checkins.path(crew.home, bot).relative_to(crew.home))] = "; ".join(bad)
 
     async def run(self) -> None:
         while True:
@@ -133,7 +137,6 @@ class Scheduler:
             self._wake_due(now)
         self.runner.attention.tick(now)
         triggers = [r for r in self.routines if r.enabled and r.on and not away
-                    and self.runner.crew.bots.get(r.bot)
                     and getattr(self.runner.backends[self.runner.crew.bots[r.bot].backend], "automatic_turns", True)]
         if (triggers or self._wants_github()) and (self._polled is None or loop.time() - self._polled >= self.github_every_s):
             self._polled = loop.time()

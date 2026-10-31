@@ -130,6 +130,17 @@ def test_the_app_or_cli_checks_a_bot_in_now(store, tmp_path):
         assert client.post("/checkins/ghost", headers=auth).status_code == 404
 
 
+def test_an_item_on_an_event_there_isnt_is_reported_with_the_routines_problems(store, tmp_path):
+    checklist = CHECKLIST + "- on commits acme-web: what changed\n- on commit acme-web: what changed\n"
+    runner, _, _ = crew_with(store, tmp_path, says({"notify": False}), checklist=checklist)
+    assert [i.on for i in checkins.load(tmp_path, "engineer").items if i.on] == ["commit"]  # the typo never fires
+    with TestClient(create_app(runner, "t", 8765), base_url="http://127.0.0.1:8765/v1") as client:
+        errors = client.get("/routines", headers={"Authorization": "Bearer t"}).json()["errors"]
+    assert list(errors) == ["bots/engineer/checkin.md"]
+    assert "'- on commits acme-web: what changed'" in errors["bots/engineer/checkin.md"]
+    assert "no 'commits' event" in errors["bots/engineer/checkin.md"]
+
+
 async def test_a_check_in_may_start_low_risk_work_of_its_own_within_a_daily_cap(store, tmp_path):
     start = {"title": "Fuzz the export's filters", "goal": "Write fuzz tests for the export's filters."}
     reports = {"notify": False, "text": "The export has no fuzz tests.", "start_thread": start}

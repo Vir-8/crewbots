@@ -32,7 +32,7 @@ export function Routines({ crew, onOpen }: { crew: Crew; onOpen: (id: string) =>
     >
       <p className="page-lede">Work the crew starts on its own: on a schedule, as a message in that bot's chat, or when GitHub has something for you, as a thread.</p>
       {errors.map(([file, why]) => (
-        <Problem key={file} what={`routines/${file} couldn't be read`} why={why} />
+        <Problem key={file} what={`${file.includes("/") ? file : `routines/${file}`} couldn't be read`} why={why} />
       ))}
       <div className="list">
         {routines.map((r) => (

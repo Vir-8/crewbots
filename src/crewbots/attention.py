@@ -14,6 +14,7 @@ import time
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+from crewbots import prompts
 from crewbots.memory import MemoryError
 
 if TYPE_CHECKING:
@@ -85,7 +86,7 @@ class Attention:
             return None
         store.mark_digested(_midnight(now), [i["id"] for i in items])
         lines = [f"- {crew.bots[i['bot']].label if i['bot'] in crew.bots else i['bot']}: {i['text']}" for i in items]
-        text = "Good morning. While you were away, the crew noticed:\n\n" + "\n".join(lines)
+        text = prompts.text("digest", crew.home, items="\n".join(lines))
         chat = self.runner.chat(chief.name)
         self.runner._record(chat.id, kind="text", data={"text": text, "digest": True, "items": [i["id"] for i in items]})
         return {"bot": chief.name, "items": len(items)}

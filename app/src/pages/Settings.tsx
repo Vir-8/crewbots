@@ -27,7 +27,7 @@ export function Settings({ crew }: { crew: Crew }) {
 
   const problems = [
     crew.routines?.crew_error && { what: "A role card couldn't be read, so the crew carries on as it was", why: crew.routines.crew_error },
-    ...Object.entries(crew.routines?.errors ?? {}).map(([file, why]) => ({ what: `routines/${file} couldn't be read`, why })),
+    ...Object.entries(crew.routines?.errors ?? {}).map(([file, why]) => ({ what: `${file.includes("/") ? file : `routines/${file}`} couldn't be read`, why })),
   ].filter(Boolean) as { what: string; why: string }[];
   const reviewed = new Set([...(crew.reviewInbox?.assigned ?? []), ...(crew.reviewInbox?.direct ?? [])].map((p) => p.repo));
   const suggestions = [...reviewed].filter((r) => !repos[r]);

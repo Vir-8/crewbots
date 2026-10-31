@@ -95,3 +95,13 @@ def load(home: Path, bot: str) -> Checklist | None:
             every = max(SHORTEST, {"m": timedelta(minutes=n), "h": timedelta(hours=n), "d": timedelta(days=n)}[unit])
             items.append(Item(id=hashlib.sha256(what.encode()).hexdigest()[:10], every=every, what=what))
     return Checklist(items, hours, tuple(watch)) if items else None
+
+
+def problems(home: Path, bot: str) -> list[str]:
+    """The checklist's `on` items on an event there isn't, a typo say, which `load` skips: they'd never come due."""
+    try:
+        text = path(home, bot).read_text()
+    except OSError:
+        return []
+    return [f"{line.strip()!r} is skipped: there's no {found[1]!r} event (there are {', '.join(KINDS)})"
+            for line in text.splitlines() if (found := ON_ITEM.match(line)) and found[1].lower() not in KINDS]
