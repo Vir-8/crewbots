@@ -97,7 +97,7 @@ database, and `crewbots --help` lists every command. For Antigravity, see [docs/
 
 ## The app
 
-A Tauri 2 shell around a React and TypeScript UI, typed from the daemon's OpenAPI schema. It needs Rust and Node 22.
+A Tauri 2 shell around a React and TypeScript UI, typed from the daemon's OpenAPI schema. It needs Rust and Node.
 
 ```bash
 cd app && npm install && npm run dev

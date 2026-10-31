@@ -586,7 +586,6 @@ Checked on Claude Code 2.1.310 and codex-cli 0.164.0 (26 October 2026), before b
 - Intel tools can come from an Intel Homebrew in `/usr/local` ahead of `/opt/homebrew` in PATH. Installing an
   Apple silicon node isn't enough: `npm` is a script that runs whichever `node` comes first, so it kept installing
   Intel binaries (codex picks its native binary by node's architecture) until the Apple silicon node came first.
-- Vite's dev server hangs at start on node 26; node 22 runs it. `vite build` works on both.
 - Claude Code reports its models only by family ("Sonnet"), with the version in the description; the app labels them
   by version, and lists pinned versions (`claude-opus-4-8`) apart from the names that follow the newest.
 
