@@ -14,7 +14,7 @@ from test_browser import FakeCDP, pipe_pair
 
 from crewbots.browser import Browser, BrowserSession
 from crewbots.browser_cdp import CDP, BrowserError
-from crewbots.browser_process import Profiles, launch
+from crewbots.browser_process import Profiles, find_chrome, launch
 from crewbots.browser_proxy import BrowserProxy
 
 
@@ -87,10 +87,11 @@ async def test_browser_launch_has_pipe_and_no_debugging_port(tmp_path, monkeypat
         return Process(), transport
 
     monkeypatch.setattr(module, "launch", start)
+    monkeypatch.setenv("CREWBOTS_CHROME", sys.executable)
     service = Browser(tmp_path / "browser")
     try:
         await service.action("task", tmp_path, False, "open", {"url": "http://localhost"})
-        assert "--remote-debugging-pipe" in command
+        assert command[0] == sys.executable and "--remote-debugging-pipe" in command
         assert not any(arg.startswith(("--proxy-server", "--proxy-bypass-list", "--no-proxy-server")) for arg in command)
         tab = service.sessions["task"]
         context = next(c["params"] for c in fake.calls if c["method"] == "Target.createBrowserContext")
@@ -119,6 +120,33 @@ async def test_browser_launch_has_pipe_and_no_debugging_port(tmp_path, monkeypat
             await peer.close()
         if worker:
             await worker
+
+
+async def test_a_missing_chrome_is_reported_before_anything_launches(tmp_path, monkeypatch, own_home):
+    from crewbots import browser as module
+    from crewbots import browser_process
+
+    async def start(argv, log, profile):
+        raise AssertionError("nothing should launch")
+
+    monkeypatch.setattr(module, "launch", start)
+    monkeypatch.setattr(browser_process, "CHROME_FOLDERS", ("~/Applications",))
+    monkeypatch.setenv("PATH", str(tmp_path))
+    service = Browser(tmp_path / "browser")
+    with pytest.raises(BrowserError, match="Chrome isn't installed"):
+        await service.action("task", tmp_path, False, "open", {"url": "http://localhost"})
+    assert service.profile is None
+    await service.close()
+
+    monkeypatch.setenv("CREWBOTS_CHROME", str(tmp_path / "nowhere"))
+    with pytest.raises(BrowserError, match="CREWBOTS_CHROME"):
+        find_chrome()
+    monkeypatch.delenv("CREWBOTS_CHROME")
+    app = own_home / "Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    app.parent.mkdir(parents=True)
+    app.write_text("")
+    app.chmod(0o755)
+    assert find_chrome() == str(app)
 
 
 def write_owner(profile, pid, started):
@@ -368,6 +396,7 @@ async def test_failed_launcher_reaping_is_bounded_and_preserves_profile(tmp_path
         raise browser_process.LaunchStillRunning("launcher still running")
 
     monkeypatch.setattr(browser_module, "launch", stuck_launch)
+    monkeypatch.setenv("CREWBOTS_CHROME", sys.executable)
     service = Browser(tmp_path / "profiles")
     with pytest.raises(browser_process.LaunchStillRunning, match="still running"):
         await service.action("a", tmp_path, False, "open", {"url": "http://localhost"})

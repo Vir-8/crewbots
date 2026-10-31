@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import os
+import sys
 from pathlib import Path
 
 import httpx
@@ -368,6 +369,7 @@ async def test_chrome_start_failure_cleans_up(tmp_path, monkeypatch):
         kwargs["stderr"].write(b"Chrome diagnostic from fake launch")
         raise OSError("cannot start Chrome")
     monkeypatch.setattr(asyncio, "create_subprocess_exec", failed)
+    monkeypatch.setenv("CREWBOTS_CHROME", sys.executable)
     service = Browser(tmp_path / "browser")
     with pytest.raises(BrowserError, match="cannot start"):
         await service.action("a", tmp_path, False, "open", {"url": "http://localhost"})

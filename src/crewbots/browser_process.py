@@ -24,10 +24,28 @@ from pathlib import Path
 from crewbots.browser_cdp import BrowserError
 from crewbots.browser_pipe import Pipe
 
-CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+CHROME_FOLDERS = ("/Applications", "~/Applications")
+CHROME_NAMES = ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser")
 OWNER_FILE = "crewbots-owner.json"
 REAP_TIMEOUT_S = 1.0
 log = logging.getLogger(__name__)
+
+
+def find_chrome() -> str:
+    """CREWBOTS_CHROME, then Google Chrome in an Applications folder, then Chrome or Chromium on PATH."""
+    if path := os.environ.get("CREWBOTS_CHROME"):
+        if os.access(path, os.X_OK):
+            return path
+        raise BrowserError(f"CREWBOTS_CHROME is {path}, which isn't a program that can run")
+    for folder in CHROME_FOLDERS:
+        path = Path(folder).expanduser() / "Google Chrome.app/Contents/MacOS/Google Chrome"
+        if os.access(path, os.X_OK):
+            return str(path)
+    for name in CHROME_NAMES:
+        if path := shutil.which(name):
+            return path
+    raise BrowserError("Chrome isn't installed: put Google Chrome in /Applications or ~/Applications, "
+                       "or set CREWBOTS_CHROME to the browser's program")
 
 
 @dataclass(frozen=True)

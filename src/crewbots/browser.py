@@ -21,7 +21,7 @@ from uuid import uuid4
 from crewbots import paths
 from crewbots.browser_cdp import CDP, BrowserError
 from crewbots.browser_control import CONTROL_NOTICE, BrowserControl, ControlLease
-from crewbots.browser_process import CHROME, LaunchStillRunning, Profiles, launch
+from crewbots.browser_process import LaunchStillRunning, Profiles, find_chrome, launch
 from crewbots.browser_proxy import BrowserProxy, Network, allowed
 
 log = logging.getLogger(__name__)
@@ -90,12 +90,13 @@ class Browser(BrowserControl):
         if self.cdp and self.process.returncode is None and not self.cdp.reader.done():
             return
         await self._stop()
+        chrome = find_chrome()
         try:
             await self._profiles.acquire()
             self.profile = Path(tempfile.mkdtemp(prefix="chrome-", dir=self.root))
             self._log = open(self.profile / "chrome.log", "wb")
             self.process, transport = await launch([
-                CHROME, "--headless=new", "--remote-debugging-pipe",
+                chrome, "--headless=new", "--remote-debugging-pipe",
                 f"--user-data-dir={self.profile}", "--no-first-run", "--no-default-browser-check",
                 "--disable-background-networking", "--disable-component-update", "--disable-sync",
                 "--disable-domain-reliability", "--disable-extensions", "--disable-quic",

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import sys
 from unittest.mock import AsyncMock
 
 import httpx
@@ -221,6 +222,7 @@ async def test_startup_target_with_context_is_intercepted(tmp_path, monkeypatch,
 
     monkeypatch.setattr("crewbots.browser.CDP", InitialCDP)
     monkeypatch.setattr("crewbots.browser.launch", AsyncMock(return_value=(object(), object())))
+    monkeypatch.setenv("CREWBOTS_CHROME", sys.executable)
     monkeypatch.setattr(service._profiles, "acquire", AsyncMock())
     monkeypatch.setattr(service, "_stop", AsyncMock())
     await service._start()
