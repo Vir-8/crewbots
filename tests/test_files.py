@@ -1,7 +1,9 @@
 """Files a bot shows the user: ones it shares, copied into the crew's attachments and shown under what it says, from
 its own folders only."""
 
+import asyncio
 import os
+from urllib.parse import quote
 
 import pytest
 from fakes import ScriptedCrew, as_bot, bot, start, wait_until
@@ -189,13 +191,17 @@ async def test_files_a_reply_names_show_under_it_where_they_are(crew, store, tmp
     os.utime(studio / "README.md", (1e9, 1e9))
     (studio / "app.py").write_text("print()")  # code: the diff shows it
     (tmp_path / "elsewhere.pdf").write_bytes(b"%PDF")  # not in its folders
+    for name in ("take two.mov", "renders/shot(1).png", "the poster.pdf"):
+        (studio / name).write_bytes(PNG)
 
     def turn(spec, me):
         (studio / "notes.md").write_text("# Today")  # written in this turn
         (studio / "cut.mp4").write_bytes(b"\0" * 32)
         return [Text(text="Rendered `renders/hero.png` and [the notes](notes.md); see README.md, app.py and "
                           f"{tmp_path / 'elsewhere.pdf'}, and renders/missing.png."),
-                Text(text="Nothing named here."), Done(final_text="ok")]
+                Text(text="Nothing named here."),
+                Text(text=f"[The take](<{studio}/take two.mov>), [the shot](renders/shot(1).png) and "
+                          f"[the poster](file://{quote(str(studio / 'the poster.pdf'))})."), Done(final_text="ok")]
 
     crew.script["artist"] = turn
     chat = crew.runner.say("artist", "render it")
@@ -205,11 +211,13 @@ async def test_files_a_reply_names_show_under_it_where_they_are(crew, store, tmp
         ("hero.png", "", "image/png"), ("notes.md", "", "text/markdown")]
     assert said[0]["files"][0]["path"] == str((studio / "renders" / "hero.png").resolve())  # where it is, not a copy
     assert "files" not in said[1]
+    assert [f["name"] for f in said[2]["files"]] == ["take two.mov", "shot(1).png", "the poster.pdf"]
 
-    named = crew.runner._mentioned(store.get_task(chat.id), studio, "Here's `cut.mp4`.", 0)
+    shown = crew.runner._shared_now[chat.id]
+    named = crew.runner._mentioned(store.get_task(chat.id), studio, "Here's `cut.mp4`.", 0, shown)
     assert [f["name"] for f in named] == ["cut.mp4"]
     await CrewTools(crew.runner, chat.id, can_delegate=False).call("share", {"files": ["cut.mp4"]})
-    assert crew.runner._mentioned(store.get_task(chat.id), studio, "Here's `cut.mp4`.", 0) == []  # shared: not again
+    assert crew.runner._mentioned(store.get_task(chat.id), studio, "Here's `cut.mp4`.", 0, shown) == []  # shared: not again
 
 
 async def test_a_group_chat_reply_carries_the_files_it_names(crew, store, tmp_path, studio):
@@ -223,3 +231,45 @@ async def test_a_group_chat_reply_carries_the_files_it_names(crew, store, tmp_pa
     await wait_until(lambda: not crew.runner.running())
     [reply] = [m for m in store.room_messages(room["id"]) if m["author"] == "artist"]
     assert [f["name"] for f in reply["attachments"]] == ["poster.pdf"]
+
+
+async def test_what_the_chief_tells_the_user_or_posts_shows_the_files_it_names(store, tmp_path, studio):
+    shots = tmp_path / "attachments" / "919bcfd31991"  # where its browser screenshots are kept
+    shots.mkdir(parents=True)
+    (shots / "browser-dark-a.png").write_bytes(PNG)
+    (shots / "browser-dark-b.png").write_bytes(PNG + b"b")
+    private = tmp_path.parent / f"{tmp_path.name}-private.png"  # not in its folders
+    private.write_bytes(PNG)
+    (studio / "README.md").write_text("old news")
+    os.utime(studio / "README.md", (1e9, 1e9))
+    gate = asyncio.Event()
+    crew = ScriptedCrew(store, tmp_path, bot("chief", workspace=studio, can_delegate=True), bot("critic"), gate=gate)
+    a, b = f"[A — two columns]({shots}/browser-dark-a.png)", f"[B]({shots}/browser-dark-b.png)"
+
+    def turn(spec, me):
+        if me.kind == "seat":
+            (studio / "plan.md").write_text("# Plan")  # written in this turn
+            crew.runner.tell_user(me.id, f"The mockups:\n\n{a}\n\n{b}, with plan.md (not README.md or {private}).")
+            crew.runner.post_from(me.id, f"@critic thoughts on {a} and `{private}`?")
+            return [Done(final_text=f"As posted, {a} and {b}")]
+        return [Done(final_text="")]
+
+    crew.script["chief"] = turn
+    room = crew.runner.create_room("Design", ["chief", "critic"], "chief")
+    crew.runner.post(room["id"], "user", "where are the mockups?")
+    await wait_until(lambda: crew.backend.active)
+    seat = store.seat_of(room["id"], "chief")
+    await CrewTools(crew.runner, seat.id, can_delegate=True).call("share", {"files": [str(shots / "browser-dark-b.png")]})
+    gate.set()
+    said = lambda: [m for m in store.room_messages(room["id"]) if m["author"] == "chief"]  # noqa: E731
+    await wait_until(lambda: len(said()) == 3)
+    await wait_until(lambda: not crew.runner.running())
+
+    [told] = [e.data for e in store.events(crew.runner.chat("chief").id) if e.kind == "text"]
+    assert told["from"] == "Design" and [(f["name"], f["id"]) for f in told["files"]] == [
+        ("browser-dark-a.png", ""), ("browser-dark-b.png", ""), ("plan.md", "")]  # though B was shared in the room
+    assert told["files"][0]["path"] == str((shots / "browser-dark-a.png").resolve())  # where it is, not a copy
+    shared, posted, reply = said()
+    assert [f["name"] for f in shared["attachments"]] == ["browser-dark-b.png"]
+    assert [(f["name"], f["mime"]) for f in posted["attachments"]] == [("browser-dark-a.png", "image/png")]
+    assert not reply["attachments"]  # shown in the room already

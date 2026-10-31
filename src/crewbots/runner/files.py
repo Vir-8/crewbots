@@ -1,6 +1,6 @@
 """Files a bot shows the user, under what it says in a chat, a thread or a group chat: ones it shares (`share`), ones
-it names in a reply, and images its tools return (a file it looked at, a screenshot from Blender, GIMP or Resolve),
-shown in its steps.
+it names in a reply, a post or what it tells the user (`tell_user`), and images its tools return (a file it looked at,
+a screenshot from Blender, GIMP or Resolve), shown in its steps.
 
 A bot shows only files from its own folders: the task's worktree or workspace, its own workspace or folder in the
 crew, the crew's attachments, and sessions' temp folders. A shared file is copied into the crew's attachments, so what
@@ -12,8 +12,10 @@ import base64
 import binascii
 import mimetypes
 import re
+import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 from crewbots import attachments, paths
 from crewbots.backends.claude_cli import SANDBOX_TEMP
@@ -33,7 +35,8 @@ SHOWN = {"png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "bmp", "tif", "tif
          "drp", "zip"}
 WRITTEN = {"md", "txt", "csv", "tsv", "html", "htm", "json", "log"}
 NAMED = re.compile(
-    r"\]\((?:file://)?([^)\s]+)\)"  # a Markdown link's target
+    r"\]\(<([^>\n]+)>\)"  # a Markdown link's target, in <...> when it has spaces
+    r"|\]\(((?:[^()\s]|\([^()\s]*\))+)\)"  # or without, with at most one level of (...) in it
     r"|`([^`\n]+)`"  # inline code
     r"|(?<![\w/.~-])((?:~|\.{1,2})?/?[\w.-]+(?:/[\w.-]+)*\.[A-Za-z0-9]{1,6})(?![\w/])"  # a bare path with an extension
 )
@@ -60,13 +63,20 @@ class Files:
         self._record(task_id, kind="shared", data={"text": text, "attachments": copied})
         return {"task_id": task_id, "files": copied}
 
-    def _mentioned(self, task: Task, cwd: Path, text: str, since: float) -> list[dict[str, Any]]:
-        """Files a reply names that its bot made, in its own folders, to show under it where they are."""
+    def _named(self, task: Task, text: str, shown: set[Path]) -> list[dict[str, Any]]:
+        """Files a tool's text names (`post`, `tell_user`), found as a reply's are."""
+        return self._mentioned(task, self._work_folder(task), text, self._turn_started.get(task.id, time.time()), shown)
+
+    def _mentioned(self, task: Task, cwd: Path, text: str, since: float, shown: set[Path]) -> list[dict[str, Any]]:
+        """Files a reply names that its bot made, in its own folders, to show under it where they are: all but those
+        `shown` where it goes already."""
         if "." not in text:
             return []
-        folders, shared, found = self._own_folders(task), self._shared_now.get(task.id, set()), {}
+        folders, found = self._own_folders(task), {}
         for match in NAMED.finditer(text):
             given = next(g for g in match.groups() if g).strip()
+            if given.startswith("file://"):
+                given = unquote(given.removeprefix("file://"))
             ext = given.rsplit(".", 1)[-1].lower() if "." in given else ""
             if ext not in SHOWN and ext not in WRITTEN or "://" in given:
                 continue
@@ -76,7 +86,7 @@ class Files:
                 stat = path.stat()
             except (OSError, ValueError):
                 continue
-            if (path in found or path in shared or not path.is_file() or not stat.st_size
+            if (path in found or path in shown or not path.is_file() or not stat.st_size
                     or not any(path.is_relative_to(f) for f in folders)
                     or (ext in WRITTEN and stat.st_mtime < since - 2)):
                 continue

@@ -183,7 +183,8 @@ class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Revie
         self._seat_depth: dict[str, int] = {}  # seat task → the depth of the room message that woke it
         self._owed: set[str] = set()  # seats with a pending user mention
         self._nudged: set[str] = set()  # seats with a pending reminder to answer the user
-        self._shared_now: dict[str, set[Path]] = {}  # task → files it shared this turn, which its reply needn't show
+        self._shared_now: dict[str, set[Path]] = {}  # task → files it showed where its reply goes this turn
+        self._turn_started: dict[str, float] = {}  # task → when its turn began: a text file named since counts as made
         # A code review's tools (reading the repo on GitHub), given its task; None where it has your local copy.
         self.review_tools: Callable[[Task], Any] | None = None
 
@@ -486,7 +487,7 @@ class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Revie
             done: Done | None = None
             stalled = False
             looked_at: dict[str, str] = {}
-            started = time.time()  # a text file a reply names counts as made by it if it changed since
+            started = self._turn_started[task_id] = time.time()
             self._shared_now[task_id] = set()
             try:
                 if task.kind == "seat":
@@ -528,7 +529,7 @@ class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Revie
                             elif isinstance(event, Text):
                                 if is_no_reply(event.text):
                                     continue  # nothing to say: the chat shows nothing
-                                named = self._mentioned(task, cwd, event.text, started)
+                                named = self._mentioned(task, cwd, event.text, started, self._shared_now[task_id])
                                 if named or task_id in self._waking:
                                     self._record(task_id, kind="text", data={
                                         "text": event.text, **({"files": named} if named else {}),
@@ -577,8 +578,8 @@ class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Revie
                            result="" if is_no_reply(done.final_text) else done.final_text, turns=task.turns + 1)
             else:
                 if task.kind == "seat" and task.room_id:
-                    self._seat_replied(task, done.final_text, self._mentioned(task, cwd, done.final_text, started),
-                                       owed, nudged)
+                    named = self._mentioned(task, cwd, done.final_text, started, self._shared_now[task_id])
+                    self._seat_replied(task, done.final_text, named, owed, nudged)
                     self._seat_turn_finished(task, done.final_text)
                 try:
                     await self._maybe_compact(task_id, open_session, bot)

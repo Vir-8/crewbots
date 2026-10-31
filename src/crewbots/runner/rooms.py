@@ -4,6 +4,7 @@ import logging
 import re
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from crewbots import attachments as attachments_module
@@ -344,23 +345,30 @@ class Rooms:
 
     def post_from(self, task_id: str, text: str, room_id: str | None = None,
                   attachments: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-        """The `post` tool: a bot says something in a room, from wherever it's working."""
+        """The `post` tool: a bot says something in a room, from wherever it's working, with the files it names (or,
+        from `share`, the `attachments` it copied)."""
         task = self.store.get_task(task_id)
         room = self._room_to_post(task, room_id)
-        if task.kind == "seat" and task.room_id == room["id"]:
+        own = task.kind == "seat" and task.room_id == room["id"]
+        if own:
             self._clear_room_mentions(task.bot, room["id"], self._seat_turn_seen.get(task.id, 0))
+        if attachments is None:
+            shown = self._shared_now.setdefault(task.id, set()) if own else set()
+            attachments = self._named(task, text, shown)
+            shown.update(Path(f["path"]) for f in attachments)  # its reply, in the same room, needn't show them again
         return self.post(room["id"], task.bot, text, depth=self._seat_depth.get(task_id, 0) + 1, attachments=attachments)
 
     def tell_user(self, task_id: str, text: str, needs_you: bool = False) -> dict[str, Any]:
         """The `tell_user` tool: the chief says something to the user in its chat with them from wherever it's working,
-        a group chat or a thread, without waiting to be asked. Its chat hears it next time it runs."""
+        a group chat or a thread, without waiting to be asked, with the files it names. Its chat hears it next time it
+        runs."""
         task = self.store.get_task(task_id)
         if not self.is_chief(task.bot):
             raise NotAllowed("only the chief tells the user things directly: say it to whoever you work for")
         if not text.strip():
             raise NotAllowed("there's nothing to tell")
         where = " ".join(self.store.room(task.room_id)["title"].split()) if task.room_id else f"thread {task.id}"
-        return self.attention.tell(task.bot, text.strip(), needs_you, where)
+        return self.attention.tell(task.bot, text.strip(), needs_you, where, self._named(task, text, set()))
 
     def _room_to_post(self, task: Task, room_id: str | None) -> dict[str, Any]:
         """Where a bot's post goes: the room it names (by id, or by title among its own), else the one it's in, else

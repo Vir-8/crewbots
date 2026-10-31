@@ -50,17 +50,18 @@ class Attention:
             self._deliver(item)
         return store.proactive_item(item["id"])
 
-    def tell(self, bot: str, text: str, needs_you: bool, where: str) -> dict[str, Any]:
+    def tell(self, bot: str, text: str, needs_you: bool, where: str,
+             files: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         """What a bot tells the user in its chat with them from somewhere else (a group chat, a thread), whenever it
-        has something for them: shown there at once, and with a notification when it needs them, outside quiet hours
-        and within the day's budget."""
+        has something for them: shown there at once, with the `files` it names under it, and with a notification when
+        it needs them, outside quiet hours and within the day's budget."""
         store = self.runner.store
         now = self.now()
         urgent = needs_you and not self.quiet(now) and self.interruptions_today(now) < DAILY_INTERRUPTIONS
         item = store.add_proactive(bot, "needs_you" if urgent else "question", text, f"{TOLD}{where}",
                                    (now + EXPIRES).astimezone(UTC).isoformat())
-        self.runner._record(self.runner.chat(bot).id, kind="text", data={"text": text, "level": item["level"],
-                                                                         "from": where})
+        self.runner._record(self.runner.chat(bot).id, kind="text", data={
+            "text": text, "level": item["level"], "from": where, **({"files": files} if files else {})})
         store.mark_delivered(item["id"])
         return store.proactive_item(item["id"])
 
