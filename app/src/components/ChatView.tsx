@@ -12,6 +12,7 @@ import { crewCommands } from "./CommandPreview";
 import { Composer } from "./Composer";
 import { FindBar, Finding, count, shown, useCurrentHit, useFind } from "./Find";
 import { Icon } from "./Icon";
+import { LinksFrom } from "./links";
 import { Welcoming } from "./Offer";
 import { Thread } from "./Thread";
 import { settle, useBottomAnchor } from "./ui";
@@ -209,7 +210,7 @@ export function GroupChat(props: { crew: Crew; chat: GroupChatOut; onOpen: (id: 
                         <Boundary key={m.id} where={`a group chat message (${m.id})`}>
                           <div className="room-message message-row" data-msg={m.id}>
                             <div className="message-body">
-                              {m.text && <RoomBubble text={m.text} onOpen={props.onOpen} />}
+                              {m.text && <LinksFrom files={m.attachments}><RoomBubble text={m.text} onOpen={props.onOpen} /></LinksFrom>}
                               <Files items={m.attachments ?? []} />
                             </div>
                             <MessageMeta at={m.at} text={m.text} />

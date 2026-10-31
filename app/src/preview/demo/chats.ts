@@ -47,7 +47,7 @@ for (const b of bots) {
   const refused = emit(chief, "push_proposed", { project: "export-service", summary: "The remote needs attention.", branch: "main", upstream: "origin/main", push_url_display: "github.com/acme/export-service.git", commits: ["123abcd Update the export schema"] });
   emit(chief, "push_result", { proposal: refused.id, ok: false, reason: "The remote changed; make a new proposal." });
   message(chief, "user", "Write up the Q3 retro and a Q4 plan from it.");
-  emit(chief, "text", { text: "Done: the retro is `docs/retro/q3-retro.pdf`, and the plan it led to is `docs/retro/q4-plan.md`.", files: [made.retro, made.plan] });
+  emit(chief, "text", { text: "Done: the [Q3 retro](docs/retro/q3-retro.pdf), and the [plan it led to](docs/retro/q4-plan.md:1).", files: [made.retro, made.plan] });
   emit(chief, "text", { text: `The two results mockups are ready:\n\n[A — two columns, leaderboard stays on screen](${made.mockA.path})\n\n[B — larger rank and score](${made.mockB.path})\n\nI recommend B, as the [style guide](https://example.com/style-guide) does.`, level: "question", from: "Design", files: [made.mockA, made.mockB] });
   done(chief);
 

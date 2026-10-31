@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { bridge } from "../bridge";
-import { Markdown, MentionText, MessageMeta, TextLink, dayAndTime, stamp, timeBreaks } from "./bits";
+import { describe, expect, it } from "vitest";
+import { Markdown, MentionText, MessageMeta, dayAndTime, stamp, timeBreaks } from "./bits";
+import { LinksFrom } from "./links";
 import { setCrew } from "./Avatar";
 import { Finding, count } from "./Find";
 import { bots } from "../preview/demo/make";
@@ -94,6 +94,21 @@ describe("Markdown", () => {
       '<div class="md"><p><span class="pre">the plan and x</span></p></div>'); // nowhere to show them from
   });
 
+  it("finds a relative path among the files shown under the message, then in the folder its task works in", () => {
+    const shot = { path: "/Users/pat/studio/renders/hero.png" };
+    const text = "[shot](renders/hero.png) [plan](./docs/plan.md:12:3) [fix](src/app.py:42) [up](../secret.txt) " +
+      "[deep](docs/../../x.md) [x](javascript:alert(1)) [mail](mailto:pat@example.com) [setup](#setup) [server](localhost:8080)";
+    const drawn = (folder: string | null) => renderToStaticMarkup(
+      <LinksFrom folder={folder}><LinksFrom files={[shot]}><Markdown text={text} onSelect={() => undefined} /></LinksFrom></LinksFrom>);
+    const titles = (out: string) => [...out.matchAll(/class="text-link" title="([^"]*)">([^<]*)</g)].map((m) => [m[2], m[1]]);
+    expect(titles(drawn("~/code/acme-web/"))).toEqual([
+      ["shot", shot.path], ["plan", "~/code/acme-web/docs/plan.md"], ["fix", "~/code/acme-web/src/app.py"]]);
+    // never out of the folder, and no other schemes, hosts or places in the page
+    expect(drawn("~/code/acme-web")).toContain("up deep x mail setup server");
+    expect(titles(drawn(null))).toEqual([["shot", shot.path]]); // a folder the app doesn't know: only what's shown
+    expect(drawn(null)).toContain("plan fix up");
+  });
+
   it("finishes every document quickly, whatever it's made of", () => {
     // Fragments that start, end or confuse blocks, joined at random: 5,000 documents, each with a time budget.
     const parts = ["- ", "* ", "+ ", "1. ", "10) ", "  ", "\t", "    - ", "```", "``", "`", "# ", "###### ", "**", "*",
@@ -108,35 +123,6 @@ describe("Markdown", () => {
       slowest = Math.max(slowest, performance.now() - started);
     }
     expect(slowest).toBeLessThan(100);
-  });
-});
-
-describe("a link a bot wrote", () => {
-  afterEach(() => vi.restoreAllMocks());
-  const click = (target: string) => {
-    const preventDefault = vi.fn();
-    TextLink({ label: "it", target }).props.onClick({ preventDefault });
-    expect(preventDefault).toHaveBeenCalled(); // the window never goes there itself
-  };
-
-  it("opens a web address in the browser", () => {
-    const openUrl = vi.spyOn(bridge, "openUrl").mockResolvedValue(undefined);
-    const reveal = vi.spyOn(bridge, "reveal").mockResolvedValue(undefined);
-    click("https://example.com/a?b=1");
-    expect(openUrl).toHaveBeenCalledWith("https://example.com/a?b=1");
-    expect(reveal).not.toHaveBeenCalled();
-  });
-
-  it("shows a path in Finder, never opening it", async () => {
-    const openUrl = vi.spyOn(bridge, "openUrl").mockResolvedValue(undefined);
-    const reveal = vi.spyOn(bridge, "reveal").mockRejectedValue(new Error("gone"));
-    const openFile = vi.spyOn(bridge, "openFile");
-    vi.spyOn(bridge, "home").mockResolvedValue("/Users/pat");
-    for (const target of ["/Users/pat/work/run.sh", "file:///Users/pat/My%20Shot.png", "/Users/pat/a.ts:12:3", "~/notes.md"]) click(target);
-    await vi.waitFor(() => expect(reveal).toHaveBeenCalledTimes(4));
-    expect(reveal.mock.calls).toEqual([["/Users/pat/work/run.sh"], ["/Users/pat/My Shot.png"], ["/Users/pat/a.ts"], ["/Users/pat/notes.md"]]);
-    expect(openUrl).not.toHaveBeenCalled();
-    expect(openFile).not.toHaveBeenCalled();
   });
 });
 

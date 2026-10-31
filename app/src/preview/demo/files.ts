@@ -139,4 +139,6 @@ export const made = {
   mockA: named("~/.crewbots/crew/attachments/919bcfd31991/browser-dark-a.png", "image/png", render(), 88_000),
   mockB: named("~/.crewbots/crew/attachments/25228c2ea788/browser-dark-b.png", "image/png", render(), 91_000),
 };
+/** Paths a bot links to that aren't there any more: Show in Finder fails on them. */
+export const gone = new Set(["~/.crewbots/worktrees/acme-web/t_truncate02/scratch/notes.md"]);
 demoFiles.set(`${made.retro.path}.png`, text(firstPage.replace("Release notes 2.4", "Q3 retro"), "image/svg+xml"));

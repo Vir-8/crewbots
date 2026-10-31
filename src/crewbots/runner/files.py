@@ -77,6 +77,7 @@ class Files:
             given = next(g for g in match.groups() if g).strip()
             if given.startswith("file://"):
                 given = unquote(given.removeprefix("file://"))
+            given = re.sub(r"(:\d+)+$", "", given)  # a line (and column) in it, as the app's links take one
             ext = given.rsplit(".", 1)[-1].lower() if "." in given else ""
             if ext not in SHOWN and ext not in WRITTEN or "://" in given:
                 continue

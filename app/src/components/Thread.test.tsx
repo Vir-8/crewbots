@@ -29,6 +29,7 @@ function chat(size: number): { crew: Crew; task: Task } {
     ensureEvents: () => undefined,
     children: new Map(),
     tasks: new Map([[task.id, task]]),
+    bots: [],
     latest: new Map(),
     release: () => Promise.resolve(),
   } as unknown as Crew;

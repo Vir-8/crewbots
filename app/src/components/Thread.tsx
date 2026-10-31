@@ -9,6 +9,7 @@ import { Boundary } from "./Boundary";
 import { Markdown, MentionText, MessageMeta, PageLink, TimeBreak, tilde, timeBreaks, useHoveredMessage } from "./bits";
 import { Finding, Marked, count, useCurrentHit } from "./Find";
 import { Icon } from "./Icon";
+import { LinksFrom } from "./links";
 import { Offer } from "./Offer";
 import { Permission } from "./Permission";
 import { PushCard } from "./PushCard";
@@ -109,6 +110,7 @@ export function Thread(props: {
     >
       <div className={`thread-col ${props.compact ? "compact" : ""} ${props.chat ? "chat" : ""}`} ref={col}>
         <Finding.Provider value={query}>
+        <LinksFrom folder={task.worktree_path ?? task.workspace ?? crew.bots.find((b) => b.name === task.bot)?.workspace ?? null}>
         {!events && <div className="thread-loading" />}
         {start > 0 && (
           <button className="thread-earlier text-button" onClick={() => earlier(start - PAGE)}>
@@ -120,6 +122,7 @@ export function Thread(props: {
             <BlockView block={block} crew={crew} lead={task.bot} onOpen={props.onOpen} afterBreak={breaks.has(start + i)} run={props.chat ? runOf(blocks, start + i, breaks) : ""} />
           </Boundary>
         ))}
+        </LinksFrom>
         </Finding.Provider>
         {active && (
           <div className="working-indicator">
@@ -169,7 +172,7 @@ function BlockView(props: { block: Block; crew: Crew; lead: string; onOpen: (id:
           <div className="message-row">
             <div className="say">
               {block.tag && <div className={`say-tag ${block.tag.startsWith("Needs you") ? "urgent" : ""}`}>{block.tag}</div>}
-              {block.text && <Markdown text={block.text} onSelect={props.onOpen} />}
+              {block.text && <LinksFrom files={block.files}><Markdown text={block.text} onSelect={props.onOpen} /></LinksFrom>}
               {block.files && <Files items={block.files} />}
               {block.raised && <Reactions crew={props.crew} id={block.raised} />}
             </div>

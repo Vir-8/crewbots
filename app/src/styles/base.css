@@ -98,6 +98,11 @@ select {
   cursor: pointer;
 }
 
+/* A path link Finder couldn't find: its title says so */
+.text-link.missing {
+  color: var(--faint);
+}
+
 .button {
   display: inline-flex;
   align-items: center;

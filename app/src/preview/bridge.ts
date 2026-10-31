@@ -370,7 +370,9 @@ export const previewBridge = {
   status: async () => status,
   request,
   pickFolder: async () => "~/code/acme-web",
-  reveal: async (_path: string) => undefined,
+  reveal: async (path: string) => {
+    if (demo.gone.has(path.replace(/^\/Users\/pat\//, "~/"))) throw new Error(`${path}: no such file`);
+  },
   home: async () => "/Users/pat",
   openPath: async (_path: string) => undefined,
   fileSrc: (path: string) => previewFileSrc(path),

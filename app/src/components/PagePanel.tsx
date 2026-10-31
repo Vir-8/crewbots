@@ -5,6 +5,7 @@ import type { Crew } from "../state";
 import { Avatar, labelOf } from "./Avatar";
 import { Markdown, PageOpener, ago } from "./bits";
 import { Icon } from "./Icon";
+import { LinksFrom } from "./links";
 import "../styles/panels.css";
 
 /** One of a bot's pages, beside its chat: its scratchpad, or a page that grew from it. Its [[links]] open the pages
@@ -129,7 +130,9 @@ export function PagePanel(props: { crew: Crew; bot: string; page: string; onPage
         ) : page ? (
           <PageOpener.Provider value={follow}>
             <div className="page-text">
-              <Markdown text={page.text ?? ""} onSelect={props.onOpen} />
+              <LinksFrom folder={page.path.replace(/\/[^/]*$/, "")}>
+                <Markdown text={page.text ?? ""} onSelect={props.onOpen} />
+              </LinksFrom>
             </div>
             <div className="page-updated faint">Updated {ago(page.updated)}</div>
           </PageOpener.Provider>

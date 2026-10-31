@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { bridge } from "../bridge";
 import type { Status } from "../types";
 import { Finding, LINK, Marked } from "./Find";
 import { crewMentionNames } from "./Avatar";
 import { Icon } from "./Icon";
+import { TextLink } from "./links";
 
 export const STATUS_LABEL: Record<Status, string> = {
   queued: "queued",
@@ -369,43 +369,6 @@ function wikiLink(raw: string): { page: string; label: string } {
   return { page: target.split("#")[0].trim(), label: (label ?? target).trim() };
 }
 
-/** A [label](target) link a bot wrote. A web address opens in the browser; a path (absolute, from ~, or a file://
- * address, maybe with a :line after it) is shown in Finder, never opened: a bot wrote it, and it could be something
- * that runs. Anything else, a relative path say, has nowhere to be shown from, so it's only its label. */
-export function TextLink({ label, target }: { label: string; target: string }) {
-  const web = /^https?:\/\//i.test(target);
-  const path = web ? "" : local(target);
-  const text = /^`[^`]+`$/.test(label) ? <code><Marked text={label.slice(1, -1)} /></code> : <Marked text={label} />;
-  if (!web && !path) return text;
-  const open = (e: MouseEvent) => {
-    e.preventDefault();
-    void (web ? bridge.openUrl(target) : reveal(path)).catch(() => undefined);
-  };
-  return (
-    <a className="text-link" onClick={open} title={target}>
-      {text}
-    </a>
-  );
-}
-
-/** The file a path link names, or "" if it isn't absolute or from ~. */
-function local(target: string): string {
-  let path = target;
-  if (/^file:\/\//i.test(path)) {
-    try {
-      path = decodeURIComponent(path.slice(7));
-    } catch {
-      return "";
-    }
-  }
-  path = path.replace(/(:\d+)+$/, "");
-  return path.startsWith("/") || path.startsWith("~/") ? path : "";
-}
-
-async function reveal(path: string) {
-  await bridge.reveal(path.startsWith("~/") ? `${await bridge.home()}${path.slice(1)}` : path);
-}
-
 const INLINE = new RegExp(`(\`[^\`]+\`|\\*\\*[^*]+\\*\\*|\\[\\[[^\\]\\n]+\\]\\]|${LINK.source})`, "g");
 
 function Inline({ text, onSelect, everyone = false }: { text: string; onSelect: (id: string) => void; everyone?: boolean }) {
@@ -424,7 +387,9 @@ function inlineParts(text: string, onSelect: (id: string) => void, everyone: boo
       ) : token.startsWith("[[") ? (
         <PageLink key={`p${match.index}`} {...wikiLink(token)} />
       ) : label ? (
-        <TextLink key={`l${match.index}`} label={label} target={target.replace(/^<(.*)>$/, "$1")} />
+        <TextLink key={`l${match.index}`} target={target.replace(/^<(.*)>$/, "$1")}>
+          {/^`[^`]+`$/.test(label) ? <code><Marked text={label.slice(1, -1)} /></code> : <Marked text={label} />}
+        </TextLink>
       ) : (
         <strong key={`b${match.index}`}>{inlineParts(token.slice(2, -2), onSelect, everyone)}</strong>
       ),

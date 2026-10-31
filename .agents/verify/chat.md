@@ -6,7 +6,9 @@
   - working between two messages folded into one line ("Kept 2 notes · 1 step");
   - quiet lines (retried tries, compactions, drops);
   - links a bot writes, `[label](target)`: a web address opens in the browser, a path (absolute, from ~ or file://)
-    is shown in Finder, and anything else is only its label;
+    is shown in Finder, and so is a relative one, found among the files shown under the message, else in the folder
+    its task works in (a thread's worktree or workspace, a chat's bot's workspace). A path Finder can't find greys,
+    and its title says it wasn't found. Anything else is only its label;
   - files a reply, or what the chief told you from elsewhere ("From Design"), names, shown under it.
 - Cards in the conversation:
   - work cards (see work-and-threads.md);
@@ -28,8 +30,13 @@ open last.
 - Open a chat: `browser_evaluate` clicks `[...document.querySelectorAll('.sidebar .chat-row')]`, the one whose
   `innerText` includes the bot's name.
 - The conversation is `.main .thread`, with its blocks in `.main .thread-col`.
-- A bot's links are `a.text-link`, titled with their target. Roger's last message, "From Design", has two path
-  links, a web link and the two screenshots they name.
+- A bot's links are `a.text-link`, titled with the path Finder shows or the web address, and `a.text-link.missing`
+  once Finder couldn't find it. Roger's last message, "From Design", has two path links, a web link and the two
+  screenshots they name. The one before it has relative links to the retro and plan shown under it. In the thread of
+  "Add truncate(s, n) to text.py, with tests…" (open "Add truncate(s, n)…", then its card in the panel), the
+  engineer's links go through its worktree, and "scratch notes" isn't there.
+- The app can't know a chat's own folder when its bot names no workspace (the daemon's ~/Documents/Crewbots/<bot>),
+  or which task posted to a group chat: their relative links resolve only to files shown under the message.
 - The header is `.main header`. The Profile toggle is `header .icon-button[title="Profile"]`; its state is
   `aria-pressed`.
 - Demo URL switches:

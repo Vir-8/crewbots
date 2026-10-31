@@ -20,6 +20,7 @@ import { diffs, done, emit, message, reviews, say, task, tick, tool, usage, verd
   tool(e.id, "shell", { command: "python -m pytest -q" }, "11 passed in 0.02s");
   emit(e.id, "handoff", { done: "Added truncate(s, n) with 11 tests; all pass.", output: ["text.py", "test_text.py", "/Users/you/Documents/Crewbots/engineer/Projects/acme-web/truncate-notes.md"], open: "", needs: "Review", evidence: ["`python -m pytest -q` → 11 passed in 0.02s", "`truncate(\"héllo wörld\", 8)` → `\"héllo...\"`; `truncate(\"abc\", -1)` → `\"\"`", "couldn't check: grapheme clusters (counts code points)"] });
   say(e.id, e.result!);
+  say(e.id, "The change is in [text.py](text.py:12), with its tests in [test_text.py](test_text.py). I didn't keep my [scratch notes](scratch/notes.md).");
   usage(e.id);
   done(e.id, e.result!);
   const r = work("t_truncate03", "reviewer", "Review truncate(s, n)", g.id, { review_of: e.id, review_version: 1, worktree_path: null, branch: null });

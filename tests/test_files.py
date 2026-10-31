@@ -196,12 +196,14 @@ async def test_files_a_reply_names_show_under_it_where_they_are(crew, store, tmp
 
     def turn(spec, me):
         (studio / "notes.md").write_text("# Today")  # written in this turn
+        (studio / "plan.md").write_text("# Plan")
         (studio / "cut.mp4").write_bytes(b"\0" * 32)
         return [Text(text="Rendered `renders/hero.png` and [the notes](notes.md); see README.md, app.py and "
                           f"{tmp_path / 'elsewhere.pdf'}, and renders/missing.png."),
                 Text(text="Nothing named here."),
                 Text(text=f"[The take](<{studio}/take two.mov>), [the shot](renders/shot(1).png) and "
-                          f"[the poster](file://{quote(str(studio / 'the poster.pdf'))})."), Done(final_text="ok")]
+                          f"[the poster](file://{quote(str(studio / 'the poster.pdf'))}), as [the plan](plan.md:12:3) said."),
+                Done(final_text="ok")]
 
     crew.script["artist"] = turn
     chat = crew.runner.say("artist", "render it")
@@ -211,7 +213,7 @@ async def test_files_a_reply_names_show_under_it_where_they_are(crew, store, tmp
         ("hero.png", "", "image/png"), ("notes.md", "", "text/markdown")]
     assert said[0]["files"][0]["path"] == str((studio / "renders" / "hero.png").resolve())  # where it is, not a copy
     assert "files" not in said[1]
-    assert [f["name"] for f in said[2]["files"]] == ["take two.mov", "shot(1).png", "the poster.pdf"]
+    assert [f["name"] for f in said[2]["files"]] == ["take two.mov", "shot(1).png", "the poster.pdf", "plan.md"]
 
     shown = crew.runner._shared_now[chat.id]
     named = crew.runner._mentioned(store.get_task(chat.id), studio, "Here's `cut.mp4`.", 0, shown)
