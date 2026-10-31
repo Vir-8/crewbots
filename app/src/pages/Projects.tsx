@@ -5,10 +5,18 @@ import { labelOf } from "../components/Avatar";
 import { tilde } from "../components/bits";
 import { BringIn } from "../components/BringIn";
 import { Icon } from "../components/Icon";
-import { Field, Page, Problem, Segmented, Sheet } from "../components/ui";
+import { Field, Page, Problem, Segmented, Sheet, Switch } from "../components/ui";
 import type { Crew } from "../state";
 
-type Draft = { name: string; folder: string; about: string; existing: boolean; isolation?: ProjectOut["isolation"] };
+type Draft = {
+  name: string;
+  folder: string;
+  about: string;
+  existing: boolean;
+  isolation?: ProjectOut["isolation"];
+  max_worktrees?: number | null;
+  folder_branch?: boolean;
+};
 
 const WHERE: Record<ProjectOut["isolation"], string> = { in_place: "The folder itself", worktree: "A worktree each" };
 const HOW: Record<ProjectOut["isolation"], string> = {
@@ -47,7 +55,8 @@ export function Projects(props: { crew: Crew; onChat: (bot: string) => void }) {
   const save = async () => {
     if (!draft) return;
     try {
-      await api.saveProject(draft.name.trim(), draft.folder, draft.about, draft.isolation);
+      const room = draft.existing ? { max_worktrees: draft.max_worktrees ?? 0, folder_branch: Boolean(draft.folder_branch) } : undefined;
+      await api.saveProject(draft.name.trim(), draft.folder, draft.about, draft.isolation, room);
       setDraft(null);
       setError(null);
       await load();
@@ -91,7 +100,7 @@ export function Projects(props: { crew: Crew; onChat: (bot: string) => void }) {
       ))}
       <div className="list">
         {projects?.map((p) => (
-          <div key={p.name} className="list-row" role="button" tabIndex={0} onClick={() => setDraft({ name: p.name, folder: p.folder, about: p.about, existing: true, isolation: p.isolation })}>
+          <div key={p.name} className="list-row" role="button" tabIndex={0} onClick={() => setDraft({ name: p.name, folder: p.folder, about: p.about, existing: true, isolation: p.isolation, max_worktrees: p.max_worktrees, folder_branch: p.folder_branch })}>
             <Icon name="folder" size={18} />
             <span className="list-text">
               <span className="list-title">
@@ -100,6 +109,8 @@ export function Projects(props: { crew: Crew; onChat: (bot: string) => void }) {
               </span>
               <span className="faint">
                 {tilde(p.folder)} · {WHERE[p.isolation]}
+                {p.isolation === "worktree" && p.max_worktrees ? `, at most ${p.max_worktrees}` : ""}
+                {p.isolation === "worktree" && p.folder_branch ? ", and the folder on a branch" : ""}
               </span>
               {p.about && <span className="project-about">{p.about.split("\n")[0]}</span>}
             </span>
@@ -151,6 +162,22 @@ export function Projects(props: { crew: Crew; onChat: (bot: string) => void }) {
             <Field label="Where tasks work" hint={HOW[draft.isolation]}>
               <Segmented value={draft.isolation} options={Object.entries(WHERE) as [ProjectOut["isolation"], string][]} onChange={(isolation) => setDraft({ ...draft, isolation })} />
             </Field>
+          )}
+          {draft.isolation === "worktree" && (
+            <>
+              <Field label="Worktrees at once" hint="The most task worktrees this project has at a time, since each takes disk space. Once they're taken, the lead gives new work to one of those tasks or waits for one to go. Empty for no limit.">
+                <input
+                  type="number"
+                  min={1}
+                  placeholder="No limit"
+                  value={draft.max_worktrees ?? ""}
+                  onChange={(e) => setDraft({ ...draft, max_worktrees: e.target.value ? Math.max(1, Math.floor(Number(e.target.value))) : null })}
+                />
+              </Field>
+              <Field label="The folder itself" hint="One more task at a time, with no worktree: it works here on a branch made from the one the folder is on, and the folder switches back once its work is merged or dropped. It's only lent while nothing here is uncommitted.">
+                <Switch on={Boolean(draft.folder_branch)} label="Lend the folder to one task at a time" onChange={(folder_branch) => setDraft({ ...draft, folder_branch })} />
+              </Field>
+            </>
           )}
         </Sheet>
       )}

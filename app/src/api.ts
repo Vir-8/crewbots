@@ -191,8 +191,8 @@ export const api = {
   runRoutine: (name: string) => call<Task>("POST", `/routines/${encodeURIComponent(name)}/run`),
   confirmRoutine: (name: string) => call<Task | null>("POST", `/routines/${encodeURIComponent(name)}/confirm`),
   projects: () => call<ProjectsOut>("GET", "/projects"),
-  saveProject: (name: string, folder: string, about: string, isolation?: ProjectOut["isolation"]) =>
-    call<ProjectOut>("PUT", `/projects/${encodeURIComponent(name)}`, { folder, about, isolation }),
+  saveProject: (name: string, folder: string, about: string, isolation?: ProjectOut["isolation"], room?: { max_worktrees: number; folder_branch: boolean }) =>
+    call<ProjectOut>("PUT", `/projects/${encodeURIComponent(name)}`, { folder, about, isolation, ...room }),
   removeProject: (name: string) => call<null>("DELETE", `/projects/${encodeURIComponent(name)}`),
   /** The folders the user worked in lately with Claude Code or Codex, and the memories those keep. */
   foundProjects: () => call<FoundOut>("GET", "/projects/found"),

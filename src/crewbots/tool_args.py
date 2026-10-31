@@ -194,6 +194,7 @@ class ThreadBody(Args):
     title: str
     goal: str
     project: str | None = None
+    in_folder: bool = False
 
 
 class PostBody(Args):
@@ -251,6 +252,7 @@ class Delegation(Args):
     project: str | None = None
     workspace: str | None = None
     review_of: str | None = None
+    in_folder: bool = False
 
 
 class RoomStatus(Args):

@@ -234,7 +234,8 @@ class CrewTools:
                     return "Verdict recorded. End your reply with a short summary."
                 case "delegate":
                     child = r.delegate(me, args["bot"], args["goal"], project=args["project"] or None,
-                                       workspace=args["workspace"] or None, review_of=args["review_of"] or None)
+                                       workspace=args["workspace"] or None, review_of=args["review_of"] or None,
+                                       in_folder=args["in_folder"])
                     # The app finds the child's card by its id in this reply, and in start_thread's and ask's.
                     return f"Delegated {child.id} to {child.bot}: {child.title}"
                 case "tasks":
@@ -332,7 +333,8 @@ class CrewTools:
                     return (f"Added {added.label} (@{added.name}), {added.title}, to the crew. It's in the roster now: "
                             "@mention it in a group chat to bring it in.")
                 case "start_thread":
-                    thread = r.start_thread(me, args["title"], args["goal"], args["project"] or None)
+                    thread = r.start_thread(me, args["title"], args["goal"], args["project"] or None,
+                                            in_folder=args["in_folder"])
                     return f"Opened thread {thread.id}: {thread.title}. Its result comes back here when it's done."
                 case "ask":
                     asked = r.ask(me, args["bot"], args["question"])

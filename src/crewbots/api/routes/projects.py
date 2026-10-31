@@ -41,7 +41,8 @@ def routes(c: Context) -> APIRouter:
     @v1.put("/projects/{name}", response_model=ProjectOut)
     async def put_project(name: str, body: ProjectBody):
         try:
-            project = projects_module.save(home(), name, Path(body.folder), body.about, body.isolation)
+            project = projects_module.save(home(), name, Path(body.folder), body.about, body.isolation,
+                                           max_worktrees=body.max_worktrees, folder_branch=body.folder_branch)
         except ProjectError as e:
             raise HTTPException(422, str(e)) from None
         reload()
@@ -94,6 +95,7 @@ def routes(c: Context) -> APIRouter:
 
 def _project_out(project: Project) -> dict[str, Any]:
     return {"name": project.name, "folder": str(project.folder), "about": project.about, "isolation": project.isolation,
+            "max_worktrees": project.max_worktrees, "folder_branch": project.folder_branch,
             "missing": not project.folder.is_dir()}
 
 

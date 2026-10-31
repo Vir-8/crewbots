@@ -1,7 +1,7 @@
 """The user's projects, and what Claude Code and Codex already know, for getting a crew started."""
 
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from crewbots.projects import Isolation
 
@@ -10,12 +10,16 @@ class ProjectBody(BaseModel):
     folder: str
     about: str = ""
     isolation: Isolation | None = None
+    max_worktrees: int | None = Field(None, ge=0)  # left out, it keeps what it was; 0 for no cap
+    folder_branch: bool | None = None  # left out, it keeps what it was
 
 class ProjectOut(BaseModel):
     name: str
     folder: str
     about: str
     isolation: Isolation
+    max_worktrees: int | None  # task worktrees at once; None for no cap
+    folder_branch: bool  # one task at a time may work in the folder itself, on a branch of its own
     missing: bool  # its folder isn't there any more
 
 class ProjectsOut(BaseModel):

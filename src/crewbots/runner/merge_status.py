@@ -33,7 +33,8 @@ class MergeStatus:
             if task.worktree_path and Path(task.worktree_path).is_dir() and worktree.git_read(
                     Path(task.worktree_path), "status", "--porcelain"):
                 return None  # uncommitted work the branch does not yet hold
-            into = worktree.git_read(repo, "symbolic-ref", "--short", "HEAD")
+            into = (self._in_folder(task) and self._folder_from(task)) or worktree.git_read(
+                repo, "symbolic-ref", "--short", "HEAD")
             return into if worktree.already_in(repo, f"refs/heads/{into}", tip, task.base) else None
         except worktree.GitError:
             return None
@@ -110,7 +111,8 @@ class MergeStatus:
         more on the new squash; if that moves again too, the merge is refused. A proposal that changed while CI ran
         (withdrawn) is not landed."""
         for attempt in (1, 2):
-            tip = worktree._git(wt.path, "rev-parse", "HEAD")
+            # In the folder itself, the folder is back on the branch it merges into by now (runner/folder_branch.py).
+            tip = worktree._git(wt.path, "rev-parse", f"refs/heads/{wt.branch}" if self._in_folder(task) else "HEAD")
             tested = self.ci_gate(task, worktree._git(wt.repo, "symbolic-ref", "--short", "HEAD"), tip)
             if self.store.get_task(task.id).merge_state != task.merge_state:
                 raise MergeError("the proposal changed while CI ran, so nothing was merged; propose again")

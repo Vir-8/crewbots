@@ -5,7 +5,9 @@ from pathlib import Path
 from crewbots import worktree
 from crewbots.backends import Access
 from crewbots.crew import Bot
+from crewbots.projects import Project
 from crewbots.runner.common import NotAllowed
+from crewbots.runner.folder_branch import ASKED
 from crewbots.store import Task
 
 
@@ -20,6 +22,10 @@ class Checkouts:
                     self._restore_worktree(reviewed)
                 self._review_copy(reviewed, Path(task.workspace))
         if task.worktree_path:
+            if self._in_folder(task):  # the project's folder itself, on the task's branch (runner/folder_branch.py)
+                return self._take_folder(task, self._project_of(task))
+            if not Path(task.worktree_path).exists():
+                self._worktree_room(Path(task.workspace or task.repo), but=task.id)
             self._restore_worktree(task)
             return Path(task.worktree_path)
         workspace = Path(task.workspace).expanduser() if task.workspace else self.crew.folder_of(bot)
@@ -36,10 +42,19 @@ class Checkouts:
             if not self.store.last_event(task.id, ("in_place",)):  # what its work is committed onto (runner/in_place.py)
                 self._record(task.id, kind="in_place", data={"branch": worktree._git(workspace, "branch", "--show-current")})
             return self._in_place(workspace)
+        if project and self.store.last_event(task.id, (ASKED,)):
+            return self._take_folder(task, project)
+        self._worktree_room(workspace, but=task.id)
         wt = worktree.create(workspace, task.id, root=self.worktree_root)
         self._set(task.id, repo=str(wt.repo), worktree_path=str(wt.path), branch=wt.branch, base=wt.base)
         self._record(task.id, kind="worktree", data={"path": str(wt.path), "branch": wt.branch, "base": wt.base})
         return wt.path
+
+    def _project_of(self, task: Task) -> Project:
+        if project := self.crew.project_at(Path(task.workspace or task.repo)):
+            return project
+        raise NotAllowed(f"{task.id} works in a project's folder on a branch of its own, and {task.workspace} isn't a "
+                         "project any more")
 
     def _in_place(self, workspace: Path) -> Path:
         home, folder = self.crew.home.resolve(), workspace.resolve()

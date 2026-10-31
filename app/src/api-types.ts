@@ -2,7 +2,7 @@
 
 /** The API this app was built against: its major version, and a fingerprint of all of it. */
 export const API_VERSION = 1;
-export const API_SCHEMA = "88c7c43d8bb5";
+export const API_SCHEMA = "dcd4378584cf";
 
 /** How much a run may touch. Each backend maps this onto its own permission or sandbox flags. */
 export type Access = "read_only" | "workspace_write" | "full";
@@ -773,6 +773,8 @@ export interface ProjectBody {
   folder: string;
   about?: string;
   isolation?: "in_place" | "worktree" | null;
+  max_worktrees?: number | null;
+  folder_branch?: boolean | null;
 }
 
 export interface ProjectOut {
@@ -780,6 +782,8 @@ export interface ProjectOut {
   folder: string;
   about: string;
   isolation: "in_place" | "worktree";
+  max_worktrees: number | null;
+  folder_branch: boolean;
   missing: boolean;
 }
 

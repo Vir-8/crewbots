@@ -281,12 +281,18 @@ class Work(Landed, Closing, MergeStatus, SharedApps, Editors, InPlace):
             except worktree.GitError as e:
                 raise MergeError(str(e)) from None
         wt = worktree.Worktree(repo=Path(work.repo), path=Path(work.worktree_path), branch=work.branch, base=work.base)
+        left = False
         try:
             if not wt.path.exists():
                 self._restore_worktree(work)
             worktree.commit(wt, f"{message.splitlines()[0]}\n\ncrewbots task {work.id}, by {work.bot}")
+            if self._in_folder(work):  # squashed into the branch the folder was on, so it goes back there first
+                self._leave_folder(work, wt)
+                left = True
             tip, commit = self.merge_gated(work, wt, message)
         except worktree.GitError as e:
+            if left:
+                self._back_to_work(wt)
             raise MergeError(str(e)) from None
         task = self._set(task_id, merge_state="merged", merged_commit=commit, merged_tip=tip)
         self._record(task_id, kind="merged", data={"commit": commit, "into": str(wt.repo), "forced": not state.approved,

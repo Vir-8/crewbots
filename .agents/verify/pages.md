@@ -6,7 +6,8 @@
 - **Crew's Models view:** the crew's backends, models and efforts in a table by team (a role card's `team`), with
   each plan's tightest window over it and presets to try. Changes are a draft until Apply, which makes one
   `PUT /bots/models`; presets are `/presets`.
-- **Projects:** folders the crew may work in, each with its folder, a description and where tasks work (isolation). CI commands aren't set here.
+- **Projects:** folders the crew may work in, each with its folder, a description and where tasks work (isolation);
+  a worktree project can also cap its worktrees and lend its folder to one task at a time. CI commands aren't set here.
 - **Activity:** who asked or handed what to whom, live.
 - **Landed:** what merged, the latest first, with its handback's evidence and the verdicts of the merged version; a
   revert for each. Opening it clears the sidebar's count; rows that were new when it opened keep a blue edge.
@@ -22,11 +23,15 @@ The "Your crew" menu at the bottom of the sidebar, or ⌘K. Landed has its own r
 ## Driving it with scripts/verify
 - Open the menu with `.side-row.crew-button`, then click the item by its text.
 - Projects: a row opens its sheet; "Where tasks work" is a `.segmented` of "The folder itself" and "A worktree each",
-  and the row's second line ends with the one in use. The demo's `glider` is a Unity project,
+  and the row's second line ends with the one in use. For "A worktree each" the sheet adds "Worktrees at once" (a
+  number input, placeholder "No limit") and "The folder itself" (a switch labelled "Lend the folder to one task at a
+  time"); the row then reads e.g. "A worktree each, at most 2, and the folder on a branch". The demo's `acme-web` has both. The demo's `glider` is a Unity project,
   worked in its folder itself. In a scratch daemon, adding a Unity project (a folder with
   `ProjectSettings/ProjectVersion.txt`) puts `verify-unity` in `GET /v1/skills` once the next tick reloads the crew.
 - The page is in `.main`; its title is the `h1`.
 - A project's row is a `.list-row`, which opens a `.sheet` with "Choose…", the `.segmented` buttons, Cancel and Save.
+- The sheet's fields are `<label>`s, so a click on a switch's hint text toggles it too: click the switch by its
+  label, and read `aria-checked` after a frame.
 - Crew: `.page-head .segmented` switches Cards and Models, remembered in `localStorage["crewbots.crewView"]`. In
   Models, the rows are `.models-row.team` and `.models-row.bot`; their selects are labelled "<Team> runs on",
   "<Team> model", "<Team> reasoning", or the bot's name in place of the team ("Engineer model"). A changed cell is

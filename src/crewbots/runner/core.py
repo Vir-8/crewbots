@@ -69,6 +69,7 @@ from crewbots.runner.common import (
 from crewbots.runner.delegation import MAX_CHILDREN, MAX_DEPTH, MAX_OUT, Delegation
 from crewbots.runner.dreams import Dreams
 from crewbots.runner.files import Files
+from crewbots.runner.folder_branch import FolderBranch
 from crewbots.runner.holds import Holds
 from crewbots.runner.permissions import Permissions
 from crewbots.runner.retries import Attempt, Retries
@@ -94,7 +95,7 @@ STALL_S = 1200.0  # no event at all from a turn for this long: it's stuck, so it
 
 
 class Runner(ChiefEvents, Checkouts, Retries, Sessions, Rooms, Delegation, Reviewing, Work, Files, Holds, Dreams, Checkins, Wakes,
-             Welcome, Permissions, Watchdog, Cleanup):
+             Welcome, Permissions, Watchdog, Cleanup, FolderBranch):
     """Runs the crew's tasks. Each base class is one part of it, kept in its own runner module."""
     def __init__(
         self,

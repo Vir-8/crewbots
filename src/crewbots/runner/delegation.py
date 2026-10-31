@@ -17,6 +17,7 @@ from crewbots.crew import Bot, CrewError
 from crewbots.events import Notice
 from crewbots.projects import Project, is_unity
 from crewbots.runner.common import NotAllowed, UnknownBot, _clip
+from crewbots.runner.folder_branch import ASKED
 from crewbots.runner.reviews import MAX_REVIEW_ROUNDS, _review_findings, _round_status
 from crewbots.runner.room_talk import RoomTalk
 from crewbots.store import UNFINISHED, Handoff, Review, Status, Task, Verdict
@@ -32,7 +33,8 @@ log = logging.getLogger(__name__)
 class Delegation(RoomTalk):
     """The part of Runner that opens threads, hands out work, and reports results back up."""
 
-    def start_thread(self, task_id: str, title: str, goal: str, project: str | None = None) -> Task:
+    def start_thread(self, task_id: str, title: str, goal: str, project: str | None = None, *,
+                     in_folder: bool = False) -> Task:
         """A bot opens a thread for itself, under the conversation it's in, in a project's folder or the
         conversation's own. Its result comes back there."""
         parent = self.store.get_task(task_id)
@@ -41,11 +43,15 @@ class Delegation(RoomTalk):
         if self.store.unfinished_children(task_id) >= self.max_children:
             raise NotAllowed(f"stop condition: this conversation already has {self.max_children} unfinished child tasks. "
                              "Finish those before opening more.")
-        return self.submit(parent.bot, goal, created_by=parent.bot, parent_id=task_id, workspace=workspace,
-                           title=title)
+        self._check_room(parent.bot, project, in_folder)
+        thread = self.submit(parent.bot, goal, created_by=parent.bot, parent_id=task_id, workspace=workspace,
+                             title=title)
+        if in_folder:  # recorded before its first turn can start, which takes the folder
+            self._record(thread.id, kind=ASKED, data={"project": project})
+        return thread
 
     def delegate(self, parent_id: str, bot: str, goal: str, *, project: str | None = None,
-                 workspace: str | None = None, review_of: str | None = None) -> Task:
+                 workspace: str | None = None, review_of: str | None = None, in_folder: bool = False) -> Task:
         parent = self.store.get_task(parent_id)
         if project and not review_of:
             workspace = str(self._project(project).folder)  # the user's to give, and given by adding it
@@ -95,14 +101,31 @@ class Delegation(RoomTalk):
             workspace = self._review_copy(work) or work.worktree_path or work.workspace
         elif workspace and not project:
             self._check_folder(parent, bot, workspace)
+        else:
+            self._check_room(bot, project, in_folder)
         task = self.submit(bot, goal, created_by=parent.bot, parent_id=parent_id,
                            workspace=workspace or parent.workspace, review_of=review_of, review_version=version)
+        if in_folder and not review_of:  # recorded before its first turn can start, which takes the folder
+            self._record(task.id, kind=ASKED, data={"project": project})
         if review_of and (change := self._change_of(work)):  # so a later version with the same change keeps the verdict
             self._record(task.id, kind="review_change", data={"change": change})
         self.store.log_agent("review" if review_of else "delegate", parent.bot, bot, task.id, text=goal)
         self._say_in_room(parent, parent, bot, f"{task.id}" + (f", a review of {review_of}" if review_of else "")
                           + f": {goal}")
         return task
+
+    def _check_room(self, bot: str, project: str | None, in_folder: bool) -> None:
+        """Work in a project that will make a worktree needs room for one; work asking for the folder's own branch
+        needs the folder free (runner/folder_branch.py)."""
+        if not project or not self._writes_in_worktree(bot):
+            if in_folder:
+                raise NotAllowed("in_folder is for work in a project by a bot that writes: name the project")
+            return
+        found = self._project(project)
+        if not in_folder:
+            self._worktree_room(found.folder, waiting=True)
+        elif refused := self._folder_refusal(found):
+            raise NotAllowed(f"{bot} can't work in {project}'s folder now: {refused}")
 
     def _review_copy(self, work: Task, at: Path | None = None) -> str | None:
         """A throwaway copy of `work` as it stands, for its reviewer to run the checks and the change itself in, with

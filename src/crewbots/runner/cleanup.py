@@ -59,8 +59,8 @@ class Cleanup:
         try:
             if not wt.path.is_dir():
                 return result | {"status": "kept", "reason": "worktree path is missing"}
-            if wt.repo.resolve() == wt.path.resolve():
-                return result | {"status": "kept", "reason": "path is the main checkout"}
+            if self._in_folder(task):  # the project's folder itself, on the task's branch: it switches back
+                return result | self._release_folder(task, wt, sweep=sweep, dry_run=dry_run)
             if not dry_run:
                 self.close_editor(wt.path)  # a Unity Editor on it would write there as it goes
             try:

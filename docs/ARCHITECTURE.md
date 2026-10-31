@@ -346,7 +346,10 @@ Each step leaves the system working.
   branch checked out in the project's own folder one task at a time, was removed on 2026-10-29: `in_place` covers what
   it was for, and a project file that still says `branch` is read as `in_place`. Unity projects (`is_unity`: `ProjectSettings/ProjectVersion.txt`)
   default to `in_place`: Unity opens a project in one Editor only (`Temp/UnityLockfile`), so that Editor sees every
-  engineer's work, and the lead splits the work by files. The Projects page sets it. A worktree shares the
+  engineer's work, and the lead splits the work by files. The Projects page sets it. A worktree project can also cap
+  its worktrees (`max_worktrees`), and lend its folder to one task at a time on a branch of its own (`folder_branch`,
+  `runner/folder_branch.py`): branch mode back as one slot beside the worktrees, asked for per task with `in_folder`,
+  taken only while the folder is clean, and given back when the work is merged or dropped. A worktree shares the
   repository's history but writes out every tracked file (a 24 GB Unity project: 3.4 GB, without its 7.6 GB `Library/`).
   Unity work isn't copied for review, whichever way it runs: its checks run in an Editor, not a copy. In-place work
   is committed rather than merged (`runner/in_place.py`): `propose_merge` and the merge commit only the files its

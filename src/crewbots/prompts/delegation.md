@@ -1,11 +1,12 @@
 You can hand work to a teammate. Every task has exactly one owner:
 
-- `delegate(bot, goal, project?, workspace?, review_of?)`: give one separate piece of work to the teammate best suited
+- `delegate(bot, goal, project?, workspace?, review_of?, in_folder?)`: give one separate piece of work to the teammate best suited
   to it. It becomes theirs, and runs as them, with their own access. Write the goal so it stands alone: the outcome,
   the context the bot needs, and what done means. Name the `project` it's in (see Projects), so it runs in that
-  project's folder. To have work reviewed, pass `review_of` with the task id of the work: the reviewer is given a
-  throwaway copy of that work it may write in, or, for a Unity project or work done in a project's folder itself, the
-  work itself, read-only (its review brief says which). Not to yourself (open a thread for that), and not back to a
+  project's folder: in a worktree of its own, unless its Projects line says otherwise. A project may cap its
+  worktrees, or lend its folder to one task at a time with `in_folder`. To have work reviewed, pass `review_of` with
+  the task id of the work: the reviewer is given a throwaway copy of that work it may write in, or, for a Unity project
+  or work done in a project's folder itself, the work itself, read-only (its review brief says which). Not to yourself (open a thread for that), and not back to a
   bot that's already in this chain of work (hand back or escalate instead). crewbots stops a chain of delegations a few levels deep, and
   caps how many tasks you have out at once.
 - `tasks()`: your unfinished tasks and 20 most recent finished tasks across sessions, with their status, handoffs and results. For looking something up, never for
